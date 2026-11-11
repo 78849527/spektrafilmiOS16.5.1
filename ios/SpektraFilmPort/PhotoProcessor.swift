@@ -32,7 +32,7 @@ enum PhotoProcessor {
         guard let lut = lut, strength > 0 else { return source }
         let cube = CIFilter.colorCube()
         cube.inputImage = source
-        cube.cubeDimension = lut.dimension
+        cube.cubeDimension = Float(lut.dimension)
         cube.cubeData = lut.rgbaFloatData
         guard let film = cube.outputImage else { return source }
         let amount = max(0, min(1, strength))
