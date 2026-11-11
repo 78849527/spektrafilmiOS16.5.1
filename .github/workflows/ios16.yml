@@ -1,0 +1,73 @@
+name: iOS 16 — unsigned IPA
+on:
+  push:
+    branches: [ios16]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios16.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios16.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate --spec project.yml
+      - name: Compile unsigned device release
+        run: |
+          xcodebuild -project ios/SpektraFilmPort.xcodeproj \
+            -scheme SpektraFilmPort -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Verify device app
+        run: |
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -f "$APP/SpektraFilmPort"
+          /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16(\.0)?$'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -q '^com.twogou.spektrafilmport$'
+      - name: Package IPA
+        run: |
+          mkdir -p ios/build/package/Payload
+          cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
+          cd ios/build/package
+          zip -q -r ../SpektraFilmPort-ios16-unsigned.ipa Payload
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpektraFilmPort-ios16-unsigned
+          path: ios/build/SpektraFilmPort-ios16-unsigned.ipa
+          if-no-files-found: error
+      - name: Publish unofficial test prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET=ios/build/SpektraFilmPort-ios16-unsigned.ipa
+          TAG=ios16-mvp
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
+              --title "SpektraFilm Port iOS 16 v0.1.0 (unsigned)" \
+              --notes "Unofficial iOS 16 test build. Adobe .cube LUT import, photo preview, JPEG export. NOT the native spectral engine. Unsigned IPA must be signed." \
+              --prerelease
+          fi
