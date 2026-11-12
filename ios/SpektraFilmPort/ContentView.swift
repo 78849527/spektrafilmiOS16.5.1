@@ -233,48 +233,8 @@ struct ContentView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
-    @State private var holdingOriginal = false
     @AppStorage("compactFilmStock") private var selectedFilmID = "kodak_portra_400"
     @AppStorage("compactPaperStock") private var selectedPaperID = "kodak_portra_endura"
-
-    // The inline wheels show only the measured profiles backed by physics.
-    private var wheelFilms: [MeasuredStock] {
-        SpectralPhysics.supportedFilmIDs.compactMap { id in
-            GeneratedMeasuredProfiles.entries.first { $0.id == id }
-        }
-    }
-
-    private var wheelPapers: [MeasuredStock] {
-        SpectralPhysics.supportedPaperIDs.compactMap { id in
-            GeneratedMeasuredProfiles.entries.first { $0.id == id }
-        }
-    }
-
-    private func shortStockName(_ stock: MeasuredStock) -> String {
-        stock.name
-            .replacingOccurrences(of: "Kodak Professional ", with: "")
-            .replacingOccurrences(of: "Kodak ", with: "")
-            .replacingOccurrences(of: "Fujifilm ", with: "Fuji ")
-            .replacingOccurrences(of: "Crystal Archive Type II", with: "Crystal II")
-    }
-
-    private var selectedIsPositive: Bool {
-        SpectralPhysics.isPositiveFilm(selectedFilmID)
-    }
-
-    private var activePairIsSupported: Bool {
-        SpectralPhysics.supportedFilmIDs.contains(selectedFilmID) &&
-        (selectedIsPositive || SpectralPhysics.supportedPaperIDs.contains(selectedPaperID))
-    }
-
-    private var currentStockDescription: String {
-        let names = Dictionary(uniqueKeysWithValues:
-            GeneratedMeasuredProfiles.entries.map { ($0.id, $0.name) }
-        )
-        let film = names[selectedFilmID] ?? selectedFilmID
-        if selectedIsPositive { return film + " → 反转片直接扫描（无需印相）" }
-        return film + " → " + (names[selectedPaperID] ?? selectedPaperID)
-    }
 
     // Use a single native document picker for both file entry points. A
     // restrictive UTType or multiple fileImporter modifiers can hide .cube
@@ -297,332 +257,41 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("原始 Spektrafilm · iOS 移植实验")
-                        .font(.subheadline).foregroundStyle(.secondary)
-
-                    ZStack {
-                        Rectangle().fill(Color(white: 0.10))
-                        if let preview = holdingOriginal
-                            ? model.originalPreview : model.processedPreview {
-                            Image(uiImage: preview)
-                                .resizable().scaledToFit().padding(4)
-                        } else {
-                            VStack(spacing: 10) {
-                                Image(systemName: "photo.on.rectangle.angled")
-                                    .font(.system(size: 36))
-                                Text("导入照片开始")
-                            }
-                            .foregroundStyle(.white.opacity(0.75))
-                        }
-                        if model.hasPhoto {
-                            VStack {
-                                Spacer()
-                                HStack {
-                                    Spacer()
-                                    Text(holdingOriginal ? "原图" : "按住看原图")
-                                        .font(.caption2)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 9)
-                                        .padding(.vertical, 5)
-                                        .background(Color.black.opacity(0.55), in: Capsule())
-                                }
-                                .padding(12)
-                            }
-                            .allowsHitTesting(false)
-                        }
+            FloatingEditorWorkspace(
+                model: model,
+                selectedPhoto: $selectedPhoto,
+                selectedFilmID: $selectedFilmID,
+                selectedPaperID: $selectedPaperID,
+                onOpenPhotoFile: {
+                    model.status = "请选择 JPEG / HEIC / PNG / TIFF 图片文件"
+                    activeSheet = .photo
+                },
+                onOpenLUT: {
+                    model.status = "请选择 .cube 文件"
+                    activeSheet = .lut
+                },
+                onOpenCatalog: {
+                    activeSheet = .stocks
+                },
+                onExport: {
+                    do {
+                        let url = try model.exportJPEG()
+                        activeSheet = .share(url)
+                    } catch {
+                        message = error.localizedDescription
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 370)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    // UIKit recognizer stays in .began/.changed for the entire
-                    // physical hold. SwiftUI onLongPressGesture pressing: can
-                    // turn false immediately upon successful recognition on iOS 16.
-                    .overlay {
-                        if model.hasPhoto {
-                            StablePreviewHoldOverlay(isHolding: $holdingOriginal)
-                        }
-                    }
-
-                    HStack {
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("照片图库", systemImage: "photo")
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button {
-                            model.status = "请选择 JPEG / HEIC / PNG / TIFF 图片文件"
-                            activeSheet = .photo
-                        } label: {
-                            Label("文件图片", systemImage: "folder")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    Divider()
-                    Text("胶片 × 相纸")
-                        .font(.headline)
-                    Text("上下拨动左侧胶片或相纸，停下即自动更新预览。")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    GeometryReader { geometry in
-                        let columnWidth = max(118, (geometry.size.width - 12) / 2)
-                        HStack(alignment: .top, spacing: 12) {
-                            // Two independent vertical wheels in the lower-left.
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("胶片 FILM")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                Picker("胶片", selection: $selectedFilmID) {
-                                    ForEach(wheelFilms) { film in
-                                        Text(shortStockName(film))
-                                            .font(.caption)
-                                            .tag(film.id)
-                                    }
-                                }
-                                .pickerStyle(.wheel)
-                                .labelsHidden()
-                                .frame(width: columnWidth - 14, height: 128)
-                                .clipped()
-
-                                Divider().padding(.vertical, 3)
-
-                                Text(selectedIsPositive ? "反转 DIRECT" : "印相 PRINT")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                if selectedIsPositive {
-                                    VStack(spacing: 5) {
-                                        Image(systemName: "film")
-                                            .font(.title2)
-                                        Text("反转片直扫")
-                                            .font(.caption)
-                                        Text("不经过相纸")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .frame(width: columnWidth - 14, height: 128)
-                                } else {
-                                    Picker("印相介质", selection: $selectedPaperID) {
-                                        ForEach(wheelPapers) { paper in
-                                            Text(shortStockName(paper))
-                                                .font(.caption)
-                                                .tag(paper.id)
-                                        }
-                                    }
-                                    .pickerStyle(.wheel)
-                                    .labelsHidden()
-                                    .frame(width: columnWidth - 14, height: 128)
-                                    .clipped()
-                                }
-
-                                Button("完整胶片目录") {
-                                    activeSheet = .stocks
-                                }
-                                .font(.caption2)
-                                .padding(.top, 6)
-                            }
-                            .frame(width: columnWidth - 14, alignment: .leading)
-                            .padding(.vertical, 7)
-                            .padding(.horizontal, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color(uiColor: .secondarySystemBackground))
-                            )
-
-                            // All continuous adjustments stay on the right.
-                            VStack(alignment: .leading, spacing: 11) {
-                                Text("调整")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("胶片曝光")
-                                        .font(.caption)
-                                    Text(String(format: "%+.2f EV", model.filmExposureEV))
-                                        .font(.caption2)
-                                        .monospacedDigit()
-                                        .foregroundColor(.secondary)
-                                    Slider(value: $model.filmExposureEV,
-                                           in: -2...2, step: 0.25,
-                                           onEditingChanged: { editing in
-                                        if !editing { model.queueSpectralPreview() }
-                                    })
-                                }
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(selectedIsPositive ? "无需印相" : "印相曝光")
-                                        .font(.caption)
-                                    Text(String(format: "%+.2f EV", model.printExposureEV))
-                                        .font(.caption2)
-                                        .monospacedDigit()
-                                        .foregroundColor(.secondary)
-                                    Slider(value: $model.printExposureEV,
-                                           in: -2...2, step: 0.25,
-                                           onEditingChanged: { editing in
-                                        if !editing { model.queueSpectralPreview() }
-                                    })
-                                    .disabled(selectedIsPositive)
-                                }
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack {
-                                        Text("效果强度")
-                                            .font(.caption)
-                                        Spacer(minLength: 0)
-                                        Text("\(Int(model.strength * 100))%")
-                                            .font(.caption2)
-                                            .monospacedDigit()
-                                    }
-                                    Slider(value: $model.strength,
-                                           in: 0...1, step: 0.05,
-                                           onEditingChanged: { editing in
-                                        if !editing { refresh() }
-                                    })
-                                    .disabled(model.lut == nil || !model.hasPhoto)
-                                }
-
-                                Divider()
-                                Toggle("乳剂散射", isOn: $model.scatterEnabled)
-                                    .font(.caption)
-                                    .disabled(!model.hasPhoto)
-                                    .onChange(of: model.scatterEnabled) { _ in refresh() }
-                                Toggle("背反射光晕", isOn: $model.halationEnabled)
-                                    .font(.caption)
-                                    .disabled(!model.hasPhoto)
-                                    .onChange(of: model.halationEnabled) { _ in refresh() }
-                                Toggle("密度颗粒", isOn: $model.grainEnabled)
-                                    .font(.caption)
-                                    .disabled(!model.hasPhoto || model.busy)
-                                    .onChange(of: model.grainEnabled) { enabled in
-                                        if enabled { model.queueSpectralPreview() }
-                                        else { refresh() }
-                                    }
-                                if model.grainEnabled {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack {
-                                            Text("颗粒强度")
-                                                .font(.caption2)
-                                            Spacer(minLength: 0)
-                                            Text(String(format: "%.2f×", model.grainAmount))
-                                                .font(.caption2)
-                                                .monospacedDigit()
-                                        }
-                                        Slider(value: $model.grainAmount, in: 0...2,
-                                               step: 0.25, onEditingChanged: { editing in
-                                            if !editing { refresh() }
-                                        })
-                                        Text("显影密度统计模拟")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                if model.halationEnabled {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        HStack {
-                                            Text("光晕倍率")
-                                                .font(.caption2)
-                                            Spacer(minLength: 0)
-                                            Text(String(format: "%.2f×", model.halationAmount))
-                                                .font(.caption2)
-                                                .monospacedDigit()
-                                        }
-                                        Slider(value: $model.halationAmount, in: 0...3,
-                                               step: 0.25, onEditingChanged: { editing in
-                                            if !editing { refresh() }
-                                        })
-                                        .disabled(!model.hasPhoto)
-                                    }
-                                }
-
-                                Button {
-                                    model.applyMeasuredSimulation()
-                                } label: {
-                                    Text("应用模拟")
-                                        .font(.caption)
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(!model.hasPhoto || !activePairIsSupported)
-
-                                if model.busy {
-                                    ProgressView("计算中")
-                                        .font(.caption2)
-                                } else {
-                                    Text("拨轮停止后自动计算")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .frame(width: columnWidth, alignment: .leading)
-                            .padding(.vertical, 7)
-                        }
-                    }
-                    .frame(height: 500 + (model.halationEnabled ? 55 : 0) +
-                           (model.grainEnabled ? 95 : 0))
-                    .onChange(of: selectedFilmID) { _ in
-                        model.queueSpectralPreview()
-                    }
-                    .onChange(of: selectedPaperID) { _ in
-                        model.queueSpectralPreview()
-                    }
-                    Text(currentStockDescription)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                    Text("20 款拍摄胶片（16 负片＋4 反转片）· 6 相纸＋2 电影印片；Hanatos2025 光谱输入。")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    Divider()
-                    HStack {
-                        Button {
-                            model.status = "请选择 .cube 文件；其他扩展名会在选择后提示"
-                            activeSheet = .lut
-                        } label: {
-                            Label("导入 .cube", systemImage: "square.stack.3d.up")
-                        }
-                        .buttonStyle(.bordered)
-                        Spacer()
-                        Text(model.lut?.title ?? "未选择 LUT")
-                            .font(.caption).lineLimit(2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Button {
-                        do {
-                            let url = try model.exportJPEG()
-                            activeSheet = .share(url)
-                        } catch {
-                            message = error.localizedDescription
-                        }
-                    } label: {
-                        Label("导出 JPEG / 分享", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!model.hasPhoto || model.busy)
-
-                    Text(model.status)
-                        .font(.footnote).foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-
-                    Divider()
-                    Text("v0.9：新增原版密度颗粒统计模型的 GPU 近似。真实 Hanatos + DIR 显影密度在首个 LUT 中生成，再在胶片密度域按原版 Poisson/Binomial 的均值、方差采样，最后由第二个 LUT 执行负片印相或反转片直扫；尚未做到精确粒子分布、三乳剂亚层或空间 DIR 扩散。v0.8：保留乳剂散射及三次反射光晕。28 份原版配置与双拨轮全部保留，仍仅测试 iOS 16.5.1。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                .padding()
-            }
-            .navigationTitle("SpektraFilm Port")
-            .navigationBarTitleDisplayMode(.inline)
+                },
+                onRefresh: { refresh() }
+            )
+            .toolbar(.hidden, for: .navigationBar)
             .onChange(of: selectedPhoto) { item in
                 model.selectFromPhotos(item)
+            }
+            .onChange(of: selectedFilmID) { _ in
+                model.queueSpectralPreview()
+            }
+            .onChange(of: selectedPaperID) { _ in
+                model.queueSpectralPreview()
             }
             .sheet(item: $activeSheet) { selection in
                 switch selection {
@@ -725,60 +394,3 @@ private struct FilesDocumentPicker: UIViewControllerRepresentable {
 }
 
 
-/// UIKit continuous long-press state for iOS 16.5.1. Unlike SwiftUI's
-/// onLongPressGesture(pressing:perform:), .began/.changed remains active
-/// until the user actually lifts the finger or the gesture is cancelled.
-/// The state belongs to ContentView, so a fresh film preview cannot clear it.
-private struct StablePreviewHoldOverlay: UIViewRepresentable {
-    @Binding var isHolding: Bool
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isHolding: $isHolding)
-    }
-
-    func makeUIView(context: Context) -> UIView {
-        let overlay = UIView(frame: .zero)
-        overlay.backgroundColor = .clear
-        overlay.isUserInteractionEnabled = true
-        let press = UILongPressGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handlePress(_:))
-        )
-        press.minimumPressDuration = 0.12
-        press.allowableMovement = 50
-        press.cancelsTouchesInView = false
-        press.delegate = context.coordinator
-        overlay.addGestureRecognizer(press)
-        return overlay
-    }
-
-    func updateUIView(_ view: UIView, context: Context) {
-        context.coordinator.isHolding = $isHolding
-    }
-
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var isHolding: Binding<Bool>
-
-        init(isHolding: Binding<Bool>) {
-            self.isHolding = isHolding
-        }
-
-        @objc func handlePress(_ recognizer: UILongPressGestureRecognizer) {
-            switch recognizer.state {
-            case .began, .changed:
-                if !isHolding.wrappedValue { isHolding.wrappedValue = true }
-            case .ended, .cancelled, .failed:
-                if isHolding.wrappedValue { isHolding.wrappedValue = false }
-            default:
-                break
-            }
-        }
-
-        func gestureRecognizer(
-            _ gestureRecognizer: UIGestureRecognizer,
-            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-        ) -> Bool {
-            true
-        }
-    }
-}
