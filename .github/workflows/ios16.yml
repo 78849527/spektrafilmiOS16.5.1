@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.8.1 full-frame source YVV IIR and dye clouds
+name: iOS 16.5.1 — v1.8.2 source MT19937 and Python density replay
 
 on:
   push:
-    branches: ['ios16.5.1/original-metal-iir-v1.8.1']
+    branches: ['ios16.5.1/original-source-replay-v1.8.2']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -13,7 +13,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-original-metal-iir-v1.8.1-release
+  group: ios1651-original-source-replay-v1.8.2-release
   cancel-in-progress: true
 
 jobs:
@@ -69,6 +69,8 @@ jobs:
           python3 ios/scripts/generate_original_metal_grain.py
           python3 ios/scripts/generate_original_source_rng.py
           python3 ios/scripts/generate_source_iir.py
+          python3 ios/scripts/generate_source_mt19937.py
+          python3 ios/scripts/generate_source_replay.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -83,11 +85,22 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedOriginalMetalGrainReference.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalSourceRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceIIRReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
           test ! -d ios/SpektraFilmPort/Resources
+      - name: Compile exact legacy NumPy MT19937 uint32 and Float64 uniform tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/tests/OriginalSourceMT19937Validation.swift \
+            -o /tmp/SpektraFilmSourceMTValidation
+      - name: Compare 2640 original NumPy MT words and 160 bit-exact Float64 uniforms
+        run: NSUnbufferedIO=YES /tmp/SpektraFilmSourceMTValidation
       - name: Compile density-grain GPU statistical regression
         run: |
           xcrun swiftc -Onone -parse-as-library \
@@ -181,6 +194,20 @@ jobs:
         id: iir_source_gpu
         continue-on-error: true
         run: NSUnbufferedIO=YES /tmp/SpektrafilmOriginalIIRValidation /tmp/SpektrafilmOriginalGrain.metallib
+      - name: Compile original SciPy particle-field source replay with production YVV
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalIIR.swift \
+            ios/SpektraFilmPort/GeneratedSourceIIRReference.swift \
+            ios/SpektraFilmPort/OriginalMetalSourceReplay.swift \
+            ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
+            ios/tests/OriginalMetalSourceReplayValidation.swift \
+            -o /tmp/SpektraFilmSourceReplayValidation
+      - name: Compare source-injected nine-field optical density on real Metal GPU
+        id: source_replay_gpu
+        continue-on-error: true
+        run: NSUnbufferedIO=YES /tmp/SpektraFilmSourceReplayValidation /tmp/SpektrafilmOriginalGrain.metallib
       - name: Require source RNG, float, full-image and real-iPhone evidence
         id: precision_certificate
         continue-on-error: true
@@ -415,31 +442,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.1'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.2'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '26'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '27'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8 unsigned IPA
+      - name: Package v1.8.2 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.1-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.2-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.2 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.1-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.1-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.2-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.2-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-iir-v1.8.1' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-source-replay-v1.8.2' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.1-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.1-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.1-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/original-metal-iir-v1.8.1" --jq '.object.sha')
+          TAG=ios1651-v1.8.2-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.2-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.2-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/original-source-replay-v1.8.2" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -451,7 +478,7 @@ jobs:
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
               --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8 - GPU NOT VERIFIED" \
-              --notes "WARNING: EXPERIMENTAL TEST BUILD, NOT A CERTIFIED RELEASE. v1.8.1 routes sigma >= 3 through full-frame source-order YVV Metal and streams layers to reduce peak GPU RAM; Float32 and PRNG parity still unverified. Full iPhoneOS build and previous color/film regression succeeded, but the Intel CI Metal GPU passthrough returned all zero values. This IPA includes a real-device GPU diagnostic button under Density Grain > 3 Measured Layers > Original Metal. Run that diagnostic before trusting emulsion output. Source Metal path fails explicitly and never silently uses fast approximations; fast mode remains the default. Unsigned IPA requires user signing. Share the on-device diagnostics/result if a failure occurs. GPU parity and physical phone tests have NOT passed." \
+              --notes "WARNING: EXPERIMENTAL TEST BUILD, NOT A CERTIFIED RELEASE. v1.8.2 adds exact NumPy legacy MT19937/53-bit uniform generation (not yet used for production SciPy/Numba sampling), source-injected nine particle field optical density replay with MAE/RMSE/max on GPU, and preserves the full-frame IIR pathway. v1.8.2 routes sigma >= 3 through full-frame source-order YVV Metal and streams layers to reduce peak GPU RAM; Float32 and PRNG parity still unverified. Full iPhoneOS build and previous color/film regression succeeded, but the Intel CI Metal GPU passthrough returned all zero values. This IPA includes a real-device GPU diagnostic button under Density Grain > 3 Measured Layers > Original Metal. Run that diagnostic before trusting emulsion output. Source Metal path fails explicitly and never silently uses fast approximations; fast mode remains the default. Unsigned IPA requires user signing. Share the on-device diagnostics/result if a failure occurs. GPU parity and physical phone tests have NOT passed." \
               --prerelease
           fi
           gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
@@ -460,15 +487,15 @@ jobs:
           test "$ACTUAL" = "$GITHUB_SHA"
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-iir-v1.8.1' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.2 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-source-replay-v1.8.2' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.1-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.1-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.2-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.2-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/original-metal-iir-v1.8.1" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/original-source-replay-v1.8.2" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -478,8 +505,8 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.1 — source-order native Metal dye clouds and microstructure" \
-              --notes "v1.8.1 adds production global YVV IIR and streaming 3-layer dye clouds, plus measured hardware reference tests. Existing source-law particle pipeline retained. Previous v1.8 description: 3 measured film H-D emulsion sublayers, source Poisson thinning, per-layer/channel dye-cloud blur sigma=sqrt(ODparticle) and real reflect-boundary Gaussian convolution, source lognormal microstructure activation and 0.2um clumping blur, subtract density minima, final 0.65px film blur, then original paper/scan path. Full-resolution output uses 512px Metal tiles with analytic halo to limit intermediate memory, no resampling. Original mode fails explicitly and NEVER silently degrades; previews render off main thread. Python/NumPy 12 stock/pixel reference vectors and actual Metal reflect-boundary tests check formulas and shader, alongside earlier DIR/optics and native iPhoneOS build. Caveat: SciPy RNG streams vs GPU hash and Float64 vs Float32 rounding are not bit-identical. Existing v1.7 fast grain remains default. Unsigned IPA needs signing. Real iPhone16.5 test still pending." \
+              --title "SpektraFilm iOS 16.5.1 v1.8.2 — source-order native Metal dye clouds and microstructure" \
+              --notes "v1.8.2 adds source MT19937 uniform core and SciPy particle-field GPU density replay (but still does not port NumPy/SciPy sampler sequencing or Numba micro RNG); inherits production global YVV IIR and streaming 3-layer dye clouds, plus measured hardware reference tests. Existing source-law particle pipeline retained. Previous v1.8 description: 3 measured film H-D emulsion sublayers, source Poisson thinning, per-layer/channel dye-cloud blur sigma=sqrt(ODparticle) and real reflect-boundary Gaussian convolution, source lognormal microstructure activation and 0.2um clumping blur, subtract density minima, final 0.65px film blur, then original paper/scan path. Full-resolution output uses 512px Metal tiles with analytic halo to limit intermediate memory, no resampling. Original mode fails explicitly and NEVER silently degrades; previews render off main thread. Python/NumPy 12 stock/pixel reference vectors and actual Metal reflect-boundary tests check formulas and shader, alongside earlier DIR/optics and native iPhoneOS build. Caveat: SciPy RNG streams vs GPU hash and Float64 vs Float32 rounding are not bit-identical. Existing v1.7 fast grain remains default. Unsigned IPA needs signing. Real iPhone16.5 test still pending." \
               --prerelease
           fi
           # Editing a Release's target_commitish does NOT move an existing
@@ -490,7 +517,7 @@ jobs:
           test "$ACTUAL_TAG" = "$GITHUB_SHA"
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
-        if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.1 certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.2 certified release."
           exit 1
