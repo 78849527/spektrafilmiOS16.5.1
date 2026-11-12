@@ -244,7 +244,7 @@ final class PhotoEditorModel: ObservableObject {
         }
         let result = try PhotoProcessor.exportJPEG(
             source, lut: lut, strength: strength, spatial: spatialSettings,
-            grain: grainSettings
+            grain: grainSettings, scanner: scannerFinishSettings
         )
         let note = result.downsampled ? "（高于 1250 万像素，已缩小）" : "（原像素尺寸）"
         status = "已导出 \(result.width) × \(result.height) JPEG \(note)"
