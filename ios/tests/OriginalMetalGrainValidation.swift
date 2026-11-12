@@ -317,7 +317,7 @@ struct OriginalMetalGrainValidation {
         // actually requires sigma>=3. Verify deterministic complete-image
         // three-layer accumulation, no tile seam/shape change and finite
         // normalized output. Bitwise SciPy RNG parity is NOT asserted.
-        var iirCase: GeneratedOriginalMetalGrainReference.Sample? = nil
+        var iirCase: GeneratedOriginalMetalGrainReference.Item? = nil
         for item in vectors {
             let physical = try OriginalMetalGrain.physicalCoefficients(
                 maxima: item.maxima, pixelUM: item.pixelUM
