@@ -14,6 +14,24 @@ final class PhotoEditorModel: ObservableObject {
     @Published var photoDimensions = ""
     @Published var filmExposureEV = 0.0
     @Published var printExposureEV = 0.0
+    @Published var scatterEnabled = false
+    @Published var halationEnabled = false
+    @Published var halationAmount = 1.0
+
+    // Spatial convolution settings depend on the original stock's base
+    // material and antihalation layer. Original film data lives in generated
+    // metadata; no large JSON bundle is read at app launch.
+    private var spatialSettings: SpatialOpticsSettings {
+        let selected = UserDefaults.standard.string(forKey: "compactFilmStock")
+            ?? "kodak_portra_400"
+        let info = GeneratedMeasuredProfiles.entries.first { $0.id == selected }
+        return SpatialOpticsSettings(
+            scatterAmount: scatterEnabled ? 1.0 : 0.0,
+            halationAmount: halationEnabled ? halationAmount : 0.0,
+            filmUse: info?.usage ?? "still",
+            antihalation: info?.antihalation ?? "strong"
+        )
+    }
 
     // Debounce scrolling wheels; never let a stale render replace new settings.
     private var renderGeneration = 0
@@ -154,7 +172,9 @@ final class PhotoEditorModel: ObservableObject {
             status = lut == nil ? "请先导入照片。" : "LUT 已导入，请选择照片。"
             return
         }
-        processedPreview = try PhotoProcessor.preview(source, lut: lut, strength: strength)
+        processedPreview = try PhotoProcessor.preview(
+            source, lut: lut, strength: strength, spatial: spatialSettings
+        )
         if let lut {
             status = "已应用 \(lut.title) · \(lut.dimension)³ LUT · \(photoDimensions)"
         } else {
@@ -166,7 +186,9 @@ final class PhotoEditorModel: ObservableObject {
         guard let source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
-        let result = try PhotoProcessor.exportJPEG(source, lut: lut, strength: strength)
+        let result = try PhotoProcessor.exportJPEG(
+            source, lut: lut, strength: strength, spatial: spatialSettings
+        )
         let note = result.downsampled ? "（高于 1250 万像素，已缩小）" : "（原像素尺寸）"
         status = "已导出 \(result.width) × \(result.height) JPEG \(note)"
         return result.url
@@ -431,6 +453,33 @@ struct ContentView: View {
                                     .disabled(model.lut == nil || !model.hasPhoto)
                                 }
 
+                                Divider()
+                                Toggle("乳剂散射", isOn: $model.scatterEnabled)
+                                    .font(.caption)
+                                    .disabled(!model.hasPhoto)
+                                    .onChange(of: model.scatterEnabled) { _ in refresh() }
+                                Toggle("背反射光晕", isOn: $model.halationEnabled)
+                                    .font(.caption)
+                                    .disabled(!model.hasPhoto)
+                                    .onChange(of: model.halationEnabled) { _ in refresh() }
+                                if model.halationEnabled {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        HStack {
+                                            Text("光晕倍率")
+                                                .font(.caption2)
+                                            Spacer(minLength: 0)
+                                            Text(String(format: "%.2f×", model.halationAmount))
+                                                .font(.caption2)
+                                                .monospacedDigit()
+                                        }
+                                        Slider(value: $model.halationAmount, in: 0...3,
+                                               step: 0.25, onEditingChanged: { editing in
+                                            if !editing { refresh() }
+                                        })
+                                        .disabled(!model.hasPhoto)
+                                    }
+                                }
+
                                 Button {
                                     model.applyMeasuredSimulation()
                                 } label: {
@@ -454,7 +503,7 @@ struct ContentView: View {
                             .padding(.vertical, 7)
                         }
                     }
-                    .frame(height: 360)
+                    .frame(height: model.halationEnabled ? 515 : 465)
                     .onChange(of: selectedFilmID) { _ in
                         model.queueSpectralPreview()
                     }
@@ -503,7 +552,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.7：新增原版 DIR 化学抑制与胶片专属校正曲线。28 份原版实测资料全量接入。20 种拍摄胶片可选；负片可组合 6 相纸或 Kodak 2383/2393 电影印片，反转片跳过印相直接扫描。启用原始 Hanatos2025 光谱查找表及窗口匹配；DIR 耦合、物理颗粒、光晕和完整扫描校色仍未完成。")
+                    Text("v0.8：新增 GPU 像素空间的乳剂散射与三次背反射光晕。使用原版物理参数和胶片防光晕层预设，但在光谱 LUT 前的线性 RGB 上进行近似，尚非原版 RAW 空间结果。v0.7：原版 DIR 化学抑制与胶片专属校正曲线。28 份原版实测资料全量接入。20 种拍摄胶片可选；负片可组合 6 相纸或 Kodak 2383/2393 电影印片，反转片跳过印相直接扫描。启用原始 Hanatos2025 光谱查找表及窗口匹配；DIR 耦合、物理颗粒、光晕和完整扫描校色仍未完成。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
