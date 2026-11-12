@@ -284,6 +284,108 @@ enum OriginalMetalGrain {
             "纹理透传 PASS · reflect 误差 \(String(format: "%.7f", err))"
     }
 
+    struct PoissonDiagnosticParameters {
+        var lambda: Float
+        var width: UInt32
+        var height: UInt32
+        var seed: UInt32
+    }
+
+    /// Explicit user-triggered, real-device diagnostic of the production
+    /// Poisson kernel. This is not run during every preview or export.
+    /// A pass proves basic GPU sampler convergence and distribution moments;
+    /// it does not prove bitwise SciPy RNG/Float64 equivalence.
+    static func poissonHardwareDiagnostic() throws -> String {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let queue = device.makeCommandQueue() else {
+            throw Failure.invalid("Poisson 自检：无法创建 Metal GPU 指令")
+        }
+        let library = try device.makeDefaultLibrary(bundle: .main)
+        guard let function = library.makeFunction(
+            name: "originalFilmPoissonDiagnostic"
+        ) else {
+            throw Failure.invalid("Poisson 自检：缺少原生采样诊断内核")
+        }
+        let pipeline = try device.makeComputePipelineState(function: function)
+        let w = 192
+        let h = 192
+        let total = w * h
+        guard let samples = device.makeBuffer(
+            length: total * MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        ), let faults = device.makeBuffer(
+            length: 4 * MemoryLayout<UInt32>.stride,
+            options: .storageModeShared
+        ) else {
+            throw Failure.invalid("Poisson 自检：分配 GPU 数值缓冲失败")
+        }
+        let reasons = faults.contents().bindMemory(to: UInt32.self, capacity: 4)
+        let counts = samples.contents().bindMemory(to: Float.self, capacity: total)
+        for rate: Float in [7.29, 22.71, 29.9] {
+            for i in 0..<4 { reasons[i] = 0 }
+            var params = PoissonDiagnosticParameters(
+                lambda: rate, width: UInt32(w), height: UInt32(h), seed: 8888
+            )
+            guard let command = queue.makeCommandBuffer(),
+                  let encoder = command.makeComputeCommandEncoder() else {
+                throw Failure.invalid("Poisson 自检：GPU 计算任务创建失败")
+            }
+            encoder.setComputePipelineState(pipeline)
+            encoder.setBuffer(samples, offset: 0, index: 0)
+            encoder.setBytes(
+                &params, length: MemoryLayout<PoissonDiagnosticParameters>.stride,
+                index: 1
+            )
+            encoder.setBuffer(faults, offset: 0, index: 2)
+            let threads = min(64, pipeline.maxTotalThreadsPerThreadgroup)
+            let group = MTLSize(width: threads, height: 1, depth: 1)
+            encoder.dispatchThreadgroups(
+                MTLSize(width: (total + threads - 1) / threads,
+                        height: 1, depth: 1),
+                threadsPerThreadgroup: group
+            )
+            encoder.endEncoding()
+            command.commit()
+            command.waitUntilCompleted()
+            guard command.status == .completed else {
+                throw Failure.invalid(
+                    "Poisson 自检：GPU 内核执行失败：" +
+                    (command.error?.localizedDescription ?? "unknown")
+                )
+            }
+            guard reasons[0] == 0 else {
+                throw Failure.invalid(
+                    "Poisson 自检：λ=\\(rate) 出现 \\(reasons[0]) 次采样失败，" +
+                    "无效参数=\\(reasons[1])、低率耗尽=\\(reasons[2])、" +
+                    "高率耗尽=\\(reasons[3])"
+                )
+            }
+            var sum = 0.0
+            var sumSquares = 0.0
+            for i in 0..<total {
+                let sample = Double(counts[i])
+                guard sample.isFinite && sample >= 0 &&
+                      sample.rounded(.down) == sample else {
+                    throw Failure.invalid("Poisson 自检：GPU 采样存在无效计数")
+                }
+                sum += sample
+                sumSquares += sample * sample
+            }
+            let mean = sum / Double(total)
+            let variance = sumSquares / Double(total) - mean * mean
+            let expected = Double(rate)
+            guard abs(mean - expected) < 0.50,
+                  abs(variance - expected) / expected < 0.15 else {
+                throw Failure.invalid(
+                    "Poisson 自检：λ=\\(rate) 统计量异常，" +
+                    "均值=\\(mean)，方差=\\(variance)"
+                )
+            }
+        }
+        return "原生 Metal Poisson 3 档采样通过，" +
+            "每档 36,864 点，无失效；非 SciPy 逐像素同序验证"
+    }
+
     private static func makeTexture(
         _ device: MTLDevice, width: Int, height: Int,
         format: MTLPixelFormat = .rgba32Float
