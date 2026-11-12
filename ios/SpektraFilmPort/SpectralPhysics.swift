@@ -131,6 +131,8 @@ struct SpectralPhysics {
     private let hanatos: OriginalHanatosResponse
     private let filmMatrix: [[Double]]    // film channel -> source linear RGB
     private let paperWeights: [[Double]]  // wavelength -> paper channel
+    private let opticalPreflashRaw: [Double]
+    private let useOriginalPrintOptics: Bool
     private let scanWeights: [[Double]]   // wavelength -> CIE XYZ
     private let mediaWhiteXYZ: [Double]
     private let printReference: Double
@@ -159,7 +161,9 @@ struct SpectralPhysics {
          sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
          cam16Gamut: Bool = false,
          printReferenceCorrection: Bool = false,
-         printMorph: OriginalPrintMorph.Settings = .init()) throws {
+         printMorph: OriginalPrintMorph.Settings = .init(),
+         printOptics: OriginalPrintOptics.Settings = .init(),
+         cameraExposureEV: Double = 0) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
@@ -168,6 +172,10 @@ struct SpectralPhysics {
         let originalPaper = try Profile(id: paperID)
         let originalHanatos = try OriginalHanatosResponse(filmID: filmID)
         let positive = originalFilm.polarity == "positive"
+        guard !printOptics.enabled || printOptics.isValid else {
+            throw PhysicsError.invalid("原版印相滤色或预闪光参数超出范围")
+        }
+        useOriginalPrintOptics = !positive && printOptics.enabled
         let viewed = positive ? originalFilm : originalPaper
         film = originalFilm
         paper = originalPaper
@@ -202,9 +210,28 @@ struct SpectralPhysics {
         let sourceIlluminant =
             GeneratedOriginalOptics.printIlluminantByPair[printKey] ??
             GeneratedOriginalOptics.enlargerNeutral
-        let enlarger = try Self.readOriginalFloat32(
-            sourceIlluminant, count: 81
-        )
+        let opticalLighting: OriginalPrintOptics.Prepared?
+        if useOriginalPrintOptics {
+            let unfiltered = try Self.readOriginalFloat32(
+                GeneratedOriginalOptics.enlargerSource, count: 81
+            )
+            let mediaSensitivities = (0..<81).map { index in
+                (0..<3).map { originalPaper.sensitivity(index, $0) }
+            }
+            opticalLighting = OriginalPrintOptics.prepare(
+                source: unfiltered,
+                neutralCC: GeneratedOriginalOptics.neutralCMYByPair[printKey]
+                    ?? [0, 65, 55],
+                settings: printOptics,
+                filmBase: (0..<81).map { originalFilm.base($0) },
+                paperSensitivity: mediaSensitivities
+            )
+        } else {
+            opticalLighting = nil
+        }
+        opticalPreflashRaw = opticalLighting?.preflashRaw ?? [0, 0, 0]
+        let enlarger = try opticalLighting?.printIlluminant ??
+            Self.readOriginalFloat32(sourceIlluminant, count: 81)
         var matrix = Array(repeating: Array(repeating: 0.0, count: 3), count: 3)
         var pWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
         var xyzWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
@@ -248,7 +275,9 @@ struct SpectralPhysics {
         // while the actual film processing uses the original DIR chemistry.
         let midFilmReference = Self.filmDensities(
             [0.184, 0.184, 0.184], film: originalFilm,
-            hanatos: originalHanatos, exposureEV: 0, applyDIR: false
+            hanatos: originalHanatos,
+            exposureEV: useOriginalPrintOptics ? cameraExposureEV : 0,
+            applyDIR: false
         )
         let midFilm = Self.filmDensities(
             [0.184, 0.184, 0.184], film: originalFilm,
@@ -262,14 +291,24 @@ struct SpectralPhysics {
             midMedium = midFilm
         } else {
             let ref = Self.printRaw(
-                filmDensities: midFilmReference, film: originalFilm, weights: pWeights
+                filmDensities: midFilmReference, film: originalFilm,
+                weights: pWeights, clampDensity: !useOriginalPrintOptics
             )
-            printReference = exp(
-                ref.reduce(0.0) { $0 + log(max($1, 1e-14)) } / 3.0
-            )
+            if useOriginalPrintOptics {
+                // Default upstream flags normalize_print_exposure=true and
+                // print_exposure_compensation=true. Camera EV compensates the
+                // middle-grey reference before adding independent preflash.
+                printReference = OriginalPrintOptics.midgrayReference(ref)
+            } else {
+                printReference = exp(
+                    ref.reduce(0.0) { $0 + log(max($1, 1e-14)) } / 3.0
+                )
+            }
             midMedium = Self.paperDensities(
                 midFilm, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0.0
+                weights: pWeights, reference: printReference, printEV: 0.0,
+                preflashRaw: opticalPreflashRaw,
+                opticalPrint: useOriginalPrintOptics
             )
         }
         let midLinear = Self.scanLinear(
@@ -313,11 +352,15 @@ struct SpectralPhysics {
             }
             let paperBlack = Self.paperDensities(
                 filmBlack, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0
+                weights: pWeights, reference: printReference, printEV: 0,
+                preflashRaw: opticalPreflashRaw,
+                opticalPrint: useOriginalPrintOptics
             )
             let paperWhite = Self.paperDensities(
                 filmWhite, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0
+                weights: pWeights, reference: printReference, printEV: 0,
+                preflashRaw: opticalPreflashRaw,
+                opticalPrint: useOriginalPrintOptics
             )
             let measuredBlack = Self.scanPhysicalXYZ(
                 densities: paperBlack, paper: originalPaper,
@@ -349,7 +392,8 @@ struct SpectralPhysics {
                              scannerBlackWhite: Bool = false,
                              cam16Gamut: Bool = false,
                              printReferenceCorrection: Bool = false,
-                             printMorph: OriginalPrintMorph.Settings = .init()
+                             printMorph: OriginalPrintMorph.Settings = .init(),
+                             printOptics: OriginalPrintOptics.Settings = .init()
     ) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
@@ -361,7 +405,8 @@ struct SpectralPhysics {
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
-            printMorph: printMorph
+            printMorph: printMorph, printOptics: printOptics,
+            cameraExposureEV: exposureEV
         )
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
@@ -403,7 +448,8 @@ struct SpectralPhysics {
         sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
         cam16Gamut: Bool = false,
         printReferenceCorrection: Bool = false,
-        printMorph: OriginalPrintMorph.Settings = .init()
+        printMorph: OriginalPrintMorph.Settings = .init(),
+        printOptics: OriginalPrintOptics.Settings = .init()
     ) throws -> DensityStageData {
         guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -414,7 +460,8 @@ struct SpectralPhysics {
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
-            printMorph: printMorph
+            printMorph: printMorph, printOptics: printOptics,
+            cameraExposureEV: exposureEV
         )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
         let step = 1.0 / Double(size-1)
@@ -487,7 +534,9 @@ struct SpectralPhysics {
                 filmDensity, film: film, paper: paper, weights: paperWeights,
                 reference: printReference,
                 printEV: paperEV + correctedPrintExposureEV,
-                morph: printMorphCurve
+                morph: printMorphCurve,
+                preflashRaw: opticalPreflashRaw,
+                opticalPrint: useOriginalPrintOptics
             )
             substrate = paper
         }
@@ -596,14 +645,16 @@ struct SpectralPhysics {
     }
 
     private static func printRaw(filmDensities: [Double], film: Profile,
-                                 weights: [[Double]]) -> [Double] {
+                                 weights: [[Double]],
+                                 clampDensity: Bool = true) -> [Double] {
         var raw = [0.0, 0.0, 0.0]
         for i in 0..<81 {
             var spectralDensity = film.base(i)
             for c in 0..<3 {
                 spectralDensity += film.dyeAbsorbance(i, c) * filmDensities[c]
             }
-            let transmission = pow(10.0, -max(0, spectralDensity))
+            let adjustedDensity = clampDensity ? max(0, spectralDensity) : spectralDensity
+            let transmission = pow(10.0, -adjustedDensity)
             for c in 0..<3 { raw[c] += weights[i][c] * transmission }
         }
         return raw
@@ -612,12 +663,23 @@ struct SpectralPhysics {
     private static func paperDensities(_ filmDensities: [Double], film: Profile,
                                        paper: Profile, weights: [[Double]],
                                        reference: Double, printEV: Double,
-                                       morph: OriginalPrintMorph.PreparedCurve? = nil
+                                       morph: OriginalPrintMorph.PreparedCurve? = nil,
+                                       preflashRaw: [Double] = [0, 0, 0],
+                                       opticalPrint: Bool = false
     ) -> [Double] {
-        let raw = printRaw(filmDensities: filmDensities, film: film, weights: weights)
+        let raw = printRaw(
+            filmDensities: filmDensities, film: film, weights: weights,
+            clampDensity: !opticalPrint
+        )
+        let originalExposure = opticalPrint
+            ? OriginalPrintOptics.paperLogExposure(
+                raw: raw, reference: reference, preflash: preflashRaw,
+                printEV: printEV
+              ) : []
         return (0..<3).map { c in
-            let logE = log10(max(1e-14, raw[c]) / reference) +
-                printEV * 0.301029995664
+            let logE = opticalPrint ? originalExposure[c]
+                : log10(max(1e-14, raw[c]) / reference) +
+                    printEV * 0.301029995664
             let measured = paper.curve(logE, channel: c)
             guard let morph else { return measured }
             // Apply the ORIGINAL s023 CDF morphology delta on top of
