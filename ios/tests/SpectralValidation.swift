@@ -32,8 +32,10 @@ struct SpectralValidation {
         precondition(abs(luminance(red) - luminance(blue)) > 0.001 ||
                      abs(red[0] - blue[0]) > 0.1,
                      "distinct colors collapsed")
-        precondition(zip(mid, neutral).contains { abs($0.0 - $0.1) > 0.005 },
-                     "physics unexpectedly exactly identity")
+        // Neutral is deliberately calibrated back to sRGB midgray.
+        // Verify a saturated color changes instead of asserting gray must move.
+        precondition(zip(red, [0.85, 0.15, 0.15]).contains { abs($0.0 - $0.1) > 0.005 },
+                     "saturated red unexpectedly rendered as identity")
         let cube = try SpectralPhysics.makeCubeData(exposureEV: 0, paperEV: 0, size:9)
         precondition(cube.count == 9 * 9 * 9 * 4 * MemoryLayout<Float>.size,
                      "wrong Core Image cube byte size")
