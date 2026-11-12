@@ -450,6 +450,30 @@ final class PhotoEditorModel: ObservableObject {
                     checks.append("附录【原版负片→相纸 H-D→RGB · 本机数值对照｜无法完成】\n" +
                                   error.localizedDescription)
                 }
+                // v1.8.14: film measured H-D + original Python nonspatial
+                // DIR + same original s023 paper/scanning production functions.
+                // This is stage-limited, NOT a ninth certified 8/8 item.
+                do {
+                    let evidence=try OriginalFilmDIRPrintParity.evaluate()
+                    if evidence.channels==54 &&
+                       evidence.stageOutsideTolerance==0 &&
+                       evidence.outputOutsideTolerance==0 {
+                        checks.append(
+                            "附录【原版负片 H-D/DIR→相纸→RGB · 本机连续链｜通过，不计入 8/8 认证】\n" +
+                            evidence.text
+                        )
+                    } else {
+                        checks.append(
+                            "附录【原版负片 H-D/DIR→相纸→RGB · 本机连续链｜未通过】\n" +
+                            evidence.text
+                        )
+                    }
+                } catch {
+                    checks.append(
+                        "附录【原版负片 H-D/DIR→相纸→RGB · 本机连续链｜无法完成】\n" +
+                        error.localizedDescription
+                    )
+                }
                 let report = "本机原版算法诊断 · 8/8 项全部通过\n" +
                     "注意：通过的是列出的数值测试，不代表完整 Numba 随机流或 Float64/RAW/RGB 已认证。\n\n" +
                     checks.joined(separator: "\n\n")
