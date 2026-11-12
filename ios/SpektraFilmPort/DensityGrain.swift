@@ -30,6 +30,9 @@ struct DensityGrainSettings {
     // Opt-in. Original v1.5 Poisson-binomial moment renderer remains
     // identical unless the user explicitly selects measured sublayers.
     var measuredSublayersEnabled = false
+    // Source discrete Poisson-thinned particle samples instead of the
+    // v1.6 Gaussian moment approximation. Requires measured sublayers.
+    var discreteParticlesEnabled = false
 }
 
 enum DensityGrain {
@@ -131,6 +134,18 @@ enum DensityGrain {
     ) -> CIImage? {
         let stage = settings.stage
         if settings.measuredSublayersEnabled {
+            if settings.discreteParticlesEnabled {
+                return OriginalDiscreteGrain.perturb(
+                    normalizedDensity,
+                    sublayerCubes: stage.sublayerCubes,
+                    rawLayerMaxima: stage.sublayerRawMaxima,
+                    totalRanges: stage.maxDensity,
+                    cubeDimension: stage.cubeDimension,
+                    pixelUM: pixelUM,
+                    amount: settings.amount,
+                    seed: settings.seed
+                )
+            }
             // Fail instead of silently using post-scan RGB or pretending
             // the old single-layer grain is the original sublayer model.
             return OriginalSublayerGrain.perturb(
