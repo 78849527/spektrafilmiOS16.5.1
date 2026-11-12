@@ -267,3 +267,85 @@ kernel void originalFilmDebugProbe(
     float value=input.read(tid).r;
     output.write(float4(value,args.sigmas.x,float(args.width),1.0f),tid);
 }
+
+
+// Upstream Young–van Vliet 3rd order IIR. Source:
+// spektrafilm/utils/fast_gaussian_filter.py _iir_horizontal/_iir_vertical.
+// Four passes retain the original recurrence ordering and endpoint state.
+// Each shader invocation owns an entire row or column; no tile boundaries.
+struct FilmSourceIIRParams {
+    float4 B;
+    float4 B1;
+    float4 B2;
+    float4 B3;
+    uint width;
+    uint height;
+};
+
+kernel void originalFilmIIRHorizontalForward(
+    texture2d<float,access::read> input [[texture(0)]],
+    texture2d<float,access::write> output [[texture(1)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint y [[thread_position_in_grid]]) {
+    if (y >= p.height) { return; }
+    float3 w1 = input.read(uint2(0,y)).rgb;
+    float3 w2 = w1, w3 = w1;
+    for (uint x=0u; x<p.width; ++x) {
+        float3 value = input.read(uint2(x,y)).rgb;
+        float3 w = p.B.rgb*value + p.B1.rgb*w1 +
+            p.B2.rgb*w2 + p.B3.rgb*w3;
+        output.write(float4(w,1.0f),uint2(x,y));
+        w3=w2; w2=w1; w1=w;
+    }
+}
+
+kernel void originalFilmIIRHorizontalBackward(
+    texture2d<float,access::read> input [[texture(0)]],
+    texture2d<float,access::write> output [[texture(1)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint y [[thread_position_in_grid]]) {
+    if (y >= p.height) { return; }
+    float3 y1 = input.read(uint2(p.width-1u,y)).rgb;
+    float3 y2 = y1, y3 = y1;
+    for (int x=int(p.width)-1; x>=0; --x) {
+        float3 value = input.read(uint2(uint(x),y)).rgb;
+        float3 v = p.B.rgb*value + p.B1.rgb*y1 +
+            p.B2.rgb*y2 + p.B3.rgb*y3;
+        output.write(float4(v,1.0f),uint2(uint(x),y));
+        y3=y2; y2=y1; y1=v;
+    }
+}
+
+kernel void originalFilmIIRVerticalForward(
+    texture2d<float,access::read> input [[texture(0)]],
+    texture2d<float,access::write> output [[texture(1)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint x [[thread_position_in_grid]]) {
+    if (x >= p.width) { return; }
+    float3 w1 = input.read(uint2(x,0u)).rgb;
+    float3 w2 = w1, w3 = w1;
+    for (uint y=0u; y<p.height; ++y) {
+        float3 value = input.read(uint2(x,y)).rgb;
+        float3 w = p.B.rgb*value + p.B1.rgb*w1 +
+            p.B2.rgb*w2 + p.B3.rgb*w3;
+        output.write(float4(w,1.0f),uint2(x,y));
+        w3=w2; w2=w1; w1=w;
+    }
+}
+
+kernel void originalFilmIIRVerticalBackward(
+    texture2d<float,access::read> input [[texture(0)]],
+    texture2d<float,access::write> output [[texture(1)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint x [[thread_position_in_grid]]) {
+    if (x >= p.width) { return; }
+    float3 y1 = input.read(uint2(x,p.height-1u)).rgb;
+    float3 y2 = y1, y3 = y1;
+    for (int y=int(p.height)-1; y>=0; --y) {
+        float3 value = input.read(uint2(x,uint(y))).rgb;
+        float3 v = p.B.rgb*value + p.B1.rgb*y1 +
+            p.B2.rgb*y2 + p.B3.rgb*y3;
+        output.write(float4(v,1.0f),uint2(x,uint(y)));
+        y3=y2; y2=y1; y1=v;
+    }
+}
