@@ -278,17 +278,83 @@ struct SpectralPhysics {
         }
     }
 
+    /// Build two native CIColorCube stages:
+    /// sRGB -> original Hanatos + DIR film *densities* -> optical print/scan.
+    /// Unlike putting noise on final RGB, this permits a stochastic density
+    /// layer between physical film development and photographic printing.
+    /// Cubic interpolation is the mobile approximation to full per-pixel
+    /// spectral inversion, not byte-exact source rendering.
+    struct DensityStageData {
+        let inputCube: Data
+        let printCube: Data
+        let ranges: [Double]       // normalize 3 film optical-density channels
+        let size: Int
+    }
+
+    static func makeDensityStageData(
+        filmID: String, paperID: String,
+        exposureEV: Double, paperEV: Double, size: Int = 17
+    ) throws -> DensityStageData {
+        guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
+              abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
+            throw PhysicsError.invalid("无效的胶片密度分段计算参数")
+        }
+        let engine = try SpectralPhysics(filmID: filmID, paperID: paperID)
+        let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
+        let step = 1.0 / Double(size-1)
+        var input = [Float]()
+        var printMap = [Float]()
+        input.reserveCapacity(size*size*size*4)
+        printMap.reserveCapacity(size*size*size*4)
+        for b in 0..<size {
+            for g in 0..<size {
+                for r in 0..<size {
+                    let rgb = [Double(r)*step, Double(g)*step, Double(b)*step]
+                    let linear = rgb.map { decodeSRGB(clamp($0)) }
+                    let density = filmDensities(
+                        linear, film: engine.film, hanatos: engine.hanatos,
+                        exposureEV: exposureEV
+                    )
+                    for channel in 0..<3 {
+                        input.append(Float(clamp(density[channel]/ranges[channel])))
+                    }
+                    input.append(1.0)
+                    let filmDensity = (0..<3).map { rgb[$0] * ranges[$0] }
+                    let finalRGB = engine.scanFilmDensity(filmDensity, paperEV: paperEV)
+                    printMap.append(Float(finalRGB[0]))
+                    printMap.append(Float(finalRGB[1]))
+                    printMap.append(Float(finalRGB[2]))
+                    printMap.append(1.0)
+                }
+            }
+        }
+        let cubeA = input.withUnsafeBufferPointer {
+            Data(bytes: $0.baseAddress!, count: $0.count * MemoryLayout<Float>.size)
+        }
+        let cubeB = printMap.withUnsafeBufferPointer {
+            Data(bytes: $0.baseAddress!, count: $0.count * MemoryLayout<Float>.size)
+        }
+        return DensityStageData(
+            inputCube: cubeA, printCube: cubeB, ranges: ranges, size: size
+        )
+    }
+
     /// Encoded sRGB -> approximately measured negative and paper -> encoded sRGB.
     func render(_ srgb: [Double], exposureEV: Double, paperEV: Double) -> [Double] {
         let linear = srgb.map { Self.decodeSRGB(Self.clamp($0)) }
         let filmDensity = Self.filmDensities(
             linear, film: film, hanatos: hanatos, exposureEV: exposureEV
         )
+        return scanFilmDensity(filmDensity, paperEV: paperEV)
+    }
+
+    /// After film development (and stochastic optical-density grain, if
+    /// enabled), apply the original substrate-specific printing/scanning
+    /// pipeline. A reversal film bypasses printing.
+    func scanFilmDensity(_ filmDensity: [Double], paperEV: Double) -> [Double] {
         let resultDensity: [Double]
         let substrate: Profile
         if isPositive {
-            // Bypass printing exactly as upstream SimulationPipeline does
-            // when io.scan_film is true for a reversal stock.
             resultDensity = filmDensity
             substrate = film
         } else {
@@ -302,8 +368,8 @@ struct SpectralPhysics {
             resultDensity, paper: substrate,
             weights: scanWeights, mediaWhite: mediaWhiteXYZ
         )
-        // Display-neutral calibration for the iOS preview. The upstream
-        // full scanner colour-reference calibration is a separate stage.
+        // This display neutralisation is the existing mobile approximation,
+        // not the full original Python scanning/colour-reference module.
         return (0..<3).map { ch in
             let balanced = linOutput[ch] * (0.184 / neutralOutputRGB[ch])
             return Self.encodeSRGB(Self.clamp(balanced))
