@@ -126,7 +126,10 @@ def main():
     lines.append("  static let exposureReferences: [ExposureReference] = [")
     for ix,(stock,info,data) in enumerate(stocks):
         def reference_ev(y_black,y_white,le,curves,base):
-            target_black=((0.01+0.055)/1.055)**2.4
+            # Original source removes sRGB CCTF piecewise. 0.01 is
+            # in the LOW linear segment (0.01 / 12.92), not the
+            # (0.01+0.055)/1.055 power branch.
+            target_black=0.01/12.92
             target_white=((0.98+0.055)/1.055)**2.4
             slope=(target_white-target_black)/(y_white-y_black+1e-10)
             intercept=target_black-slope*y_black
