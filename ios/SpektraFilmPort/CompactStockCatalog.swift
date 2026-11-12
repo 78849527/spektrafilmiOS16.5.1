@@ -30,7 +30,7 @@ struct CompactStockCatalogView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("适配 iOS 16.5.1 · 当前仅 Portra400+Endura 支持模拟")
+                Text("iOS 16.5.1 · 可模拟 6 款负片、3 款相纸")
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 8)
                 Picker("类型", selection: $category) {
                     Text("胶片 \(films.count)").tag(0)
@@ -54,6 +54,12 @@ struct CompactStockCatalogView: View {
                                 Text(stock.name).foregroundStyle(.primary)
                                 Text("\(stock.wavelengthCount) 采样点 · \(stock.profileVersion)")
                                     .font(.caption).foregroundStyle(.secondary)
+                                let canSimulate = category == 0
+                                    ? SpectralPhysics.supportedFilmIDs.contains(stock.id)
+                                    : SpectralPhysics.supportedPaperIDs.contains(stock.id)
+                                Text(canSimulate ? "实测光谱：可模拟" : "仅原版数据目录")
+                                    .font(.caption2)
+                                    .foregroundColor(canSimulate ? Color.green : Color.secondary)
                             }
                             Spacer()
                             if (category == 0 && filmID == stock.id) ||
@@ -64,7 +70,7 @@ struct CompactStockCatalogView: View {
                     }
                 }
                 .listStyle(.plain)
-                Text("胶片和相纸全目录只显示原始元数据；v0.3 的实验光学引擎仅支持 Portra 400 与 Portra Endura，其他组合尚不可用。")
+                Text("选择带有「可模拟」标识的负片和相纸，再返回主界面点击计算。18 种组合已接入实测曲线；其他胶片仅展示元数据。")
                     .font(.caption).foregroundStyle(.secondary).padding()
             }
             .navigationTitle("原始胶片数据目录")
