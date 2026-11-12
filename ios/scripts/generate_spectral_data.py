@@ -24,21 +24,28 @@ FIELDS = (
     ("base_density", 81),
     ("log_exposure", 256),
     ("density_curves", 768),
+    # Measured 256 x 3 emulsion sublayers x 3 CMY components.
+    # Only the 20 capture-film profiles contain these curves.
+    ("density_curves_layers", 2304),
 )
 Q = lambda s: json.dumps(str(s), ensure_ascii=False)
 
 
 def to_f32(name: str, field: str, values, expected: int) -> str:
     flat = []
-    for row in values:
-        for elem in (row if isinstance(row, list) else [row]):
-            if elem is None:
-                flat.append(0.0)
-            else:
-                value = float(elem)
-                if not math.isfinite(value):
-                    raise ValueError(f"Nonfinite {name} / {field}")
-                flat.append(value)
+    def gather(tree):
+        if isinstance(tree, list):
+            for item in tree:
+                gather(item)
+            return
+        if tree is None:
+            flat.append(0.0)
+        else:
+            value = float(tree)
+            if not math.isfinite(value):
+                raise ValueError(f"Nonfinite {name} / {field}")
+            flat.append(value)
+    gather(values)
     if len(flat) != expected:
         raise ValueError(f"Bad size {name}/{field} {len(flat)} != {expected}")
     return base64.b64encode(struct.pack("<" + "f" * expected, *flat)).decode("ascii")
@@ -87,6 +94,7 @@ def main() -> None:
         "        let baseDensity: String",
         "        let logExposure: String",
         "        let densityCurves: String",
+        "        let densityCurvesLayers: String",
         "        let support: String",
         "        let stage: String",
         "        let polarity: String",
@@ -109,7 +117,10 @@ def main() -> None:
     for info, data, raw in originals:
         stock = info["stock"]
         encoded = {
-            field: to_f32(stock, field, data[field], count)
+            field: (
+                to_f32(stock, field, data[field], count)
+                if field in data else ""
+            )
             for field, count in FIELDS
         }
         fields = [
@@ -118,6 +129,7 @@ def main() -> None:
             ("baseDensity", encoded["base_density"]),
             ("logExposure", encoded["log_exposure"]),
             ("densityCurves", encoded["density_curves"]),
+            ("densityCurvesLayers", encoded["density_curves_layers"]),
             ("support", info["support"]),
             ("stage", info["stage"]),
             ("polarity", info["type"]),
@@ -134,6 +146,10 @@ def main() -> None:
     print(f"PASS: 28 original measured profiles; {len(negatives)} negative + "
           f"{len(positives)} positive exposure films; "
           f"{len(papers)} papers + {len(printfilm)} motion print stocks")
+    assert all("density_curves_layers" in data and
+               len(data["density_curves_layers"]) == 256
+               for info, data, _ in exposures)
+    print("PASS: 20 measured 256×3×3 sublayer emulsions encoded.")
     print(f"PASS: {len(negatives) * len(printmedia)} negative-print "
           f"pairs and {len(positives)} positive film scans")
     print(f"Generated embedded Swift data: {DEST.stat().st_size} bytes")
