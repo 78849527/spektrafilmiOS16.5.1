@@ -190,6 +190,54 @@ struct SpectralValidation {
         precondition(reverseCube.count == lut.count)
         print("PASS: 3D colour cube generation for negative→movie print and reversal scan.")
 
+        // Native two-stage density rendering: unmodified source RGB
+        // becomes the original Hanatos+DIR developed film optical density,
+        // then that density is optically printed/scanned using the same
+        // negative/reversal topology as the original Python engine.
+        let densityRoutes = [
+            ("kodak_portra_400", "kodak_portra_endura"),
+            ("kodak_portra_400", "kodak_2383"),
+            ("fujifilm_provia_100f", "kodak_portra_endura")
+        ]
+        func lookup(_ bytes: Data, _ floatIndex: Int) -> Double {
+            let array = [UInt8](bytes)
+            let j = floatIndex * 4
+            precondition(j+3 < array.count)
+            let bits = UInt32(array[j]) |
+                UInt32(array[j+1]) << 8 |
+                UInt32(array[j+2]) << 16 |
+                UInt32(array[j+3]) << 24
+            return Double(Float(bitPattern: bits))
+        }
+        for (negative, paper) in densityRoutes {
+            let engine = try SpectralPhysics(filmID: negative, paperID: paper)
+            let paired = try SpectralPhysics.makeDensityStageData(
+                filmID: negative, paperID: paper, exposureEV: 0,
+                paperEV: 0, size: 9
+            )
+            let size = paired.size
+            precondition(paired.inputCube.count == size*size*size*16)
+            precondition(paired.printCube.count == size*size*size*16)
+            precondition(paired.ranges.count == 3)
+            let offset = ((4*size+4)*size+4)*4
+            let measured = engine.developedFilmDensity(
+                [0.5,0.5,0.5], exposureEV: 0
+            )
+            let scanned = engine.scanFilmDensity(
+                paired.ranges.map { $0*0.5 }, paperEV: 0
+            )
+            for channel in 0..<3 {
+                let dSample = lookup(paired.inputCube, offset+channel)
+                let rgbSample = lookup(paired.printCube, offset+channel)
+                precondition(abs(dSample - min(1.0, max(0.0,
+                    measured[channel]/paired.ranges[channel]))) < 0.00005,
+                    "Initial optical-density stage mismatch \(negative), ch\(channel)")
+                precondition(abs(rgbSample - scanned[channel]) < 0.00005,
+                    "Substrate optical print/scan mismatch \(paper), ch\(channel)")
+            }
+        }
+        print("PASS: original Hanatos+DIR optical density and downstream print/scan 3D cube separation.")
+
         do {
             _ = try SpectralPhysics(filmID: "missing_profile", paperID: media[0])
             preconditionFailure("Unknown materials must reject")
