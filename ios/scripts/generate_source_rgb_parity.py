@@ -11,6 +11,7 @@ This test IS NOT complete RAW->negative->paper->scan/JPEG parity.
 We explicitly run/source-pin original spektrafilm helper functions.
 """
 from __future__ import annotations
+import ast
 import hashlib
 import json
 import sys
@@ -22,11 +23,41 @@ from opt_einsum import contract
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT / "src"))
-from spektrafilm.config import STANDARD_OBSERVER_CMFS
-from spektrafilm.model.develop import compute_density_spectral
-from spektrafilm.model.illuminants import standard_illuminant
-from spektrafilm.utils.conversions import density_to_light
-from spektrafilm.utils.gamut_compression import compress_rgb_aces_rgc
+from spektrafilm.config import STANDARD_OBSERVER_CMFS, SPECTRAL_SHAPE
+
+# Extract the ORIGINAL source functions unchanged. Importing the full
+# illuminants.py module pulls optional exiv2/OpenImageIO dependencies
+# through color_filters; the D50 scanner reference doesn't use them.
+# AST extraction preserves original source equations and signatures
+# without installing unrelated image-metadata or RAW adapters.
+def original_functions():
+    namespace = dict(np=np, colour=colour, contract=contract,
+                     SPECTRAL_SHAPE=SPECTRAL_SHAPE)
+    modules = [
+        ("src/spektrafilm/model/develop.py", ["compute_density_spectral"]),
+        ("src/spektrafilm/model/illuminants.py", ["standard_illuminant"]),
+        ("src/spektrafilm/utils/conversions.py", ["density_to_light"]),
+        ("src/spektrafilm/utils/gamut_compression.py",
+         ["reinhard_knee", "compress_rgb_aces_rgc"]),
+    ]
+    for rel, names in modules:
+        path=ROOT/rel
+        tree=ast.parse(path.read_text(encoding="utf-8"),
+                       filename=str(path))
+        for name in names:
+            nodes=[node for node in tree.body if
+                   isinstance(node,ast.FunctionDef) and node.name==name]
+            assert len(nodes)==1, f"Source reference function changed: {rel}:{name}"
+            module=ast.fix_missing_locations(
+                ast.Module(body=nodes, type_ignores=[]))
+            exec(compile(module,str(path),"exec"),namespace)
+    return namespace
+
+FUNCTIONS=original_functions()
+compute_density_spectral=FUNCTIONS["compute_density_spectral"]
+standard_illuminant=FUNCTIONS["standard_illuminant"]
+density_to_light=FUNCTIONS["density_to_light"]
+compress_rgb_aces_rgc=FUNCTIONS["compress_rgb_aces_rgc"]
 
 PROFILES = ROOT / "src/spektrafilm/data/profiles"
 OUTPUT = ROOT / "ios/SpektraFilmPort/GeneratedSourceRGBReference.swift"
@@ -78,6 +109,7 @@ def main():
     sources=[
         ROOT / "src/spektrafilm/runtime/stages/scanning.py",
         ROOT / "src/spektrafilm/model/develop.py",
+        ROOT / "src/spektrafilm/model/illuminants.py",
         ROOT / "src/spektrafilm/utils/conversions.py",
         ROOT / "src/spektrafilm/utils/gamut_compression.py",
     ]
