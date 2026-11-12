@@ -28,30 +28,41 @@ enum PhotoProcessor {
         return image
     }
 
-    static func apply(to source: CIImage, lut: FilmLUT?, strength: Double) -> CIImage {
-        guard let lut = lut, strength > 0 else { return source }
+    static func apply(
+        to source: CIImage, lut: FilmLUT?, strength: Double,
+        spatial: SpatialOpticsSettings = SpatialOpticsSettings()
+    ) -> CIImage {
+        // Spatial optical propagation precedes spectral film colour response.
+        // Operate at requested output resolution, not full source resolution,
+        // so the effective micrometers/pixel remains consistent.
+        let optical = SpatialOptics.apply(to: source, settings: spatial)
+        guard let lut = lut, strength > 0 else { return optical }
         let cube = CIFilter.colorCube()
-        cube.inputImage = source
+        cube.inputImage = optical
         cube.cubeDimension = Float(lut.dimension)
         cube.cubeData = lut.rgbaFloatData
-        guard let film = cube.outputImage else { return source }
+        guard let film = cube.outputImage else { return optical }
         let amount = max(0, min(1, strength))
-        if amount >= 1 { return film.cropped(to: source.extent) }
+        if amount >= 1 { return film.cropped(to: optical.extent) }
 
         let alpha = CIFilter.colorMatrix()
         alpha.inputImage = film
         alpha.aVector = CIVector(x: 0, y: 0, z: 0, w: CGFloat(amount))
         let blend = CIFilter.sourceOverCompositing()
         blend.inputImage = alpha.outputImage
-        blend.backgroundImage = source
-        return (blend.outputImage ?? source).cropped(to: source.extent)
+        blend.backgroundImage = optical
+        return (blend.outputImage ?? optical).cropped(to: optical.extent)
     }
 
-    static func preview(_ source: CIImage, lut: FilmLUT?, strength: Double) throws -> UIImage {
-        let image = apply(to: source, lut: lut, strength: strength)
-        let factor = min(1, 1500 / max(image.extent.width, image.extent.height))
-        let scaled = image.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
-        guard let cg = context.createCGImage(scaled, from: scaled.extent) else {
+    static func preview(
+        _ source: CIImage, lut: FilmLUT?, strength: Double,
+        spatial: SpatialOpticsSettings = SpatialOpticsSettings()
+    ) throws -> UIImage {
+        let factor = min(1.0, 1500 / max(source.extent.width, source.extent.height))
+        let resized = source.transformed(by:
+            CGAffineTransform(scaleX: factor, y: factor))
+        let image = apply(to: resized, lut: lut, strength: strength, spatial: spatial)
+        guard let cg = context.createCGImage(image, from: image.extent) else {
             throw ImageProcessingError.invalid("预览渲染失败")
         }
         return UIImage(cgImage: cg)
@@ -64,12 +75,15 @@ enum PhotoProcessor {
         let downsampled: Bool
     }
 
-    static func exportJPEG(_ source: CIImage, lut: FilmLUT?,
-                           strength: Double) throws -> ExportResult {
+    static func exportJPEG(
+        _ source: CIImage, lut: FilmLUT?, strength: Double,
+        spatial: SpatialOpticsSettings = SpatialOpticsSettings()
+    ) throws -> ExportResult {
         let pixels = max(1, source.extent.width * source.extent.height)
         let factor = min(1, sqrt(12_500_000 / pixels))
-        let image = apply(to: source, lut: lut, strength: strength)
-            .transformed(by: CGAffineTransform(scaleX: factor, y: factor))
+        let resized = source.transformed(by:
+            CGAffineTransform(scaleX: factor, y: factor))
+        let image = apply(to: resized, lut: lut, strength: strength, spatial: spatial)
         guard let data = context.jpegRepresentation(
             of: image, colorSpace: srgb, options: [:]
         ) else {

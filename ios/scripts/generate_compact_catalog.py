@@ -29,6 +29,8 @@ for path in files:
        "medium": q(info["support"]),
        "stage": q(info["stage"]),
        "polarity": q(info["type"]),
+       "usage": q(info["use"]),
+       "antihalation": q(info["antihalation"]),
        "targetPrint": "nil" if info.get("target_print") is None else q(info["target_print"]),
        "wavelengthCount": str(len(wavelengths)),
        "profileVersion": q(meta.get("version", "")),

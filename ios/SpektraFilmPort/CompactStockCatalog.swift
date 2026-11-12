@@ -8,6 +8,8 @@ struct MeasuredStock: Identifiable, Hashable {
     let medium: String
     let stage: String
     let polarity: String
+    let usage: String
+    let antihalation: String
     let targetPrint: String?
     let wavelengthCount: Int
     let profileVersion: String
