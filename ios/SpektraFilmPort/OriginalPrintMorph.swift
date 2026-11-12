@@ -235,6 +235,78 @@ enum OriginalPrintMorph {
         return PreparedCurve(logExposure: xs,channelDeltas:deltas)
     }
 
+    /// Original PrintingStage.develop: apply_print_curves_morph() on
+    /// all 256 measured exposure nodes, followed by fast_interp() with
+    /// right-biased upper_bound and endpoint clamping. This is the
+    /// ABSOLUTE 3-layer CDF characteristic, not measured-curve + delta.
+    /// Once prepared for the current stock/morph sliders, scalar image
+    /// lookups use the same 256-node source interpolation in Double.
+    struct SourceCurve {
+        let logExposure: [Double]
+        let channels: [[Double]]
+
+        func density(_ x: Double, channel: Int) -> Double {
+            precondition((0..<3).contains(channel) && x.isFinite &&
+                         logExposure.count == 256 &&
+                         channels.count == 3 &&
+                         channels[channel].count == 256)
+            if x <= logExposure[0] { return channels[channel][0] }
+            if x >= logExposure[255] { return channels[channel][255] }
+            var lo = 0
+            var hi = 256
+            while lo < hi {
+                let mid = (lo + hi) / 2
+                if x < logExposure[mid] { hi = mid } else { lo = mid + 1 }
+            }
+            let lower = lo - 1
+            let delta = logExposure[lo] - logExposure[lower]
+            // Source fast_interp precomputes 1/dx and uses
+            // y0 + ((x-x0)*invDx)*(y1-y0), not a display curve.
+            let t = delta == 0 ? 0 : (x-logExposure[lower])*(1.0/delta)
+            return channels[channel][lower] +
+                t*(channels[channel][lo]-channels[channel][lower])
+        }
+    }
+
+    static func prepareSource(
+        stock: String, logExposure: [Float], settings: Settings,
+        positive: Bool = false
+    ) -> SourceCurve? {
+        guard settings.valid, logExposure.count == 256 else { return nil }
+        let xs = logExposure.map(Double.init)
+        guard xs.allSatisfy({ $0.isFinite }),
+              zip(xs,xs.dropFirst()).allSatisfy({ $0 < $1 }) else {
+            return nil
+        }
+        var channels = [[Double]]()
+        for channel in 0..<3 {
+            guard var adjusted = layers(stock:stock,channel:channel) else {
+                return nil
+            }
+            let sorted=adjusted.indices.sorted {
+                adjusted[$0].center < adjusted[$1].center
+            }
+            let channelGamma=[settings.red,settings.green,settings.blue][channel]
+            for i in sorted {
+                let band = i == sorted[0] ? settings.fast : settings.slow
+                let gamma = settings.gamma * channelGamma * band
+                adjusted[i].center /= gamma
+                adjusted[i].sigma = max(0.05,adjusted[i].sigma/gamma)
+            }
+            let shift = exhaustionOffset(
+                adjusted,positive:positive,mix:settings.developerExhaustion
+            )
+            let samples = xs.map {
+                evaluate(adjusted,at:$0,positive:positive,
+                         exhaustion:settings.developerExhaustion,
+                         centerOffset:shift)
+            }
+            guard samples.allSatisfy({ $0.isFinite }) else { return nil }
+            channels.append(samples)
+        }
+        return SourceCurve(logExposure:xs,channels:channels)
+    }
+
     static func fittedChannels(
         stock: String, logExposure: Double, settings: Settings,
         positive: Bool = false
