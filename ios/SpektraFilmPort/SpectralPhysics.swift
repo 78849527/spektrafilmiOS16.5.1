@@ -521,6 +521,118 @@ struct SpectralPhysics {
         )
     }
 
+    /// Build source DIR spatial inputs from the SAME Hanatos raw light
+    /// and measured H-D curves used by the existing nonspatial branch.
+    /// The iOS spatial GPU stage acts on intermediate *film* buffers;
+    /// the final printCube remains the source spectral paper/scan route.
+    static func makeSpatialDIRStageData(
+        filmID: String, paperID: String,
+        exposureEV: Double, paperEV: Double,
+        size: Int = 17, correctedSize: Int = 33,
+        sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
+        cam16Gamut: Bool = false,
+        printReferenceCorrection: Bool = false,
+        printMorph: OriginalPrintMorph.Settings = .init(),
+        printOptics: OriginalPrintOptics.Settings = .init()
+    ) throws -> SpatialDIRStage {
+        guard (9...33).contains(size), (17...33).contains(correctedSize),
+              exposureEV.isFinite, abs(exposureEV) <= 4 else {
+            throw PhysicsError.invalid("无效的 DIR 空间显影参数")
+        }
+        let pair = try makeDensityStageData(
+            filmID: filmID, paperID: paperID, exposureEV: exposureEV,
+            paperEV: paperEV, size: size,
+            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
+            cam16Gamut: cam16Gamut,
+            printReferenceCorrection: printReferenceCorrection,
+            printMorph: printMorph, printOptics: printOptics
+        )
+        let stock = try Profile(id: filmID)
+        let response = try OriginalHanatosResponse(filmID: filmID)
+        guard !stock.dirCorrectedCurves.isEmpty &&
+              stock.dirMatrix.count == 9 else {
+            throw PhysicsError.invalid("缺失原版 DIR 化学数据：" + filmID)
+        }
+        let logMin = Double(stock.logExposure[0])
+        let span = max(1e-5,
+            Double(stock.logExposure[255]) - logMin
+        )
+        let spans = [Double](repeating: span, count: 3)
+        let step = 1.0 / Double(size - 1)
+        var rawMap = [Float]()
+        var initialMap = [Float]()
+        rawMap.reserveCapacity(size*size*size*4)
+        initialMap.reserveCapacity(size*size*size*4)
+
+        for b in 0..<size {
+            for g in 0..<size {
+                for r in 0..<size {
+                    let rgb = [Double(r)*step, Double(g)*step,
+                               Double(b)*step]
+                    let linear = rgb.map { decodeSRGB(clamp($0)) }
+                    let measuredRaw = response.raw(linearRGB: linear)
+                    for channel in 0..<3 {
+                        let logE = log10(max(1e-10, measuredRaw[channel])) +
+                            exposureEV * 0.301029995664
+                        rawMap.append(Float(clamp((logE-logMin)/span)))
+                        let initial = stock.curve(logE, channel: channel)
+                        initialMap.append(Float(
+                            clamp(initial/pair.ranges[channel])
+                        ))
+                    }
+                    rawMap.append(1)
+                    initialMap.append(1)
+                }
+            }
+        }
+
+        // After subtracting spatially diffused inhibitors, apply the
+        // *original* computed pre-DIR H-D characteristic (not an RGB curve).
+        let correctedStep = 1.0 / Double(correctedSize-1)
+        var developed = [Float]()
+        developed.reserveCapacity(correctedSize*correctedSize*correctedSize*4)
+        for b in 0..<correctedSize {
+            for g in 0..<correctedSize {
+                for r in 0..<correctedSize {
+                    let normalized = [
+                        Double(r)*correctedStep,
+                        Double(g)*correctedStep,
+                        Double(b)*correctedStep
+                    ]
+                    for channel in 0..<3 {
+                        let logE = logMin + normalized[channel]*span
+                        let opticalD = stock.curve(
+                            logE, channel: channel, correctedBeforeDIR: true
+                        )
+                        developed.append(Float(
+                            clamp(opticalD/pair.ranges[channel])
+                        ))
+                    }
+                    developed.append(1)
+                }
+            }
+        }
+        func cube(_ values: [Float]) -> Data {
+            values.withUnsafeBufferPointer { pointer in
+                Data(bytes: pointer.baseAddress!,
+                     count: pointer.count * MemoryLayout<Float>.size)
+            }
+        }
+        return SpatialDIRStage(
+            rawLogCube: cube(rawMap),
+            initialDensityCube: cube(initialMap),
+            correctedDensityCube: cube(developed),
+            printCube: pair.printCube,
+            sourceCubeSize: size,
+            correctedCubeSize: correctedSize,
+            densityRanges: pair.ranges,
+            densityMaximum: stock.densityMaximum,
+            logExposureSpans: spans,
+            donorReceiverMatrix: stock.dirMatrix,
+            positive: stock.polarity == "positive"
+        )
+    }
+
     /// Diagnostics: inspect the actual negative/reversal developed
     /// densities to compare CIColorCube source values against original maths.
     func developedFilmDensity(_ srgb: [Double], exposureEV: Double) -> [Double] {
