@@ -443,7 +443,7 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)
-                    Text("6 款负片 × 3 款相纸；原版实测曲线驱动的简化光谱模拟。")
+                    Text("6 款负片 × 3 款相纸；原版 Mallett2019 输入与光学曲线模拟。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
 
@@ -481,7 +481,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.4：已接入 6 款原版负片与 3 款相纸的 81 波长实测曲线，内部生成 17³ 光学色彩加速表。未移植原版 Hanatos 光谱重建、染料耦合、光晕、颗粒与完整色彩校正；反转片仍仅能查看资料。保留 sRGB .cube 和 JPEG 导出。")
+                    Text("v0.5：接入原版 Mallett2019 感光积分、D55/D50 标准光源、Schott KG3 放大机滤镜、默认 CMY 配色及 CIE1931 标准观察者。仍缺少 Hanatos2025、DIR 耦合、颗粒、光晕和完整扫描校色。18 组可选；预览长按持续显示原图。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)

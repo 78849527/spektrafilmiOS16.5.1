@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v0.4.1 multi-stock wheels
+name: iOS 16.5.1 — v0.5.0 original Mallett optics
 
 on:
   push:
-    branches: ['ios16.5.1/spectral-v0.4']
+    branches: ['ios16.5.1/optics-v0.5']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -25,10 +25,19 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Prepare Python reference generator (build machine only)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original colour-science reference dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6'
       - name: Generate original profile metadata and spectral numeric arrays
         run: |
           python3 ios/scripts/generate_compact_catalog.py
           python3 ios/scripts/generate_spectral_data.py
+          python3 ios/scripts/generate_original_optics.py
+          test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
           test ! -d ios/SpektraFilmPort/Resources
@@ -37,6 +46,7 @@ jobs:
           xcrun swiftc -O -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
+            ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Run numeric physics and LUT regression checks
@@ -60,33 +70,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.4.1'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.5.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.4.1-wheel-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.4.1-wheel-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.4.1-wheel-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/spectral-v0.4'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/optics-v0.5'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.4.1-wheel
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.4.1-wheel-unsigned.ipa
+          TAG=ios1651-v0.5.0-original-optics
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.4.1 — film/paper wheel pickers" \
-              --notes "iOS 16.5.1 Xcode 16.4. Six measured film negatives and three measured print papers (18 pairs) with native simplified spectral calculation. Two on-page vertical wheel pickers on lower-left, exposure and strength on right. Selecting wheels triggers debounced preview. Long-press original, Files/Photos/.cube import and JPEG export retained. No full original Spektrafilm spectral parity. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.5.0 — Mallett optics and hold repair" \
+              --notes "Xcode16.4 iOS16.5.1. Fixes original preview flashing via UIKit continuous press. Ports original supported Mallett2019 spectral input, original D55/D50, CIE 1931 CMFs, Schott KG3 enlarger and default CMY filters. Six negatives and three print papers. Hanatos2025, couplers, film grain, halation and complete scanning remain pending. Unsigned IPA requires signing." \
               --prerelease
           fi

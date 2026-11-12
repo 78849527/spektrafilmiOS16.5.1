@@ -2,4 +2,5 @@ build/
 SpektraFilmPort.xcodeproj/
 SpektraFilmPort/GeneratedMeasuredProfiles.swift
 SpektraFilmPort/GeneratedSpectralData.swift
+SpektraFilmPort/GeneratedOriginalOptics.swift
 .DS_Store
