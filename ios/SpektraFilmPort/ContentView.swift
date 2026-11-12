@@ -281,17 +281,26 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    func exportJPEG() throws -> URL {
-        guard let source else {
+    func exportJPEG() async throws -> URL {
+        guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
-        let result = try PhotoProcessor.exportJPEG(
-            source, lut: lut, strength: strength, spatial: spatialSettings,
-            grain: grainSettings, scanner: scannerFinishSettings
-        )
-        let note = result.downsampled ? "（高于 1250 万像素，已缩小）" : "（原像素尺寸）"
-        status = "已导出 \(result.width) × \(result.height) JPEG \(note)"
-        return result.url
+        // Keep full-resolution Core Image evaluation off the SwiftUI main
+        // actor to avoid freezing the iOS 16.5.1 floating workspace.
+        let currentLUT = lut
+        let currentStrength = strength
+        let currentSpatial = spatialSettings
+        let currentGrain = grainSettings
+        let currentScanner = scannerFinishSettings
+        let output = try await Task.detached(priority: .userInitiated) {
+            try PhotoProcessor.exportJPEG(
+                imageSource, lut: currentLUT, strength: currentStrength,
+                spatial: currentSpatial, grain: currentGrain,
+                scanner: currentScanner
+            )
+        }.value
+        status = "高清原尺寸 \(output.width) × \(output.height) JPEG 已完成"
+        return output.url
     }
 }
 
@@ -340,14 +349,8 @@ struct ContentView: View {
                 onOpenCatalog: {
                     activeSheet = .stocks
                 },
-                onExport: {
-                    do {
-                        let url = try model.exportJPEG()
-                        activeSheet = .share(url)
-                    } catch {
-                        message = error.localizedDescription
-                    }
-                },
+                onExport: { performExport(saveToPhotos: false) },
+                onSaveToPhotos: { performExport(saveToPhotos: true) },
                 onRefresh: { refresh() }
             )
             .toolbar(.hidden, for: .navigationBar)
@@ -396,6 +399,29 @@ struct ContentView: View {
     private func refresh() {
         do { try model.refresh() }
         catch { message = error.localizedDescription }
+    }
+
+    private func performExport(saveToPhotos: Bool) {
+        guard model.hasPhoto && !model.busy else { return }
+        model.busy = true
+        model.status = saveToPhotos
+            ? "正在制作高清 JPEG 并写入系统相册…"
+            : "正在制作高清原尺寸 JPEG…"
+        Task { @MainActor in
+            defer { model.busy = false }
+            do {
+                let file = try await model.exportJPEG()
+                if saveToPhotos {
+                    try await PhotoLibrarySaver.saveJPEG(at: file)
+                    model.status = "高清照片已保存到系统相册"
+                } else {
+                    activeSheet = .share(file)
+                }
+            } catch {
+                message = error.localizedDescription
+                model.status = "高清导出失败：" + error.localizedDescription
+            }
+        }
     }
 }
 
