@@ -264,14 +264,17 @@ struct SpectralPhysics {
          printReferenceCorrection: Bool = false,
          printMorph: OriginalPrintMorph.Settings = .init(),
          printOptics: OriginalPrintOptics.Settings = .init(),
-         cameraExposureEV: Double = 0) throws {
+         cameraExposureEV: Double = 0,
+         hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
         }
         let originalFilm = try Profile(id: filmID)
         let originalPaper = try Profile(id: paperID)
-        let originalHanatos = try OriginalHanatosResponse(filmID: filmID)
+        let originalHanatos = try OriginalHanatosResponse(
+            filmID: filmID, precision: hanatosPrecision
+        )
         let positive = originalFilm.polarity == "positive"
         guard !printOptics.enabled || printOptics.isValid else {
             throw PhysicsError.invalid("原版印相滤色或预闪光参数超出范围")
@@ -533,7 +536,8 @@ struct SpectralPhysics {
                              cam16Gamut: Bool = false,
                              printReferenceCorrection: Bool = false,
                              printMorph: OriginalPrintMorph.Settings = .init(),
-                             printOptics: OriginalPrintOptics.Settings = .init()
+                             printOptics: OriginalPrintOptics.Settings = .init(),
+        hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64
     ) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
@@ -546,7 +550,8 @@ struct SpectralPhysics {
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
             printMorph: printMorph, printOptics: printOptics,
-            cameraExposureEV: exposureEV
+            cameraExposureEV: exposureEV,
+            hanatosPrecision: hanatosPrecision
         )
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
@@ -591,7 +596,8 @@ struct SpectralPhysics {
         cam16Gamut: Bool = false,
         printReferenceCorrection: Bool = false,
         printMorph: OriginalPrintMorph.Settings = .init(),
-        printOptics: OriginalPrintOptics.Settings = .init()
+        printOptics: OriginalPrintOptics.Settings = .init(),
+        hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64
     ) throws -> DensityStageData {
         guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -603,7 +609,8 @@ struct SpectralPhysics {
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
             printMorph: printMorph, printOptics: printOptics,
-            cameraExposureEV: exposureEV
+            cameraExposureEV: exposureEV,
+            hanatosPrecision: hanatosPrecision
         )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
         let layerMaxima = engine.film.sublayerMaxima
@@ -691,7 +698,8 @@ struct SpectralPhysics {
         cam16Gamut: Bool = false,
         printReferenceCorrection: Bool = false,
         printMorph: OriginalPrintMorph.Settings = .init(),
-        printOptics: OriginalPrintOptics.Settings = .init()
+        printOptics: OriginalPrintOptics.Settings = .init(),
+        hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64
     ) throws -> SpatialDIRStage {
         guard (9...33).contains(size), (17...33).contains(correctedSize),
               exposureEV.isFinite, abs(exposureEV) <= 4 else {
@@ -703,10 +711,13 @@ struct SpectralPhysics {
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
-            printMorph: printMorph, printOptics: printOptics
+            printMorph: printMorph, printOptics: printOptics,
+            hanatosPrecision: hanatosPrecision
         )
         let stock = try Profile(id: filmID)
-        let response = try OriginalHanatosResponse(filmID: filmID)
+        let response = try OriginalHanatosResponse(
+            filmID: filmID, precision: hanatosPrecision
+        )
         guard !stock.dirCorrectedCurves.isEmpty &&
               stock.dirMatrix.count == 9 else {
             throw PhysicsError.invalid("缺失原版 DIR 化学数据：" + filmID)
@@ -729,9 +740,11 @@ struct SpectralPhysics {
                                Double(b)*step]
                     let linear = rgb.map { decodeSRGB(clamp($0)) }
                     let measuredRaw = response.raw(linearRGB: linear)
+                    let sourceLog=filmLogExposure(
+                        raw:measuredRaw,exposureEV:exposureEV
+                    )
                     for channel in 0..<3 {
-                        let logE = log10(max(1e-10, measuredRaw[channel])) +
-                            exposureEV * 0.301029995664
+                        let logE=sourceLog[channel]
                         rawMap.append(Float(clamp((logE-logMin)/span)))
                         let initial = stock.curve(logE, channel: channel)
                         initialMap.append(Float(
@@ -905,6 +918,41 @@ struct SpectralPhysics {
         let linear: [Double]
         let compressed: [Double]
         let encoded: [Double]
+    }
+
+    /// Full source-order scalar response: linear sRGB → original Hanatos
+    /// camera response → original negative H-D/DIR → optical paper/scan RGB.
+    /// No spatial/grain/Numba/whole-image certification.
+    struct SourceCameraFilmPrintStages {
+        let hanatosRaw:[Double]
+        let filmLogRaw:[Double]
+        let developed:SourceFilmDIRPrintStages
+    }
+
+    func sourceCameraFilmPrintStages(
+        linearRGB:[Double],cameraEV:Double,paperEV:Double
+    ) throws -> SourceCameraFilmPrintStages {
+        guard !isPositive,linearRGB.count==3,
+              linearRGB.allSatisfy({ $0.isFinite && $0>=0 && $0<=1 }),
+              cameraEV.isFinite,abs(cameraEV)<=4 else {
+            throw PhysicsError.invalid("Hanatos 相机曝光源诊断需有限线性 RGB/EV")
+        }
+        let raw=hanatos.raw(linearRGB:linearRGB)
+        guard raw.count==3 && raw.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版 Hanatos 曝光包含 NaN/Inf")
+        }
+        let logRaw=Self.filmLogExposure(raw:raw,exposureEV:cameraEV)
+        let developed=try sourceFilmDIRPrintStages(logRaw,paperEV:paperEV)
+        let production=Self.filmDensities(
+            linearRGB,film:film,hanatos:hanatos,exposureEV:cameraEV
+        )
+        guard zip(production,developed.filmDIR.developedDensity)
+            .allSatisfy({ abs($0.0-$0.1)<1e-12 }) else {
+            throw PhysicsError.invalid("Hanatos 分段与生产显影输出不一致")
+        }
+        return SourceCameraFilmPrintStages(
+            hanatosRaw:raw,filmLogRaw:logRaw,developed:developed
+        )
     }
 
     /// Contiguous source stage from already-computed CAMERA FILM log10 RAW
@@ -1113,16 +1161,25 @@ struct SpectralPhysics {
         return Self.developLogExposure(logRaw, film: film, applyDIR: true)
     }
 
+    /// Source FilmingStage.expose ordering: raw *= 2**EV, then
+    /// log10(fmax(raw,0)+1e-10). Keep production and parity identical.
+    private static func filmLogExposure(
+        raw: [Double], exposureEV: Double
+    ) -> [Double] {
+        let multiplier=pow(2.0,exposureEV)
+        return raw.map { log10(max(0,$0*multiplier)+1e-10) }
+    }
+
     private static func filmDensities(_ linear: [Double],
                                       film: Profile,
                                       hanatos: OriginalHanatosResponse,
                                       exposureEV: Double,
                                       applyDIR: Bool = true) -> [Double] {
         let raw = hanatos.raw(linearRGB: linear)
-        let logRaw = (0..<3).map { ch in
-            log10(max(1e-10, raw[ch])) + exposureEV * 0.301029995664
-        }
-        return developLogExposure(logRaw, film: film, applyDIR: applyDIR)
+        return developLogExposure(
+            filmLogExposure(raw:raw,exposureEV:exposureEV),
+            film:film,applyDIR:applyDIR
+        )
     }
 
     private static func printRaw(filmDensities: [Double], film: Profile,
