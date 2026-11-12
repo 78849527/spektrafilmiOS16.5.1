@@ -89,9 +89,15 @@ float filmLogFactorial(float k) {
         inv/12.0f - cube/360.0f + cube*inv*inv/1260.0f;
 }
 
-// Exact inverse CDF for Poisson(lambda < 30); PTRS transformed rejection
-// with analytic logfactorial for larger rates. No silent Gaussian fallback:
-// signal error to the caller if bounded iteration fails, then abort export.
+// Original Poisson probability law without approximate Gaussian fallback.
+// For lambda < 30 use Knuth's product-of-uniforms inversion. The previous
+// Float32 *CDF summation* may saturate at 0.999999... due to rounding,
+// causing rare false "nonconvergence" for legitimate uniform draws near 1.
+// Knuth's product avoids cumulative CDF loss; its distribution is exactly
+// Poisson(lambda) (independent of SciPy's random stream).
+// For lambda >= 30 retain transformed-rejection PTRS.
+// Any genuine bad parameter/iteration exhaustion still increments errors
+// and MUST block original-mode export; never conceal failures.
 float filmPoisson(float lambda, uint seed, uint x, uint y,
                   uint ch, uint sl, device atomic_uint *errors) {
     if (!(isfinite(lambda)) || lambda < 0.0f) {
@@ -99,15 +105,17 @@ float filmPoisson(float lambda, uint seed, uint x, uint y,
         return 0.0f;
     }
     if (lambda < 30.0f) {
-        float u=filmUniform(seed,x,y,ch,sl,1u);
-        float prob=exp(-lambda);
-        float cum=prob;
-        if (u <= cum) { return 0.0f; }
-        for (int k=1;k<512;k++) {
-            prob *= lambda / float(k);
-            cum += prob;
-            if (u<=cum) { return float(k); }
+        // Knuth inversion: N is the number of independent uniforms before
+        // their product falls below exp(-lambda). All intermediate values
+        // are positive and float32-representable for lambda < 30.
+        // A 512-draw cap is > 80 sigma beyond this rate range.
+        const float threshold=exp(-lambda);
+        float product=1.0f;
+        for(uint k=0u;k<512u;k++) {
+            product *= filmUniform(seed,x,y,ch,sl,k+1u);
+            if(product <= threshold) { return float(k); }
         }
+        // True sampler exhaustion (not a numerical CDF saturation).
         atomic_fetch_add_explicit(errors,1u,memory_order_relaxed);
         return 0.0f;
     }
