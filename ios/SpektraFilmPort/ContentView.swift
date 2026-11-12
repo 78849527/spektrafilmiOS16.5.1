@@ -19,7 +19,25 @@ final class PhotoEditorModel: ObservableObject {
     @Published var halationAmount = 1.0
     @Published var grainEnabled = false
     @Published var grainAmount = 1.0
+    // Experimental source-scanner path is OPT-IN. Initial UI and
+    // old calculated looks remain identical to user-tested v1.0.1.
+    @Published var originalScannerEnabled = false
+    @Published var scannerBlackWhiteEnabled = false
+    @Published var scannerFinishingEnabled = false
+    @Published var scannerSharpenAmount = 0.7
     private var densityGrainStage: DensityGrainStage?
+
+    private var scannerFinishSettings: ScannerFinishSettings {
+        let filmID = UserDefaults.standard.string(forKey: "compactFilmStock")
+            ?? "kodak_portra_400"
+        return ScannerFinishSettings(
+            enabled: scannerFinishingEnabled,
+            applyGlare: !SpectralPhysics.isPositiveFilm(filmID),
+            unsharpAmount: scannerSharpenAmount,
+            glarePercent: 0.03,
+            seed: 8888
+        )
+    }
 
     private var grainSettings: DensityGrainSettings? {
         guard grainEnabled, grainAmount > 0, let stage = densityGrainStage else {
@@ -155,19 +173,25 @@ final class PhotoEditorModel: ObservableObject {
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
         let requiresGrainStage = grainEnabled
+        let originalScanner = originalScannerEnabled
+        let referenceBW = scannerBlackWhiteEnabled
         Task {
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     let cube = try SpectralPhysics.makeCubeData(
                         filmID: filmID, paperID: paperID,
                         exposureEV: cameraExposure, paperEV: enlargerExposure,
-                        size: 17
+                        size: 17,
+                        sourceScanner: originalScanner,
+                        scannerBlackWhite: referenceBW
                     )
                     let density = try requiresGrainStage
                         ? SpectralPhysics.makeDensityStageData(
                             filmID: filmID, paperID: paperID,
                             exposureEV: cameraExposure, paperEV: enlargerExposure,
-                            size: 17
+                            size: 17,
+                            sourceScanner: originalScanner,
+                            scannerBlackWhite: referenceBW
                           ) : nil
                     return (cube, density)
                 }.value
@@ -205,7 +229,7 @@ final class PhotoEditorModel: ObservableObject {
         }
         processedPreview = try PhotoProcessor.preview(
             source, lut: lut, strength: strength, spatial: spatialSettings,
-            grain: grainSettings
+            grain: grainSettings, scanner: scannerFinishSettings
         )
         if let lut {
             status = "已应用 \(lut.title) · \(lut.dimension)³ LUT · \(photoDimensions)"
