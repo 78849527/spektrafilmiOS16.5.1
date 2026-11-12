@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v0.8 scatter and halation spatial optics
+name: iOS 16.5.1 — v0.9 film density grain
 
 on:
   push:
-    branches: ['ios16.5.1/spatial-v0.8']
+    branches: ['ios16.5.1/density-grain-v0.9']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -33,6 +33,14 @@ jobs:
             -o /tmp/SpektrafilmSpatialValidation
       - name: Verify spatial optics energy conservation and real blur
         run: NSUnbufferedIO=YES /tmp/SpektrafilmSpatialValidation
+      - name: Compile density-grain GPU statistical regression
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/DensityGrain.swift \
+            ios/tests/DensityGrainValidation.swift \
+            -o /tmp/SpektrafilmDensityGrainValidation
+      - name: Verify optical grain density moments and deterministic sampling
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmDensityGrainValidation
       - name: Prepare Python reference generator (build machine only)
         uses: actions/setup-python@v5
         with:
@@ -85,33 +93,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.8.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.9.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/spatial-v0.8'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/density-grain-v0.9'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.8.0-spatial
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned.ipa
+          TAG=ios1651-v0.9.0-density-grain
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.8 — spatial emulsion scatter and halation" \
-              --notes "Xcode 16.4 and iOS 16.5.1 only. Adds real Core Image pixel-space scatter and original three-bounce halation convolution formulas with six film-use/antihalation presets. Pre-LUT image-space linear RGB approximation, NOT original upstream film irradiance parity; spatial DIR diffusion and true stochastic density-based grain remain pending. Existing Hanatos2025, 28 stocks, source DIR chemistry, twin wheels, long-press and export retained. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.9 — measured film density grain" \
+              --notes "Xcode16.4 and iOS16.5.1 only. Adds two-stage source Hanatos+DIR film-density LUT and downstream measured print/scan LUT with GPU optical density grain between, using normal approximation to original Poisson/Binomial grain moments. Stock exposure and physical pixel size affect variance, with fixed seed. Full original multi-sublayer grain, dye cloud, spatial DIR diffusion, color gamut calibration remain unported. Preserves 28 profiles, two wheels, long-press original, v0.8 scatter/halation, and JPEG export. Unsigned IPA must be signed." \
               --prerelease
           fi
