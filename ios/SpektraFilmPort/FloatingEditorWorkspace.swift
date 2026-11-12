@@ -591,10 +591,18 @@ struct FloatingEditorWorkspace: View {
                         onRefresh()
                     }
                 if model.grainSublayersEnabled {
+                    resetToggle("原版离散 Poisson 颗粒",
+                                value: $model.grainDiscreteParticlesEnabled,
+                                enabled: model.hasPhoto && !model.busy)
+                        .onChange(of: model.grainDiscreteParticlesEnabled) { _ in
+                            onRefresh()
+                        }
                     Text("原版 3×3 亚层密度 · 独立显影颗粒")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text("保留源颗粒方差；分布与微结构使用 GPU 近似")
+                    Text(model.grainDiscreteParticlesEnabled
+                         ? "Poisson 薄化：小 λ 精确逆 CDF，大 λ PTRS 拒绝采样"
+                         : "保留源颗粒方差；Gaussian 快速近似")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
