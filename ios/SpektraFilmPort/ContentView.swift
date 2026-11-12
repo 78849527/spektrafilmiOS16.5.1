@@ -394,35 +394,37 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    /// Keep the complete seven-stage hardware evidence separately from status.
+    /// Keep the complete eight-stage hardware evidence separately from status.
     /// One- or two-line UI summaries must never hide a partial failure.
     func checkOriginalMetalHardware() {
         hardwareDiagnosticReport = nil
         status = "正在检测本机原版 Metal，请在检测完成后点击上方查看报告…"
         Task.detached(priority: .userInitiated) {
             var checks: [String] = []
-            let stages = 7
+            let stages = 8
             do {
                 let grain = try OriginalMetalGrain.hardwareDiagnostic()
-                checks.append("1/7 【通过】Metal 硬件、纹理透传及 reflect\n" + grain)
+                checks.append("1/8 【通过】Metal 硬件、纹理透传及 reflect\n" + grain)
                 let poisson = try OriginalMetalGrain.poissonHardwareDiagnostic()
-                checks.append("2/7 【通过】原生 Metal Poisson / PTRS\n" + poisson)
+                checks.append("2/8 【通过】原生 Metal Poisson / PTRS\n" + poisson)
                 let iir = try OriginalMetalIIR.hardwareDiagnostic()
-                checks.append("3/7 【通过】原版 Young–van Vliet IIR\n" + iir)
+                checks.append("3/8 【通过】原版 Young–van Vliet IIR\n" + iir)
                 let replay = try OriginalMetalSourceReplay.hardwareDiagnostic()
-                checks.append("4/7 【通过】Python 九路颗粒场与 Metal 密度回放\n" + replay)
+                checks.append("4/8 【通过】Python 九路颗粒场与 Metal 密度回放\n" + replay)
                 let mt = try OriginalSourceMT19937.validateReference()
-                checks.append("5/7 【通过】NumPy MT19937 原始位流\n" + mt)
+                checks.append("5/8 【通过】NumPy MT19937 原始位流\n" + mt)
                 let scipy = try OriginalSourceSciPySampler.validateSourceReference()
-                checks.append("6/7 【通过】SciPy Poisson→Binomial 计数与 MT 顺序\n" + scipy)
+                checks.append("6/8 【通过】SciPy Poisson→Binomial 计数与 MT 顺序\n" + scipy)
                 let production = try OriginalSourceSciPyParticles.hardwareDiagnostic()
-                checks.append("7/7 【通过】正式显影 SciPy 随机数 → Metal 颗粒密度\n" + production)
-                let report = "本机原版算法诊断 · 7/7 项全部通过\n" +
-                    "注意：通过的是列出的数值测试，不代表完整 Float64/RAW/RGB 已认证。\n\n" +
+                checks.append("7/8 【通过】正式显影 SciPy 随机数 → Metal 颗粒密度\n" + production)
+                let micro = try OriginalSourceMicrostructure.hardwareDiagnostic()
+                checks.append("8/8 【通过】Numba 微结构确定性 lognormal 变换\n" + micro)
+                let report = "本机原版算法诊断 · 8/8 项全部通过\n" +
+                    "注意：通过的是列出的数值测试，不代表完整 Numba 随机流或 Float64/RAW/RGB 已认证。\n\n" +
                     checks.joined(separator: "\n\n")
                 await MainActor.run {
                     self.hardwareDiagnosticReport = report
-                    self.status = "原版 Metal 检测 7/7 项通过 · 点击查看完整报告"
+                    self.status = "原版 Metal 检测 8/8 项通过 · 点击查看完整报告"
                 }
             } catch {
                 let done = checks.count
