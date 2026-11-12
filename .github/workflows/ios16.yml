@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v0.6.0 all 28 stocks with Hanatos2025
+name: iOS 16.5.1 — v0.7 original DIR chemistry
 
 on:
   push:
-    branches: ['ios16.5.1/full-stock-v0.6']
+    branches: ['ios16.5.1/dir-v0.7']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -38,6 +38,8 @@ jobs:
           python3 ios/scripts/generate_spectral_data.py
           python3 ios/scripts/generate_original_optics.py
           python3 ios/scripts/generate_hanatos.py
+          python3 ios/scripts/generate_dir.py
+          test -s ios/SpektraFilmPort/GeneratedDIRData.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
@@ -51,6 +53,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
             ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
             ios/SpektraFilmPort/GeneratedHanatosData.swift \
+            ios/SpektraFilmPort/GeneratedDIRData.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Run numeric physics and LUT regression checks
@@ -74,33 +77,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.6.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.7.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/full-stock-v0.6'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/dir-v0.7'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.6.0-all-stocks
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned.ipa
+          TAG=ios1651-v0.7.0-dir
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.6.0 — all original stocks and Hanatos2025" \
-              --notes "Xcode16.4, iOS16.5.1 only. 28 source profiles (20 exposure films: 16 negative and 4 reversal; 6 print papers and Kodak 2383/2393 motion print films). Original Hanatos2025 TC irradiance LUT integrated with each stock and measured spectral window; reverse film scans directly, negative film prints. Original Mallett alternative and optics retained. Still not exact full upstream: DIR couplers, paper curve morph, spatial grain/halation/glare and full gamut compression pending. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.7 — original DIR film chemistry" \
+              --notes "Xcode 16.4 and iOS 16.5.1 only. Includes all 28 measured materials, Hanatos2025 source TC spectra, film/paper neutral CC data, and original film-specific nonspatial DIR coupler matrices with corrected H-D curves. Original Python/Swift DIR reference parity tested for positive and negative film. Spatial DIR diffusion, stochastic grain, physical halation, paper morph and scanner gamut correction remain pending; this is not full source parity. Unsigned IPA needs signing." \
               --prerelease
           fi

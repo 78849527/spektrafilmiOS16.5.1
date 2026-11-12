@@ -4,4 +4,5 @@ SpektraFilmPort/GeneratedMeasuredProfiles.swift
 SpektraFilmPort/GeneratedSpectralData.swift
 SpektraFilmPort/GeneratedOriginalOptics.swift
 SpektraFilmPort/GeneratedHanatosData.swift
+SpektraFilmPort/GeneratedDIRData.swift
 .DS_Store

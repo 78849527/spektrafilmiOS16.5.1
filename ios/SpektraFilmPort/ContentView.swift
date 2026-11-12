@@ -503,7 +503,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.6：28 份原版实测资料全量接入。20 种拍摄胶片可选；负片可组合 6 相纸或 Kodak 2383/2393 电影印片，反转片跳过印相直接扫描。启用原始 Hanatos2025 光谱查找表及窗口匹配；DIR 耦合、物理颗粒、光晕和完整扫描校色仍未完成。")
+                    Text("v0.7：新增原版 DIR 化学抑制与胶片专属校正曲线。28 份原版实测资料全量接入。20 种拍摄胶片可选；负片可组合 6 相纸或 Kodak 2383/2393 电影印片，反转片跳过印相直接扫描。启用原始 Hanatos2025 光谱查找表及窗口匹配；DIR 耦合、物理颗粒、光晕和完整扫描校色仍未完成。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
