@@ -11,12 +11,17 @@ on:
 permissions:
   contents: write
 
+# Prevent older push runs from re-uploading their IPA over a newer SHA.
+concurrency:
+  group: ios1651-print-optics-v1.4-release
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15-intel
     timeout-minutes: 40
     steps:
-      - name: Checkout v0.2.3 based experimental branch
+      - name: Checkout v1.4 optical-print branch
         uses: actions/checkout@v4
       - name: Pin verified iOS 16.5.1 toolchain
         run: |
@@ -178,25 +183,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
           /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.4.0'
           test ! -e "$APP/Resources/profiles/index.json"
-      - name: Package v0.3 alpha unsigned IPA
+      - name: Package v1.4 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
           zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned.ipa Payload
-      - name: Upload v0.3 alpha IPA
+      - name: Upload v1.4 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
           name: SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned
           path: ios/build/SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned.ipa
           if-no-files-found: error
-      - name: Publish isolated v0.3 alpha release
+      - name: Publish isolated v1.4 prerelease and synchronize tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/print-optics-v1.4'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=ios1651-v1.4.0-optics
           ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned.ipa
+          # A superseded run must never publish its older binary.
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/print-optics-v1.4" --jq '.object.sha')
+          if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
+            echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
+            exit 0
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
@@ -206,3 +217,10 @@ jobs:
               --notes "v1.4 adds opt-in 81-wavelength CMY dichroic printing with stock-specific neutral filters; real spectral preflash before paper development; compensated midgrey enlarger normalization; works with v1.3 paper s023, black/white reference and density-grain two-stage LUT. Python Float64 source vectors verify illuminant, raw, preflash and log exposure. v1.3 appearance remains the default; reversals bypass printing. Full spatial print diffusion and physical iOS testing remain pending. Unsigned IPA requires personal signing." \
               --prerelease
           fi
+          # Editing a Release's target_commitish does NOT move an existing
+          # lightweight git tag. Pin the real tag ref to the tested commit.
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+            -f sha="$GITHUB_SHA" -F force=true
+          ACTUAL_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')
+          test "$ACTUAL_TAG" = "$GITHUB_SHA"
+          echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
