@@ -552,6 +552,7 @@ enum OriginalMetalGrain {
         normalizedDensity: CIImage, cubes: [CIImage],
         physical: PhysicalCoefficients, totalRanges: [Double],
         pixelUM: Double, amount: Double, seed: Double,
+        sourceSciPySampling: Bool,
         bounds: CGRect, device: MTLDevice, queue: MTLCommandQueue,
         library: MTLLibrary, context: CIContext, destination: MTLTexture,
         particles: MTLComputePipelineState,
@@ -561,6 +562,12 @@ enum OriginalMetalGrain {
     ) throws {
         let width = destination.width
         let height = destination.height
+        if sourceSciPySampling {
+            try OriginalSourceSciPyParticles.validateMemory(
+                width: width, height: height,
+                physicalMemory: ProcessInfo.processInfo.physicalMemory
+            )
+        }
         let projectedBytes = UInt64(width) * UInt64(height) * 16 * 5
         let memoryBudget = min(
             UInt64(1_500_000_000),
@@ -611,45 +618,82 @@ enum OriginalMetalGrain {
                 )
                 for index in 0..<4 { words[index] = 0 }
                 let scratch = try makeTexture(device, width: width, height: height)
-                let developed = try makeTexture(device, width: width, height: height)
-                // The CI color-cube emulsion is needed only for this layer.
-                // After the particle encoder it becomes the FIR scratch.
+                // Render one emulsion's measured LUT into full-image
+                // Float32 scratch. No GPU sampling is allowed to change the
+                // source SciPy global RNG stream in the opt-in path.
                 context.render(
                     cubes[layer], to: scratch, commandBuffer: command,
                     bounds: bounds, colorSpace: linearSpace
                 )
-                try execute(
-                    command: command, pipeline: particles,
-                    textures: [scratch, developed], params: &params,
-                    width: width, height: height, errors: faults,
-                    sublayer: UInt32(layer)
-                )
+                let finishCommand: MTLCommandBuffer
+                let particlesTexture: MTLTexture
+                let sourceBacking: OriginalSourceSciPyParticles.Result?
+                if sourceSciPySampling {
+                    // CPU cannot inspect an uncommitted Core Image render.
+                    command.commit()
+                    command.waitUntilCompleted()
+                    guard command.status == .completed else {
+                        throw Failure.invalid(
+                            "原版 SciPy：亚层 \(layer) 读取前 GPU 渲染失败：" +
+                            (command.error?.localizedDescription ?? "unknown")
+                        )
+                    }
+                    let field = try OriginalSourceSciPyParticles.renderLayer(
+                        normalizedLayer: scratch, sublayer: layer,
+                        physical: physical, pixelUM: pixelUM,
+                        device: device, queue: queue, library: library
+                    )
+                    particlesTexture = field.texture
+                    sourceBacking = field
+                    guard let nextCommand = queue.makeCommandBuffer() else {
+                        throw Failure.invalid("原版 SciPy：亚层后续 GPU 指令创建失败")
+                    }
+                    finishCommand = nextCommand
+                } else {
+                    let output = try makeTexture(
+                        device, width: width, height: height
+                    )
+                    try execute(
+                        command: command, pipeline: particles,
+                        textures: [scratch, output], params: &params,
+                        width: width, height: height, errors: faults,
+                        sublayer: UInt32(layer)
+                    )
+                    particlesTexture = output
+                    sourceBacking = nil
+                    finishCommand = command
+                }
                 try blurWholeFrameInPlace(
-                    developed, scratch: scratch,
+                    particlesTexture, scratch: scratch,
                     sigmas: physical.cloudSigmas[layer],
-                    command: command, device: device,
+                    command: finishCommand, device: device,
                     library: library, gaussian: gaussian
                 )
                 var first: UInt32 = layer == 0 ? 1 : 0
                 try execute(
-                    command: command, pipeline: accumulate,
-                    textures: [developed, accumulated], params: &first,
+                    command: finishCommand, pipeline: accumulate,
+                    textures: [particlesTexture, accumulated], params: &first,
                     width: width, height: height
                 )
-                command.commit()
-                command.waitUntilCompleted()
-                guard command.status == .completed else {
+                finishCommand.commit()
+                finishCommand.waitUntilCompleted()
+                // Keep the buffer backing the linear RGBA32Float field
+                // alive until the GPU has finished every filtering sweep.
+                withExtendedLifetime(sourceBacking) {}
+                guard finishCommand.status == .completed else {
                     throw Failure.invalid(
-                        "原版 Metal 全图 IIR：亚层 \(layer) 显影失败：" +
-                        (command.error?.localizedDescription ?? "unknown")
+                        "原版 Metal 全图：亚层 \(layer) 显影失败：" +
+                        (finishCommand.error?.localizedDescription ?? "unknown")
                     )
                 }
-                guard words[0] == 0 else {
-                    throw Failure.invalid(
-                        "原版 Metal 全图 IIR：亚层 \(layer) Poisson 采样失败 " +
-                        "\(words[0]) 次（无效 λ=\(words[1])，低率耗尽=" +
-                        "\(words[2])，高率耗尽=\(words[3])），已停止导出。"
-                    )
+                if !sourceSciPySampling {
+                    guard words[0] == 0 else {
+                        throw Failure.invalid(
+                            "原版 Metal 全图：亚层 \(layer) Poisson 采样失败 " +
+                            "\(words[0]) 次（无效 λ=\(words[1])，低率耗尽=" +
+                            "\(words[2])，高率耗尽=\(words[3])），已停止导出。"
+                        )
+                    }
                 }
             }
         }
@@ -717,6 +761,7 @@ enum OriginalMetalGrain {
         sublayerCubes: [Data], rawLayerMaxima: [Double],
         totalRanges: [Double], cubeDimension: Int,
         pixelUM: Double, amount: Double, seed: Double,
+        sourceSciPySampling: Bool = false,
         libraryURL: URL? = nil
     ) throws -> CIImage {
         guard sublayerCubes.count == 3, rawLayerMaxima.count == 9,
@@ -726,6 +771,12 @@ enum OriginalMetalGrain {
               amount.isFinite && (0...3).contains(amount),
               seed.isFinite && seed >= 0 && seed <= Double(UInt32.max) else {
             throw Failure.invalid("原版 Metal 颗粒：显影输入参数不完整")
+        }
+        if sourceSciPySampling && seed != 8888 {
+            throw Failure.invalid(
+                "原版 SciPy 随机流固定按源代码每乳剂层重置种子；" +
+                "请使用既有 8888 基准，不允许隐式更改随机状态。"
+            )
         }
         if amount <= 0 { return normalizedDensity }
         let needed = cubeDimension * cubeDimension * cubeDimension * 16
@@ -797,12 +848,13 @@ enum OriginalMetalGrain {
         guard cubes.count == 3, cubes.allSatisfy({ $0 != nil }) else {
             throw Failure.invalid("原版 Metal 颗粒：实测三层光学密度 LUT 无法渲染")
         }
-        if needsWholeFrameIIR(physical) {
+        if needsWholeFrameIIR(physical) || sourceSciPySampling {
             try renderWholeFrameIIR(
                 normalizedDensity: normalizedDensity,
                 cubes: cubes.compactMap { $0 }, physical: physical,
                 totalRanges: totalRanges, pixelUM: pixelUM,
-                amount: amount, seed: seed, bounds: bounds,
+                amount: amount, seed: seed,
+                sourceSciPySampling: sourceSciPySampling, bounds: bounds,
                 device: device, queue: queue, library: library,
                 context: context, destination: destination,
                 particles: particles, clumping: clumping,
