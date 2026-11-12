@@ -31,7 +31,8 @@ enum PhotoProcessor {
     static func apply(
         to source: CIImage, lut: FilmLUT?, strength: Double,
         spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
-        grain: DensityGrainSettings? = nil
+        grain: DensityGrainSettings? = nil,
+        scanner: ScannerFinishSettings = ScannerFinishSettings()
     ) -> CIImage {
         // Spatial optical propagation precedes spectral film colour response.
         // Operate at requested output resolution, not full source resolution,
@@ -52,7 +53,11 @@ enum PhotoProcessor {
             film = output
         }
         let amount = max(0, min(1, strength))
-        if amount >= 1 { return film.cropped(to: optical.extent) }
+        if amount >= 1 {
+            return ScannerFinishing.apply(
+                to: film.cropped(to: optical.extent), settings: scanner
+            )
+        }
 
         let alpha = CIFilter.colorMatrix()
         alpha.inputImage = film
@@ -60,20 +65,22 @@ enum PhotoProcessor {
         let blend = CIFilter.sourceOverCompositing()
         blend.inputImage = alpha.outputImage
         blend.backgroundImage = optical
-        return (blend.outputImage ?? optical).cropped(to: optical.extent)
+        let blended = (blend.outputImage ?? optical).cropped(to: optical.extent)
+        return ScannerFinishing.apply(to: blended, settings: scanner)
     }
 
     static func preview(
         _ source: CIImage, lut: FilmLUT?, strength: Double,
         spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
-        grain: DensityGrainSettings? = nil
+        grain: DensityGrainSettings? = nil,
+        scanner: ScannerFinishSettings = ScannerFinishSettings()
     ) throws -> UIImage {
         let factor = min(1.0, 1500 / max(source.extent.width, source.extent.height))
         let resized = source.transformed(by:
             CGAffineTransform(scaleX: factor, y: factor))
         let image = apply(
             to: resized, lut: lut, strength: strength,
-            spatial: spatial, grain: grain
+            spatial: spatial, grain: grain, scanner: scanner
         )
         guard let cg = context.createCGImage(image, from: image.extent) else {
             throw ImageProcessingError.invalid("预览渲染失败")
@@ -91,7 +98,8 @@ enum PhotoProcessor {
     static func exportJPEG(
         _ source: CIImage, lut: FilmLUT?, strength: Double,
         spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
-        grain: DensityGrainSettings? = nil
+        grain: DensityGrainSettings? = nil,
+        scanner: ScannerFinishSettings = ScannerFinishSettings()
     ) throws -> ExportResult {
         let pixels = max(1, source.extent.width * source.extent.height)
         let factor = min(1, sqrt(12_500_000 / pixels))
@@ -99,7 +107,7 @@ enum PhotoProcessor {
             CGAffineTransform(scaleX: factor, y: factor))
         let image = apply(
             to: resized, lut: lut, strength: strength,
-            spatial: spatial, grain: grain
+            spatial: spatial, grain: grain, scanner: scanner
         )
         guard let data = context.jpegRepresentation(
             of: image, colorSpace: srgb, options: [:]
