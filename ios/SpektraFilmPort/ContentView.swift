@@ -301,52 +301,154 @@ struct ContentView: View {
                     }
 
                     Divider()
-                    Button {
-                        activeSheet = .stocks
-                    } label: {
-                        Label("原版胶片与相纸（iOS 16.5.1）", systemImage: "film.stack")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.bordered)
-                    Text("当前组合：" + currentStockDescription)
-                        .font(.footnote)
-                    Text(activePairIsSupported
-                         ? "该组合已接入实测曲线，可进行简化光学计算。"
-                         : "该组合目前只有资料目录，尚未接入物理模拟。")
+                    Text("胶片 × 相纸")
+                        .font(.headline)
+                    Text("上下拨动左侧胶片或相纸，停下即自动更新预览。")
                         .font(.caption2)
-                        .foregroundColor(activePairIsSupported ? Color.secondary : Color.orange)
+                        .foregroundColor(.secondary)
 
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text("原版实测曲线模拟 · v0.4 实验").font(.headline)
-                        Text("现支持 6 款负片 × 3 款相纸，共 18 种光谱组合。采用原始感光曲线、负片与相纸特性曲线及染料光谱；谱线重建与色彩校正仍是简化版本。"
-                            .font(.caption).foregroundStyle(.secondary)
+                    GeometryReader { geometry in
+                        let columnWidth = max(118, (geometry.size.width - 12) / 2)
+                        HStack(alignment: .top, spacing: 12) {
+                            // Two independent vertical wheels in the lower-left.
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("胶片 FILM")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                Picker("胶片", selection: $selectedFilmID) {
+                                    ForEach(wheelFilms) { film in
+                                        Text(shortStockName(film))
+                                            .font(.caption)
+                                            .tag(film.id)
+                                    }
+                                }
+                                .pickerStyle(.wheel)
+                                .labelsHidden()
+                                .frame(width: columnWidth - 14, height: 128)
+                                .clipped()
 
-                        HStack {
-                            Text("胶片曝光")
-                            Spacer()
-                            Text(String(format: "%+.2f EV", model.filmExposureEV)).monospacedDigit()
-                        }
-                        Slider(value: $model.filmExposureEV, in: -2...2, step: 0.25)
-                            .disabled(model.busy)
-                        HStack {
-                            Text("印相曝光")
-                            Spacer()
-                            Text(String(format: "%+.2f EV", model.printExposureEV)).monospacedDigit()
-                        }
-                        Slider(value: $model.printExposureEV, in: -2...2, step: 0.25)
-                            .disabled(model.busy)
-                        Button {
-                            model.applyMeasuredSimulation()
-                        } label: {
-                            Label("计算并应用光谱模拟", systemImage: "waveform.path")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.busy || !model.hasPhoto || !activePairIsSupported)
-                        if model.busy {
-                            ProgressView("光谱数据计算中…")
+                                Divider().padding(.vertical, 3)
+
+                                Text("相纸 PAPER")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                Picker("相纸", selection: $selectedPaperID) {
+                                    ForEach(wheelPapers) { paper in
+                                        Text(shortStockName(paper))
+                                            .font(.caption)
+                                            .tag(paper.id)
+                                    }
+                                }
+                                .pickerStyle(.wheel)
+                                .labelsHidden()
+                                .frame(width: columnWidth - 14, height: 128)
+                                .clipped()
+
+                                Button("完整胶片目录") {
+                                    activeSheet = .stocks
+                                }
+                                .font(.caption2)
+                                .padding(.top, 6)
+                            }
+                            .frame(width: columnWidth, alignment: .leading)
+                            .padding(.vertical, 7)
+                            .padding(.horizontal, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color(uiColor: .secondarySystemBackground))
+                            )
+
+                            // All continuous adjustments stay on the right.
+                            VStack(alignment: .leading, spacing: 11) {
+                                Text("调整")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("胶片曝光")
+                                        .font(.caption)
+                                    Text(String(format: "%+.2f EV", model.filmExposureEV))
+                                        .font(.caption2)
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                    Slider(value: $model.filmExposureEV,
+                                           in: -2...2, step: 0.25,
+                                           onEditingChanged: { editing in
+                                        if !editing { model.queueSpectralPreview() }
+                                    })
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("相纸曝光")
+                                        .font(.caption)
+                                    Text(String(format: "%+.2f EV", model.printExposureEV))
+                                        .font(.caption2)
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                    Slider(value: $model.printExposureEV,
+                                           in: -2...2, step: 0.25,
+                                           onEditingChanged: { editing in
+                                        if !editing { model.queueSpectralPreview() }
+                                    })
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack {
+                                        Text("效果强度")
+                                            .font(.caption)
+                                        Spacer(minLength: 0)
+                                        Text("\(Int(model.strength * 100))%")
+                                            .font(.caption2)
+                                            .monospacedDigit()
+                                    }
+                                    Slider(value: $model.strength,
+                                           in: 0...1, step: 0.05,
+                                           onEditingChanged: { editing in
+                                        if !editing { refresh() }
+                                    })
+                                    .disabled(model.lut == nil || !model.hasPhoto)
+                                }
+
+                                Button {
+                                    model.applyMeasuredSimulation()
+                                } label: {
+                                    Text("应用模拟")
+                                        .font(.caption)
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!model.hasPhoto || !activePairIsSupported)
+
+                                if model.busy {
+                                    ProgressView("计算中")
+                                        .font(.caption2)
+                                } else {
+                                    Text("拨轮停止后自动计算")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .frame(width: columnWidth, alignment: .leading)
+                            .padding(.vertical, 7)
                         }
                     }
+                    .frame(height: 360)
+                    .onChange(of: selectedFilmID) { _ in
+                        model.queueSpectralPreview()
+                    }
+                    .onChange(of: selectedPaperID) { _ in
+                        model.queueSpectralPreview()
+                    }
+                    Text(currentStockDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                    Text("6 款负片 × 3 款相纸；原版实测曲线驱动的简化光谱模拟。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
 
                     Divider()
                     HStack {
@@ -361,19 +463,6 @@ struct ContentView: View {
                         Text(model.lut?.title ?? "未选择 LUT")
                             .font(.caption).lineLimit(2)
                             .foregroundStyle(.secondary)
-                    }
-
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text("LUT 强度")
-                            Spacer()
-                            Text("\(Int(model.strength * 100))%").monospacedDigit()
-                        }
-                        Slider(value: $model.strength, in: 0...1, step: 0.05,
-                               onEditingChanged: { editing in
-                            if !editing { refresh() }
-                        })
-                        .disabled(model.lut == nil || !model.hasPhoto)
                     }
 
                     Button {
