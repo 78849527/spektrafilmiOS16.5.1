@@ -10,6 +10,8 @@ final class PhotoEditorModel: ObservableObject {
     @Published var lut: FilmLUT?
     @Published var strength = 1.0
     @Published var status = "选择照片，再导入 sRGB→sRGB .cube LUT。"
+    /// Persistent, multiline self-test result; the compact toast is NOT the report.
+    @Published var hardwareDiagnosticReport: String? = nil
     @Published var busy = false
     @Published var photoDimensions = ""
     @Published var filmExposureEV = 0.0
@@ -381,26 +383,43 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    /// Device-side, nonblocking numerical checks for both source
-    /// reflect FIR and YVV IIR. A failure is surfaced; never auto-fallback.
+    /// Keep the complete six-stage hardware evidence separately from status.
+    /// One- or two-line UI summaries must never hide a partial failure.
     func checkOriginalMetalHardware() {
-        status = "正在检测 Metal / IIR / Python 密度回放 / 原版 SciPy 随机流…"
+        hardwareDiagnosticReport = nil
+        status = "正在检测本机原版 Metal，请在检测完成后点击上方查看报告…"
         Task.detached(priority: .userInitiated) {
+            var checks: [String] = []
+            let stages = 6
             do {
                 let grain = try OriginalMetalGrain.hardwareDiagnostic()
+                checks.append("1/6 【通过】Metal 硬件、纹理透传及 reflect\n" + grain)
                 let poisson = try OriginalMetalGrain.poissonHardwareDiagnostic()
+                checks.append("2/6 【通过】原生 Metal Poisson / PTRS\n" + poisson)
                 let iir = try OriginalMetalIIR.hardwareDiagnostic()
+                checks.append("3/6 【通过】原版 Young–van Vliet IIR\n" + iir)
                 let replay = try OriginalMetalSourceReplay.hardwareDiagnostic()
+                checks.append("4/6 【通过】Python 九路颗粒场与 Metal 密度回放\n" + replay)
                 let mt = try OriginalSourceMT19937.validateReference()
+                checks.append("5/6 【通过】NumPy MT19937 原始位流\n" + mt)
                 let scipy = try OriginalSourceSciPySampler.validateSourceReference()
+                checks.append("6/6 【通过】SciPy Poisson→Binomial 计数与 MT 顺序\n" + scipy)
+                let report = "本机原版算法诊断 · 6/6 项全部通过\n" +
+                    "注意：通过的是列出的数值测试，不代表完整 Float64/RAW/RGB 已认证。\n\n" +
+                    checks.joined(separator: "\n\n")
                 await MainActor.run {
-                    self.status = grain + "；" + poisson + "；" + iir +
-                        "；" + replay + "；" + mt + "；" + scipy
+                    self.hardwareDiagnosticReport = report
+                    self.status = "原版 Metal 检测 6/6 项通过 · 点击查看完整报告"
                 }
             } catch {
+                let done = checks.count
+                let report = "本机原版算法诊断 · 未全部通过（\(done)/\(stages) 项完成）\n" +
+                    "仅下列项目已通过，其余步骤未完成或未执行。\n\n" +
+                    checks.joined(separator: "\n\n") +
+                    "\n\n【失败原因】\n" + error.localizedDescription
                 await MainActor.run {
-                    self.status = "Metal 原版数值自检失败：" +
-                        error.localizedDescription
+                    self.hardwareDiagnosticReport = report
+                    self.status = "原版 Metal 检测未通过（\(done)/\(stages)）· 点击查看错误"
                 }
             }
         }
