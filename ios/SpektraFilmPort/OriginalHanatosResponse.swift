@@ -34,14 +34,18 @@ struct OriginalHanatosResponse {
         rgbToXYZ = matrix
         self.n = n
         // Decode from little-endian binary16 without assuming aligned pointers.
-        rawLUT = raw.withUnsafeBytes { buffer in
-            let bytes = buffer.bindMemory(to: UInt8.self)
-            return (0..<(n*n*3)).map { i in
-                let j = i * 2
-                let bits = UInt16(bytes[j]) | (UInt16(bytes[j+1]) << 8)
-                return Double(Float16(bitPattern: bits))
-            }
+        // A direct counted loop avoids a costly nested generic type-check
+        // of Data.withUnsafeBytes / Array.map in Swift 5 on Intel Xcode16.4.
+        let bytes = [UInt8](raw)
+        let itemCount = n * n * 3
+        var decoded = [Double](repeating: 0, count: itemCount)
+        for index in 0..<itemCount {
+            let byteIndex = index * 2
+            let low = UInt16(bytes[byteIndex])
+            let high = UInt16(bytes[byteIndex + 1]) << 8
+            decoded[index] = Double(Float16(bitPattern: low | high))
         }
+        rawLUT = decoded
     }
 
     func raw(linearRGB: [Double]) -> [Double] {
