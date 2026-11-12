@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.7.0 discrete Poisson emulsion grain
+name: iOS 16.5.1 — v1.8.0 source-ordered Metal optical grain
 
 on:
   push:
-    branches: ['ios16.5.1/grain-discrete-v1.7']
+    branches: ['ios16.5.1/original-metal-grain-v1.8']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -13,7 +13,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-grain-discrete-v1.7-release
+  group: ios1651-original-metal-grain-v1.8-release
   cancel-in-progress: true
 
 jobs:
@@ -44,6 +44,7 @@ jobs:
             ios/SpektraFilmPort/DensityGrain.swift \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
             ios/tests/DensityGrainValidation.swift \
             -o /tmp/SpektrafilmDensityGrainValidation
       - name: Verify optical grain density moments and deterministic sampling
@@ -72,6 +73,7 @@ jobs:
           python3 ios/scripts/generate_dir.py
           python3 ios/scripts/generate_dir_spatial.py
           python3 ios/scripts/generate_sublayer_grain.py
+          python3 ios/scripts/generate_original_metal_grain.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -83,6 +85,7 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
           test -s ios/SpektraFilmPort/GeneratedDIRSpatialReference.swift
           test -s ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift
+          test -s ios/SpektraFilmPort/GeneratedOriginalMetalGrainReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
@@ -134,11 +137,27 @@ jobs:
             -o /tmp/SpektrafilmPrintOpticsValidation
       - name: Verify source CMY/preflash/normalization in print exposure buffer
         run: NSUnbufferedIO=YES /tmp/SpektrafilmPrintOpticsValidation
+      - name: Compile source native Metal kernels and original measured references
+        run: |
+          xcrun -sdk macosx metal -c -std=macos-metal2.4 \
+            ios/SpektraFilmPort/OriginalGrainKernels.metal \
+            -o /tmp/SpektrafilmOriginalGrain.air
+          xcrun -sdk macosx metallib \
+            /tmp/SpektrafilmOriginalGrain.air \
+            -o /tmp/SpektrafilmOriginalGrain.metallib
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/GeneratedOriginalMetalGrainReference.swift \
+            ios/tests/OriginalMetalGrainValidation.swift \
+            -o /tmp/SpektrafilmOriginalMetalGrainValidation
+      - name: Compare actual Metal dye-cloud/reflect shaders to original NumPy
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmOriginalMetalGrainValidation /tmp/SpektrafilmOriginalGrain.metallib
       - name: Compile source discrete Poisson GPU film particle tests
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
             ios/tests/DiscreteGrainValidation.swift \
             -o /tmp/SpektrafilmDiscreteGrainValidation
       - name: Verify Poisson thinning moments and low/high-rate discrete GPU particles
@@ -148,6 +167,7 @@ jobs:
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
             ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift \
             ios/tests/SublayerGrainValidation.swift \
             -o /tmp/SpektrafilmSublayerGrainValidation
@@ -160,6 +180,7 @@ jobs:
             ios/SpektraFilmPort/DensityGrain.swift \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
             ios/SpektraFilmPort/GeneratedDIRData.swift \
             ios/SpektraFilmPort/GeneratedDIRSpatialReference.swift \
             ios/tests/SpatialDIRValidation.swift \
@@ -174,6 +195,7 @@ jobs:
             ios/SpektraFilmPort/DensityGrain.swift \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
             ios/SpektraFilmPort/OriginalPrintOptics.swift \
             ios/SpektraFilmPort/OriginalPrintMorph.swift \
             ios/SpektraFilmPort/OriginalPrintReference.swift \
@@ -279,6 +301,29 @@ jobs:
           assert 'NSPhotoLibraryAddUsageDescription' in Path("ios/project.yml").read_text()
           print("PASS: source Poisson discreteness is an opt-in film-density GPU stage")
           PY
+      - name: Guard source original Metal mode, no fallback, background preview
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          model=Path("ios/SpektraFilmPort/ContentView.swift").read_text()
+          photo=Path("ios/SpektraFilmPort/PhotoProcessor.swift").read_text()
+          density=Path("ios/SpektraFilmPort/DensityGrain.swift").read_text()
+          original=Path("ios/SpektraFilmPort/OriginalMetalGrain.swift").read_text()
+          metal=Path("ios/SpektraFilmPort/OriginalGrainKernels.metal").read_text()
+          ui=Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+          assert '@Published var grainOriginalMetalEnabled = false' in model
+          assert 'Task.detached(priority: .userInitiated)' in model
+          assert 'originalMetalPreviewVersion' in model
+          assert 'originalMetalEnabled: grainOriginalMetalEnabled' in model
+          assert 'try OriginalMetalGrain.render(' in density
+          assert '禁止退回快速模式' in photo
+          assert 'try SpatialDIR.apply(' in photo
+          assert 'originalFilmGaussianReflect' in metal
+          assert 'originalFilmMicroClump' in metal
+          assert 'physicalCoefficients(' in original
+          assert '原版 Metal 显影链' in ui
+          print("PASS: strict source Metal branch, original-density ordering and nonblocking preview")
+          PY
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
@@ -293,36 +338,37 @@ jobs:
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
           plutil -lint "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.spektrafilmport'
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.7.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.0'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '24'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '25'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.7 unsigned IPA
+      - name: Package v1.8 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.7.0-discrete-unsigned.ipa Payload
-      - name: Upload v1.7 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.7.0-discrete-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.7.0-discrete-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned.ipa
           if-no-files-found: error
-      - name: Publish isolated v1.7 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/grain-discrete-v1.7'
+      - name: Publish isolated v1.8 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.7.0-discrete
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.7.0-discrete-unsigned.ipa
+          TAG=ios1651-v1.8.0-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/grain-discrete-v1.7" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/original-metal-grain-v1.8" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -332,8 +378,8 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.7.0 — Poisson-discrete nine-layer film grain" \
-              --notes "v1.7 adds OPT-IN original Poisson->Binomial film particle count distribution using Poisson-thinning marginal: K~Poisson(n*p/saturation). CoreImage samples rates below 30 by exact inverse CDF and higher rates with PTRS rejection + Stirling factorial, with very rare bounded-loop fallback. Measured 3x3 source emulsion data and density scaling drive nine independent sublayers BEFORE optical print/scan. Native tests verify source analytic moments, actual GPU low/high rate, seed determinism and original 128 negative/paper routes. Gaussian approximation remains default. CIColorCube interpolation, original RNG sequence and dye-cloud/microstructure spatial differences remain. Includes previous HD Photos export and double-tap reset. iOS16.5.1 device testing pending; IPA requires signing." \
+              --title "SpektraFilm iOS 16.5.1 v1.8.0 — source-order native Metal dye clouds and microstructure" \
+              --notes "v1.8 adds opt-in source-order Metal Compute grain: 3 measured film H-D emulsion sublayers, source Poisson thinning, per-layer/channel dye-cloud blur sigma=sqrt(ODparticle) and real reflect-boundary Gaussian convolution, source lognormal microstructure activation and 0.2um clumping blur, subtract density minima, final 0.65px film blur, then original paper/scan path. Full-resolution output uses 512px Metal tiles with analytic halo to limit intermediate memory, no resampling. Original mode fails explicitly and NEVER silently degrades; previews render off main thread. Python/NumPy 12 stock/pixel reference vectors and actual Metal reflect-boundary tests check formulas and shader, alongside earlier DIR/optics and native iPhoneOS build. Caveat: SciPy RNG streams vs GPU hash and Float64 vs Float32 rounding are not bit-identical. Existing v1.7 fast grain remains default. Unsigned IPA needs signing. Real iPhone16.5 test still pending." \
               --prerelease
           fi
           # Editing a Release's target_commitish does NOT move an existing
