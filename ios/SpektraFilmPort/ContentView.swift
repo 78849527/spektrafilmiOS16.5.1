@@ -480,8 +480,33 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // v1.8.15 direct upstream Hanatos (source Float64) ->
+                // camera EV -> measured negative H-D / nonspatial DIR ->
+                // print / source XYZ ACES + separate Float16 quantization.
+                // This is an appendix, NEVER an unearned ninth 8/8 item.
+                do {
+                    let result=try OriginalCameraFilmPrintParity.evaluate()
+                    if result.channels==72 &&
+                       result.preciseStageExceed==0 &&
+                       result.preciseOutputExceed==0 {
+                        checks.append(
+                            "附录【原版 Hanatos Float64→负片 DIR→相纸→RGB｜通过；含快速模式对照】\n" +
+                            result.text
+                        )
+                    } else {
+                        checks.append(
+                            "附录【原版 Hanatos Float64→负片 DIR→相纸→RGB｜未通过】\n" +
+                            result.text
+                        )
+                    }
+                } catch {
+                    checks.append(
+                        "附录【原版 Hanatos Float64→负片 DIR→相纸→RGB｜无法完成】\n" +
+                        error.localizedDescription
+                    )
+                }
                 let report = "本机原版算法诊断 · 8/8 项全部通过\n" +
-                    "注意：通过的是列出的数值测试，不代表完整 Numba 随机流或 Float64/RAW/RGB 已认证。\n\n" +
+                    "注意：通过的是列出的数值测试，不代表完整 Numba 随机流、RAW 或 Float64 整图 RGB 已认证。\n\n" +
                     checks.joined(separator: "\n\n")
                 await MainActor.run {
                     self.hardwareDiagnosticReport = report
