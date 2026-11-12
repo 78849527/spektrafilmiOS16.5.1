@@ -604,6 +604,14 @@ struct FloatingEditorWorkspace: View {
                         Text("使用原版数学公式；GPU 浮点与随机序列尚非逐位一致")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                        Button {
+                            model.checkOriginalMetalHardware()
+                        } label: {
+                            Text("检测本机 Metal 显影内核")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.busy)
                     }
                     resetToggle("原版离散 Poisson 颗粒",
                                 value: $model.grainDiscreteParticlesEnabled,
