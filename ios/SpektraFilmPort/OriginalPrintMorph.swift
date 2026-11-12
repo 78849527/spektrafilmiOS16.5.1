@@ -173,6 +173,68 @@ enum OriginalPrintMorph {
         return adjusted-neutral
     }
 
+    /// Prepared lookup built ONCE per stock/exposure slider update. Original
+    /// exhaustion root-finding is per dye sublayer, not per photo pixel.
+    struct PreparedCurve {
+        let logExposure: [Double]
+        let channelDeltas: [[Double]]
+
+        func densityDelta(_ x: Double, channel: Int) -> Double {
+            guard (0..<3).contains(channel), logExposure.count == 256,
+                  channelDeltas.count == 3, x.isFinite else { return 0 }
+            if x <= logExposure[0] { return channelDeltas[channel][0] }
+            if x >= logExposure[255] { return channelDeltas[channel][255] }
+            var lower = 0
+            var upper = 255
+            while lower + 1 < upper {
+                let mid = (lower+upper)/2
+                if x >= logExposure[mid] { lower = mid }
+                else { upper = mid }
+            }
+            let distance = logExposure[upper]-logExposure[lower]
+            let t = max(0,min(1,(x-logExposure[lower])/max(1e-12,distance)))
+            return channelDeltas[channel][lower]*(1-t) +
+                channelDeltas[channel][upper]*t
+        }
+    }
+
+    static func prepare(
+        stock: String, logExposure: [Float], settings: Settings,
+        positive: Bool = false
+    ) -> PreparedCurve? {
+        guard settings.valid, logExposure.count == 256,
+              !settings.isIdentity else { return nil }
+        var deltas = [[Double]]()
+        let xs = logExposure.map(Double.init)
+        for channel in 0..<3 {
+            guard var modified = layers(stock: stock, channel: channel),
+                  let baseline = layers(stock: stock, channel: channel)
+            else { return nil }
+
+            let sorted = modified.indices.sorted {
+                modified[$0].center < modified[$1].center
+            }
+            let channelGamma=[settings.red,settings.green,settings.blue][channel]
+            for i in sorted {
+                let modifier = (i == sorted[0]) ? settings.fast : settings.slow
+                let gamma = settings.gamma * channelGamma * modifier
+                modified[i].center /= gamma
+                modified[i].sigma = max(0.05, modified[i].sigma / gamma)
+            }
+            let offset = exhaustionOffset(
+                modified,positive:positive,mix:settings.developerExhaustion
+            )
+            let correction=xs.map { x in
+                evaluate(modified,at:x,positive:positive,
+                         exhaustion:settings.developerExhaustion,
+                         centerOffset:offset) -
+                evaluate(baseline,at:x,positive:positive,exhaustion:0)
+            }
+            deltas.append(correction)
+        }
+        return PreparedCurve(logExposure: xs,channelDeltas:deltas)
+    }
+
     static func fittedChannels(
         stock: String, logExposure: Double, settings: Settings,
         positive: Bool = false
