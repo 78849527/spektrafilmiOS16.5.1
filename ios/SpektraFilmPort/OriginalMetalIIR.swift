@@ -136,4 +136,75 @@ enum OriginalMetalIIR {
         }
         return result
     }
+
+    /// On-device equivalent to the CI IIR shader check, independent from
+    /// virtualized GitHub Intel GPU execution. All 3 channels are checked.
+    static func hardwareDiagnostic() throws -> String {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let queue = device.makeCommandQueue() else {
+            throw Error.invalid("原版 IIR 自检：本机 Metal GPU 不可用")
+        }
+        let library = try device.makeDefaultLibrary(bundle: .main)
+        let fixtures = GeneratedSourceIIRReference.cases
+        guard fixtures.count >= 2 else {
+            throw Error.invalid("原版 IIR 自检：Python 参考数据未打包")
+        }
+        var totalError = 0.0
+        var largestError = 0.0
+        for fixture in fixtures {
+            let w = fixture.width
+            let h = fixture.height
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba32Float, width: w, height: h, mipmapped: false)
+            descriptor.storageMode = .shared
+            descriptor.usage = [.shaderRead, .shaderWrite]
+            guard let source = device.makeTexture(descriptor: descriptor) else {
+                throw Error.invalid("原版 IIR 自检：测试纹理分配失败")
+            }
+            guard fixture.input.count == w*h*3,
+                  fixture.expected.count == fixture.input.count else {
+                throw Error.invalid("原版 IIR 自检：Python 测试向量尺寸错误")
+            }
+            var values = [Float](repeating: 1, count: w*h*4)
+            for pixel in 0..<(w*h) {
+                for channel in 0..<3 {
+                    values[pixel*4+channel] = Float(fixture.input[pixel*3+channel])
+                }
+            }
+            values.withUnsafeBytes { bytes in
+                source.replace(region: MTLRegionMake2D(0,0,w,h),
+                               mipmapLevel: 0,
+                               withBytes: bytes.baseAddress!,
+                               bytesPerRow: w*4*MemoryLayout<Float>.stride)
+            }
+            let result = try filter(source, sigmas: fixture.sigmas,
+                                    device: device, library: library, queue: queue)
+            var observed = [Float](repeating: 0, count: w*h*4)
+            observed.withUnsafeMutableBytes { bytes in
+                result.getBytes(bytes.baseAddress!,
+                                bytesPerRow: w*4*MemoryLayout<Float>.stride,
+                                from: MTLRegionMake2D(0,0,w,h),
+                                mipmapLevel: 0)
+            }
+            for pixel in 0..<(w*h) {
+                for channel in 0..<3 {
+                    let actual = Double(observed[pixel*4+channel])
+                    let expected = fixture.expected[pixel*3+channel]
+                    let error = abs(actual - expected)
+                    guard actual.isFinite && error <= 0.0005 else {
+                        throw Error.invalid(
+                            "原版 IIR 真机对照失败：\(fixture.name) 像素\(pixel) / 通道\(channel)，实测\(actual)，源\(expected)，误差\(error)"
+                        )
+                    }
+                    totalError += error
+                    largestError = max(largestError,error)
+                }
+            }
+        }
+        let count = fixtures.reduce(0) { $0 + $1.expected.count }
+        return "原版 YVV IIR 两组图 / 三通道对照 PASS，" +
+               "MAE=\(String(format:"%.7g",totalError/Double(count)))，" +
+               "max=\(String(format:"%.7g",largestError))，设备\(device.name)"
+    }
+
 }
