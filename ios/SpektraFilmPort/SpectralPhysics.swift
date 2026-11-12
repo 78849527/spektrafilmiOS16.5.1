@@ -891,6 +891,63 @@ struct SpectralPhysics {
         let encoded: [Double]
     }
 
+    /// 1.8.12 source-contiguous negative film CMY -> enlarger optical
+    /// raw -> log paper exposure -> source 256-node CDF H-D -> paper
+    /// XYZ -> linear sRGB -> ACES -> display-encoded sRGB. This uses
+    /// the same printRaw, paperDensities and scanner stages as production.
+    /// Input is already developed film CMY; camera RAW/film development,
+    /// spatial diffusion and default CAM16 are intentionally outside scope.
+    struct SourceNegativePrintStages {
+        let enlargerRaw: [Double]
+        let paperLogExposure: [Double]
+        let paperDensity: [Double]
+        let xyz: [Double]
+        let linear: [Double]
+        let compressed: [Double]
+        let encoded: [Double]
+    }
+
+    func sourceNegativePrintStages(
+        _ filmDensity: [Double], paperEV: Double
+    ) throws -> SourceNegativePrintStages {
+        guard !isPositive, useOriginalPrintOptics, useOriginalScanner,
+              !useReferenceBlackWhite, !defaultCAM16Gamut,
+              sourcePaperHDCurve != nil,
+              filmDensity.count == 3,
+              filmDensity.allSatisfy({ $0.isFinite }),
+              paperEV.isFinite && abs(paperEV) <= 4 else {
+            throw PhysicsError.invalid(
+                "负片印相整链分段诊断要求原版光学＋ACES 扫描和有效 CMY 密度")
+        }
+        let raw = Self.printRaw(
+            filmDensities: filmDensity, film: film,
+            weights: paperWeights, clampDensity:false
+        )
+        let logE = OriginalPrintOptics.paperLogExposure(
+            raw:raw, reference:printReference,
+            preflash:opticalPreflashRaw,printEV:paperEV+correctedPrintExposureEV
+        )
+        let developed = Self.paperDensities(
+            filmDensity, film:film, paper:paper, weights:paperWeights,
+            reference:printReference,
+            printEV:paperEV+correctedPrintExposureEV,
+            morph:printMorphCurve,preflashRaw:opticalPreflashRaw,
+            opticalPrint:true,sourceHD:sourcePaperHDCurve
+        )
+        let scan = try directPrintScannerStages(developed)
+        let actualEncoded = scanFilmDensity(filmDensity,paperEV:paperEV)
+        guard zip(actualEncoded,scan.encoded).allSatisfy({
+            abs($0-$1) < 1e-12
+        }) else {
+            throw PhysicsError.invalid("原版负片整链诊断与实际生产 RGB 路径不一致")
+        }
+        return SourceNegativePrintStages(
+            enlargerRaw:raw,paperLogExposure:logE,paperDensity:developed,
+            xyz:scan.xyz,linear:scan.linear,
+            compressed:scan.compressed,encoded:scan.encoded
+        )
+    }
+
     func directPrintScannerStages(
         _ paperDensity: [Double]
     ) throws -> DirectPrintScannerStages {
