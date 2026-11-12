@@ -16,6 +16,27 @@ final class PhotoEditorModel: ObservableObject {
     @Published var filmExposureEV = 0.0
     @Published var printExposureEV = 0.0
 
+    // Debounce scrolling wheels; never let a stale render replace new settings.
+    private var renderGeneration = 0
+    private var pendingRender: Task<Void, Never>?
+
+    func queueSpectralPreview() {
+        pendingRender?.cancel()
+        renderGeneration &+= 1
+        let generation = renderGeneration
+        guard hasPhoto else { return }
+        pendingRender = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 380_000_000)
+            guard !Task.isCancelled && generation == renderGeneration else { return }
+            applyMeasuredSimulation(generation: generation)
+        }
+    }
+
+    private func invalidateSimulation() {
+        pendingRender?.cancel()
+        renderGeneration &+= 1
+    }
+
     private var source: CIImage?
     var hasPhoto: Bool { source != nil }
 
@@ -47,11 +68,13 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     private func loadPhoto(_ data: Data) throws {
+        invalidateSimulation()
         let decoded = try PhotoProcessor.decode(data)
         source = decoded
         photoDimensions = "\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
         originalPreview = try PhotoProcessor.preview(decoded, lut: nil, strength: 0)
         try refresh()
+        queueSpectralPreview()
     }
 
     func loadLUTFile(_ url: URL) {
@@ -59,8 +82,11 @@ final class PhotoEditorModel: ObservableObject {
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
-            lut = try FilmLUT.read(text: text,
+            let importedLUT = try FilmLUT.read(text: text,
                 filename: url.deletingPathExtension().lastPathComponent)
+            invalidateSimulation()
+            lut = importedLUT
+            busy = false
             try refresh()
         } catch {
             status = "LUT 导入失败：" + error.localizedDescription
@@ -70,6 +96,12 @@ final class PhotoEditorModel: ObservableObject {
     /// Compute an internal optical LUT from measured wavelength data.
     /// Keep the proven photo importer and CoreImage renderer unchanged.
     func applyMeasuredSimulation() {
+        pendingRender?.cancel()
+        renderGeneration &+= 1
+        applyMeasuredSimulation(generation: renderGeneration)
+    }
+
+    private func applyMeasuredSimulation(generation: Int) {
         guard hasPhoto else {
             status = "请先选择照片，再模拟真实胶片数据。"
             return
@@ -86,7 +118,6 @@ final class PhotoEditorModel: ObservableObject {
         )
         let filmName = sourceNames[filmID] ?? filmID
         let paperName = sourceNames[paperID] ?? paperID
-        guard !busy else { return }
         busy = true
         status = "正在计算 \(filmName) → \(paperName)，81 波长实测数据…"
         let cameraExposure = filmExposureEV
@@ -100,6 +131,7 @@ final class PhotoEditorModel: ObservableObject {
                         size: 17
                     )
                 }.value
+                guard generation == renderGeneration else { return }
                 lut = FilmLUT(
                     title: "实测曲线·\(filmName) → \(paperName) (实验)",
                     dimension: 17, rgbaFloatData: cubeData
@@ -108,9 +140,10 @@ final class PhotoEditorModel: ObservableObject {
                 try refresh()
                 status = "已应用 \(filmName) → \(paperName) · 胶片 \(String(format: "%+.2f", cameraExposure)) EV · 相纸 \(String(format: "%+.2f", enlargerExposure)) EV。仍是简化光谱模拟。"
             } catch {
+                guard generation == renderGeneration else { return }
                 status = "光谱计算失败：" + error.localizedDescription
             }
-            busy = false
+            if generation == renderGeneration { busy = false }
         }
     }
 
@@ -146,6 +179,27 @@ struct ContentView: View {
     @State private var message: String?
     @AppStorage("compactFilmStock") private var selectedFilmID = "kodak_portra_400"
     @AppStorage("compactPaperStock") private var selectedPaperID = "kodak_portra_endura"
+
+    // The inline wheels show only the measured profiles backed by physics.
+    private var wheelFilms: [MeasuredStock] {
+        SpectralPhysics.supportedFilmIDs.compactMap { id in
+            GeneratedMeasuredProfiles.entries.first { $0.id == id }
+        }
+    }
+
+    private var wheelPapers: [MeasuredStock] {
+        SpectralPhysics.supportedPaperIDs.compactMap { id in
+            GeneratedMeasuredProfiles.entries.first { $0.id == id }
+        }
+    }
+
+    private func shortStockName(_ stock: MeasuredStock) -> String {
+        stock.name
+            .replacingOccurrences(of: "Kodak Professional ", with: "")
+            .replacingOccurrences(of: "Kodak ", with: "")
+            .replacingOccurrences(of: "Fujifilm ", with: "Fuji ")
+            .replacingOccurrences(of: "Crystal Archive Type II", with: "Crystal II")
+    }
 
     private var activePairIsSupported: Bool {
         SpectralPhysics.supportedFilmIDs.contains(selectedFilmID) &&
