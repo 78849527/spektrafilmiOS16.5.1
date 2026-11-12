@@ -178,10 +178,36 @@ struct ContentView: View {
                             }
                             .foregroundStyle(.white.opacity(0.75))
                         }
+                        if model.hasPhoto {
+                            VStack {
+                                Spacer()
+                                HStack {
+                                    Spacer()
+                                    Text(model.showOriginal ? "原图" : "长按查看原图")
+                                        .font(.caption2)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 5)
+                                        .background(Color.black.opacity(0.55), in: Capsule())
+                                }
+                                .padding(12)
+                            }
+                            .allowsHitTesting(false)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 370)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    // iOS 16.5.1: press on preview to see the unedited original;
+                    // the pressing callback restores the current processing on release.
+                    .onLongPressGesture(
+                        minimumDuration: 0.18,
+                        maximumDistance: 18,
+                        pressing: { isPressing in
+                            model.showOriginal = model.hasPhoto && isPressing
+                        },
+                        perform: {}
+                    )
 
                     HStack {
                         PhotosPicker(selection: $selectedPhoto, matching: .images) {
@@ -267,8 +293,6 @@ struct ContentView: View {
                             if !editing { refresh() }
                         })
                         .disabled(model.lut == nil || !model.hasPhoto)
-                        Toggle("对比原图", isOn: $model.showOriginal)
-                            .disabled(!model.hasPhoto)
                     }
 
                     Button {

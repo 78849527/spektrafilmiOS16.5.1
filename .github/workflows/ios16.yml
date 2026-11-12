@@ -60,33 +60,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.3.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.3.1'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.3.1-long-press-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.3.1-long-press-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.3.1-long-press-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
         if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/spectral-v0.3'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.3-spectral-alpha
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned.ipa
+          TAG=ios1651-v0.3.1-long-press
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.3.1-long-press-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.3 alpha — measured spectral prototype" \
-              --notes "Original Portra 400 and Portra Endura measured curves feed an on-device simplified spectral negative/print renderer, baked at runtime into a 17-cube for Core Image preview. Adjustable film and paper exposure. Original Hanatos projection, couplers, color reference, grain and halation are not ported; this is not full original visual parity. Inherits stable v0.2.3 Xcode16.4 startup setup. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.3.1 — long-press original comparison" \
+              --notes "User-tested v0.3 simplified Portra 400 / Portra Endura renderer, now with hold-on-photo to compare original and release to return to processed preview. Removed the original-toggle row. Xcode 16.4 / iOS 16.5.1 target; existing import, .cube, exposure and export unchanged. No full upstream spectral parity. Unsigned IPA requires signing." \
               --prerelease
           fi
