@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.6 optional RAM-safe resolution export
+name: iOS 16.5.1 — v1.8.7 adaptive 50% safe + 3MP economy and microstructure math
 
 on:
   push:
-    branches: ['ios16.5.1/safe-export-v1.8.6']
+    branches: ['ios16.5.1/adaptive-safe-and-micro-v1.8.7']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.6-safe-export.md'
+      - 'docs/v1.8.7-safe-export.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-safe-export-v1.8.6-release
+  group: ios1651-adaptive-safe-and-micro-v1.8.7-release
   cancel-in-progress: true
 
 jobs:
@@ -73,6 +73,7 @@ jobs:
           python3 ios/scripts/generate_source_mt19937.py
           python3 ios/scripts/generate_original_scipy_rng.py
           python3 ios/scripts/generate_source_replay.py
+          python3 ios/scripts/generate_source_microstructure.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -90,6 +91,7 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
@@ -115,6 +117,15 @@ jobs:
             -o /tmp/SpektraFilmSourceMTValidation
       - name: Compare 2640 original NumPy MT words and 160 bit-exact Float64 uniforms
         run: NSUnbufferedIO=YES /tmp/SpektraFilmSourceMTValidation
+      - name: Compile source Numba microstructure deterministic lognormal tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/tests/SourceMicrostructureValidation.swift \
+            -o /tmp/SpektrafilmMicrostructureValidation
+      - name: Verify source Numba microstructure mean/std transform and gating
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmMicrostructureValidation
       - name: Compile density-grain GPU statistical regression
         run: |
           xcrun swiftc -Onone -parse-as-library \
@@ -122,6 +133,8 @@ jobs:
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
@@ -190,6 +203,8 @@ jobs:
             -o /tmp/SpektrafilmOriginalGrain.metallib
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
@@ -224,6 +239,8 @@ jobs:
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
@@ -249,6 +266,8 @@ jobs:
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
@@ -267,6 +286,8 @@ jobs:
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
@@ -288,6 +309,8 @@ jobs:
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
@@ -311,6 +334,8 @@ jobs:
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
             ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
@@ -382,9 +407,9 @@ jobs:
             ios/SpektraFilmPort/SafeExportResolution.swift \
             ios/tests/SafeExportResolutionValidation.swift \
             -o /tmp/SpektrafilmSafeExportValidation
-      - name: Verify RAM-bounded 3MP full-frame output geometry
+      - name: Verify adaptive 50% and economy 3MP whole-frame memory geometry
         run: /tmp/SpektrafilmSafeExportValidation
-      - name: Guard explicit original vs safe export for Photos and Files
+      - name: Guard original, adaptive and economy export for Photos and Files
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -393,18 +418,24 @@ jobs:
           ui=Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
           assert 'resolution: ExportResolutionMode = .original' in photo
           assert 'var workingSource = source' in photo
-          assert 'if resolution == .safe' in photo
-          assert 'SafeExportResolution.target(' in photo
+          assert 'if resolution != .original' in photo
+          assert 'SafeExportResolution.capture(' in photo
           assert 'lanczosScaleTransform()' in photo
           assert 'to: workingSource, lut: lut' in photo
           assert 'downsampled: downsampled' in photo
           assert 'kCGImageDestinationLossyCompressionQuality as String: 0.98' in photo
           assert 'PhotoLibrarySaver.saveJPEG(at: file)' in model
-          assert 'model.exportJPEG(resolution: resolution)' in model
-          assert 'onSaveToPhotos(.safe)' in ui and 'onSaveToPhotos(.original)' in ui
-          assert 'onExport(.safe)' in ui and 'onExport(.original)' in ui
-          assert '安全分辨率（最高 300 万像素）' in ui
-          print("PASS: explicit original and safety resolution for both Photos/Files with unchanged 98% JPEG, no hidden fallback")
+          assert 'confirmedPlan: confirmedPlan' in model
+          assert 'pendingExport = ExportProposal(' in model
+          for action in ('onSaveToPhotos','onExport'):
+              for mode in ('original','safe','economy'):
+                  assert f'{action}(.{mode})' in ui
+          assert '智能安全分辨率（约 50% 内存预算）' in ui
+          assert '省内存分辨率（最高 300 万像素）' in ui
+          assert 'os_proc_available_memory' in Path('ios/SpektraFilmPort/SafeExportResolution.swift').read_text()
+          assert 'let processHeadroomBytes: UInt64?' in Path('ios/SpektraFilmPort/SafeExportResolution.swift').read_text()
+          assert 'validateBeforeRender(plan)' in photo
+          print("PASS: explicit original/adaptive/economy for Photos/Files; preflight size+headroom, unchanged 98% JPEG, no fallback")
           PY
       - name: Guard full-size Photos save and double-tap defaults
         run: |
@@ -417,8 +448,8 @@ jobs:
           assert '12_500_000' not in source
           assert 'to: workingSource, lut: lut' in source
           assert 'var workingSource = source' in source
-          assert 'if resolution == .safe' in source
-          assert 'SafeExportResolution.target(' in source
+          assert 'if resolution != .original' in source
+          assert 'SafeExportResolution.capture(' in source
           assert 'resolution: ExportResolutionMode = .original' in source
           assert 'downsampled: downsampled' in source
           assert 'kCGImageDestinationLossyCompressionQuality as String: 0.98' in source
@@ -512,7 +543,7 @@ jobs:
           assert 'hardwareDiagnostic()' in original
           print("PASS: strict source Metal branch, original-density ordering and nonblocking preview")
           PY
-      - name: Guard complete seven-part diagnostics and accessible report
+      - name: Guard complete eight-part diagnostics and accessible report
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -523,13 +554,15 @@ jobs:
           assert "UIPasteboard.general.string" in ui
           assert ".presentationDetents([.medium, .large])" in ui
           assert ".allowsHitTesting(false)" not in ui.split(".overlay(alignment: .topLeading)",1)[1].split(".sheet",1)[0]
-          assert "原版 Metal 检测 7/7 项通过" in model
+          assert "原版 Metal 检测 8/8 项通过" in model
           assert "原版 Metal 检测未通过" in model
-          assert "6/7 【通过】SciPy" in model
-          assert "5/7 【通过】NumPy" in model
+          assert "6/8 【通过】SciPy" in model
+          assert "5/8 【通过】NumPy" in model
           assert "hardwareDiagnosticReport = report" in model
-          assert "7/7 【通过】正式显影" in model
-          print("PASS: all seven diagnostic results remain accessible, scrollable, and copyable")
+          assert "7/8 【通过】正式显影" in model
+          assert "8/8 【通过】Numba 微结构" in model
+          assert "OriginalSourceMicrostructure.hardwareDiagnostic()" in model
+          print("PASS: all eight diagnostic stages remain scrollable and copyable, microstructure RNG explicitly unverified")
           PY
       - name: Guard opt-in original SciPy full-frame sequence and fallback isolation
         run: |
@@ -555,8 +588,22 @@ jobs:
           assert 'sourceSciPySampling: sourceSciPySampling' in renderer
           assert 'grainOriginalSciPyEnabled = false' in model
           assert 'SciPy 原版随机序列' in ui
-          assert '7/7 【通过】正式显影' in model
+          assert '7/8 【通过】正式显影' in model
           print("PASS: opt-in whole-frame SciPy Poisson then Binomial, no tiled reseeding, legacy Metal mode unchanged")
+          PY
+      - name: Guard original Python microstructure scalar transform in production GPU
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          metal=Path("ios/SpektraFilmPort/OriginalGrainKernels.metal").read_text()
+          physical=Path("ios/SpektraFilmPort/OriginalMetalGrain.swift").read_text()
+          micro=Path("ios/SpektraFilmPort/OriginalSourceMicrostructure.swift").read_text()
+          assert "originalFilmMicroLognormalFromZ" in metal
+          assert "originalFilmMicroFromNormals" in metal
+          assert "OriginalSourceMicrostructure.physical(" in physical
+          assert "microStd > 0.05" in micro
+          assert "sigma2 = log(1.0 + microStd * microStd)" in micro
+          print("PASS: production GPU uses source deterministic lognormal transform, independent Numba RNG not certified")
           PY
       - name: Generate project
         working-directory: ios
@@ -578,31 +625,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.6'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.7'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '31'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '32'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8.6 unsigned IPA
+      - name: Package v1.8.7 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.6-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.6 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.7-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.7 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.6-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.6-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.7-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.7-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/safe-export-v1.8.6' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/adaptive-safe-and-micro-v1.8.7' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.6-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.6-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.6-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/safe-export-v1.8.6" --jq '.object.sha')
+          TAG=ios1651-v1.8.7-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.7-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.7-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/adaptive-safe-and-micro-v1.8.7" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -613,8 +660,8 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.6 - SAFE RESOLUTION EXPORT" \
-              --notes "WARNING: EXPERIMENTAL TEST BUILD, NOT A CERTIFIED RELEASE. v1.8.6 adds user-selected safe resolution export (up to 3MP, further limited by conservative device RAM estimates) to BOTH Save Photos and Share Files. Original resolution remains a separate untouched choice and never silently shrinks after failure. Safety mode Lanczos scales the COMPLETE image BEFORE optical grain/SciPy random count sampling and Metal IIR, preserving two-stage source RNG order, then exports 98% JPEG with actual output dimensions. Safe limit is a heuristic, not a guarantee; memory errors still surface. Previous: v1.8.6 adds opt-in full-frame source SciPy Poisson->Binomial sampling with original per-channel seed, UInt32 seed plane and GPU Float32 dye clouds; native iPhone particle field parity is checked in diagnostic stage 7/7. The old Metal hash-count path remains default, no 512-tile RNG restart, explicit memory guard, and no downgrade on failure. Source input is still Float32 Core Image, Numba microstructure RNG is not ported; not certified complete Python pixel parity. Prior UI version fixes the clipped hardware report: the top chip is tappable, the seven-stage PASS/FAIL report is scrollable and copyable, and each failure states the last completed stage. Previous v1.8.6 adds NumPy RandomState Poisson and Binomial sampled-array ordering and source count/MT stream validation as a CPU engine, not yet used in production grain; retains v1.8.2 exact NumPy legacy MT19937/53-bit uniform generation (not yet used for production SciPy/Numba sampling), source-injected nine particle field optical density replay with MAE/RMSE/max on GPU, and preserves the full-frame IIR pathway. v1.8.6 routes sigma >= 3 through full-frame source-order YVV Metal and streams layers to reduce peak GPU RAM; Float32 and PRNG parity still unverified. Full iPhoneOS build and previous color/film regression succeeded, but the Intel CI Metal GPU passthrough returned all zero values. This IPA includes a real-device GPU diagnostic button under Density Grain > 3 Measured Layers > Original Metal. Run that diagnostic before trusting emulsion output. Source Metal path fails explicitly and never silently uses fast approximations; fast mode remains the default. Unsigned IPA requires user signing. Share the on-device diagnostics/result if a failure occurs. GPU parity and physical phone tests have NOT passed." \
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.7 - ADAPTIVE SAFE AND SOURCE MICROSTRUCTURE" \
+              --notes "WARNING: EXPERIMENTAL TEST BUILD. v1.8.7 adds three explicit photo/file export modes: ORIGINAL (no shrink), INTELLIGENT (50% of smaller 1.5GB/physical RAM/3/current iOS process allocation headroom; no pixel cap), ECONOMY (old up to 3MP at 30%). The user confirms preview source/output dimensions, estimated peak MB and current memory headroom before export; accepted size remains fixed, no silent fallback, JPEG quality 98%. Further source port: original grain.py microstructure standard deviation, blur/gating and fast_stats.py lognormal transform are ref-tested in Double and shared Metal float kernel; real-iPhone eighth diagnostic checks deterministic normals. Original Numba prange RNG is NOT ported or bit-exact; source Float64/RAW/RGB full-image precision remains unverified. iOS16.5.1 unsigned TEST IPA requires user signing and actual device checks. Memory availability is an advisory snapshot; GPU allocations may still fail." \
               --prerelease
           fi
           gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
@@ -623,15 +670,15 @@ jobs:
           test "$ACTUAL" = "$GITHUB_SHA"
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.6 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/safe-export-v1.8.6' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.7 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/adaptive-safe-and-micro-v1.8.7' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.6-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.6-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.7-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.7-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/safe-export-v1.8.6" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/adaptive-safe-and-micro-v1.8.7" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -641,8 +688,8 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.6 — source-order native Metal dye clouds and microstructure" \
-              --notes "v1.8.6 adds source Poisson/Binomial samplers and regression with exact stream continuation; retains source MT19937 uniform core and SciPy particle-field GPU density replay (but still does not port NumPy/SciPy sampler sequencing or Numba micro RNG); inherits production global YVV IIR and streaming 3-layer dye clouds, plus measured hardware reference tests. Existing source-law particle pipeline retained. Previous v1.8 description: 3 measured film H-D emulsion sublayers, source Poisson thinning, per-layer/channel dye-cloud blur sigma=sqrt(ODparticle) and real reflect-boundary Gaussian convolution, source lognormal microstructure activation and 0.2um clumping blur, subtract density minima, final 0.65px film blur, then original paper/scan path. Full-resolution output uses 512px Metal tiles with analytic halo to limit intermediate memory, no resampling. Original mode fails explicitly and NEVER silently degrades; previews render off main thread. Python/NumPy 12 stock/pixel reference vectors and actual Metal reflect-boundary tests check formulas and shader, alongside earlier DIR/optics and native iPhoneOS build. Caveat: SciPy RNG streams vs GPU hash and Float64 vs Float32 rounding are not bit-identical. Existing v1.7 fast grain remains default. Unsigned IPA needs signing. Real iPhone16.5 test still pending." \
+              --title "SpektraFilm iOS 16.5.1 v1.8.7 — source-order native Metal dye clouds and microstructure" \
+              --notes "v1.8.7 adds source Poisson/Binomial samplers and regression with exact stream continuation; retains source MT19937 uniform core and SciPy particle-field GPU density replay (but still does not port NumPy/SciPy sampler sequencing or Numba micro RNG); inherits production global YVV IIR and streaming 3-layer dye clouds, plus measured hardware reference tests. Existing source-law particle pipeline retained. Previous v1.8 description: 3 measured film H-D emulsion sublayers, source Poisson thinning, per-layer/channel dye-cloud blur sigma=sqrt(ODparticle) and real reflect-boundary Gaussian convolution, source lognormal microstructure activation and 0.2um clumping blur, subtract density minima, final 0.65px film blur, then original paper/scan path. Full-resolution output uses 512px Metal tiles with analytic halo to limit intermediate memory, no resampling. Original mode fails explicitly and NEVER silently degrades; previews render off main thread. Python/NumPy 12 stock/pixel reference vectors and actual Metal reflect-boundary tests check formulas and shader, alongside earlier DIR/optics and native iPhoneOS build. Caveat: SciPy RNG streams vs GPU hash and Float64 vs Float32 rounding are not bit-identical. Existing v1.7 fast grain remains default. Unsigned IPA needs signing. Real iPhone16.5 test still pending." \
               --prerelease
           fi
           # Editing a Release's target_commitish does NOT move an existing
@@ -655,5 +702,5 @@ jobs:
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.6 certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.7 certified release."
           exit 1
