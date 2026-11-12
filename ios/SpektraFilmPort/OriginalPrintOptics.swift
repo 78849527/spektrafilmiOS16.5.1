@@ -108,9 +108,11 @@ enum OriginalPrintOptics {
         precondition(raw.count == 3 && preflash.count == 3)
         let exposure = pow(2.0, printEV)
         return (0..<3).map { c in
-            let total = (raw[c] / max(reference, 1e-10) +
-                         preflash[c]) * exposure
-            // Two 1e-10 floors in original: before, then after spatial step.
+            let rawBeforeEnlarger = max(
+                0, raw[c] / max(reference, 1e-10) + preflash[c]
+            ) + 1e-10
+            let total = rawBeforeEnlarger * exposure
+            // Two 1e-10 floors in the source: before and after printing.
             return log10(max(0, total) + 1e-10)
         }
     }
