@@ -193,6 +193,32 @@ kernel void originalFilmParticles(
     layerOut.write(float4(particle,1.0f),tid);
 }
 
+// Source fast_lognormal_from_mean_std() deterministic mean=1 transform.
+// The random z is supplied by either the existing production hash normal
+// or our diagnostic texture; Numba prange RNG remains NOT bit-identical.
+float originalFilmMicroLognormalFromZ(float z, float stdValue) {
+    if (stdValue <= 0.05f) { return 1.0f; }
+    const float sigma2 = log(1.0f + stdValue * stdValue);
+    const float sigma = sqrt(sigma2);
+    const float mu = -0.5f * sigma2;
+    return exp(mu + sigma * z);
+}
+
+// Diagnostic on real GPU; accepts explicit normals from Python source
+// fixtures and uses precisely the same transform as production.
+kernel void originalFilmMicroFromNormals(
+    texture2d<float, access::read> normalImage [[texture(0)]],
+    texture2d<float, access::write> output [[texture(1)]],
+    constant float &microStd [[buffer(0)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if(tid.x>=output.get_width() || tid.y>=output.get_height()) { return; }
+    float3 normal = normalImage.read(tid).rgb;
+    output.write(float4(
+        originalFilmMicroLognormalFromZ(normal.r,microStd),
+        originalFilmMicroLognormalFromZ(normal.g,microStd),
+        originalFilmMicroLognormalFromZ(normal.b,microStd),1.0f), tid);
+}
+
 kernel void originalFilmMicroClump(
     texture2d<float,access::write> output [[texture(0)]],
     constant FilmGrainMetalParams& args [[buffer(0)]],
@@ -202,14 +228,13 @@ kernel void originalFilmMicroClump(
         output.write(float4(1.0f),tid);
         return;
     }
-    // Source fast_lognormal_from_mean_std(mean=1,std=30 nm/pixelUM).
-    float sig2=log(1.0f+args.microSigma*args.microSigma);
-    float sigma=sqrt(sig2);
-    float mu=-0.5f*sig2;
+    // Use source scalar transform shared with the exact-input GPU
+    // reference test. Source Numba RNG is still a distinct pending task.
     float3 vals;
     for(uint ch=0u;ch<3u;ch++){
-        vals[ch]=exp(mu+sigma*filmNormal(args.seed+7541u,
-            args.originX+tid.x,args.originY+tid.y,ch,37u,1u));
+        float z=filmNormal(args.seed+7541u,
+            args.originX+tid.x,args.originY+tid.y,ch,37u,1u);
+        vals[ch]=originalFilmMicroLognormalFromZ(z,args.microSigma);
     }
     output.write(float4(vals,1.0f),tid);
 }
