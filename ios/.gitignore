@@ -3,4 +3,5 @@ SpektraFilmPort.xcodeproj/
 SpektraFilmPort/GeneratedMeasuredProfiles.swift
 SpektraFilmPort/GeneratedSpectralData.swift
 SpektraFilmPort/GeneratedOriginalOptics.swift
+SpektraFilmPort/GeneratedHanatosData.swift
 .DS_Store

@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v0.5.0 original Mallett optics
+name: iOS 16.5.1 — v0.6.0 all 28 stocks with Hanatos2025
 
 on:
   push:
-    branches: ['ios16.5.1/optics-v0.5']
+    branches: ['ios16.5.1/full-stock-v0.6']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -37,6 +37,8 @@ jobs:
           python3 ios/scripts/generate_compact_catalog.py
           python3 ios/scripts/generate_spectral_data.py
           python3 ios/scripts/generate_original_optics.py
+          python3 ios/scripts/generate_hanatos.py
+          test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
@@ -45,8 +47,10 @@ jobs:
         run: |
           xcrun swiftc -O -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/OriginalHanatosResponse.swift \
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
             ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
+            ios/SpektraFilmPort/GeneratedHanatosData.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Run numeric physics and LUT regression checks
@@ -70,33 +74,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.5.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.6.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/optics-v0.5'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/full-stock-v0.6'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.5.0-original-optics
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.5.0-original-optics-unsigned.ipa
+          TAG=ios1651-v0.6.0-all-stocks
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.6.0-all-stocks-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.5.0 — Mallett optics and hold repair" \
-              --notes "Xcode16.4 iOS16.5.1. Fixes original preview flashing via UIKit continuous press. Ports original supported Mallett2019 spectral input, original D55/D50, CIE 1931 CMFs, Schott KG3 enlarger and default CMY filters. Six negatives and three print papers. Hanatos2025, couplers, film grain, halation and complete scanning remain pending. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.6.0 — all original stocks and Hanatos2025" \
+              --notes "Xcode16.4, iOS16.5.1 only. 28 source profiles (20 exposure films: 16 negative and 4 reversal; 6 print papers and Kodak 2383/2393 motion print films). Original Hanatos2025 TC irradiance LUT integrated with each stock and measured spectral window; reverse film scans directly, negative film prints. Original Mallett alternative and optics retained. Still not exact full upstream: DIR couplers, paper curve morph, spatial grain/halation/glare and full gamut compression pending. Unsigned IPA requires signing." \
               --prerelease
           fi
