@@ -83,6 +83,12 @@ def main() -> None:
     )
     d55 = illuminant("D55")
     d50 = illuminant("D50")
+    # Upstream film-printing stocks Kodak 2383/2393 view under K75P.
+    k75 = np.asarray(
+        colour.SDS_LIGHT_SOURCES["Kinoton 75P"].copy().align(SHAPE).values,
+        dtype=np.float64
+    )
+    k75 /= np.mean(k75)
     cie = np.asarray(
         colour.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"]
         .copy().align(SHAPE).values, dtype=np.float64
@@ -102,6 +108,7 @@ def main() -> None:
         "mallettBasis": basis,
         "d55": d55,
         "d50": d50,
+        "k75p": k75,
         "cie1931": cie,
         "enlargerNeutral": print_illuminant,
         "schottKG3": kg3_filter(),
