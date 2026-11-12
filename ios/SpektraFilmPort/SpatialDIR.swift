@@ -106,7 +106,7 @@ enum SpatialDIR {
     /// Both preview and export invoke this SAME code path at their own sizes.
     static func apply(to source: CIImage, stage: SpatialDIRStage,
                       settings: SpatialDIRSettings,
-                      grain: DensityGrainSettings?) -> CIImage? {
+                      grain: DensityGrainSettings?) throws -> CIImage? {
         guard settings.enabled, settings.valid, stage.valid,
               !source.extent.isEmpty,
               let tailKernel, let subtractionKernel else { return nil }
@@ -192,7 +192,7 @@ enum SpatialDIR {
         guard var density = correctedCube.outputImage else { return nil }
 
         if let grain, grain.amount > 0 {
-            guard let result = DensityGrain.perturbDensityImage(
+            guard let result = try DensityGrain.perturbDensityImage(
                 density, settings: grain, pixelUM: pixelUM
             ) else { return nil }
             density = result
