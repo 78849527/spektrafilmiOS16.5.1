@@ -18,34 +18,69 @@ struct OriginalHanatosResponse {
     private let rgbToXYZ: [Double]
     private let n: Int
 
-    init(filmID: String) throws {
-        guard let encoded = GeneratedHanatosData.lutByFilm[filmID] else {
-            throw DecodeError.unavailable("Hanatos2025 没有该胶片的响应数据：" + filmID)
-        }
+    /// Source-precision mode is the default. The previous Float16 storage
+    /// remains available explicitly as a faster, quantized mobile alternative.
+    /// Precision selects LUT STORAGE, not a different interpolation algorithm.
+    enum Precision {
+        case originalFloat64
+        case mobileFloat16
+    }
+
+    init(filmID: String, precision: Precision = .originalFloat64) throws {
         let n = GeneratedHanatosData.dimension
-        guard n >= 32, let raw = Data(base64Encoded: encoded),
-              raw.count == n * n * 3 * 2 else {
-            throw DecodeError.unavailable("Hanatos2025 光谱数据数量不匹配")
-        }
-        guard let matrix = GeneratedHanatosData.sRGBToXYZByFilm[filmID],
+        guard n >= 32,
+              let matrix = GeneratedHanatosData.sRGBToXYZByFilm[filmID],
               matrix.count == 9 else {
-            throw DecodeError.unavailable("该胶片没有 CAT16 参考光源投影矩阵")
+            throw DecodeError.unavailable("该胶片缺少原版 Hanatos CAT16 参考矩阵")
         }
         rgbToXYZ = matrix
         self.n = n
-        // Decode from little-endian binary16 without assuming aligned pointers.
-        // A direct counted loop avoids a costly nested generic type-check
-        // of Data.withUnsafeBytes / Array.map in Swift 5 on Intel Xcode16.4.
-        let bytes = [UInt8](raw)
-        let itemCount = n * n * 3
-        var decoded = [Double](repeating: 0, count: itemCount)
-        for index in 0..<itemCount {
-            let byteIndex = index * 2
-            let low = UInt16(bytes[byteIndex])
-            let high = UInt16(bytes[byteIndex + 1]) << 8
-            decoded[index] = Self.binary16ToDouble(low | high)
+        let itemCount = n*n*3
+        switch precision {
+        case .originalFloat64:
+            guard GeneratedHanatosPreciseData.dimension == n,
+                  GeneratedHanatosPreciseData.sourceSHA256 ==
+                    GeneratedHanatosData.sourceSHA256,
+                  let encoded = GeneratedHanatosPreciseData.lutByFilm[filmID],
+                  let data = Data(base64Encoded: encoded),
+                  data.count == itemCount*8 else {
+                throw DecodeError.unavailable(
+                    "原版 Float64 Hanatos 光谱数据缺失，禁止降级 Float16：" + filmID
+                )
+            }
+            let bytes = [UInt8](data)
+            var values = [Double](repeating:0,count:itemCount)
+            for i in 0..<itemCount {
+                let k=i*8
+                var bits:UInt64=0
+                for j in 0..<8 {
+                    bits |= UInt64(bytes[k+j]) << UInt64(j*8)
+                }
+                values[i]=Double(bitPattern:bits)
+            }
+            guard values.allSatisfy({ $0.isFinite }) else {
+                throw DecodeError.unavailable("原版 Float64 光谱 LUT 包含非有限数：" + filmID)
+            }
+            rawLUT=values
+        case .mobileFloat16:
+            guard let encoded=GeneratedHanatosData.lutByFilm[filmID],
+                  let data=Data(base64Encoded:encoded),
+                  data.count == itemCount*2 else {
+                throw DecodeError.unavailable("移动 Float16 光谱 LUT 缺失：" + filmID)
+            }
+            let bytes=[UInt8](data)
+            var values=[Double](repeating:0,count:itemCount)
+            for i in 0..<itemCount {
+                let k=i*2
+                values[i]=Self.binary16ToDouble(
+                    UInt16(bytes[k]) | (UInt16(bytes[k+1]) << 8)
+                )
+            }
+            guard values.allSatisfy({ $0.isFinite }) else {
+                throw DecodeError.unavailable("移动 Float16 光谱 LUT 数值无效：" + filmID)
+            }
+            rawLUT=values
         }
-        rawLUT = decoded
     }
 
     /// Platform-independent IEEE-754 binary16 to Double conversion.
