@@ -25,6 +25,14 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Compile native Core Image spatial optics tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/SpatialOptics.swift \
+            ios/tests/SpatialOpticsValidation.swift \
+            -o /tmp/SpektrafilmSpatialValidation
+      - name: Verify spatial optics energy conservation and real blur
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmSpatialValidation
       - name: Prepare Python reference generator (build machine only)
         uses: actions/setup-python@v5
         with:
@@ -47,7 +55,7 @@ jobs:
           test ! -d ios/SpektraFilmPort/Resources
       - name: Compile native spectral physics separately
         run: |
-          xcrun swiftc -O -parse-as-library \
+          xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalHanatosResponse.swift \
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
@@ -58,14 +66,6 @@ jobs:
             -o /tmp/SpektrafilmSpectralValidation
       - name: Run numeric physics and LUT regression checks
         run: /tmp/SpektrafilmSpectralValidation
-      - name: Compile native Core Image spatial optics tests
-        run: |
-          xcrun swiftc -Onone -parse-as-library \
-            ios/SpektraFilmPort/SpatialOptics.swift \
-            ios/tests/SpatialOpticsValidation.swift \
-            -o /tmp/SpektrafilmSpatialValidation
-      - name: Verify spatial optics energy conservation and real blur
-        run: NSUnbufferedIO=YES /tmp/SpektrafilmSpatialValidation
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
