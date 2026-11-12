@@ -228,27 +228,27 @@ struct OriginalMetalGrainValidation {
         }
         print("PASS: 12 measured stock/pixel conditions, dye-cloud radii and lognormal microstructure thresholds.")
 
-        // Verify the strict source FIR/IIR dispatch decision independent
-        // of whether the hosted CI machine can actually run Metal kernels.
-        var acceptedFIR=0, rejectedIIR=0
+        // Source dispatch must accept both cases without sending any
+        // sigma>=3 channel through the local 512px FIR tile.
+        var firCases = 0
+        var iirCases = 0
         for item in vectors {
-            let p=try OriginalMetalGrain.physicalCoefficients(
-                maxima:item.maxima,pixelUM:item.pixelUM
+            let p = try OriginalMetalGrain.physicalCoefficients(
+                maxima: item.maxima, pixelUM: item.pixelUM
             )
-            let requiresIIR=p.cloudSigmas.flatMap { $0 }.contains { $0>=3.0 } ||
-                (p.microSigma>0.05 && p.microBlur>0.4 && p.microBlur>=3.0)
-            do {
-                try OriginalMetalGrain.requireSupportedOriginalFilters(p)
-                precondition(!requiresIIR,"Silently accepted source IIR as FIR")
-                acceptedFIR+=1
-            } catch {
-                precondition(requiresIIR,"Rejected valid source FIR stock")
-                rejectedIIR+=1
-            }
+            try OriginalMetalGrain.requireSupportedOriginalFilters(p)
+            let expected = p.cloudSigmas.flatMap { $0 }.contains { $0 >= 3.0 } ||
+                (p.microSigma > 0.05 && p.microBlur > 0.4 &&
+                 p.microBlur >= 3.0)
+            precondition(
+                OriginalMetalGrain.needsWholeFrameIIR(p) == expected,
+                "Source FIR/IIR dispatch differs from Python threshold"
+            )
+            if expected { iirCases += 1 } else { firCases += 1 }
         }
-        precondition(acceptedFIR>0 && rejectedIIR>0,
-                     "Source filter dispatch test lacks FIR/IIR coverage")
-        print("PASS: source FIR accepted on \\(acceptedFIR) cases; unsupported IIR rejected on \\(rejectedIIR) cases, with no approximation.")
+        precondition(firCases > 0 && iirCases > 0,
+                     "Source filter dispatch test lacks FIR/IIR cases")
+        print("PASS: source FIR/whole-frame YVV dispatch: FIR=\\(firCases), IIR=\\(iirCases)")
 
         guard let device=MTLCreateSystemDefaultDevice() else {
             fatalError("Metal GPU unavailable; do not falsely report source validation passed")
