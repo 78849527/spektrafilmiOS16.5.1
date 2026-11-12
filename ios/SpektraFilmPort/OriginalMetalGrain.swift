@@ -327,7 +327,10 @@ enum OriginalMetalGrain {
                         )
                         context.render(
                             source, to: texture, commandBuffer: command,
-                            bounds: rect, colorSpace: nil
+                            bounds: rect,
+                            colorSpace: CGColorSpace(
+                                name: CGColorSpace.linearSRGB
+                            )!
                         )
                         return texture
                     }
