@@ -19,19 +19,17 @@ struct FloatingEditorWorkspace: View {
     let onRefresh: () -> Void
 
     @State private var originalHeld = false
-    @State private var controlsVisible = true
+    // Initialize only the photo and toolbar on iOS 16.5.1.
+    // The two heavy UIKit picker docks are mounted only after opt-in.
+    @State private var controlsVisible = false
     @State private var wheelsCollapsed = false
     @State private var adjustmentCollapsed = false
     @State private var comparisonEnabled = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
-    @State private var persistedZoom: CGFloat = 1.0
-    @GestureState private var liveZoom: CGFloat = 1.0
 
     @State private var wheelOffset = CGSize.zero
     @State private var adjustOffset = CGSize.zero
-    @GestureState private var wheelDragging = CGSize.zero
-    @GestureState private var adjustDragging = CGSize.zero
 
     private var films: [MeasuredStock] {
         SpectralPhysics.supportedFilmIDs.compactMap { id in
@@ -71,27 +69,25 @@ struct FloatingEditorWorkspace: View {
                     .padding(.top, 7)
             }
             .overlay(alignment: .bottomLeading) {
-                if controlsVisible {
+                if controlsVisible && model.hasPhoto {
                     wheelDock(width: wheelWidth)
                         .offset(
-                            x: wheelOffset.width + wheelDragging.width,
-                            y: wheelOffset.height + wheelDragging.height
+                            x: wheelOffset.width,
+                            y: wheelOffset.height
                         )
                         .padding(.leading, 8)
                         .padding(.bottom, 10)
-                        .transition(.opacity)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if controlsVisible {
+                if controlsVisible && model.hasPhoto {
                     adjustmentDock(width: adjustWidth, maxHeight: available.height * 0.43)
                         .offset(
-                            x: adjustOffset.width + adjustDragging.width,
-                            y: adjustOffset.height + adjustDragging.height
+                            x: adjustOffset.width,
+                            y: adjustOffset.height
                         )
                         .padding(.trailing, 8)
                         .padding(.bottom, 10)
-                        .transition(.opacity)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -103,12 +99,8 @@ struct FloatingEditorWorkspace: View {
                 }
             }
             .background(Color.black.ignoresSafeArea())
-            .animation(.easeOut(duration: 0.18), value: controlsVisible)
-            .onChange(of: model.hasPhoto) { hasPhoto in
-                if !hasPhoto { originalHeld = false; comparisonEnabled = false }
-                photoScale = 1
-                persistedZoom = 1
-            }
+            // Avoid reentrant @State changes from derived model.hasPhoto
+            // inside AttributeGraph view updates (v1.0 startup regression).
         }
     }
 
@@ -119,7 +111,7 @@ struct FloatingEditorWorkspace: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: size.width, height: size.height)
-                    .scaleEffect(photoScale * liveZoom)
+                    .scaleEffect(photoScale)
             } else {
                 VStack(spacing: 11) {
                     Image(systemName: "photo.on.rectangle.angled")
@@ -145,7 +137,7 @@ struct FloatingEditorWorkspace: View {
                     size: size
                 )
                 if model.hasPhoto && controlsVisible {
-                    Text(originalHeld ? "原图" : "按住照片查看原图 · 双击放大")
+                    Text(originalHeld ? "原图" : "按住看原图 · 双击放大")
                         .font(.caption2)
                         .foregroundColor(.white)
                         .padding(.horizontal, 9)
@@ -160,19 +152,8 @@ struct FloatingEditorWorkspace: View {
                 let next = photoScale > 1 ? CGFloat(1) : CGFloat(2)
                 withAnimation(.easeInOut(duration: 0.2)) {
                     photoScale = next
-                    persistedZoom = next
                 }
             }
-            .simultaneousGesture(
-                MagnificationGesture()
-                    .updating($liveZoom) { value, state, _ in
-                        state = value
-                    }
-                    .onEnded { value in
-                        photoScale = min(4, max(1, photoScale * value))
-                        persistedZoom = photoScale
-                    }
-            )
             .overlay {
                 if model.hasPhoto {
                     StableImageHoldRecognizer(isHolding: $originalHeld)
@@ -244,7 +225,7 @@ struct FloatingEditorWorkspace: View {
             .disabled(!model.hasPhoto)
 
             toolButton(controlsVisible ? "eye" : "eye.slash",
-                       name: controlsVisible ? "隐藏所有控件" : "显示全部控件",
+                       name: controlsVisible ? "隐藏全部控件" : "显示双拨轮和调整",
                        action: { controlsVisible.toggle() })
         }
         .font(.system(size: 17, weight: .medium))
@@ -252,7 +233,8 @@ struct FloatingEditorWorkspace: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .frame(height: 46)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+         .background(Color(uiColor: .secondarySystemBackground).opacity(0.88),
+                    in: RoundedRectangle(cornerRadius: 15))
     }
 
     private func toolButton(_ symbol: String, name: String,
@@ -273,7 +255,8 @@ struct FloatingEditorWorkspace: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+             .background(Color(uiColor: .secondarySystemBackground).opacity(0.9),
+                    in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func wheelDock(width: CGFloat) -> some View {
@@ -299,9 +282,6 @@ struct FloatingEditorWorkspace: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 8)
-                    .updating($wheelDragging) { value, state, _ in
-                        state = value.translation
-                    }
                     .onEnded { gesture in
                         wheelOffset = clampedOffset(
                             previous: wheelOffset, translation: gesture.translation,
@@ -363,7 +343,8 @@ struct FloatingEditorWorkspace: View {
         }
         .frame(width: width)
         .foregroundColor(.primary)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+         .background(Color(uiColor: .secondarySystemBackground).opacity(0.88),
+                    in: RoundedRectangle(cornerRadius: 15))
         .overlay(RoundedRectangle(cornerRadius: 15)
             .stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
@@ -392,9 +373,6 @@ struct FloatingEditorWorkspace: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 8)
-                    .updating($adjustDragging) { value, state, _ in
-                        state = value.translation
-                    }
                     .onEnded { gesture in
                         adjustOffset = clampedOffset(
                             previous: adjustOffset, translation: gesture.translation,
@@ -416,7 +394,8 @@ struct FloatingEditorWorkspace: View {
         }
         .frame(width: width)
         .foregroundColor(.primary)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+         .background(Color(uiColor: .secondarySystemBackground).opacity(0.88),
+                    in: RoundedRectangle(cornerRadius: 15))
         .overlay(RoundedRectangle(cornerRadius: 15)
             .stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
