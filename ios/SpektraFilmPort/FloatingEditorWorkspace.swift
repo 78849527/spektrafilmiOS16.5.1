@@ -424,6 +424,36 @@ struct FloatingEditorWorkspace: View {
             }
 
             Divider()
+            Text("原版扫描实验")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+            Toggle("扫描光源 · ACES 色域", isOn: $model.originalScannerEnabled)
+                .font(.caption)
+                .disabled(!model.hasPhoto || model.busy)
+                .onChange(of: model.originalScannerEnabled) { _ in
+                    model.queueSpectralPreview()
+                }
+            if model.originalScannerEnabled {
+                Toggle("黑白场校准（端点估算）",
+                       isOn: $model.scannerBlackWhiteEnabled)
+                    .font(.caption2)
+                    .disabled(!model.hasPhoto || model.busy)
+                    .onChange(of: model.scannerBlackWhiteEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+            }
+            Toggle("扫描锐化 / 微眩光",
+                   isOn: $model.scannerFinishingEnabled)
+                .font(.caption)
+                .disabled(!model.hasPhoto)
+                .onChange(of: model.scannerFinishingEnabled) { _ in onRefresh() }
+            if model.scannerFinishingEnabled {
+                strengthControl("锐化强度",
+                                value: $model.scannerSharpenAmount,
+                                range: 0...1.5, suffix: "×")
+            }
+            Divider()
             Toggle("乳剂散射", isOn: $model.scatterEnabled)
                 .font(.caption)
                 .disabled(!model.hasPhoto)
