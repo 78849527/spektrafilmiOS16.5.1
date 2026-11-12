@@ -15,8 +15,8 @@ struct FloatingEditorWorkspace: View {
     let onOpenPhotoFile: () -> Void
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
-    let onExport: () -> Void
-    let onSaveToPhotos: () -> Void
+    let onExport: (ExportResolutionMode) -> Void
+    let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
 
     @State private var originalHeld = false
@@ -223,10 +223,37 @@ struct FloatingEditorWorkspace: View {
 
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
-            toolButton("square.and.arrow.down", name: "高清保存相册", action: onSaveToPhotos)
-                .disabled(!model.hasPhoto || model.busy)
-            toolButton("square.and.arrow.up", name: "高清分享／存储文件", action: onExport)
-                .disabled(!model.hasPhoto || model.busy)
+            // Keep both original buttons in place. Each opens a size menu:
+            // original unchanged, or explicitly chosen whole-frame safe.
+            // Do not silently shrink after a failed original-size render.
+            Menu {
+                Button("原始分辨率（不缩小）") {
+                    onSaveToPhotos(.original)
+                }
+                Button("安全分辨率（最高 300 万像素）") {
+                    onSaveToPhotos(.safe)
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.down")
+                    .frame(width: 33, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("保存相册：选择原始或安全分辨率")
+            .disabled(!model.hasPhoto || model.busy)
+            Menu {
+                Button("原始分辨率（不缩小）") {
+                    onExport(.original)
+                }
+                Button("安全分辨率（最高 300 万像素）") {
+                    onExport(.safe)
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .frame(width: 33, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("分享存储：选择原始或安全分辨率")
+            .disabled(!model.hasPhoto || model.busy)
 
             Spacer(minLength: 2)
 
