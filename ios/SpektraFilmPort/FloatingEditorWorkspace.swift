@@ -481,6 +481,36 @@ struct FloatingEditorWorkspace: View {
             }
             Divider()
             if !isReversal {
+                Toggle("原版光学放大机", isOn: $model.enlargerEnabled)
+                    .font(.caption)
+                    .disabled(!model.hasPhoto || model.busy)
+                    .onChange(of: model.enlargerEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.enlargerEnabled {
+                    Toggle("曝光中灰归一化", isOn: $model.enlargerNormalize)
+                        .font(.caption2)
+                        .disabled(!model.hasPhoto || model.busy)
+                        .onChange(of: model.enlargerNormalize) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    morphSlider("M 品红滤色 / CC偏移",
+                                value: $model.enlargerMShift, range: -50...50)
+                    morphSlider("Y 黄色滤色 / CC偏移",
+                                value: $model.enlargerYShift, range: -50...50)
+                    morphSlider("预闪光强度", value: $model.enlargerPreflash,
+                                range: 0...1)
+                    if model.enlargerPreflash > 0 {
+                        morphSlider("预闪光 M CC", value: $model.enlargerFlashMShift,
+                                    range: -50...50)
+                        morphSlider("预闪光 Y CC", value: $model.enlargerFlashYShift,
+                                    range: -50...50)
+                    }
+                    Text("原版 3400K/KG3 · CMY 滤色 · 印相前预闪光")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                Divider()
                 Toggle("相纸显影曲线 s023", isOn: $model.printMorphEnabled)
                     .font(.caption)
                     .disabled(!model.hasPhoto || model.busy)
