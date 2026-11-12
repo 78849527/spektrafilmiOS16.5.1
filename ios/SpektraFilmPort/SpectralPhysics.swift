@@ -133,6 +133,12 @@ struct SpectralPhysics {
     private let mediaWhiteXYZ: [Double]
     private let printReference: Double
     private let neutralOutputRGB: [Double]
+    private let useOriginalScanner: Bool
+    private let useReferenceBlackWhite: Bool
+    private let viewingStock: String
+    private let viewingNormalization: Double
+    private let scannedReferenceYBlack: Double
+    private let scannedReferenceYWhite: Double
 
     static var supportedFilmIDs: [String] { GeneratedSpectralData.filmIDs }
     static var supportedPaperIDs: [String] { GeneratedSpectralData.printMediumIDs }
@@ -141,7 +147,8 @@ struct SpectralPhysics {
         positiveFilmIDs.contains(id)
     }
 
-    init(filmID: String, paperID: String) throws {
+    init(filmID: String, paperID: String,
+         sourceScanner: Bool = false, scannerBlackWhite: Bool = false) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
@@ -155,6 +162,8 @@ struct SpectralPhysics {
         paper = originalPaper
         hanatos = originalHanatos
         isPositive = positive
+        useOriginalScanner = sourceScanner
+        useReferenceBlackWhite = scannerBlackWhite
 
         let basis = try Self.readOriginalFloat32(
             GeneratedOriginalOptics.mallettBasis, count: 81 * 3
@@ -163,6 +172,9 @@ struct SpectralPhysics {
         let viewingIlluminant = viewed.viewingIlluminant == "K75P"
             ? GeneratedOriginalOptics.k75p : GeneratedOriginalOptics.d50
         let viewing = try Self.readOriginalFloat32(viewingIlluminant, count: 81)
+        let stock = viewed.viewingIlluminant == "K75P" ? "K75P" : "D50"
+        viewingStock = stock
+        viewingNormalization = GeneratedScannerReference.xyzYNormalization[stock] ?? 1
         let cie = try Self.readOriginalFloat32(
             GeneratedOriginalOptics.cie1931, count: 81 * 3
         )
@@ -246,17 +258,43 @@ struct SpectralPhysics {
             midMedium, paper: viewed, weights: xyzWeights, mediaWhite: white
         )
         neutralOutputRGB = midLinear.map { max(1e-4, $0) }
+
+        // In the original ColorReferenceService, the white/black
+        // reference for printed negatives comes from printing calibrated
+        // black/white densities; this mobile variant currently estimates
+        // them from measured H-D endpoints and labels the UI accordingly.
+        let densityMax = (0..<3).map { ch -> Double in
+            let maximum = (0..<256).map { i in
+                Double(viewed.densityCurves[i*3+ch])
+            }.max() ?? 0
+            return max(0, maximum-viewed.minimumDensity[ch])
+        }
+        let y0 = Self.scanPhysicalXYZ(
+            densities: [0,0,0], paper: viewed, weights: xyzWeights,
+            normalization: viewingNormalization
+        )[1]
+        let y1 = Self.scanPhysicalXYZ(
+            densities: densityMax, paper: viewed, weights: xyzWeights,
+            normalization: viewingNormalization
+        )[1]
+        scannedReferenceYBlack = min(y0, y1)
+        scannedReferenceYWhite = max(y0, y1)
     }
 
     static func makeCubeData(filmID: String, paperID: String,
                              exposureEV: Double, paperEV: Double,
-                             size: Int = 17) throws -> Data {
+                             size: Int = 17,
+                             sourceScanner: Bool = false,
+                             scannerBlackWhite: Bool = false) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
             throw PhysicsError.invalid("无效的光谱模拟参数")
         }
-        let engine = try SpectralPhysics(filmID: filmID, paperID: paperID)
+        let engine = try SpectralPhysics(
+            filmID: filmID, paperID: paperID,
+            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite
+        )
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
         output.reserveCapacity(size * size * size * 4)
@@ -293,13 +331,17 @@ struct SpectralPhysics {
 
     static func makeDensityStageData(
         filmID: String, paperID: String,
-        exposureEV: Double, paperEV: Double, size: Int = 17
+        exposureEV: Double, paperEV: Double, size: Int = 17,
+        sourceScanner: Bool = false, scannerBlackWhite: Bool = false
     ) throws -> DensityStageData {
         guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
             throw PhysicsError.invalid("无效的胶片密度分段计算参数")
         }
-        let engine = try SpectralPhysics(filmID: filmID, paperID: paperID)
+        let engine = try SpectralPhysics(
+            filmID: filmID, paperID: paperID,
+            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite
+        )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
         let step = 1.0 / Double(size-1)
         var input = [Float]()
@@ -372,6 +414,27 @@ struct SpectralPhysics {
                 reference: printReference, printEV: paperEV
             )
             substrate = paper
+        }
+        if useOriginalScanner {
+            var xyz = Self.scanPhysicalXYZ(
+                densities: resultDensity, paper: substrate,
+                weights: scanWeights, normalization: viewingNormalization
+            )
+            if useReferenceBlackWhite {
+                xyz = OriginalScannerMath.correctBlackWhiteXYZ(
+                    xyz, yBlack: scannedReferenceYBlack,
+                    yWhite: scannedReferenceYWhite
+                )
+            }
+            let linear = OriginalScannerMath.linearSRGB(
+                xyz: xyz, viewing: viewingStock
+            )
+            // Original source-selectable ACES RGC compression; the
+            // full source default CAM16-UCS table is not yet integrated.
+            let compressed = OriginalScannerMath.compressACESRGC(linear)
+            return compressed.map {
+                OriginalScannerMath.encodeSRGB(Self.clamp($0))
+            }
         }
         let linOutput = Self.scanLinear(
             resultDensity, paper: substrate,
@@ -463,6 +526,28 @@ struct SpectralPhysics {
                     printEV * 0.301029995664, channel: c
             )
         }
+    }
+
+    /// Source _return_callable_cmy_to_log_xyz exact spectral sum:
+    /// sum_wl(viewing * CIE1931 * 10^(-film dye density)) /
+    /// sum_wl(viewing * CIE1931 Ybar), before output color transforms.
+    private static func scanPhysicalXYZ(
+        densities: [Double], paper: Profile, weights: [[Double]],
+        normalization: Double
+    ) -> [Double] {
+        var xyz = [0.0, 0.0, 0.0]
+        for wl in 0..<81 {
+            var density = paper.base(wl)
+            for channel in 0..<3 {
+                density += paper.dyeAbsorbance(wl,channel)*densities[channel]
+            }
+            let transmitted = pow(10.0,-density)
+            for channel in 0..<3 {
+                xyz[channel] += transmitted*weights[wl][channel]
+            }
+        }
+        let safe = max(1e-12,normalization)
+        return xyz.map { max(0,$0/safe) }
     }
 
     private static func scanLinear(_ densities: [Double], paper: Profile,
