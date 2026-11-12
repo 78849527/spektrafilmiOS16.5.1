@@ -106,8 +106,9 @@ struct DiscreteGrainValidation {
         )-layerMinimum
         precondition(abs(expectedMean-sourceDensity) < 1e-10,
                      "Source Poisson-thinning marginal mean incorrect")
-        let expectedVariance=(rawMaximum+layerMinimum)*
-            (rawMaximum+layerMinimum)*p*saturation/n
+        let expandedMaximum = rawMaximum + layerMinimum
+        let expectedVariance = expandedMaximum * expandedMaximum *
+            p * saturation / n
         let varianceFromThinning=pow(
             (rawMaximum+layerMinimum)*saturation/n,2
         )*lambda
