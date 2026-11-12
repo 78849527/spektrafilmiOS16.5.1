@@ -511,6 +511,16 @@ struct FloatingEditorWorkspace: View {
 
     private var adjustmentControls: some View {
         VStack(alignment: .leading, spacing: 11) {
+            resetToggle("Hanatos 原版 Float64", value: $model.hanatosOriginalPrecisionEnabled,
+                        enabled: model.hasPhoto && !model.busy,
+                        resetTo: true)
+                .onChange(of: model.hanatosOriginalPrecisionEnabled) { _ in
+                    model.queueSpectralPreview()
+                }
+            Text(model.hanatosOriginalPrecisionEnabled
+                 ? "原版双精度光谱响应 · 未近似存储"
+                 : "移动快速 Float16 光谱响应 · 已量化")
+                .font(.caption2).foregroundColor(.secondary)
             exposureControl("胶片曝光", value: $model.filmExposureEV, enabled: model.hasPhoto,
                             onCommit: { model.queueSpectralPreview() })
             exposureControl(isReversal ? "反转片无需印相" : "相纸曝光",
