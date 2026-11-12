@@ -18,12 +18,18 @@ struct DensityGrainStage {
     let fromDensity: Data
     let cubeDimension: Int
     let maxDensity: [Double]    // normalized 0-1 cube channel -> optical D
+    // v1.6 source measured 256×3×3 film H-D layers, cube per sublayer.
+    var sublayerCubes: [Data] = []
+    var sublayerRawMaxima: [Double] = []
 }
 
 struct DensityGrainSettings {
     let stage: DensityGrainStage
     var amount: Double = 1.0
     var seed: Double = 8888.0
+    // Opt-in. Original v1.5 Poisson-binomial moment renderer remains
+    // identical unless the user explicitly selects measured sublayers.
+    var measuredSublayersEnabled = false
 }
 
 enum DensityGrain {
@@ -89,7 +95,6 @@ enum DensityGrain {
 
     static func apply(to source: CIImage,
                       settings: DensityGrainSettings) -> CIImage? {
-        guard let kernel = densityParticleKernel else { return nil }
         let stage = settings.stage
         guard stage.maxDensity.count == 3, stage.maxDensity.allSatisfy({
             $0.isFinite && $0 > 0
@@ -105,15 +110,8 @@ enum DensityGrain {
         // This keeps approximately the same material grain scale across
         // preview and JPEG export dimensions.
         let pixelUM = 36_000.0 / max(source.extent.width, source.extent.height, 1)
-        guard let scattered = kernel.apply(
-            extent: d.extent,
-            arguments: [
-                d,
-                Float(stage.maxDensity[0]), Float(stage.maxDensity[1]),
-                Float(stage.maxDensity[2]),
-                Float(pixelUM), Float(min(3,max(0,settings.amount))),
-                Float(settings.seed)
-            ]
+        guard let scattered = perturbDensityImage(
+            d, settings: settings, pixelUM: pixelUM
         ) else { return nil }
 
         let paper = CIFilter.colorCube()
@@ -121,6 +119,38 @@ enum DensityGrain {
         paper.cubeDimension = Float(stage.cubeDimension)
         paper.cubeData = stage.fromDensity
         return paper.outputImage?.cropped(to: source.extent)
+    }
+
+    /// Shared emulsion-density stage used by both v1.5 spatial DIR and
+    /// the v1.2 standard density->paper path. This keeps full-res exports
+    /// identical to previews apart from their physical pixel scale.
+    static func perturbDensityImage(
+        _ normalizedDensity: CIImage,
+        settings: DensityGrainSettings,
+        pixelUM: Double
+    ) -> CIImage? {
+        let stage = settings.stage
+        if settings.measuredSublayersEnabled {
+            // Fail instead of silently using post-scan RGB or pretending
+            // the old single-layer grain is the original sublayer model.
+            return OriginalSublayerGrain.perturb(
+                normalizedDensity,
+                sublayerCubes: stage.sublayerCubes,
+                rawLayerMaxima: stage.sublayerRawMaxima,
+                totalRanges: stage.maxDensity,
+                cubeDimension: stage.cubeDimension,
+                pixelUM: pixelUM,
+                amount: settings.amount,
+                seed: settings.seed
+            )
+        }
+        return perturbDensityImage(
+            normalizedDensity,
+            maxDensity: stage.maxDensity,
+            pixelUM: pixelUM,
+            amount: settings.amount,
+            seed: settings.seed
+        )
     }
 
     /// For independent native statistical tests only; zero-amount output
