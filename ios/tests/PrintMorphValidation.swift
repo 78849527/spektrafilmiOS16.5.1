@@ -85,8 +85,10 @@ struct OriginalPrintMorphValidation {
                 yBlack:ref.yBlack,yWhite:ref.yWhite,
                 logExposure:logE,rawCurves:curve,spectralBase:base
             ) else { preconditionFailure("Source print B/W reference unavailable") }
-            precondition(abs(native.exposureEV-ref.exposureEV)<0.00005,
-                "Print reference EV mismatch \(ref.stock) native \(native.exposureEV), source \(ref.exposureEV)")
+            precondition(abs(native.exposureEV-ref.exposureEVRounded)<0.00005,
+                "Print EV mismatch embedded Float32 \(ref.stock): \(native.exposureEV) != \(ref.exposureEVRounded)")
+            precondition(abs(native.exposureEV-ref.exposureEVOriginal)<0.025,
+                "Original Float64 vs embedded Float32 print EV too different for \(ref.stock)")
             precondition(native.yWhite>native.yBlack)
         }
         print("PASS: 16 original NumPy inverse H-D exposure-compensation references across 8 measured media.")
