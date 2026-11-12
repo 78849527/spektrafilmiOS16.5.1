@@ -435,6 +435,18 @@ struct FloatingEditorWorkspace: View {
                     model.queueSpectralPreview()
                 }
             if model.originalScannerEnabled {
+                Toggle("原版默认 CAM16-UCS",
+                       isOn: $model.scannerCAM16Enabled)
+                    .font(.caption2)
+                    .disabled(!model.hasPhoto || model.busy)
+                    .onChange(of: model.scannerCAM16Enabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                Text(model.scannerCAM16Enabled
+                     ? "默认色域 · CAM16 查表插值"
+                     : "可选色域 · ACES RGC")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
                 Toggle("黑白场校准（端点估算）",
                        isOn: $model.scannerBlackWhiteEnabled)
                     .font(.caption2)
