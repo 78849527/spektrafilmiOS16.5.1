@@ -14,36 +14,6 @@ final class PhotoEditorModel: ObservableObject {
     @Published var busy = false
     @Published var photoDimensions = ""
 
-    // Selection stores original upstream identifiers; it does NOT render a
-    // simulated look until a real native spectral engine is connected.
-    @Published var selectedFilmID = "kodak_portra_400"
-    @Published var selectedPaperID = "kodak_portra_endura"
-
-    // Do not parse bundled JSON during app startup: on iOS 16 the editor
-    // must open even if the new stock catalog or a signed resource is damaged.
-    init() {
-        selectedFilmID = UserDefaults.standard.string(forKey: "selectedFilmStock")
-            ?? "kodak_portra_400"
-        selectedPaperID = UserDefaults.standard.string(forKey: "selectedPaperStock")
-            ?? "kodak_portra_endura"
-    }
-
-    func filmChanged() {
-        let catalog = MeasuredStockCatalog.shared
-        UserDefaults.standard.set(selectedFilmID, forKey: "selectedFilmStock")
-        if let preferred = catalog.stock(selectedFilmID)?.targetPrint,
-           catalog.papers.contains(where: { $0.id == preferred }) {
-            selectedPaperID = preferred
-            UserDefaults.standard.set(preferred, forKey: "selectedPaperStock")
-        }
-        status = "胶片配置已选择：\(catalog.stock(selectedFilmID)?.name ?? selectedFilmID)。目前尚未连接原版物理计算，照片效果仍由外部 LUT 控制。"
-    }
-
-    func paperChanged() {
-        UserDefaults.standard.set(selectedPaperID, forKey: "selectedPaperStock")
-        status = "相纸配置已选择：\(MeasuredStockCatalog.shared.stock(selectedPaperID)?.name ?? selectedPaperID)。原版物理印相计算待接入。"
-    }
-
     private var source: CIImage?
     var hasPhoto: Bool { source != nil }
 
@@ -132,14 +102,12 @@ struct ContentView: View {
     private enum ImportSheet: Identifiable {
         case photo
         case lut
-        case stocks
         case share(URL)
 
         var id: String {
             switch self {
             case .photo: return "photo-file"
             case .lut: return "lut-file"
-            case .stocks: return "stock-catalog"
             case .share(let url): return "share-" + url.absoluteString
             }
         }
@@ -184,23 +152,6 @@ struct ContentView: View {
                             Label("文件图片", systemImage: "folder")
                         }
                         .buttonStyle(.bordered)
-                    }
-
-                    Divider()
-
-                    // Keep this main editor identical to the stable v0.1
-                    // startup path. Open the measured-profile view explicitly.
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("原版胶片与相纸").font(.headline)
-                        Button {
-                            activeSheet = .stocks
-                        } label: {
-                            Label("打开胶片 / 相纸配置", systemImage: "film.stack")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
-                        Text("胶片配置在独立页面读取；不会影响照片导入和启动。选择配置尚不等于应用物理模拟。")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
 
                     Divider()
@@ -252,7 +203,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.2：已内置原版胶片／相纸的实测数据和选择器，但未连接物理渲染。照片效果仍仅应用外部 3D .cube LUT（要求 sRGB 输入输出、0–1 Domain）。RAW、物理颗粒与光晕待移植。超过 1250 万像素会缩小导出。")
+                    Text("阶段 1：只应用标准 3D .cube LUT。要求 sRGB 输入／输出、0–1 Domain。不是完整的光谱胶片模拟；RAW、物理颗粒、光晕待移植。导出超过 1250 万像素会等比缩小。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
@@ -280,8 +231,6 @@ struct ContentView: View {
                     }, onCancel: {
                         activeSheet = nil
                     })
-                case .stocks:
-                    StockCatalogSheet(model: model)
                 case .share(let url):
                     ActivitySheet(items: [url])
                 }
@@ -360,97 +309,6 @@ private struct FilesDocumentPicker: UIViewControllerRepresentable {
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             onCancel()
-        }
-    }
-}
-
-
-/// The catalog is opt-in and loaded only after the user opens this sheet.
-/// Avoid eager file reads in the editor's init/body, so corrupted or missing
-/// re-signed bundle resources cannot prevent the basic app from launching.
-private struct StockCatalogSheet: View {
-    @ObservedObject var model: PhotoEditorModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var catalog: MeasuredStockCatalog?
-    @State private var selectedCategory = 0
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if let catalog {
-                    if let error = catalog.error {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("配置读取失败").font(.headline)
-                            Text(error).font(.footnote).textSelection(.enabled)
-                            Text("照片导入与外部 LUT 功能仍可使用。")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding()
-                    } else {
-                        VStack(spacing: 0) {
-                            Picker("类型", selection: $selectedCategory) {
-                                Text("拍摄胶片").tag(0)
-                                Text("印相相纸").tag(1)
-                            }
-                            .pickerStyle(.segmented).padding()
-
-                            List {
-                                Section {
-                                    Text("已读取 \(catalog.filmingStocks.count) 款拍摄胶片和 \(catalog.papers.count) 款相纸。配置来自原版实测资料，尚未接入物理显影计算。")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                ForEach(selectedCategory == 0 ? catalog.filmingStocks : catalog.papers) { stock in
-                                    Button {
-                                        if selectedCategory == 0 {
-                                            model.selectedFilmID = stock.id
-                                            model.filmChanged()
-                                        } else {
-                                            model.selectedPaperID = stock.id
-                                            model.paperChanged()
-                                        }
-                                    } label: {
-                                        HStack(spacing: 10) {
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(stock.name)
-                                                    .foregroundStyle(.primary)
-                                                Text("\(stock.polarityLabel) · \(stock.wavelengthCount) 个光谱采样点")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                            Spacer()
-                                            if selectedCategory == 0 && model.selectedFilmID == stock.id ||
-                                               selectedCategory == 1 && model.selectedPaperID == stock.id {
-                                                Image(systemName: "checkmark.circle.fill")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            .listStyle(.plain)
-                        }
-                    }
-                } else {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("正在验证原版光谱配置…").font(.footnote)
-                    }
-                }
-            }
-            .navigationTitle("原版胶片与相纸")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
-                }
-            }
-            // Loading here instead of during App/PhotoEditorModel initialization
-            // is the critical launch-isolation change of v0.2.1.
-            .task {
-                if catalog == nil {
-                    catalog = MeasuredStockCatalog()
-                }
-            }
         }
     }
 }

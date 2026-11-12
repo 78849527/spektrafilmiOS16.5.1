@@ -1,7 +1,7 @@
 name: iOS 16 — unsigned IPA
 on:
   push:
-    branches: [ios16]
+    branches: ['diagnostic/ios16-startup-isolation']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -47,7 +47,7 @@ jobs:
           test -f "$APP/SpektraFilmPort"
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16(\.0)?$'
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -q '^com.twogou.spektrafilmport$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -q '^0.2.1$'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -q '^0.2.2$'
           test -s "$APP/Resources/profiles/index.json"
           test -s "$APP/Resources/profiles/kodak_portra_400.json"
           test -s "$APP/Resources/profiles/kodak_portra_endura.json"
@@ -61,31 +61,31 @@ jobs:
           assert any(p["id"] == "kodak_portra_endura" for p in index["profiles"])
           print("App bundle original spectral data verified")
           PY
-      - name: Package unsigned v0.2.1 IPA
+      - name: Package unsigned v0.2.2 IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-ios16-v0.2.1-unsigned.ipa Payload
-      - name: Upload unsigned v0.2.1 IPA
+          zip -q -r ../SpektraFilmPort-ios16-v0.2.2-startup-test-unsigned.ipa Payload
+      - name: Upload unsigned v0.2.2 IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-ios16-v0.2.1-unsigned
-          path: ios/build/SpektraFilmPort-ios16-v0.2.1-unsigned.ipa
+          name: SpektraFilmPort-ios16-v0.2.2-startup-test-unsigned
+          path: ios/build/SpektraFilmPort-ios16-v0.2.2-startup-test-unsigned.ipa
           if-no-files-found: error
-      - name: Publish v0.2.1 prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16'
+      - name: Publish v0.2.2 prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/diagnostic/ios16-startup-isolation'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ASSET=ios/build/SpektraFilmPort-ios16-v0.2.1-unsigned.ipa
-          TAG=ios16-v0.2.1
+          ASSET=ios/build/SpektraFilmPort-ios16-v0.2.2-startup-test-unsigned.ipa
+          TAG=ios16-v0.2.2-startup-test
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm Port iOS 16 v0.2.1 — measured profiles (unsigned)" \
+              --title "SpektraFilm Port iOS 16 v0.2.2 — startup isolation test (unsigned)" \
               --notes "Unofficial iOS 16.5.1 test build. Measured profiles and opt-in native stock selection sheet with launch-isolated catalog parsing. Existing .cube import and JPEG export retained. Stock selection is metadata only, not physical rendering. Unsigned IPA needs signing." \
               --prerelease
           fi
