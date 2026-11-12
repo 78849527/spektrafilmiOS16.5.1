@@ -334,6 +334,17 @@ enum OriginalMetalGrain {
         }) else {
             throw Failure.invalid("原版 Metal 高斯滤波：无效或超出边界的 sigma")
         }
+        // Upstream fast_gaussian_filter dispatches sigma >= 3.0 to a
+        // Young–van Vliet recursive IIR, not the reflect FIR kernel below.
+        // That IIR has non-local support: substituting FIR or running IIR
+        // inside a bounded tile would NOT reproduce the original image.
+        // Explicitly fail until full-frame, source-ordered IIR and its
+        // boundary/float parity have passed native GPU reference tests.
+        guard sigmas.allSatisfy({ $0 < 3.0 }) else {
+            throw Failure.invalid(
+                "原版 Metal 颗粒：sigma ≥ 3 需要上游 Young–van Vliet IIR 全图滤波；当前尚未通过数值对照，禁止以 FIR 近似执行"
+            )
+        }
         if sigmas.allSatisfy({ $0 == 0 }) { return image }
         let scratch = try makeTexture(
             device, width: image.width, height: image.height
