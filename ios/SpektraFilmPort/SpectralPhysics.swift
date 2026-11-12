@@ -28,6 +28,7 @@ struct SpectralPhysics {
         let baseDensity: [Float]          // 81
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
+        let densityCurvesLayers: [Float]  // 256 x 3 layers x 3 CMY
         let minimumDensity: [Double]    // upstream nanmin per colour channel
         let dirCorrectedCurves: [Float]  // upstream pre-DIR normalized H-D
         let dirMatrix: [Double]          // donor (row) -> receiver (column)
@@ -46,6 +47,8 @@ struct SpectralPhysics {
             baseDensity = try Self.decode(record.baseDensity, count: 81)
             logExposure = try Self.decode(record.logExposure, count: 256)
             densityCurves = try Self.decode(record.densityCurves, count: 768)
+            densityCurvesLayers = record.densityCurvesLayers.isEmpty
+                ? [] : try Self.decode(record.densityCurvesLayers, count: 2304)
             if let dir = GeneratedDIRData.records[id] {
                 dirCorrectedCurves = try Self.decode(dir.correctedCurves, count: 768)
                 dirMatrix = dir.donorReceiverMatrix
@@ -110,6 +113,48 @@ struct SpectralPhysics {
             let y0 = Double(curves[index * 3 + channel])
             let y1 = Double(curves[(index + 1) * 3 + channel])
             return max(0, y0 + (y1 - y0) * weight - minDensity)
+        }
+
+        /// Original interp_density_cmy_layers(): invert each stock's
+        /// measured normalized total H-D characteristic and sample its
+        /// measured 3 separate sublayer densities at that same exposure.
+        /// Reversal stocks invert with -density / -curve so the lookup
+        /// direction is monotonically increasing (model/density_curves.py).
+        func layerDensity(total: Double, channel: Int, sublayer: Int) -> Double {
+            guard !densityCurvesLayers.isEmpty else { return 0 }
+            let sign = polarity == "positive" ? -1.0 : 1.0
+            let desired = total * sign
+            func domain(_ index: Int) -> Double {
+                (Double(densityCurves[index * 3 + channel]) -
+                 minimumDensity[channel]) * sign
+            }
+            func value(_ index: Int) -> Double {
+                Double(densityCurvesLayers[
+                    index * 9 + sublayer * 3 + channel
+                ])
+            }
+            if desired <= domain(0) { return max(0, value(0)) }
+            if desired >= domain(255) { return max(0, value(255)) }
+            var lo = 0
+            var hi = 255
+            while lo + 1 < hi {
+                let mid = (lo + hi) / 2
+                if domain(mid) <= desired { lo = mid }
+                else { hi = mid }
+            }
+            let delta = domain(hi) - domain(lo)
+            if delta <= 1e-12 { return max(0, value(hi)) }
+            let t = min(1, max(0, (desired-domain(lo))/delta))
+            return max(0, value(lo)+(value(hi)-value(lo))*t)
+        }
+
+        var sublayerMaxima: [Double] {
+            guard !densityCurvesLayers.isEmpty else { return [] }
+            return (0..<9).map { k in
+                (0..<256).reduce(0.0) { maximum, i in
+                    max(maximum, Double(densityCurvesLayers[i*9+k]))
+                }
+            }
         }
 
         func sensitivity(_ wavelengthIndex: Int, _ ch: Int) -> Double {
@@ -459,6 +504,8 @@ struct SpectralPhysics {
         let printCube: Data
         let ranges: [Double]       // normalize 3 film optical-density channels
         let size: Int
+        let sublayerCubes: [Data]    // each 3D cube: source total D -> one real sublayer
+        let sublayerRawMaxima: [Double] // 3 sublayers x CMY
     }
 
     static func makeDensityStageData(
@@ -486,8 +533,14 @@ struct SpectralPhysics {
         let step = 1.0 / Double(size-1)
         var input = [Float]()
         var printMap = [Float]()
+        var sublayerMaps = [[Float]](
+            repeating: [], count: 3
+        )
         input.reserveCapacity(size*size*size*4)
         printMap.reserveCapacity(size*size*size*4)
+        for sub in 0..<3 {
+            sublayerMaps[sub].reserveCapacity(size*size*size*4)
+        }
         for b in 0..<size {
             for g in 0..<size {
                 for r in 0..<size {
@@ -502,6 +555,25 @@ struct SpectralPhysics {
                     }
                     input.append(1.0)
                     let filmDensity = (0..<3).map { rgb[$0] * ranges[$0] }
+                    if !engine.film.densityCurvesLayers.isEmpty {
+                        for layer in 0..<3 {
+                            for channel in 0..<3 {
+                                let measured = engine.film.layerDensity(
+                                    total: filmDensity[channel],
+                                    channel: channel, sublayer: layer
+                                )
+                                // Normalize to per-layer raw optical maxima.
+                                let peak = max(
+                                    1e-5,
+                                    engine.film.sublayerMaxima[layer*3+channel]
+                                )
+                                sublayerMaps[layer].append(
+                                    Float(clamp(measured/peak))
+                                )
+                            }
+                            sublayerMaps[layer].append(1)
+                        }
+                    }
                     let finalRGB = engine.scanFilmDensity(filmDensity, paperEV: paperEV)
                     printMap.append(Float(finalRGB[0]))
                     printMap.append(Float(finalRGB[1]))
@@ -516,8 +588,17 @@ struct SpectralPhysics {
         let cubeB = printMap.withUnsafeBufferPointer {
             Data(bytes: $0.baseAddress!, count: $0.count * MemoryLayout<Float>.size)
         }
+        let layerCubes = sublayerMaps.compactMap { values -> Data? in
+            guard values.count == size*size*size*4 else { return nil }
+            return values.withUnsafeBufferPointer { pointer in
+                Data(bytes: pointer.baseAddress!,
+                     count: pointer.count * MemoryLayout<Float>.size)
+            }
+        }
         return DensityStageData(
-            inputCube: cubeA, printCube: cubeB, ranges: ranges, size: size
+            inputCube: cubeA, printCube: cubeB, ranges: ranges, size: size,
+            sublayerCubes: layerCubes,
+            sublayerRawMaxima: engine.film.sublayerMaxima
         )
     }
 
