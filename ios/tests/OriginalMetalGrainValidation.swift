@@ -111,6 +111,48 @@ struct OriginalMetalGrainValidation {
                      "Metal texture/constant-buffer binding not faithful")
         print("PASS: native Metal texture upload, shader binding and parameters.")
 
+        // Probe the identical uploaded texture and packed Swift/Metal
+        // BlurParameters before judging the Gaussian convolution.
+        guard let probeFunc = library.makeFunction(name: "originalFilmDebugProbe")
+        else { fatalError("Missing test-only GPU shader probe") }
+        let probePipe = try device.makeComputePipelineState(function:probeFunc)
+        let probeOut = make()
+        let probeCommand = device.makeCommandQueue()!.makeCommandBuffer()!
+        let probeEncoder = probeCommand.makeComputeCommandEncoder()!
+        probeEncoder.setComputePipelineState(probePipe)
+        probeEncoder.setTexture(a, index:0)
+        probeEncoder.setTexture(probeOut, index:1)
+        var probeArgs = OriginalMetalGrain.BlurParameters(
+            sigma:SIMD4<Float>(0.65,0.65,0.65,0),
+            width:UInt32(w),height:UInt32(h),axis:0
+        )
+        probeEncoder.setBytes(
+            &probeArgs,length:MemoryLayout<OriginalMetalGrain.BlurParameters>.stride,
+            index:0
+        )
+        probeEncoder.dispatchThreads(
+            MTLSize(width:w,height:h,depth:1),
+            threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1)
+        )
+        probeEncoder.endEncoding()
+        probeCommand.commit()
+        probeCommand.waitUntilCompleted()
+        precondition(probeCommand.status == .completed,
+                     "Metal debug texture probe execution failed")
+        var probeValues = [Float](repeating:0,count:pixels.count)
+        probeValues.withUnsafeMutableBytes { raw in
+            probeOut.getBytes(raw.baseAddress!,bytesPerRow:w*4*4,
+                from:MTLRegionMake2D(0,0,w,h),mipmapLevel:0)
+        }
+        print("METAL PROBE input=",uploaded[0], " output r=",probeValues[0],
+              " shader sigma=",probeValues[1],
+              " shader width=",probeValues[2],
+              " y=3 rgb=",Array(probeValues[(3*w)*4..<(3*w)*4+3]))
+        precondition(abs(probeValues[0]-1) < 0.00001 &&
+                     abs(probeValues[1]-0.65) < 0.00001 &&
+                     abs(probeValues[2]-Float(w)) < 0.00001 &&
+                     abs(probeValues[(3*w)*4]-1) < 0.00001,
+                     "Metal shader texture binding or Swift struct ABI does not match")
         let expected=GeneratedOriginalMetalGrainReference.reflect065
         for (s,reference) in [
             (0.65,expected),
