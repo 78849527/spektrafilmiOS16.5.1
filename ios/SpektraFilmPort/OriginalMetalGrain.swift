@@ -412,7 +412,7 @@ enum OriginalMetalGrain {
         return texture
     }
 
-    private static func execute<P>(
+    static func execute<P>(
         command: MTLCommandBuffer, pipeline: MTLComputePipelineState,
         textures: [MTLTexture], params: inout P,
         width: Int, height: Int,
@@ -506,7 +506,7 @@ enum OriginalMetalGrain {
     /// Whole-frame blur in source order, with per-channel FIR/IIR dispatch.
     /// IIR mutates the density texture in place; FIR uses one temporary
     /// texture with two ordered passes. A sigma>=3 must NEVER take FIR.
-    private static func blurWholeFrameInPlace(
+    static func blurWholeFrameInPlace(
         _ image: MTLTexture, scratch: MTLTexture, sigmas: [Double],
         command: MTLCommandBuffer, device: MTLDevice,
         library: MTLLibrary, gaussian: MTLComputePipelineState
