@@ -565,5 +565,17 @@ struct SpectralValidation {
                      "SOURCE FILM H-D/DIR→PRINT RGB: >0.002 encoded deviation")
         precondition(filmEvidence.stageOutsideTolerance == 0,
                      "SOURCE FILM H-D/DIR→PRINT: >0.002 intermediate deviation")
+        // Full source H2025 -> camera EV -> measured negative H-D / DIR ->
+        // exact s023 paper CDF + XYZ / ACES / sRGB. Tests both storage
+        // precision modes against the SAME upstream source Float64 image
+        // values. Only original Float64 is source-certification gated;
+        // mobile Float16 approximation errors remain visible separately.
+        let cameraEvidence=try OriginalCameraFilmPrintParity.evaluate()
+        print(cameraEvidence.text)
+        precondition(cameraEvidence.channels==72)
+        precondition(cameraEvidence.preciseStageExceed==0,
+                     "SOURCE H2025 CAMERA->PRINT: >0.002 exact-mode stage")
+        precondition(cameraEvidence.preciseOutputExceed==0,
+                     "SOURCE H2025 CAMERA->PRINT: >0.002 exact-mode RGB")
     }
 }
