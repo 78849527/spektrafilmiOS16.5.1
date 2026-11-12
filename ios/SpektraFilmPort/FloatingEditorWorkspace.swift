@@ -423,6 +423,10 @@ struct FloatingEditorWorkspace: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("效果强度").font(.caption)
+                        .onTapGesture(count: 2) {
+                            model.strength = 1.0
+                            onRefresh()
+                        }
                     Spacer(minLength: 0)
                     Text("\(Int(model.strength * 100))%")
                         .font(.caption2).monospacedDigit()
@@ -435,7 +439,7 @@ struct FloatingEditorWorkspace: View {
             }
 
             Divider()
-            Text("原版扫描实验")
+            Text("原版扫描实验 · 双击左侧参数名称复原")
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
@@ -479,7 +483,7 @@ struct FloatingEditorWorkspace: View {
             if model.scannerFinishingEnabled {
                 strengthControl("锐化强度",
                                 value: $model.scannerSharpenAmount,
-                                range: 0...1.5, suffix: "×")
+                                range: 0...1.5, suffix: "×", resetTo: 0.7)
             }
             Divider()
             if !isReversal {
@@ -523,11 +527,11 @@ struct FloatingEditorWorkspace: View {
                     }
                 if model.printMorphEnabled {
                     morphSlider("总体伽马", value: $model.printGamma,
-                                range: 0.65...1.45)
+                                range: 0.65...1.45, resetTo: 1.0)
                     morphSlider("快乳剂层", value: $model.printFastGamma,
-                                range: 0.7...1.4)
+                                range: 0.7...1.4, resetTo: 1.0)
                     morphSlider("慢乳剂层", value: $model.printSlowGamma,
-                                range: 0.7...1.4)
+                                range: 0.7...1.4, resetTo: 1.0)
                     morphSlider("显影剂疲劳", value: $model.printDeveloperExhaustion,
                                 range: 0...1)
                     Text("原版三层 CDF，默认不改变已有曲线")
@@ -543,7 +547,7 @@ struct FloatingEditorWorkspace: View {
                 .onChange(of: model.halationEnabled) { _ in onRefresh() }
             if model.halationEnabled {
                 strengthControl("光晕倍率", value: $model.halationAmount,
-                                range: 0...3, suffix: "×")
+                                range: 0...3, suffix: "×", resetTo: 1.0)
             }
             resetToggle("密度颗粒", value: $model.grainEnabled,
                         enabled: model.hasPhoto && !model.busy)
@@ -553,7 +557,7 @@ struct FloatingEditorWorkspace: View {
                 }
             if model.grainEnabled {
                 strengthControl("颗粒强度", value: $model.grainAmount,
-                                range: 0...2, suffix: "×")
+                                range: 0...2, suffix: "×", resetTo: 1.0)
             }
 
             Button {
@@ -601,6 +605,12 @@ struct FloatingEditorWorkspace: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title).font(.caption)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard enabled else { return }
+                        value.wrappedValue = 0
+                        onCommit()
+                    }
                 Spacer(minLength: 0)
                 Text(String(format: "%+.2f EV", value.wrappedValue))
                     .font(.caption2).monospacedDigit()
@@ -614,10 +624,17 @@ struct FloatingEditorWorkspace: View {
     }
 
     private func morphSlider(_ title: String, value: Binding<Double>,
-                             range: ClosedRange<Double>) -> some View {
+                             range: ClosedRange<Double>,
+                             resetTo: Double = 0) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title).font(.caption2)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard model.hasPhoto && !model.busy else { return }
+                        value.wrappedValue = resetTo
+                        model.queueSpectralPreview()
+                    }
                 Spacer(minLength: 0)
                 Text(String(format: "%.2f", value.wrappedValue))
                     .font(.caption2).monospacedDigit()
@@ -631,10 +648,17 @@ struct FloatingEditorWorkspace: View {
     }
 
     private func strengthControl(_ title: String, value: Binding<Double>,
-                                 range: ClosedRange<Double>, suffix: String) -> some View {
+                                 range: ClosedRange<Double>, suffix: String,
+                                 resetTo: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title).font(.caption)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard model.hasPhoto else { return }
+                        value.wrappedValue = resetTo
+                        onRefresh()
+                    }
                 Spacer(minLength: 0)
                 Text(String(format: "%.2f", value.wrappedValue) + suffix)
                     .font(.caption2).monospacedDigit()
