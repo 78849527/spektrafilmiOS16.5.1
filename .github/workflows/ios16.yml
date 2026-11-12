@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.12 source-scanned RGB numerical evidence
+name: iOS 16.5.1 — v1.8.13 source-scanned RGB numerical evidence
 
 on:
   push:
-    branches: ['ios16.5.1/print-hd-chain-v1.8.12']
+    branches: ['ios16.5.1/ondevice-negative-print-diagnostics-v1.8.13']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.12-contiguous-negative-print-hd-rgb.md'
+      - 'docs/v1.8.13-iphone-negative-print-diagnostic.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-print-hd-chain-v1.8.12-release
+  group: ios1651-ondevice-negative-print-v1.8.13-release
   cancel-in-progress: true
 
 jobs:
@@ -411,6 +411,16 @@ jobs:
           assert "sensitivitySampleValid[sample]" in printing
           assert "OriginalPrintScannerParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalNegativePrintChainParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
+          # Ensure the shipped iPhone diagnosis invokes identical source
+          # references, with explicit seven-stage fail and exception output.
+          assert "OriginalNegativePrintChainParity.evaluate()" in model
+          assert "evidence.channels == 54" in model
+          assert "evidence.stageOutsideTolerance == 0" in model
+          assert "evidence.outputOutsideTolerance == 0" in model
+          assert "附录【原版负片→相纸 H-D→RGB · 本机数值对照｜通过，不计入 8/8 认证】" in model
+          assert "附录【原版负片→相纸 H-D→RGB · 本机数值对照｜未通过】" in model
+          assert "附录【原版负片→相纸 H-D→RGB · 本机数值对照｜无法完成】" in model
+          assert "let stages = 8" in model
           assert "sourceHD.density(logE, channel:c)" in printing
           assert "OriginalPrintMorph.prepareSource" in printing
           assert "apply_print_curves_morph" in Path("ios/scripts/generate_source_negative_print_chain.py").read_text()
@@ -688,31 +698,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.12'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.13'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '37'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '38'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8.12 unsigned IPA
+      - name: Package v1.8.13 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.12-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.12 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.13-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.13 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.12-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.12-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.13-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.13-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/print-hd-chain-v1.8.12' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/ondevice-negative-print-diagnostics-v1.8.13' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.12-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.12-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.12-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/print-hd-chain-v1.8.12" --jq '.object.sha')
+          TAG=ios1651-v1.8.13-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.13-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.13-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/ondevice-negative-print-diagnostics-v1.8.13" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -720,23 +730,23 @@ jobs:
           cp "$SOURCE" "$ASSET"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
-            gh release edit "$TAG" --target "$GITHUB_SHA"
+            gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
-            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.12 - ORIGINAL PAPER CDF H-D CHAIN" \
-              --notes "EXPERIMENTAL UNSIGNED v1.8.12 / Build 37. The SOURCE print optical mode now uses original s023 absolute 3-layer CDF fitted 256-node H-D instead of measured density plus morph delta, preserving independent v1.8.11 dye/base/sensitivity NaN masks. 840 source print model probes and 18 contiguous Python Float64 negative CMY->enlarger optical raw->paper logE->CDF H-D->XYZ/ACES/display sRGB vectors added to existing positive/printing scanner and 8/8 diagnostic tests. The whole-image/RAW/film H-D/DIR/Numba random thread/default CAM16 and exact Float64 paths are NOT yet certified. Prior v1.8.11 A15 8/8 evidence does not certify v1.8.12. This is an experimental unsigned IPA requiring signing."
+            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.13 - ON-DEVICE NEGATIVE PRINT H-D REPORT" \
+              --notes "EXPERIMENTAL UNSIGNED v1.8.13 / Build 38. The SOURCE print optical mode now uses original s023 absolute 3-layer CDF fitted 256-node H-D instead of measured density plus morph delta, preserving independent v1.8.11 dye/base/sensitivity NaN masks. 840 source print model probes and 18 contiguous Python Float64 negative CMY->enlarger optical raw->paper logE->CDF H-D->XYZ/ACES/display sRGB vectors added to existing positive/printing scanner and 8/8 diagnostic tests. The whole-image/RAW/film H-D/DIR/Numba random thread/default CAM16 and exact Float64 paths are NOT yet certified. User A15 8/8 on v1.8.12 does not certify v1.8.13. New appendix exercises source negative optical CMY->paper fitted CDF H-D->RGB across 54 channels with seven stage metrics on the iPhone and independently shows pass/fail/error while leaving 8/8 count intact. This is an experimental unsigned IPA requiring signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.12 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/print-hd-chain-v1.8.12' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.13 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/ondevice-negative-print-diagnostics-v1.8.13' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.12-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.12-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.13-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.13-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/print-hd-chain-v1.8.12" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/ondevice-negative-print-diagnostics-v1.8.13" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -746,12 +756,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.12 — continuous source paper H-D RGB stage parity" \
-              --notes "v1.8.12 uses original s023 absolute paper H-D and adds 54-channel contiguous negative optical print/scan RGB stage regression and 840 s023 source CDF taps. Source certification remains conditional on GPU, full image, RNG and A15 evidence. Unsigned IPA needs signing."
+              --title "SpektraFilm iOS 16.5.1 v1.8.13 — on-device negative-print RGB seven-stage appendix" \
+              --notes "v1.8.13 embeds original Python 54-channel, seven-stage negative optical print source references into the native iPhone diagnostics as an appendix with explicit per-stage errors and no change to 8/8. Source certification remains conditional on GPU, full image, RNG and A15 evidence. Unsigned IPA needs signing."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.12 certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.13 certified release."
           exit 1
