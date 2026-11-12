@@ -819,6 +819,46 @@ struct SpectralPhysics {
         }
     }
 
+    /// Stage-level numerical probe for a source positive-film scan.
+    /// This runs the same native functions as scanFilmDensity and does not
+    /// change the production image-rendering path or enable approximation.
+    struct DirectPositiveScannerStages {
+        let xyz: [Double]
+        let linear: [Double]
+        let compressed: [Double]
+        let encoded: [Double]
+    }
+
+    func directPositiveScannerStages(
+        _ filmDensity: [Double]
+    ) throws -> DirectPositiveScannerStages {
+        guard isPositive, useOriginalScanner, !useReferenceBlackWhite,
+              !defaultCAM16Gamut, filmDensity.count == 3,
+              filmDensity.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid(
+                "原版 RGB 分段诊断仅支持正片直扫、关闭黑白校准、源 ACES RGC")
+        }
+        let xyz = Self.scanPhysicalXYZ(
+            densities: filmDensity, paper: film,
+            weights: scanWeights, normalization: viewingNormalization
+        )
+        let linear = OriginalScannerMath.linearSRGB(
+            xyz: xyz, viewing: viewingStock
+        )
+        let compressed = OriginalScannerMath.compressACESRGC(linear)
+        let encoded = compressed.map {
+            OriginalScannerMath.encodeSRGB(Self.clamp($0))
+        }
+        guard (xyz + linear + compressed + encoded)
+            .allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版扫描 RGB 分段诊断产生非有限数值")
+        }
+        return DirectPositiveScannerStages(
+            xyz: xyz, linear: linear, compressed: compressed,
+            encoded: encoded
+        )
+    }
+
     /// Diagnostic source references, independent of any image output.
     func originalPrintCalibration() -> (yBlack:Double,yWhite:Double,ev:Double)? {
         guard let b=correctedReferenceBlack,

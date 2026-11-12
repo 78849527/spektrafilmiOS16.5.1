@@ -124,7 +124,7 @@ def source_scan(profile, density):
         apply_cctf_decoding=False,apply_cctf_encoding=True
     )
     assert np.isfinite(encoded).all()
-    return linear[0],compressed[0],encoded[0]
+    return xyz[0],linear[0],compressed[0],encoded[0]
 
 def main():
     sources=[
@@ -152,7 +152,9 @@ def main():
         "    struct Case {",
         "        let stock: String",
         "        let density: [Double]",
+        "        let sourceXYZ: [Double]",
         "        let sourceLinearRGB: [Double]",
+        "        let sourceCompressedRGB: [Double]",
         "        let sourceEncodedRGB: [Double]",
         "    }",
         "    static let sourceSHA: [String: String] = [",
@@ -173,13 +175,15 @@ def main():
             ]
         densities=np.array(densities,dtype=np.float64)
         assert densities.shape==(12,3)
-        linear,compressed,encoded=source_scan(p,densities)
+        source_xyz,linear,compressed,encoded=source_scan(p,densities)
         for k in range(len(densities)):
             lines.extend([
                 "        Case(",
                 f'            stock: "{stock}",',
                 f'            density: {swift(densities[k])},',
+                f'            sourceXYZ: {swift(source_xyz[k])},',
                 f'            sourceLinearRGB: {swift(linear[k])},',
+                f'            sourceCompressedRGB: {swift(compressed[k])},',
                 f'            sourceEncodedRGB: {swift(encoded[k])}',
                 "        ),",
             ])

@@ -322,6 +322,16 @@ kernel void originalFilmDebugProbe(
 }
 
 
+// Test-only sentinel: independent of input textures and Swift parameter ABI.
+// If this yields zero on an Intel CI runner, Metal dispatch/output is broken
+// before testing the scientific convolution; fail explicitly, never certify.
+kernel void originalFilmDebugWriteConstant(
+    texture2d<float,access::write> output [[texture(0)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if (tid.x >= output.get_width() || tid.y >= output.get_height()) { return; }
+    output.write(float4(0.25f,0.5f,0.75f,1.0f),tid);
+}
+
 // Upstream Young–van Vliet 3rd order IIR. Source:
 // spektrafilm/utils/fast_gaussian_filter.py _iir_horizontal/_iir_vertical.
 // Four passes retain the original recurrence ordering and endpoint state.

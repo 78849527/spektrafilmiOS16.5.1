@@ -64,6 +64,40 @@ struct OriginalMetalGrainValidation {
                      abs(uploaded[1]-1)<0.000001 &&
                      abs(uploaded[2]-1)<0.000001,
                      "GPU edge test source texture upload failed")
+        // First prove that the runner can write any result through Metal.
+        // A zero sentinel indicates a backend/dispatch problem, not a
+        // validated optical filter or a Swift/Metal struct-layout defect.
+        guard let sentinel = library.makeFunction(
+            name: "originalFilmDebugWriteConstant"
+        ) else { fatalError("Missing test-only Metal write sentinel") }
+        let sentinelPipeline = try device.makeComputePipelineState(function: sentinel)
+        let sentinelOut = make()
+        let sentinelCommand = device.makeCommandQueue()!.makeCommandBuffer()!
+        let sentinelEncoder = sentinelCommand.makeComputeCommandEncoder()!
+        sentinelEncoder.setComputePipelineState(sentinelPipeline)
+        sentinelEncoder.setTexture(sentinelOut,index:0)
+        sentinelEncoder.dispatchThreadgroups(
+            MTLSize(width:(w+7)/8,height:(h+7)/8,depth:1),
+            threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1)
+        )
+        sentinelEncoder.endEncoding()
+        sentinelCommand.commit()
+        sentinelCommand.waitUntilCompleted()
+        precondition(sentinelCommand.status == .completed,
+                     "Metal sentinel command failed: " +
+                     (sentinelCommand.error?.localizedDescription ?? "unknown"))
+        var sentinelValues = [Float](repeating:0,count:pixels.count)
+        sentinelValues.withUnsafeMutableBytes { raw in
+            sentinelOut.getBytes(raw.baseAddress!,bytesPerRow:w*4*4,
+                from:MTLRegionMake2D(0,0,w,h),mipmapLevel:0)
+        }
+        print("METAL DEVICE=",device.name,
+              " constant-write=",Array(sentinelValues[0..<4]))
+        precondition(abs(sentinelValues[0]-0.25)<0.00001 &&
+                     abs(sentinelValues[1]-0.5)<0.00001 &&
+                     abs(sentinelValues[2]-0.75)<0.00001 &&
+                     abs(sentinelValues[3]-1)<0.00001,
+                     "Metal constant-write sentinel failed: runner GPU dispatch/output is unusable; do not classify source filter as numerically equivalent")
         // Probe the identical uploaded texture and packed Swift/Metal
         // BlurParameters before judging the Gaussian convolution.
         guard let probeFunc = library.makeFunction(name: "originalFilmDebugProbe")
