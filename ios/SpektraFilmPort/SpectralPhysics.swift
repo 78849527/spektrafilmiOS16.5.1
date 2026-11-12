@@ -34,11 +34,13 @@ struct SpectralPhysics {
         let densityMaximum: [Double]
         let polarity: String
         let viewingIlluminant: String
+        let id: String
 
         init(id: String) throws {
             guard let record = GeneratedSpectralData.profiles[id] else {
                 throw PhysicsError.invalid("没有该胶片／相纸的实测曲线：" + id)
             }
+            self.id = id
             logSensitivity = try Self.decode(record.logSensitivity, count: 243)
             channelDensity = try Self.decode(record.channelDensity, count: 243)
             baseDensity = try Self.decode(record.baseDensity, count: 81)
@@ -135,6 +137,11 @@ struct SpectralPhysics {
     private let neutralOutputRGB: [Double]
     private let useOriginalScanner: Bool
     private let useReferenceBlackWhite: Bool
+    private let useExposureCorrectedPrintReference: Bool
+    private let printMorphCurve: OriginalPrintMorph.PreparedCurve?
+    private var correctedPrintExposureEV = 0.0
+    private var correctedReferenceBlack: Double?
+    private var correctedReferenceWhite: Double?
     private let defaultCAM16Gamut: Bool
     private let viewingStock: String
     private let viewingNormalization: Double
@@ -150,7 +157,9 @@ struct SpectralPhysics {
 
     init(filmID: String, paperID: String,
          sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
-         cam16Gamut: Bool = false) throws {
+         cam16Gamut: Bool = false,
+         printReferenceCorrection: Bool = false,
+         printMorph: OriginalPrintMorph.Settings = .init()) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
@@ -167,6 +176,12 @@ struct SpectralPhysics {
         useOriginalScanner = sourceScanner
         useReferenceBlackWhite = scannerBlackWhite
         defaultCAM16Gamut = cam16Gamut
+        useExposureCorrectedPrintReference = !positive &&
+            sourceScanner && scannerBlackWhite && printReferenceCorrection
+        printMorphCurve = positive ? nil : OriginalPrintMorph.prepare(
+            stock: paperID, logExposure: originalPaper.logExposure,
+            settings: printMorph, positive: originalPaper.polarity == "positive"
+        )
 
         let basis = try Self.readOriginalFloat32(
             GeneratedOriginalOptics.mallettBasis, count: 81 * 3
@@ -282,6 +297,49 @@ struct SpectralPhysics {
         )[1]
         scannedReferenceYBlack = min(y0, y1)
         scannedReferenceYWhite = max(y0, y1)
+
+        if useExposureCorrectedPrintReference {
+            // Source PrintingStage.expose: film black = -grain density_min,
+            // film white = raw maximum of the three measured density curves.
+            // Unlike v1.2 endpoint-only calibration this runs both through
+            // the film->enlarger->paper H-D response and then through the
+            // CIE viewing scanner. It also inverts the H-D midgray response
+            // to obtain the source-style print exposure compensation.
+            let filmBlack = [-0.03,-0.03,-0.03]
+            let filmWhite = (0..<3).map { ch -> Double in
+                (0..<256).map {
+                    Double(originalFilm.densityCurves[$0*3+ch])
+                }.max() ?? 0
+            }
+            let paperBlack = Self.paperDensities(
+                filmBlack, film: originalFilm, paper: originalPaper,
+                weights: pWeights, reference: printReference, printEV: 0
+            )
+            let paperWhite = Self.paperDensities(
+                filmWhite, film: originalFilm, paper: originalPaper,
+                weights: pWeights, reference: printReference, printEV: 0
+            )
+            let measuredBlack = Self.scanPhysicalXYZ(
+                densities: paperBlack, paper: originalPaper,
+                weights: xyzWeights, normalization: viewingNormalization
+            )[1]
+            let measuredWhite = Self.scanPhysicalXYZ(
+                densities: paperWhite, paper: originalPaper,
+                weights: xyzWeights, normalization: viewingNormalization
+            )[1]
+            // Original reference ordering is the printing path's
+            // film-black -> dark print; film-white -> bright print.
+            if let correction = OriginalPrintReference.apply(
+                yBlack: measuredBlack, yWhite: measuredWhite,
+                logExposure: originalPaper.logExposure,
+                rawCurves: originalPaper.densityCurves,
+                spectralBase: originalPaper.baseDensity
+            ) {
+                correctedPrintExposureEV = correction.exposureEV
+                correctedReferenceBlack = correction.yBlack
+                correctedReferenceWhite = correction.yWhite
+            }
+        }
     }
 
     static func makeCubeData(filmID: String, paperID: String,
@@ -289,7 +347,10 @@ struct SpectralPhysics {
                              size: Int = 17,
                              sourceScanner: Bool = false,
                              scannerBlackWhite: Bool = false,
-                             cam16Gamut: Bool = false) throws -> Data {
+                             cam16Gamut: Bool = false,
+                             printReferenceCorrection: Bool = false,
+                             printMorph: OriginalPrintMorph.Settings = .init()
+    ) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -298,7 +359,9 @@ struct SpectralPhysics {
         let engine = try SpectralPhysics(
             filmID: filmID, paperID: paperID,
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
-            cam16Gamut: cam16Gamut
+            cam16Gamut: cam16Gamut,
+            printReferenceCorrection: printReferenceCorrection,
+            printMorph: printMorph
         )
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
@@ -338,7 +401,9 @@ struct SpectralPhysics {
         filmID: String, paperID: String,
         exposureEV: Double, paperEV: Double, size: Int = 17,
         sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
-        cam16Gamut: Bool = false
+        cam16Gamut: Bool = false,
+        printReferenceCorrection: Bool = false,
+        printMorph: OriginalPrintMorph.Settings = .init()
     ) throws -> DensityStageData {
         guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -347,7 +412,9 @@ struct SpectralPhysics {
         let engine = try SpectralPhysics(
             filmID: filmID, paperID: paperID,
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
-            cam16Gamut: cam16Gamut
+            cam16Gamut: cam16Gamut,
+            printReferenceCorrection: printReferenceCorrection,
+            printMorph: printMorph
         )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
         let step = 1.0 / Double(size-1)
@@ -418,7 +485,9 @@ struct SpectralPhysics {
         } else {
             resultDensity = Self.paperDensities(
                 filmDensity, film: film, paper: paper, weights: paperWeights,
-                reference: printReference, printEV: paperEV
+                reference: printReference,
+                printEV: paperEV + correctedPrintExposureEV,
+                morph: printMorphCurve
             )
             substrate = paper
         }
@@ -429,8 +498,9 @@ struct SpectralPhysics {
             )
             if useReferenceBlackWhite {
                 xyz = OriginalScannerMath.correctBlackWhiteXYZ(
-                    xyz, yBlack: scannedReferenceYBlack,
-                    yWhite: scannedReferenceYWhite
+                    xyz,
+                    yBlack: correctedReferenceBlack ?? scannedReferenceYBlack,
+                    yWhite: correctedReferenceWhite ?? scannedReferenceYWhite
                 )
             }
             let linear = OriginalScannerMath.linearSRGB(
@@ -458,6 +528,17 @@ struct SpectralPhysics {
             let balanced = linOutput[ch] * (0.184 / neutralOutputRGB[ch])
             return Self.encodeSRGB(Self.clamp(balanced))
         }
+    }
+
+    /// Diagnostic source references, independent of any image output.
+    func originalPrintCalibration() -> (yBlack:Double,yWhite:Double,ev:Double)? {
+        guard let b=correctedReferenceBlack,
+              let w=correctedReferenceWhite else { return nil }
+        return (b,w,correctedPrintExposureEV)
+    }
+
+    func originalPrintMorphDelta(logExposure: Double, channel: Int) -> Double {
+        printMorphCurve?.densityDelta(logExposure,channel:channel) ?? 0
     }
 
     /// Original DIR nonspatial inhibition chemistry from
@@ -530,13 +611,25 @@ struct SpectralPhysics {
 
     private static func paperDensities(_ filmDensities: [Double], film: Profile,
                                        paper: Profile, weights: [[Double]],
-                                       reference: Double, printEV: Double) -> [Double] {
+                                       reference: Double, printEV: Double,
+                                       morph: OriginalPrintMorph.PreparedCurve? = nil
+    ) -> [Double] {
         let raw = printRaw(filmDensities: filmDensities, film: film, weights: weights)
         return (0..<3).map { c in
-            paper.curve(
-                log10(max(1e-14, raw[c]) / reference) +
-                    printEV * 0.301029995664, channel: c
-            )
+            let logE = log10(max(1e-14, raw[c]) / reference) +
+                printEV * 0.301029995664
+            let measured = paper.curve(logE, channel: c)
+            guard let morph else { return measured }
+            // Apply the ORIGINAL s023 CDF morphology delta on top of
+            // previously verified measured H-D response. The source
+            // fitted CDF baseline is not bit-identical to the measured
+            // 256 sample curve, so delta is needed for zero-effect parity.
+            let maximum = (0..<256).map {
+                Double(paper.densityCurves[$0*3+c])
+            }.max() ?? paper.minimumDensity[c]
+            let limit = max(0,maximum-paper.minimumDensity[c])
+            return max(0,min(limit,measured +
+                morph.densityDelta(logE,channel:c)))
         }
     }
 
