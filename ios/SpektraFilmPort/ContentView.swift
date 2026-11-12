@@ -384,7 +384,7 @@ final class PhotoEditorModel: ObservableObject {
     /// Device-side, nonblocking numerical checks for both source
     /// reflect FIR and YVV IIR. A failure is surfaced; never auto-fallback.
     func checkOriginalMetalHardware() {
-        status = "正在检测本机 GPU：Metal / Poisson / IIR / Python 密度回放…"
+        status = "正在检测 Metal / IIR / Python 密度回放 / 原版 SciPy 随机流…"
         Task.detached(priority: .userInitiated) {
             do {
                 let grain = try OriginalMetalGrain.hardwareDiagnostic()
@@ -392,9 +392,10 @@ final class PhotoEditorModel: ObservableObject {
                 let iir = try OriginalMetalIIR.hardwareDiagnostic()
                 let replay = try OriginalMetalSourceReplay.hardwareDiagnostic()
                 let mt = try OriginalSourceMT19937.validateReference()
+                let scipy = try OriginalSourceSciPySampler.validateSourceReference()
                 await MainActor.run {
                     self.status = grain + "；" + poisson + "；" + iir +
-                        "；" + replay + "；" + mt
+                        "；" + replay + "；" + mt + "；" + scipy
                 }
             } catch {
                 await MainActor.run {
