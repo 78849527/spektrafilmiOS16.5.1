@@ -1,0 +1,14 @@
+# Import and preview test only. NOT a Spektrafilm film stock.
+# sRGB input -> sRGB output, .cube with R varying fastest.
+TITLE "Importer Test - Warm"
+DOMAIN_MIN 0 0 0
+DOMAIN_MAX 1 1 1
+LUT_3D_SIZE 2
+0.08 0.03 0.01
+0.99 0.03 0.01
+0.08 0.92 0.01
+0.99 0.92 0.01
+0.08 0.03 0.82
+0.99 0.03 0.82
+0.08 0.92 0.82
+0.99 0.92 0.82
