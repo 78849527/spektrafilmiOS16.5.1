@@ -82,7 +82,7 @@ enum DensityGrain {
                 gaussianNoise(pos + vec2(37.81, 101.9), seed + 11.0),
                 gaussianNoise(pos + vec2(231.7, 41.83), seed + 29.0)
             );
-            vec3 outD = clamp(d + amount * dev * noise, 0.0, dmax);
+            vec3 outD = clamp(d + amount * dev * noise, vec3(0.0), dmax);
             return vec4(outD / dmax, 1.0);
         }
         """)
