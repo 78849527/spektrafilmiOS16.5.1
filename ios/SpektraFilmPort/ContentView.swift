@@ -384,13 +384,14 @@ final class PhotoEditorModel: ObservableObject {
     /// Device-side, nonblocking numerical checks for both source
     /// reflect FIR and YVV IIR. A failure is surfaced; never auto-fallback.
     func checkOriginalMetalHardware() {
-        status = "正在检测本机 GPU：Metal 透传 / reflect FIR / 原版 IIR…"
+        status = "正在检测本机 GPU：Metal 透传 / reflect FIR / Poisson / 原版 IIR…"
         Task.detached(priority: .userInitiated) {
             do {
                 let grain = try OriginalMetalGrain.hardwareDiagnostic()
+                let poisson = try OriginalMetalGrain.poissonHardwareDiagnostic()
                 let iir = try OriginalMetalIIR.hardwareDiagnostic()
                 await MainActor.run {
-                    self.status = grain + "；" + iir
+                    self.status = grain + "；" + poisson + "；" + iir
                 }
             } catch {
                 await MainActor.run {
