@@ -66,8 +66,14 @@ def main():
     assert "product *= filmUniform" in low
     assert "product <= threshold" in low
     assert "float cum=prob" not in low and "prob *= lambda" not in low
-    assert "atomic_fetch_add_explicit(errors" in low, (
-        "Real sampler failure must not silently fall back or return a mean"
+    assert "filmSamplerFault(errors,2u)" in low, (
+        "Low-rate exhaustion must increment the dedicated atomic reason"
+    )
+    assert "filmSamplerFault(errors,1u)" in src, (
+        "Invalid Poisson rates must be explicitly reported"
+    )
+    assert "filmSamplerFault(errors,3u)" in src, (
+        "High-rate PTRS exhaustion must be explicitly reported"
     )
     # Float32 CDF cannot represent some high-probability tails; reproduce
     # a known concrete failure at lambda~22.71, which can occur in real
