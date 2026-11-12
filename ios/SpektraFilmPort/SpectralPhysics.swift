@@ -8,7 +8,8 @@ import Foundation
 /// spectral negative/paper Beer-Lambert density, Schott KG3 3400K enlarger
 /// plus original 0/65/55 CMY filtration, D50 viewing and CIE 1931 2° CMFs.
 /// Still pending: Hanatos2025 correction SURFACE (window is supported),
-/// DIR couplers, print-curve morph, scattering/grain/halation, glare, full scanner
+/// spatial DIR diffusion, print-curve morph, scattering/grain/halation, glare,
+/// and full scanner calibration. Native original nonspatial DIR chemistry is included.
 /// white/black correction and gamut mapping. Outputs are NOT byte-for-byte
 /// identical to a full original Spektrafilm render.
 /// The per-pixel calculation is accelerated through a dynamic CIColorCube.
@@ -28,6 +29,9 @@ struct SpectralPhysics {
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
         let minimumDensity: [Double]    // upstream nanmin per colour channel
+        let dirCorrectedCurves: [Float]  // upstream pre-DIR normalized H-D
+        let dirMatrix: [Double]          // donor (row) -> receiver (column)
+        let densityMaximum: [Double]
         let polarity: String
         let viewingIlluminant: String
 
@@ -40,6 +44,16 @@ struct SpectralPhysics {
             baseDensity = try Self.decode(record.baseDensity, count: 81)
             logExposure = try Self.decode(record.logExposure, count: 256)
             densityCurves = try Self.decode(record.densityCurves, count: 768)
+            if let dir = GeneratedDIRData.records[id] {
+                dirCorrectedCurves = try Self.decode(dir.correctedCurves, count: 768)
+                dirMatrix = dir.donorReceiverMatrix
+                densityMaximum = dir.sourceDensityMax
+            } else {
+                // Print media do not use negative-film DIR inhibition.
+                dirCorrectedCurves = []
+                dirMatrix = Array(repeating: 0.0, count: 9)
+                densityMaximum = Array(repeating: 0.0, count: 3)
+            }
             polarity = record.polarity
             viewingIlluminant = record.viewingIlluminant
             guard logExposure[0] < logExposure[255] else {
@@ -75,24 +89,25 @@ struct SpectralPhysics {
             }
         }
 
-        func curve(_ logE: Double, channel: Int) -> Double {
+        func curve(_ logE: Double, channel: Int,
+                   correctedBeforeDIR: Bool = false) -> Double {
             let first = Double(logExposure[0])
             let last = Double(logExposure[255])
-            let lo = minimumDensity[channel]
+            let useCorrected = correctedBeforeDIR && !dirCorrectedCurves.isEmpty
+            let curves = useCorrected ? dirCorrectedCurves : densityCurves
+            let minDensity = useCorrected ? 0 : minimumDensity[channel]
             if logE <= first {
-                return max(0, Double(densityCurves[channel]) - lo)
+                return max(0, Double(curves[channel]) - minDensity)
             }
             if logE >= last {
-                return max(0, Double(densityCurves[255 * 3 + channel]) - lo)
+                return max(0, Double(curves[255 * 3 + channel]) - minDensity)
             }
-            // The original profile sampled the same log-exposure grid in each
-            // channel, preserving native linear interpolation.
-            let u = (logE - first) / (last - first) * 255.0
+            let u = (logE - first) / (last - first) * 255
             let index = min(254, max(0, Int(floor(u))))
             let weight = min(1, max(0, u - Double(index)))
-            let start = Double(densityCurves[index * 3 + channel])
-            let end = Double(densityCurves[(index + 1) * 3 + channel])
-            return max(0, start + (end - start) * weight - lo)
+            let y0 = Double(curves[index * 3 + channel])
+            let y1 = Double(curves[(index + 1) * 3 + channel])
+            return max(0, y0 + (y1 - y0) * weight - minDensity)
         }
 
         func sensitivity(_ wavelengthIndex: Int, _ ch: Int) -> Double {
@@ -199,9 +214,15 @@ struct SpectralPhysics {
         scanWeights = xyzWeights
         mediaWhiteXYZ = white
 
+        // The upstream print reference uses develop_simple (NO couplers),
+        // while the actual film processing uses the original DIR chemistry.
+        let midFilmReference = Self.filmDensities(
+            [0.184, 0.184, 0.184], film: originalFilm,
+            hanatos: originalHanatos, exposureEV: 0, applyDIR: false
+        )
         let midFilm = Self.filmDensities(
             [0.184, 0.184, 0.184], film: originalFilm,
-            hanatos: originalHanatos, exposureEV: 0.0
+            hanatos: originalHanatos, exposureEV: 0, applyDIR: true
         )
         let midMedium: [Double]
         if positive {
@@ -211,7 +232,7 @@ struct SpectralPhysics {
             midMedium = midFilm
         } else {
             let ref = Self.printRaw(
-                filmDensities: midFilm, film: originalFilm, weights: pWeights
+                filmDensities: midFilmReference, film: originalFilm, weights: pWeights
             )
             printReference = exp(
                 ref.reduce(0.0) { $0 + log(max($1, 1e-14)) } / 3.0
@@ -289,20 +310,58 @@ struct SpectralPhysics {
         }
     }
 
+    /// Original DIR nonspatial inhibition chemistry from
+    /// model/couplers.py with film-specific params_builder presets.
+    /// Spatial diffusion is disabled while baking the color cube,
+    /// exactly as source debug.lut_mode requires.
+    private static func developLogExposure(
+        _ logRaw: [Double], film: Profile, applyDIR: Bool
+    ) -> [Double] {
+        let densityInitial = (0..<3).map { ch in
+            film.curve(logRaw[ch], channel: ch)
+        }
+        guard applyDIR, !film.dirCorrectedCurves.isEmpty else {
+            return densityInitial
+        }
+
+        // Original: silver = d_max - density for reversal, else density.
+        let silver = (0..<3).map { donor -> Double in
+            film.polarity == "positive"
+                ? film.densityMaximum[donor] - densityInitial[donor]
+                : densityInitial[donor]
+        }
+        // Original np.einsum('ijk,km->ijm'): donor rows, receiver cols.
+        let logCorrected = (0..<3).map { receiver -> Double in
+            let inhibitor = (0..<3).reduce(0.0) { total, donor in
+                total + silver[donor] *
+                    film.dirMatrix[donor * 3 + receiver]
+            }
+            return logRaw[receiver] - inhibitor
+        }
+        return (0..<3).map { channel in
+            film.curve(
+                logCorrected[channel],
+                channel: channel, correctedBeforeDIR: true
+            )
+        }
+    }
+
+    /// Unit-test access to film chemistry independently of RGB/scan math.
+    func dirDevelopedDensity(logRaw: [Double]) -> [Double] {
+        guard logRaw.count == 3 else { return [] }
+        return Self.developLogExposure(logRaw, film: film, applyDIR: true)
+    }
+
     private static func filmDensities(_ linear: [Double],
                                       film: Profile,
                                       hanatos: OriginalHanatosResponse,
-                                      exposureEV: Double) -> [Double] {
-        // This uses upstream Hanatos2025 irradiance LUT and CAT16/TC mapping,
-        // rather than the earlier Mallett2019 alternative.
+                                      exposureEV: Double,
+                                      applyDIR: Bool = true) -> [Double] {
         let raw = hanatos.raw(linearRGB: linear)
-        return (0..<3).map { channel in
-            let response = max(1e-10, raw[channel])
-            return film.curve(
-                log10(response) + exposureEV * 0.301029995664,
-                channel: channel
-            )
+        let logRaw = (0..<3).map { ch in
+            log10(max(1e-10, raw[ch])) + exposureEV * 0.301029995664
         }
+        return developLogExposure(logRaw, film: film, applyDIR: applyDIR)
     }
 
     private static func printRaw(filmDensities: [Double], film: Profile,
