@@ -167,11 +167,24 @@ enum SpatialOptics {
         return (f.outputImage ?? image).cropped(to: image.extent)
     }
 
+    // CIAdditionCompositing is alpha compositing, NOT plain radiometric RGB
+    // addition; with opaque inputs it clips uniform gray to white.
+    // This explicit pixel kernel sums energy without Porter-Duff alpha logic.
+    // CIColorKernel(source:) is available on the target iOS 16.5.1 runtime.
+    private static let radiometricSumKernel = CIColorKernel(source: """
+        kernel vec4 addLight(__sample a, __sample b) {
+            return vec4(a.rgb + b.rgb, 1.0);
+        }
+        """)
+
     private static func add(_ lhs: CIImage, _ rhs: CIImage) -> CIImage {
-        let f = CIFilter.additionCompositing()
-        f.inputImage = rhs
-        f.backgroundImage = lhs
-        return (f.outputImage ?? lhs).cropped(to: lhs.extent)
+        guard let kernel = radiometricSumKernel,
+              let output = kernel.apply(extent: lhs.extent, arguments: [lhs, rhs])
+        else {
+            assertionFailure("Unable to compile Core Image radiometric add kernel")
+            return lhs
+        }
+        return output.cropped(to: lhs.extent)
     }
 
     /// Pure coefficients: tested independently against source-model formula.
