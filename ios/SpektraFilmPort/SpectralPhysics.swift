@@ -530,6 +530,7 @@ struct SpectralPhysics {
             cameraExposureEV: exposureEV
         )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
+        let layerMaxima = engine.film.sublayerMaxima
         let step = 1.0 / Double(size-1)
         var input = [Float]()
         var printMap = [Float]()
@@ -555,7 +556,7 @@ struct SpectralPhysics {
                     }
                     input.append(1.0)
                     let filmDensity = (0..<3).map { rgb[$0] * ranges[$0] }
-                    if !engine.film.densityCurvesLayers.isEmpty {
+                    if layerMaxima.count == 9 {
                         for layer in 0..<3 {
                             for channel in 0..<3 {
                                 let measured = engine.film.layerDensity(
@@ -565,7 +566,7 @@ struct SpectralPhysics {
                                 // Normalize to per-layer raw optical maxima.
                                 let peak = max(
                                     1e-5,
-                                    engine.film.sublayerMaxima[layer*3+channel]
+                                    layerMaxima[layer*3+channel]
                                 )
                                 sublayerMaps[layer].append(
                                     Float(clamp(measured/peak))
@@ -598,7 +599,7 @@ struct SpectralPhysics {
         return DensityStageData(
             inputCube: cubeA, printCube: cubeB, ranges: ranges, size: size,
             sublayerCubes: layerCubes,
-            sublayerRawMaxima: engine.film.sublayerMaxima
+            sublayerRawMaxima: layerMaxima
         )
     }
 
