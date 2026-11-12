@@ -109,8 +109,10 @@ struct SpectralPhysics {
     private let neutralOutputRGB: [Double]
 
     init() throws {
-        film = try Profile(prefix: "film")
-        paper = try Profile(prefix: "paper")
+        let originalFilm = try Profile(prefix: "film")
+        let originalPaper = try Profile(prefix: "paper")
+        film = originalFilm
+        paper = originalPaper
 
         var matrix = Array(repeating: Array(repeating: 0.0, count: 3), count: 3)
         var pWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
@@ -129,18 +131,16 @@ struct SpectralPhysics {
             ]
             for ch in 0..<3 {
                 for rgb in 0..<3 {
-                    matrix[ch][rgb] += daylight * bases[rgb] * film.sensitivity(i, ch)
+                    matrix[ch][rgb] += daylight * bases[rgb] * originalFilm.sensitivity(i, ch)
                 }
-                pWeights[i][ch] = enlarger * paper.sensitivity(i, ch)
+                pWeights[i][ch] = enlarger * originalPaper.sensitivity(i, ch)
             }
 
             let cie = Self.cie1931(wavelength)
-            let whiteLight = viewing * pow(10.0, -paper.base(i))
             for ch in 0..<3 {
                 xyzWeights[i][ch] = viewing * cie[ch]
-                white[ch] += xyzWeights[i][ch] * pow(10.0, -paper.base(i))
+                white[ch] += xyzWeights[i][ch] * pow(10.0, -originalPaper.base(i))
             }
-            _ = whiteLight
         }
         // Calibrate each film-sensitivity channel so linear sRGB midgray maps
         // to log10 exposure=0. The spectral upsampling is an approximation,
@@ -155,17 +155,17 @@ struct SpectralPhysics {
         mediaWhiteXYZ = white
 
         let midFilm = Self.filmDensities(
-            [0.184, 0.184, 0.184], film: film, matrix: matrix, exposureEV: 0.0
+            [0.184, 0.184, 0.184], film: originalFilm, matrix: matrix, exposureEV: 0.0
         )
-        let ref = Self.printRaw(filmDensities: midFilm, film: film, weights: pWeights)
+        let ref = Self.printRaw(filmDensities: midFilm, film: originalFilm, weights: pWeights)
         printReference = ref.map { max($0, 1e-14) }
 
         let midPaper = Self.paperDensities(
-            midFilm, film: film, paper: paper, weights: pWeights,
+            midFilm, film: originalFilm, paper: originalPaper, weights: pWeights,
             reference: printReference, printEV: 0.0
         )
         let midLinear = Self.scanLinear(
-            midPaper, paper: paper, weights: xyzWeights, mediaWhite: white
+            midPaper, paper: originalPaper, weights: xyzWeights, mediaWhite: white
         )
         neutralOutputRGB = midLinear.map { max(1e-4, $0) }
     }
