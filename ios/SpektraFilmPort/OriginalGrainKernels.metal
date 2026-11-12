@@ -366,6 +366,90 @@ kernel void originalFilmIIRVerticalBackward(
 }
 
     
+
+    
+// Full-image in-place YVV sweeps. Each row / column is owned by one thread.
+// Encoder boundaries enforce ordering between the four directional passes.
+// Mixed sigma: B=1 and B1=B2=B3=0 keeps FIR-routed channels unchanged.
+kernel void originalFilmIIRHorizontalForwardInPlace(
+    texture2d<float,access::read_write> io [[texture(0)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint y [[thread_position_in_grid]]) {
+    if(y>=p.height){return;}
+    float3 w1=io.read(uint2(0,y)).rgb;
+    float3 w2=w1, w3=w1;
+    for(uint x=0u;x<p.width;++x){
+        float3 v=io.read(uint2(x,y)).rgb;
+        float3 w=p.B.rgb*v+p.B1.rgb*w1+p.B2.rgb*w2+p.B3.rgb*w3;
+        io.write(float4(w,1.0f),uint2(x,y));
+        w3=w2;w2=w1;w1=w;
+    }
+}
+kernel void originalFilmIIRHorizontalBackwardInPlace(
+    texture2d<float,access::read_write> io [[texture(0)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint y [[thread_position_in_grid]]) {
+    if(y>=p.height){return;}
+    float3 y1=io.read(uint2(p.width-1u,y)).rgb;
+    float3 y2=y1,y3=y1;
+    for(int x=int(p.width)-1;x>=0;--x){
+        float3 v=io.read(uint2(uint(x),y)).rgb;
+        float3 w=p.B.rgb*v+p.B1.rgb*y1+p.B2.rgb*y2+p.B3.rgb*y3;
+        io.write(float4(w,1.0f),uint2(uint(x),y));
+        y3=y2;y2=y1;y1=w;
+    }
+}
+kernel void originalFilmIIRVerticalForwardInPlace(
+    texture2d<float,access::read_write> io [[texture(0)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint x [[thread_position_in_grid]]) {
+    if(x>=p.width){return;}
+    float3 w1=io.read(uint2(x,0u)).rgb;
+    float3 w2=w1,w3=w1;
+    for(uint y=0u;y<p.height;++y){
+        float3 v=io.read(uint2(x,y)).rgb;
+        float3 w=p.B.rgb*v+p.B1.rgb*w1+p.B2.rgb*w2+p.B3.rgb*w3;
+        io.write(float4(w,1.0f),uint2(x,y));
+        w3=w2;w2=w1;w1=w;
+    }
+}
+kernel void originalFilmIIRVerticalBackwardInPlace(
+    texture2d<float,access::read_write> io [[texture(0)]],
+    constant FilmSourceIIRParams &p [[buffer(0)]],
+    uint x [[thread_position_in_grid]]) {
+    if(x>=p.width){return;}
+    float3 y1=io.read(uint2(x,p.height-1u)).rgb;
+    float3 y2=y1,y3=y1;
+    for(int y=int(p.height)-1;y>=0;--y){
+        float3 v=io.read(uint2(x,uint(y))).rgb;
+        float3 w=p.B.rgb*v+p.B1.rgb*y1+p.B2.rgb*y2+p.B3.rgb*y3;
+        io.write(float4(w,1.0f),uint2(x,uint(y)));
+        y3=y2;y2=y1;y1=w;
+    }
+}
+
+// Per-layer streaming sum and the original source-order microstructure
+// multiply/subtract. Never retain three whole-frame dye-cloud textures.
+kernel void originalFilmAccumulate(
+    texture2d<float,access::read> layer [[texture(0)]],
+    texture2d<float,access::read_write> accumulated [[texture(1)]],
+    constant uint &first [[buffer(0)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if(tid.x>=accumulated.get_width()||tid.y>=accumulated.get_height()){return;}
+    float3 v=layer.read(tid).rgb;
+    if(first==0u){v+=accumulated.read(tid).rgb;}
+    accumulated.write(float4(v,1.0f),tid);
+}
+kernel void originalFilmCompositeAccumulated(
+    texture2d<float,access::read_write> accumulated [[texture(0)]],
+    texture2d<float,access::read> clump [[texture(1)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if(tid.x>=accumulated.get_width()||tid.y>=accumulated.get_height()){return;}
+    float3 v=accumulated.read(tid).rgb*clump.read(tid).rgb -
+        float3(0.03f,0.03f,0.03f);
+    accumulated.write(float4(v,1.0f),tid);
+}
+
 // Test-only, real GPU Poisson sampler. Uses production filmPoisson directly:
 // no CPU substitute and no source random-sequence parity claim. Explicitly
 // verifies the resolved low-rate Float32 CDF stall on an actual iPhone GPU.
