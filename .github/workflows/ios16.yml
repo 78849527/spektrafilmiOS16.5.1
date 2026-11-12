@@ -5,7 +5,7 @@ on:
     branches: ['ios16.5.1/source-rgb-parity-v1.8.8']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.8-safe-export.md'
+      - 'docs/v1.8.8-source-rgb-stage-parity.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
