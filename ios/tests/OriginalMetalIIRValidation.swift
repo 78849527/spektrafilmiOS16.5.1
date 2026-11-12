@@ -82,7 +82,7 @@ struct OriginalMetalIIRValidation {
                 }
             }
             mae /= Double(c.expected.count)
-            print("PASS: real GPU YVV \(c.name) \(c.width)x\(c.height), "+
+            print("PASS: real GPU YVV \(c.name) \(c.width)x\(c.height), " +
                   "MAE=\(mae), maxAbs=\(peak), device=\(device.name)")
         }
     }
