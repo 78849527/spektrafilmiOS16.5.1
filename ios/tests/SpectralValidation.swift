@@ -290,6 +290,86 @@ struct SpectralValidation {
         }
         print("PASS: optional black/white endpoint calibration and source scanner density split.")
 
+        // v1.3 source-topology print calibration and original 3-layer
+        // fitted CDF printing chemistry: all 16x8 media combinations.
+        var calibratedPairCount=0
+        var nonzeroExposureCount=0
+        var morphEffectCount=0
+        let gamma=OriginalPrintMorph.Settings(
+            gamma:1.18,fast:1.05,slow:0.94,developerExhaustion:0.2
+        )
+        for negative in negatives {
+            for medium in media {
+                let original=try SpectralPhysics(
+                    filmID:negative,paperID:medium,
+                    sourceScanner:true,scannerBlackWhite:true
+                )
+                let enriched=try SpectralPhysics(
+                    filmID:negative,paperID:medium,sourceScanner:true,
+                    scannerBlackWhite:true,cam16Gamut:true,
+                    printReferenceCorrection:true,printMorph:gamma
+                )
+                for ev in [-1.0,0.0,1.0] {
+                    check(enriched.render(samples[2],exposureEV:0,paperEV:ev),
+                          "calibrated print \(negative)/\(medium)")
+                }
+                if let ref=enriched.originalPrintCalibration() {
+                    precondition(ref.yBlack > 0 && ref.yWhite > ref.yBlack)
+                    precondition(ref.ev.isFinite && abs(ref.ev)<=4)
+                    if abs(ref.ev)>1e-6 { nonzeroExposureCount += 1 }
+                }
+                let delta=enriched.originalPrintMorphDelta(
+                    logExposure:0.24,channel:1
+                )
+                precondition(delta.isFinite)
+                if abs(delta)>1e-6 { morphEffectCount += 1 }
+                // A disabled new option must leave the v1.2 source
+                // scanner result unaffected.
+                let unmodified=try SpectralPhysics(
+                    filmID:negative,paperID:medium,
+                    sourceScanner:true,scannerBlackWhite:true,
+                    printReferenceCorrection:false,
+                    printMorph:OriginalPrintMorph.Settings()
+                )
+                let plainA=original.render(samples[1],exposureEV:0,paperEV:0)
+                let plainB=unmodified.render(samples[1],exposureEV:0,paperEV:0)
+                for c in 0..<3 {
+                    precondition(abs(plainA[c]-plainB[c]) < 1e-12)
+                }
+                calibratedPairCount += 1
+            }
+        }
+        precondition(calibratedPairCount == 128)
+        precondition(nonzeroExposureCount > 0)
+        precondition(morphEffectCount == 128)
+        print("PASS: 128 print-pair source reference/morph optical chains and legacy-off parity.")
+
+        for reversal in positives {
+            let a=try SpectralPhysics(
+                filmID:reversal,paperID:media[0],sourceScanner:true,
+                scannerBlackWhite:true,cam16Gamut:true,
+                printReferenceCorrection:true,printMorph:gamma
+            )
+            precondition(a.originalPrintCalibration() == nil,
+                         "Direct reversal scan must bypass print exposure.")
+            precondition(a.originalPrintMorphDelta(
+                logExposure:0.2,channel:0)==0,
+                "Direct reversal scan must bypass print morphology.")
+        }
+        print("PASS: 4 reversal sources ignore downstream print reference/morph.")
+
+        for (negative,medium) in densityRoutes.prefix(2) {
+            let lut=try SpectralPhysics.makeDensityStageData(
+                filmID:negative,paperID:medium,
+                exposureEV:0,paperEV:0,size:9,
+                sourceScanner:true,scannerBlackWhite:true,cam16Gamut:true,
+                printReferenceCorrection:true,printMorph:gamma
+            )
+            precondition(lut.inputCube.count==9*9*9*16)
+            precondition(lut.printCube.count==9*9*9*16)
+        }
+        print("PASS: measured density-grain split supports calibrated print and s023 morph.")
+
         do {
             _ = try SpectralPhysics(filmID: "missing_profile", paperID: media[0])
             preconditionFailure("Unknown materials must reject")
