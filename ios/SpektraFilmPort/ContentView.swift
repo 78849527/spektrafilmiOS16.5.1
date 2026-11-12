@@ -438,7 +438,22 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    func exportJPEG(resolution: ExportResolutionMode = .original) async throws -> URL {
+    func prepareExport(resolution: ExportResolutionMode) throws
+        -> SafeExportResolution.Plan {
+        guard let src = source else {
+            throw ImageProcessingError.invalid("请先导入照片")
+        }
+        let bounds = src.extent.integral
+        return try SafeExportResolution.capture(
+            width: Int(bounds.width), height: Int(bounds.height),
+            mode: resolution
+        )
+    }
+
+    func exportJPEG(
+        resolution: ExportResolutionMode = .original,
+        confirmedPlan: SafeExportResolution.Plan? = nil
+    ) async throws -> URL {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
@@ -466,10 +481,11 @@ final class PhotoEditorModel: ObservableObject {
                 scanner: currentScanner,
                 dirStage: currentDIRStage,
                 dirSettings: currentDIRSettings,
-                resolution: resolution
+                resolution: resolution,
+                confirmedPlan: confirmedPlan
             )
         }.value
-        let label = resolution == .safe ? "安全分辨率" : "原始分辨率"
+        let label = resolution.title
         status = "\(label) \(output.width) × \(output.height) JPEG 已完成"
         return output.url
     }
@@ -480,6 +496,14 @@ struct ContentView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
+    @State private var pendingExport: ExportProposal?
+
+    private struct ExportProposal: Identifiable {
+        let id = UUID()
+        let toPhotos: Bool
+        let plan: SafeExportResolution.Plan
+    }
+
     @AppStorage("compactFilmStock") private var selectedFilmID = "kodak_portra_400"
     @AppStorage("compactPaperStock") private var selectedPaperID = "kodak_portra_endura"
 
@@ -521,10 +545,10 @@ struct ContentView: View {
                     activeSheet = .stocks
                 },
                 onExport: { resolution in
-                    performExport(saveToPhotos: false, resolution: resolution)
+                    proposeExport(saveToPhotos: false, resolution: resolution)
                 },
                 onSaveToPhotos: { resolution in
-                    performExport(saveToPhotos: true, resolution: resolution)
+                    proposeExport(saveToPhotos: true, resolution: resolution)
                 },
                 onRefresh: { refresh() }
             )
@@ -560,6 +584,48 @@ struct ContentView: View {
                     ActivitySheet(items: [url])
                 }
             }
+            .sheet(item: $pendingExport) { proposal in
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            Text(proposal.plan.mode.title)
+                                .font(.headline)
+                            Text(proposal.plan.summary)
+                                .font(.system(size: 14, design: .monospaced))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                            Text("实际内存会波动。此模式按确认的输出尺寸执行完整显影；失败会提示，不会擅自降低像素或切换颗粒算法。")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                            Button {
+                                pendingExport = nil
+                                performExport(
+                                    saveToPhotos: proposal.toPhotos,
+                                    resolution: proposal.plan.mode,
+                                    confirmedPlan: proposal.plan
+                                )
+                            } label: {
+                                Text(proposal.toPhotos
+                                    ? "确认尺寸并保存相册"
+                                    : "确认尺寸并导出文件")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.busy)
+                        }
+                        .padding(20)
+                    }
+                    .navigationTitle("导出前确认")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("取消") { pendingExport = nil }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
             .alert("提示", isPresented: Binding(
                 get: { message != nil },
                 set: { if !$0 { message = nil } }
@@ -576,19 +642,36 @@ struct ContentView: View {
         catch { message = error.localizedDescription }
     }
 
-    private func performExport(
+    private func proposeExport(
         saveToPhotos: Bool, resolution: ExportResolutionMode
     ) {
         guard model.hasPhoto && !model.busy else { return }
+        do {
+            let plan = try model.prepareExport(resolution: resolution)
+            pendingExport = ExportProposal(
+                toPhotos: saveToPhotos, plan: plan
+            )
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func performExport(
+        saveToPhotos: Bool, resolution: ExportResolutionMode,
+        confirmedPlan: SafeExportResolution.Plan
+    ) {
+        guard model.hasPhoto && !model.busy else { return }
         model.busy = true
-        let mode = resolution == .safe ? "安全分辨率" : "原始分辨率"
+        let mode = resolution.title
         model.status = saveToPhotos
             ? "正在制作\(mode) JPEG 并写入系统相册…"
             : "正在制作\(mode) JPEG…"
         Task { @MainActor in
             defer { model.busy = false }
             do {
-                let file = try await model.exportJPEG(resolution: resolution)
+                let file = try await model.exportJPEG(
+                    resolution: resolution, confirmedPlan: confirmedPlan
+                )
                 if saveToPhotos {
                     try await PhotoLibrarySaver.saveJPEG(at: file)
                     model.status = "\(mode)照片已保存到系统相册"
