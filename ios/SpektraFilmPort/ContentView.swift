@@ -419,6 +419,15 @@ final class PhotoEditorModel: ObservableObject {
                 checks.append("7/8 【通过】正式显影 SciPy 随机数 → Metal 颗粒密度\n" + production)
                 let micro = try OriginalSourceMicrostructure.hardwareDiagnostic()
                 checks.append("8/8 【通过】Numba 微结构确定性 lognormal 变换\n" + micro)
+                // Stage-specific RGB evidence is NOT an 9th certified
+                // item. Explicitly preserve failures and measured drift.
+                do {
+                    let evidence = try OriginalSourceRGBParity.report()
+                    checks.append("附录【原版 RGB 数值对照｜不计入 8/8 认证】\n" + evidence)
+                } catch {
+                    checks.append("附录【原版 RGB 对照不可用】\n" +
+                        error.localizedDescription)
+                }
                 let report = "本机原版算法诊断 · 8/8 项全部通过\n" +
                     "注意：通过的是列出的数值测试，不代表完整 Numba 随机流或 Float64/RAW/RGB 已认证。\n\n" +
                     checks.joined(separator: "\n\n")
