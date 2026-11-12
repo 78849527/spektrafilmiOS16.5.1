@@ -260,7 +260,7 @@ struct ContentView: View {
                          ? "该组合已接入实测曲线，可进行简化光学计算。"
                          : "该组合目前只有资料目录，尚未接入物理模拟。")
                         .font(.caption2)
-                        .foregroundStyle(activePairIsSupported ? .secondary : .orange)
+                        .foregroundColor(activePairIsSupported ? Color.secondary : Color.orange)
 
                     VStack(alignment: .leading, spacing: 9) {
                         Text("原版实测曲线模拟 · v0.4 实验").font(.headline)
