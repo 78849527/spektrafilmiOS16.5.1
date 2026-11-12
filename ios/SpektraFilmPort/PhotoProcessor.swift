@@ -2,6 +2,8 @@ import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import UIKit
 
 enum ImageProcessingError: LocalizedError {
@@ -112,16 +114,28 @@ enum PhotoProcessor {
             to: source, lut: lut, strength: strength,
             spatial: spatial, grain: grain, scanner: scanner
         )
-        guard let data = context.jpegRepresentation(
-            of: image, colorSpace: srgb,
-            options: [.lossyCompressionQuality: 0.98]
-        ) else {
-            throw ImageProcessingError.invalid("原尺寸高清 JPEG 导出失败，请检查可用内存与储存空间")
+        // Core Image's CIImageRepresentationOption has no JPEG quality key
+        // on iOS 16.5. Use ImageIO CGImageDestination for a real 0.98
+        // compression setting and write straight to disk (not a giant Data
+        // allocation on the main actor).
+        guard let rendered = context.createCGImage(image, from: image.extent) else {
+            throw ImageProcessingError.invalid("原尺寸高清渲染失败，请检查可用内存")
         }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SpektraFilmPort-" + UUID().uuidString)
             .appendingPathExtension("jpg")
-        try data.write(to: url, options: .atomic)
+        guard let destination = CGImageDestinationCreateWithURL(
+            url as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+        ) else {
+            throw ImageProcessingError.invalid("无法创建高清 JPEG 文件")
+        }
+        let properties: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: 0.98
+        ]
+        CGImageDestinationAddImage(destination, rendered, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw ImageProcessingError.invalid("原尺寸高清 JPEG 写入失败，请检查储存空间")
+        }
         return ExportResult(url: url, width: Int(image.extent.width.rounded()),
                             height: Int(image.extent.height.rounded()),
                             downsampled: false)
