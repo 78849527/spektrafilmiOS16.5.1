@@ -355,9 +355,9 @@ enum OriginalMetalGrain {
             }
             guard reasons[0] == 0 else {
                 throw Failure.invalid(
-                    "Poisson 自检：λ=\\(rate) 出现 \\(reasons[0]) 次采样失败，" +
-                    "无效参数=\\(reasons[1])、低率耗尽=\\(reasons[2])、" +
-                    "高率耗尽=\\(reasons[3])"
+                    "Poisson 自检：λ=\(rate) 出现 \(reasons[0]) 次采样失败，" +
+                    "无效参数=\(reasons[1])、低率耗尽=\(reasons[2])、" +
+                    "高率耗尽=\(reasons[3])"
                 )
             }
             var sum = 0.0
@@ -377,8 +377,8 @@ enum OriginalMetalGrain {
             guard abs(mean - expected) < 0.50,
                   abs(variance - expected) / expected < 0.15 else {
                 throw Failure.invalid(
-                    "Poisson 自检：λ=\\(rate) 统计量异常，" +
-                    "均值=\\(mean)，方差=\\(variance)"
+                    "Poisson 自检：λ=\(rate) 统计量异常，" +
+                    "均值=\(mean)，方差=\(variance)"
                 )
             }
         }
