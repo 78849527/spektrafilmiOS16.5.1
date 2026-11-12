@@ -46,6 +46,18 @@ final class PhotoEditorModel: ObservableObject {
     @Published var preflashMagentaShift = 0.0
     @Published var preflashYellowShift = 0.0
     private var densityGrainStage: DensityGrainStage?
+    private var spatialDIRStage: SpatialDIRStage?
+    // Original DIR inhibition diffusion, opt-in to retain v1.4.1 visuals.
+    @Published var spatialDIREnabled = false
+    @Published var spatialDIRRadiusScale = 1.0
+
+    private var spatialDIRSettings: SpatialDIRSettings {
+        SpatialDIRSettings(
+            enabled: spatialDIREnabled && spatialDIRStage != nil,
+            diffusionRadiusScale: spatialDIRRadiusScale,
+            tailWeight: 0.06
+        )
+    }
 
     private var scannerFinishSettings: ScannerFinishSettings {
         let filmID = UserDefaults.standard.string(forKey: "compactFilmStock")
@@ -151,6 +163,8 @@ final class PhotoEditorModel: ObservableObject {
                 filename: url.deletingPathExtension().lastPathComponent)
             invalidateSimulation()
             densityGrainStage = nil
+            spatialDIRStage = nil
+            spatialDIREnabled = false
             grainEnabled = false
             lut = importedLUT
             busy = false
@@ -193,6 +207,7 @@ final class PhotoEditorModel: ObservableObject {
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
         let requiresGrainStage = grainEnabled
+        let requiresSpatialDIRStage = spatialDIREnabled
         let originalScanner = originalScannerEnabled
         let referenceBW = scannerBlackWhiteEnabled
         let cam16 = scannerCAM16Enabled
@@ -240,9 +255,22 @@ final class PhotoEditorModel: ObservableObject {
                             printMorph: printMorph,
                             printOptics: printOptics
                           ) : nil
-                    return (cube, density)
+                    let spatialDIR = try requiresSpatialDIRStage
+                        ? SpectralPhysics.makeSpatialDIRStageData(
+                            filmID: filmID, paperID: paperID,
+                            exposureEV: cameraExposure,
+                            paperEV: enlargerExposure,
+                            sourceScanner: originalScanner,
+                            scannerBlackWhite: referenceBW,
+                            cam16Gamut: cam16,
+                            printReferenceCorrection: useExposureReference,
+                            printMorph: printMorph,
+                            printOptics: printOptics
+                          ) : nil
+                    return (cube, density, spatialDIR)
                 }.value
                 guard generation == renderGeneration else { return }
+                spatialDIRStage = result.2
                 if let stage = result.1 {
                     densityGrainStage = DensityGrainStage(
                         toDensity: stage.inputCube,
@@ -260,7 +288,11 @@ final class PhotoEditorModel: ObservableObject {
                 strength = 1.0
                 try refresh()
                 status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。" +
-                    (requiresGrainStage ? "显影密度颗粒 → 原版印相链路已启用。" : "原版光谱链路已启用。")
+                    (requiresSpatialDIRStage
+                        ? "DIR 空间抑制扩散 → 显影密度 → 光谱印相已启用。"
+                        : (requiresGrainStage
+                            ? "显影密度颗粒 → 原版印相链路已启用。"
+                            : "原版光谱链路已启用。"))
             } catch {
                 guard generation == renderGeneration else { return }
                 status = "光谱计算失败：" + error.localizedDescription
@@ -276,7 +308,8 @@ final class PhotoEditorModel: ObservableObject {
         }
         processedPreview = try PhotoProcessor.preview(
             source, lut: lut, strength: strength, spatial: spatialSettings,
-            grain: grainSettings, scanner: scannerFinishSettings
+            grain: grainSettings, scanner: scannerFinishSettings,
+            dirStage: spatialDIRStage, dirSettings: spatialDIRSettings
         )
         if let lut {
             status = "已应用 \(lut.title) · \(lut.dimension)³ LUT · \(photoDimensions)"
@@ -296,11 +329,15 @@ final class PhotoEditorModel: ObservableObject {
         let currentSpatial = spatialSettings
         let currentGrain = grainSettings
         let currentScanner = scannerFinishSettings
+        let currentDIRStage = spatialDIRStage
+        let currentDIRSettings = spatialDIRSettings
         let output = try await Task.detached(priority: .userInitiated) {
             try PhotoProcessor.exportJPEG(
                 imageSource, lut: currentLUT, strength: currentStrength,
                 spatial: currentSpatial, grain: currentGrain,
-                scanner: currentScanner
+                scanner: currentScanner,
+                dirStage: currentDIRStage,
+                dirSettings: currentDIRSettings
             )
         }.value
         status = "高清原尺寸 \(output.width) × \(output.height) JPEG 已完成"
