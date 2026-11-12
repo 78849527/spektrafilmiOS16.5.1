@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "src/spektrafilm/data/profiles"
 NPY = ROOT / "src/spektrafilm/data/luts/spectral_upsampling/irradiance_xy_tc.npy"
 DEST = ROOT / "ios/SpektraFilmPort/GeneratedHanatosData.swift"
+PRECISE_DEST = ROOT / "ios/SpektraFilmPort/GeneratedHanatosPreciseData.swift"
 WAVELENGTH = np.arange(380, 781, 5, dtype=np.float64)
 SHAPE = colour.SpectralShape(380, 780, 5)
 
@@ -137,6 +138,16 @@ def main():
         "    static let lutByFilm: [String: String] = [",
     ])
     lut_map={}
+    # Keep the upstream spectral contraction in IEEE754 Float64 for the
+    # original mode; the packed Float16 version remains the mobile mode.
+    precise_lines=[
+        "// ORIGINAL upstream Hanatos2025 2D TC source sensor-integrated LUT.",
+        "// Actual stored IEEE754 binary64. Never silently drop to Float16.",
+        "enum GeneratedHanatosPreciseData {",
+        f"    static let dimension = {n}",
+        f'    static let sourceSHA256 = "{hashlib.sha256(NPY.read_bytes()).hexdigest()}"',
+        "    static let lutByFilm: [String: String] = [",
+    ]
     for info, values in originals:
         stock = info["stock"]
         sensitivity = np.nan_to_num(10.0 ** np.asarray(
@@ -159,6 +170,9 @@ def main():
         encoded = base64.b64encode(half.tobytes()).decode("ascii")
         lines.append("        "+q(stock)+": "+q(encoded)+",")
         lut_map[stock] = response
+        packed=np.ascontiguousarray(response,dtype="<f8")
+        precise_lines.append("        "+q(stock)+": "+
+                             q(base64.b64encode(packed.tobytes()).decode("ascii"))+",")
 
     lines.append("    ]")
     sample=[np.array([0.184]*3),np.array([0.65,0.12,0.04]),
@@ -177,6 +191,10 @@ def main():
             idx+=1
     lines.append("}")
     DEST.write_text("\n".join(lines)+"\n", encoding="utf-8")
+    precise_lines.extend(["    ]", "}"])
+    PRECISE_DEST.write_text("\n".join(precise_lines)+"\n",encoding="utf-8")
+    print(f"PASS: 20 original Float64 Hanatos stock response LUTs " +
+          f"({PRECISE_DEST.stat().st_size} Swift bytes), no mobile precision fallback")
     print(f"PASS: original Hanatos2025 LUT grid {n}x{n}x81, "
           "default per-stock UV window adaptation")
     print(f"PASS: 20 filming stocks, {idx} Python/SciPy reference vectors")
