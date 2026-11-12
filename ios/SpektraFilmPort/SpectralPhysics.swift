@@ -937,7 +937,7 @@ struct SpectralPhysics {
         let scan = try directPrintScannerStages(developed)
         let actualEncoded = scanFilmDensity(filmDensity,paperEV:paperEV)
         guard zip(actualEncoded,scan.encoded).allSatisfy({
-            abs($0-$1) < 1e-12
+            abs($0.0-$0.1) < 1e-12
         }) else {
             throw PhysicsError.invalid("原版负片整链诊断与实际生产 RGB 路径不一致")
         }
