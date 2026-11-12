@@ -70,7 +70,7 @@ enum OriginalSublayerGrain {
         }
         vec3 layerPerturb(vec3 normalizedD, vec3 peak, vec3 fractions,
                           float layerScale, float pixelUM, float seed,
-                          float layerOffset) {
+                          float layerOffset, vec2 pos) {
             vec3 dm = fractions * vec3(0.03,0.03,0.03);
             vec3 fullMax = peak + dm;
             vec3 d = clamp(normalizedD,0.0,1.0)*peak;
@@ -82,7 +82,6 @@ enum OriginalSublayerGrain {
             vec3 sd = fullMax * sqrt(
                 p*sat/max(n,vec3(0.000001))
             );
-            vec2 pos = destCoord();
             vec3 noise = vec3(
                 layerGaussian(pos+vec2(7.31+layerOffset,0.19),seed+layerOffset),
                 layerGaussian(pos+vec2(37.81,101.90+layerOffset),seed+11.0+layerOffset),
@@ -99,12 +98,13 @@ enum OriginalSublayerGrain {
             // Precisely nine independent source-model channel/sublayer
             // particle distributions; the normal approximation preserves
             // original first/second moments but not the discrete tails.
+            vec2 pos = destCoord();
             vec3 noise = layerPerturb(sl0.rgb,maximum0.rgb,fractions0.rgb,
-                                      2.0,pixelUM,seed,0.0);
+                                      2.0,pixelUM,seed,0.0,pos);
             noise += layerPerturb(sl1.rgb,maximum1.rgb,fractions1.rgb,
-                                  1.0,pixelUM,seed,71.0);
+                                  1.0,pixelUM,seed,71.0,pos);
             noise += layerPerturb(sl2.rgb,maximum2.rgb,fractions2.rgb,
-                                  0.5,pixelUM,seed,163.0);
+                                  0.5,pixelUM,seed,163.0,pos);
             vec3 outD = clamp(base.rgb*totalRanges.rgb + amount*noise,
                               vec3(0.0),totalRanges.rgb);
             return vec4(outD/totalRanges.rgb,1.0);
