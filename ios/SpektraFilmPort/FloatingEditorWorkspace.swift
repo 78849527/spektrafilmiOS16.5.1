@@ -439,17 +439,14 @@ struct FloatingEditorWorkspace: View {
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-            Toggle("扫描光源 · ACES 色域", isOn: $model.originalScannerEnabled)
-                .font(.caption)
-                .disabled(!model.hasPhoto || model.busy)
+            resetToggle("扫描光源 · ACES 色域", value: $model.originalScannerEnabled,
+                        enabled: model.hasPhoto && !model.busy)
                 .onChange(of: model.originalScannerEnabled) { _ in
                     model.queueSpectralPreview()
                 }
             if model.originalScannerEnabled {
-                Toggle("原版默认 CAM16-UCS",
-                       isOn: $model.scannerCAM16Enabled)
-                    .font(.caption2)
-                    .disabled(!model.hasPhoto || model.busy)
+                resetToggle("原版默认 CAM16-UCS", value: $model.scannerCAM16Enabled,
+                            enabled: model.hasPhoto && !model.busy)
                     .onChange(of: model.scannerCAM16Enabled) { _ in
                         model.queueSpectralPreview()
                     }
@@ -458,18 +455,14 @@ struct FloatingEditorWorkspace: View {
                      : "可选色域 · ACES RGC")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Toggle("黑白场校准",
-                       isOn: $model.scannerBlackWhiteEnabled)
-                    .font(.caption2)
-                    .disabled(!model.hasPhoto || model.busy)
+                resetToggle("黑白场校准", value: $model.scannerBlackWhiteEnabled,
+                            enabled: model.hasPhoto && !model.busy)
                     .onChange(of: model.scannerBlackWhiteEnabled) { _ in
                         model.queueSpectralPreview()
                     }
                 if model.scannerBlackWhiteEnabled && !isReversal {
-                    Toggle("按印相曝光计算黑白参考",
-                           isOn: $model.exposureReferenceEnabled)
-                        .font(.caption2)
-                        .disabled(!model.hasPhoto || model.busy)
+                    resetToggle("按印相曝光计算黑白参考", value: $model.exposureReferenceEnabled,
+                                enabled: model.hasPhoto && !model.busy)
                         .onChange(of: model.exposureReferenceEnabled) { _ in
                             model.queueSpectralPreview()
                         }
@@ -480,10 +473,8 @@ struct FloatingEditorWorkspace: View {
                         .foregroundColor(.secondary)
                 }
             }
-            Toggle("扫描锐化 / 微眩光",
-                   isOn: $model.scannerFinishingEnabled)
-                .font(.caption)
-                .disabled(!model.hasPhoto)
+            resetToggle("扫描锐化 / 微眩光", value: $model.scannerFinishingEnabled,
+                        enabled: model.hasPhoto)
                 .onChange(of: model.scannerFinishingEnabled) { _ in onRefresh() }
             if model.scannerFinishingEnabled {
                 strengthControl("锐化强度",
@@ -492,9 +483,8 @@ struct FloatingEditorWorkspace: View {
             }
             Divider()
             if !isReversal {
-                Toggle("原版放大机归一化 / CMY", isOn: $model.originalPrintOpticsEnabled)
-                    .font(.caption)
-                    .disabled(!model.hasPhoto || model.busy)
+                resetToggle("原版放大机归一化 / CMY", value: $model.originalPrintOpticsEnabled,
+                            enabled: model.hasPhoto && !model.busy)
                     .onChange(of: model.originalPrintOpticsEnabled) { _ in
                         model.queueSpectralPreview()
                     }
@@ -508,9 +498,8 @@ struct FloatingEditorWorkspace: View {
                                 range: -40...40)
                     morphSlider("黄色 Y / CC", value: $model.printYellowShift,
                                 range: -40...40)
-                    Toggle("相纸预闪光", isOn: $model.preflashEnabled)
-                        .font(.caption2)
-                        .disabled(!model.hasPhoto || model.busy)
+                    resetToggle("相纸预闪光", value: $model.preflashEnabled,
+                                enabled: model.hasPhoto && !model.busy)
                         .onChange(of: model.preflashEnabled) { _ in
                             model.queueSpectralPreview()
                         }
@@ -527,9 +516,8 @@ struct FloatingEditorWorkspace: View {
                     }
                 }
                 Divider()
-                Toggle("相纸显影曲线 s023", isOn: $model.printMorphEnabled)
-                    .font(.caption)
-                    .disabled(!model.hasPhoto || model.busy)
+                resetToggle("相纸显影曲线 s023", value: $model.printMorphEnabled,
+                            enabled: model.hasPhoto && !model.busy)
                     .onChange(of: model.printMorphEnabled) { _ in
                         model.queueSpectralPreview()
                     }
@@ -547,21 +535,18 @@ struct FloatingEditorWorkspace: View {
                         .foregroundColor(.secondary)
                 }
             }
-            Toggle("乳剂散射", isOn: $model.scatterEnabled)
-                .font(.caption)
-                .disabled(!model.hasPhoto)
+            resetToggle("乳剂散射", value: $model.scatterEnabled,
+                        enabled: model.hasPhoto)
                 .onChange(of: model.scatterEnabled) { _ in onRefresh() }
-            Toggle("背反射光晕", isOn: $model.halationEnabled)
-                .font(.caption)
-                .disabled(!model.hasPhoto)
+            resetToggle("背反射光晕", value: $model.halationEnabled,
+                        enabled: model.hasPhoto)
                 .onChange(of: model.halationEnabled) { _ in onRefresh() }
             if model.halationEnabled {
                 strengthControl("光晕倍率", value: $model.halationAmount,
                                 range: 0...3, suffix: "×")
             }
-            Toggle("密度颗粒", isOn: $model.grainEnabled)
-                .font(.caption)
-                .disabled(!model.hasPhoto || model.busy)
+            resetToggle("密度颗粒", value: $model.grainEnabled,
+                        enabled: model.hasPhoto && !model.busy)
                 .onChange(of: model.grainEnabled) { enabled in
                     if enabled { model.queueSpectralPreview() }
                     else { onRefresh() }
@@ -589,6 +574,26 @@ struct FloatingEditorWorkspace: View {
                     .foregroundColor(.secondary)
             }
         }
+    }
+
+    // Double-tap the left caption to reset this switch. Toggle itself
+    // retains native single-tap action; no drag/tap recognizer is placed
+    // over the actual controls (iOS 16.5.1-safe).
+    private func resetToggle(_ title: String, value: Binding<Bool>,
+                             enabled: Bool) -> some View {
+        HStack(spacing: 5) {
+            Text(title)
+                .font(.caption2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    value.wrappedValue = false
+                }
+                .accessibilityHint("双击标签恢复默认关闭")
+            Toggle(title, isOn: value)
+                .labelsHidden()
+        }
+        .disabled(!enabled)
     }
 
     private func exposureControl(_ title: String, value: Binding<Double>,
