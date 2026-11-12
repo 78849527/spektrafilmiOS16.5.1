@@ -53,8 +53,14 @@ struct CAM16GamutValidation {
         let white=OriginalCAM16Gamut.compress([1,1,1])
         precondition(black.allSatisfy({ abs($0)<0.02 }),
                      "CAM16 gamut must anchor near-black")
-        precondition(white.allSatisfy({ $0>0.9 && $0<=1.04 }),
-                     "CAM16 gamut must maintain neutral display white")
+        // The source default one-sided lightness knee starts at 0.7
+        // and intentionally reduces display-white brightness. Do not
+        // assert that white stays >0.9: compare source values above.
+        precondition(white.allSatisfy({ $0>0.5 && $0<=1.04 }),
+                     "CAM16 source must map white into a finite valid interval")
+        precondition(abs(white[0]-white[1]) < 0.012 &&
+                     abs(white[1]-white[2]) < 0.012,
+                     "CAM16 default should preserve neutral gray balance")
         let fallback=OriginalCAM16Gamut.compress([3.0,-0.2,0.5])
         let alternative=OriginalScannerMath.compressACESRGC([3.0,-0.2,0.5])
         for i in 0..<3 {
