@@ -101,18 +101,22 @@ enum PhotoProcessor {
         grain: DensityGrainSettings? = nil,
         scanner: ScannerFinishSettings = ScannerFinishSettings()
     ) throws -> ExportResult {
-        let pixels = max(1, source.extent.width * source.extent.height)
-        let factor = min(1, sqrt(12_500_000 / pixels))
-        let resized = source.transformed(by:
-            CGAffineTransform(scaleX: factor, y: factor))
+        // Full-resolution output: NEVER silently shrink high-resolution
+        // images to 12.5 MP. The preview remains 1500 px for performance.
+        // On-memory CI filters evaluate lazily until JPEG encoding.
+        guard source.extent.width.isFinite, source.extent.height.isFinite,
+              source.extent.width > 0, source.extent.height > 0 else {
+            throw ImageProcessingError.invalid("源照片尺寸无效")
+        }
         let image = apply(
-            to: resized, lut: lut, strength: strength,
+            to: source, lut: lut, strength: strength,
             spatial: spatial, grain: grain, scanner: scanner
         )
         guard let data = context.jpegRepresentation(
-            of: image, colorSpace: srgb, options: [:]
+            of: image, colorSpace: srgb,
+            options: [.lossyCompressionQuality: 0.98]
         ) else {
-            throw ImageProcessingError.invalid("JPEG 导出失败")
+            throw ImageProcessingError.invalid("原尺寸高清 JPEG 导出失败，请检查可用内存与储存空间")
         }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SpektraFilmPort-" + UUID().uuidString)
@@ -120,6 +124,6 @@ enum PhotoProcessor {
         try data.write(to: url, options: .atomic)
         return ExportResult(url: url, width: Int(image.extent.width.rounded()),
                             height: Int(image.extent.height.rounded()),
-                            downsampled: factor < 0.9999)
+                            downsampled: false)
     }
 }
