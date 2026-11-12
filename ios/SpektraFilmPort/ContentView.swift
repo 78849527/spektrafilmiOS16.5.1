@@ -39,6 +39,7 @@ final class PhotoEditorModel: ObservableObject {
     @Published var printCyanShift = 0.0
     @Published var printMagentaShift = 0.0
     @Published var printYellowShift = 0.0
+    @Published var preflashEnabled = false
     @Published var preflashExposure = 0.0
     @Published var preflashMagentaShift = 0.0
     @Published var preflashYellowShift = 0.0
@@ -199,7 +200,7 @@ final class PhotoEditorModel: ObservableObject {
             cyanShift: printCyanShift,
             magentaShift: printMagentaShift,
             yellowShift: printYellowShift,
-            preflashExposure: preflashExposure,
+            preflashExposure: preflashEnabled ? preflashExposure : 0,
             preflashMagentaShift: preflashMagentaShift,
             preflashYellowShift: preflashYellowShift
         )
