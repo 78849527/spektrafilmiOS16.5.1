@@ -841,6 +841,47 @@ struct SpectralPhysics {
         let encoded: [Double]
     }
 
+    /// Stage-scoped paper / movie-print scanner diagnostic. Production
+    /// scanFilmDensity() uses the same scanPhysicalXYZ, linearSRGB, ACES
+    /// and CCTF operations after paper development. This deliberately
+    /// accepts already-developed print density: NOT negative->paper
+    /// H-D/print exposure/full RAW equivalence.
+    struct DirectPrintScannerStages {
+        let xyz: [Double]
+        let linear: [Double]
+        let compressed: [Double]
+        let encoded: [Double]
+    }
+
+    func directPrintScannerStages(
+        _ paperDensity: [Double]
+    ) throws -> DirectPrintScannerStages {
+        guard !isPositive, useOriginalScanner, !useReferenceBlackWhite,
+              !defaultCAM16Gamut, paperDensity.count == 3,
+              paperDensity.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid(
+                "相纸扫描分段诊断仅支持负片配置、关闭黑白校准及 ACES RGC")
+        }
+        let xyz = Self.scanPhysicalXYZ(
+            densities: paperDensity, paper: paper,
+            weights: scanWeights, normalization: viewingNormalization
+        )
+        let linear = OriginalScannerMath.linearSRGB(
+            xyz: xyz, viewing: viewingStock
+        )
+        let compressed = OriginalScannerMath.compressACESRGC(linear)
+        let encoded = compressed.map {
+            OriginalScannerMath.encodeSRGB(Self.clamp($0))
+        }
+        guard (xyz + linear + compressed + encoded)
+            .allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("相纸扫描 RGB 分段诊断产生非有限数值")
+        }
+        return DirectPrintScannerStages(
+            xyz: xyz, linear: linear, compressed: compressed, encoded: encoded
+        )
+    }
+
     func directPositiveScannerStages(
         _ filmDensity: [Double]
     ) throws -> DirectPositiveScannerStages {
