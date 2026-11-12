@@ -60,7 +60,10 @@ float filmUniform(uint seed, uint x, uint y, uint channel, uint layer,
     uint h = filmHash(seed ^ filmHash(x * 0x9e3779b9u) ^
         filmHash(y * 0x85ebca6bu) ^ filmHash(channel * 0xc2b2ae35u) ^
         filmHash(layer * 0x27d4eb2fu) ^ filmHash(iteration * 0x165667b1u));
-    return (float((h & 0xffffffu) + 1u)) / 16777217.0f;
+    // Clamp to open (0,1); 24-bit Float32 division can otherwise round
+    // the top hash bucket up to exactly 1 and break inverse-CDF sampling.
+    float uniform=(float(h & 0xffffffu)+0.5f)/16777216.0f;
+    return clamp(uniform,0.000000059604645f,0.9999998807907104f);
 }
 
 float filmNormal(uint seed, uint x, uint y, uint channel, uint layer,
