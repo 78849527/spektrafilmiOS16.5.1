@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.4.1 HD export and optical normalization
+name: iOS 16.5.1 — v1.5.0 source spatial DIR coupling
 
 on:
   push:
-    branches: ['ios16.5.1/hd-photos-controls-v1.4.1']
+    branches: ['ios16.5.1/dir-spatial-v1.5']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -13,7 +13,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-hd-photos-v1.4.1-release
+  group: ios1651-dir-spatial-v1.5-release
   cancel-in-progress: true
 
 jobs:
@@ -68,6 +68,7 @@ jobs:
           python3 ios/scripts/generate_original_optics.py
           python3 ios/scripts/generate_hanatos.py
           python3 ios/scripts/generate_dir.py
+          python3 ios/scripts/generate_dir_spatial.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -77,6 +78,7 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedCAM16Gamut.swift
           test -s ios/SpektraFilmPort/GeneratedScannerReference.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
+          test -s ios/SpektraFilmPort/GeneratedDIRSpatialReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
@@ -128,10 +130,23 @@ jobs:
             -o /tmp/SpektrafilmPrintOpticsValidation
       - name: Verify source CMY/preflash/normalization in print exposure buffer
         run: NSUnbufferedIO=YES /tmp/SpektrafilmPrintOpticsValidation
+      - name: Compile native spatial DIR and original NumPy inhibition tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/SpatialDIR.swift \
+            ios/SpektraFilmPort/DensityGrain.swift \
+            ios/SpektraFilmPort/GeneratedDIRData.swift \
+            ios/SpektraFilmPort/GeneratedDIRSpatialReference.swift \
+            ios/tests/SpatialDIRValidation.swift \
+            -o /tmp/SpektrafilmSpatialDIRValidation
+      - name: Verify source interlayer DIR inhibition and CoreImage diffusion
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmSpatialDIRValidation
       - name: Compile native spectral physics separately
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/SpatialDIR.swift \
+            ios/SpektraFilmPort/DensityGrain.swift \
             ios/SpektraFilmPort/OriginalPrintOptics.swift \
             ios/SpektraFilmPort/OriginalPrintMorph.swift \
             ios/SpektraFilmPort/OriginalPrintReference.swift \
@@ -182,6 +197,24 @@ jobs:
           assert 'NSPhotoLibraryAddUsageDescription' in Path("ios/project.yml").read_text()
           print("PASS: native add-only save, no silent downsample, per-control double-tap reset")
           PY
+      - name: Guard opt-in DIR respects original full-size output and cold-start
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          model = Path("ios/SpektraFilmPort/ContentView.swift").read_text()
+          source = Path("ios/SpektraFilmPort/PhotoProcessor.swift").read_text()
+          stage = Path("ios/SpektraFilmPort/SpatialDIR.swift").read_text()
+          ui = Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+          assert '@Published var spatialDIREnabled = false' in model
+          assert 'makeSpatialDIRStageData(' in model
+          assert 'dirStage: currentDIRStage' in model
+          assert 'dirStage: spatialDIRStage' in model
+          assert 'SpatialDIR.apply(' in source
+          assert 'DensityGrain.perturbDensityImage' in stage
+          assert 'sourceDIRSubtract' in stage
+          assert '原版 DIR 空间显影' in ui
+          print("PASS: opt-in source spatial DIR before paper and grain on preview/export")
+          PY
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
@@ -201,31 +234,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.4.1'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.5.0'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '21'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '22'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.4 unsigned IPA
+      - name: Package v1.5 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.4.1-hd-unsigned.ipa Payload
-      - name: Upload v1.4 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.5.0-dir-unsigned.ipa Payload
+      - name: Upload v1.5 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.4.1-hd-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.4.1-hd-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.5.0-dir-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.5.0-dir-unsigned.ipa
           if-no-files-found: error
-      - name: Publish isolated v1.4 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/hd-photos-controls-v1.4.1'
+      - name: Publish isolated v1.5 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/dir-spatial-v1.5'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.4.1-hd-photos
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.4.1-hd-unsigned.ipa
+          TAG=ios1651-v1.5.0-dir
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.5.0-dir-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/hd-photos-controls-v1.4.1" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/dir-spatial-v1.5" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -235,8 +268,8 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.4.1 — HD Photos export, resettable controls, source enlarger modes" \
-              --notes "v1.4.1 builds on v1.4 with double-tap reset on individual adjustment captions, film/paper wheel reset labels, native add-only Photos saving and full-original-pixel 98%-quality JPEG output without the 12.5 MP cap. Heavy export is dispatched away from the UI actor. Adds upstream PrintingStage four-mode enlarger normalization / exposure-compensation switches with Python Float64 ratio parity across material routes. iOS 16.5 UI and previous effects remain; physical-device testing remains pending. Unsigned IPA requires signing." \
+              --title "SpektraFilm iOS 16.5.1 v1.5.0 — source spatial DIR chemical diffusion" \
+              --notes "v1.5 adds OPT-IN source DIR interlayer inhibition in film log-exposure and spatially diffused 20um Gaussian / 200um exponential source model before corrected measured film H-D, density grain, spectral printing and scanner. Uses actual Hanatos spectral LUT and measured negative/reversal media, CUDA-free CoreImage GPU and Python Float64 NumPy matrix references. Gaussian boundary treatment and CIColorCube interpolation are approximations, not exact upstream convolution. Retains v1.4.1 double-tap reset, high-quality full-size JPEG and direct Photos save. Default opt-out preserves old rendering. iOS 16.5.1 user-device verification still required. Unsigned IPA must be signed." \
               --prerelease
           fi
           # Editing a Release's target_commitish does NOT move an existing
