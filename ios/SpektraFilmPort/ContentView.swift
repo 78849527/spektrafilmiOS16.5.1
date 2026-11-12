@@ -22,6 +22,7 @@ final class PhotoEditorModel: ObservableObject {
     // Experimental source-scanner path is OPT-IN. Initial UI and
     // old calculated looks remain identical to user-tested v1.0.1.
     @Published var originalScannerEnabled = false
+    @Published var scannerCAM16Enabled = false
     @Published var scannerBlackWhiteEnabled = false
     @Published var scannerFinishingEnabled = false
     @Published var scannerSharpenAmount = 0.7
@@ -175,6 +176,7 @@ final class PhotoEditorModel: ObservableObject {
         let requiresGrainStage = grainEnabled
         let originalScanner = originalScannerEnabled
         let referenceBW = scannerBlackWhiteEnabled
+        let cam16 = scannerCAM16Enabled
         Task {
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
@@ -183,7 +185,8 @@ final class PhotoEditorModel: ObservableObject {
                         exposureEV: cameraExposure, paperEV: enlargerExposure,
                         size: 17,
                         sourceScanner: originalScanner,
-                        scannerBlackWhite: referenceBW
+                        scannerBlackWhite: referenceBW,
+                        cam16Gamut: cam16
                     )
                     let density = try requiresGrainStage
                         ? SpectralPhysics.makeDensityStageData(
@@ -191,7 +194,8 @@ final class PhotoEditorModel: ObservableObject {
                             exposureEV: cameraExposure, paperEV: enlargerExposure,
                             size: 17,
                             sourceScanner: originalScanner,
-                            scannerBlackWhite: referenceBW
+                            scannerBlackWhite: referenceBW,
+                            cam16Gamut: cam16
                           ) : nil
                     return (cube, density)
                 }.value
