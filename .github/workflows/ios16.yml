@@ -173,6 +173,10 @@ jobs:
         id: iir_source_gpu
         continue-on-error: true
         run: NSUnbufferedIO=YES /tmp/SpektrafilmOriginalIIRValidation /tmp/SpektrafilmOriginalGrain.metallib
+      - name: Require source RNG, float, full-image and real-iPhone evidence
+        id: precision_certificate
+        continue-on-error: true
+        run: python3 ios/scripts/verify_precision_release.py
       - name: Compile source discrete Poisson GPU film particle tests
         run: |
           xcrun swiftc -Onone -parse-as-library \
@@ -385,7 +389,7 @@ jobs:
           path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -414,7 +418,7 @@ jobs:
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish isolated v1.8 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -443,7 +447,7 @@ jobs:
           test "$ACTUAL_TAG" = "$GITHUB_SHA"
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
-        if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success')
+        if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Original Metal grain or source IIR GPU compute/reference validation failed or was not run. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8 certified release."
+          echo "::error::Source grain/IIR GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8 certified release."
           exit 1
