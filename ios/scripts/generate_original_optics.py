@@ -52,7 +52,7 @@ def kg3_filter() -> np.ndarray:
         values[unique, 0], values[unique, 1])(WL), dtype=np.float64)
 
 
-def default_dichroic() -> np.ndarray:
+def default_dichroic(cc_values=(0.0, 65.0, 55.0)) -> np.ndarray:
     # Exact original create_combined_dichroic_filter defaults, CMY order.
     dic = np.zeros((81, 3), dtype=np.float64)
     dic[:, 2] = erf((WL - 516.0) / 12.0)
@@ -61,7 +61,8 @@ def default_dichroic() -> np.ndarray:
     dic[~mask, 1] = erf((WL[~mask] - 610.0) / 8.0)
     dic[:, 0] = -erf((WL - 607.0) / 8.0)
     dic = dic / 2.0 + 0.5
-    cc = np.array([0.0, 65.0, 55.0], dtype=np.float64)
+    cc = np.asarray(cc_values, dtype=np.float64)
+    assert cc.shape == (3,)
     trans = 10.0 ** (-cc / 100.0)
     dimmed = 1.0 - (1.0 - dic) * (1.0 - trans)[None, :]
     return np.prod(dimmed, axis=1)
@@ -104,6 +105,29 @@ def main() -> None:
     source /= np.mean(source)
     print_illuminant = source * default_dichroic()
 
+    # Original params_builder.apply_database_neutral_print_filters uses
+    # print stock / TH-KG3 / film stock specific CMY Kodak CC balancing.
+    # Bake the *actual* neutral filter for each 16 negatives x 8 media:
+    # colour_enlarger(light_source, filter_cc_values=stock_cc).
+    filter_db = json.loads((
+        ROOT / "src/spektrafilm/data/filters/neutral_print_filters.json"
+    ).read_text())
+    all_infos = [
+        json.loads(path.read_bytes())["info"]
+        for path in sorted((ROOT / "src/spektrafilm/data/profiles").glob("*.json"))
+    ]
+    negatives = [x["stock"] for x in all_infos
+                 if x["stage"] == "filming" and x["type"] == "negative"]
+    media = [x["stock"] for x in all_infos if x["stage"] == "printing"]
+    assert len(negatives) == 16 and len(media) == 8
+    print_illuminants = {}
+    for medium in media:
+        for stock in negatives:
+            cc = (filter_db.get(medium, {}).get("TH-KG3", {})
+                  .get(stock, (0.0, 65.0, 55.0)))
+            print_illuminants[stock + "|" + medium] = source * default_dichroic(cc)
+    assert len(print_illuminants) == 128
+
     names = {
         "mallettBasis": basis,
         "d55": d55,
@@ -142,6 +166,10 @@ def main() -> None:
     ]
     for key, array in names.items():
         lines.append(f'    static let {key} = "{encoded(array)}"')
+    lines.append("    static let printIlluminantByPair: [String: String] = [")
+    for key, values in print_illuminants.items():
+        lines.append(f"        {json.dumps(key)}: {json.dumps(encoded(values))},")
+    lines.append("    ]")
     for index, (stock, rgb, response) in enumerate(validation):
         def numbers(vals):
             return "[" + ",".join(format(float(v), ".16g") for v in vals) + "]"
@@ -156,6 +184,7 @@ def main() -> None:
     lines.append("}")
     DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("PASS: Mallett2019 basis, D55/D50, CIE1931, KG3, default CMY filter")
+    print("PASS: 128 original film×print neutral CMY database filter spectra")
     print(f"PASS: {len(validation)} Python reference Mallett response samples")
     print(f"Generated: {DEST.stat().st_size} bytes")
     print(f"colour-science version: {colour.__version__}")
