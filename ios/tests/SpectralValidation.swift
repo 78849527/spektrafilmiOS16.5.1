@@ -238,6 +238,58 @@ struct SpectralValidation {
         }
         print("PASS: original Hanatos+DIR optical density and downstream print/scan 3D cube separation.")
 
+        // Source-scanner opt-in must not alter the legacy v1.0.1 default.
+        // Exercise all measured print media and direct reversal routes, and
+        // the two-cube grain print stage under the scanner pathway.
+        var originalScannerPairs=0
+        for negative in negatives {
+            for paper in media {
+                let engine=try SpectralPhysics(
+                    filmID:negative,paperID:paper,sourceScanner:true
+                )
+                for input in [samples[1],samples[3]] {
+                    check(engine.render(input,exposureEV:0,paperEV:0),
+                          "source scanner \(negative) \(paper)")
+                }
+                originalScannerPairs+=1
+            }
+        }
+        precondition(originalScannerPairs==128)
+        for reversal in positives {
+            let a=try SpectralPhysics(
+                filmID:reversal,paperID:media[0],sourceScanner:true
+            )
+            let b=try SpectralPhysics(
+                filmID:reversal,paperID:media[7],sourceScanner:true
+            )
+            for input in [samples[1],samples[4]] {
+                let v1=a.render(input,exposureEV:0,paperEV:-2)
+                let v2=b.render(input,exposureEV:0,paperEV:2)
+                check(v1,"source reversal \(reversal)")
+                for c in 0..<3 {
+                    precondition(abs(v1[c]-v2[c]) < 0.000001,
+                                 "Reversal bypasses printing in source scanner")
+                }
+            }
+        }
+        print("PASS: 128 original viewing-scanner negatives and 4 reversal direct-scans.")
+
+        for (filmID,printID) in densityRoutes {
+            let scanner=try SpectralPhysics(
+                filmID:filmID,paperID:printID,
+                sourceScanner:true,scannerBlackWhite:true
+            )
+            check(scanner.render(samples[1],exposureEV:0,paperEV:0),
+                  "source scanner calibrated \(filmID)")
+            let pair=try SpectralPhysics.makeDensityStageData(
+                filmID:filmID,paperID:printID,exposureEV:0,paperEV:0,
+                size:9,sourceScanner:true,scannerBlackWhite:true
+            )
+            precondition(pair.inputCube.count==9*9*9*16)
+            precondition(pair.printCube.count==9*9*9*16)
+        }
+        print("PASS: optional black/white endpoint calibration and source scanner density split.")
+
         do {
             _ = try SpectralPhysics(filmID: "missing_profile", paperID: media[0])
             preconditionFailure("Unknown materials must reject")
