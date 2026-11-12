@@ -255,3 +255,15 @@ kernel void originalFilmWriteCore(
     destination.write(float4(result/args.totalRanges.rgb,1.0f),
                       uint2(args.originX+tid.x,args.originY+tid.y));
 }
+
+// Native test-only probe to verify texture binding and Swift/Metal ABI.
+// Not invoked by the production rendering pipeline.
+kernel void originalFilmDebugProbe(
+    texture2d<float,access::read> input [[texture(0)]],
+    texture2d<float,access::write> output [[texture(1)]],
+    constant FilmGrainBlurParams& args [[buffer(0)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if(tid.x>=args.width || tid.y>=args.height){ return; }
+    float value=input.read(tid).r;
+    output.write(float4(value,args.sigmas.x,float(args.width),1.0f),tid);
+}
