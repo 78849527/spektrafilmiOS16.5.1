@@ -312,5 +312,44 @@ struct OriginalMetalGrainValidation {
         precondition(a.extent.width==31 && a.extent.height==27,
                      "Metal tiling silently changed output dimensions")
         print("PASS: end-to-end actual Metal source density 3-layer Poisson draw, physical blur, seed and original dimensions.")
+
+        // End-to-end global YVV integration: one original reference case
+        // actually requires sigma>=3. Verify deterministic complete-image
+        // three-layer accumulation, no tile seam/shape change and finite
+        // normalized output. Bitwise SciPy RNG parity is NOT asserted.
+        var iirCase: GeneratedOriginalMetalGrainReference.Sample? = nil
+        for item in vectors {
+            let physical = try OriginalMetalGrain.physicalCoefficients(
+                maxima: item.maxima, pixelUM: item.pixelUM
+            )
+            if OriginalMetalGrain.needsWholeFrameIIR(physical) {
+                iirCase = item
+                break
+            }
+        }
+        guard let global = iirCase else {
+            fatalError("Expected at least one upstream sigma>=3 fixture")
+        }
+        func globalImage() throws -> CIImage {
+            try OriginalMetalGrain.render(
+                normalizedDensity: source, sublayerCubes: [c,c,c],
+                rawLayerMaxima: global.maxima, totalRanges: [2.8,2.8,2.8],
+                cubeDimension: 9, pixelUM: global.pixelUM,
+                amount: 1, seed: 8888,
+                libraryURL: URL(fileURLWithPath: CommandLine.arguments[1])
+            )
+        }
+        let global1 = try globalImage()
+        let global2 = try globalImage()
+        let gv1 = data(global1)
+        let gv2 = data(global2)
+        precondition(global1.extent.width == 31 && global1.extent.height == 27)
+        for i in stride(from: 0, to: gv1.count, by: 4) {
+            precondition(gv1[i].isFinite && gv1[i] >= 0 && gv1[i] <= 1.001)
+            near(Double(gv1[i]), Double(gv2[i]), tolerance: 0.00002,
+                 "whole-frame IIR three-layer deterministic output")
+        }
+        print("PASS: production global sigma>=3 YVV density output and three-layer dye-cloud streaming")
+
     }
 }
