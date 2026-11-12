@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.1.0 source scanner colour options
+name: iOS 16.5.1 — v1.2.0 original default CAM16-UCS gamut
 
 on:
   push:
-    branches: ['ios16.5.1/scanner-v1.1']
+    branches: ['ios16.5.1/cam16-v1.2']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -55,7 +55,7 @@ jobs:
           python-version: '3.11'
       - name: Install original colour-science reference dependencies
         run: |
-          python -m pip install --disable-pip-version-check --quiet 'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6'
+          python -m pip install --disable-pip-version-check --quiet 'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' 'matplotlib==3.10.7'
       - name: Generate original profile metadata and spectral numeric arrays
         run: |
           python3 ios/scripts/generate_compact_catalog.py
@@ -64,6 +64,8 @@ jobs:
           python3 ios/scripts/generate_hanatos.py
           python3 ios/scripts/generate_dir.py
           python3 ios/scripts/generate_scanner_reference.py
+          python3 ios/scripts/generate_cam16_gamut.py
+          test -s ios/SpektraFilmPort/GeneratedCAM16Gamut.swift
           test -s ios/SpektraFilmPort/GeneratedScannerReference.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
@@ -76,10 +78,23 @@ jobs:
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalScannerMath.swift \
             ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/OriginalCAM16Gamut.swift \
+            ios/SpektraFilmPort/GeneratedCAM16Gamut.swift \
             ios/tests/ScannerMathValidation.swift \
             -o /tmp/SpektrafilmScannerMathValidation
       - name: Verify Python/Swift colour science CAT and ACES references
         run: /tmp/SpektrafilmScannerMathValidation
+      - name: Compile source CAM16 gamut table and interpolation tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalCAM16Gamut.swift \
+            ios/SpektraFilmPort/OriginalScannerMath.swift \
+            ios/SpektraFilmPort/GeneratedCAM16Gamut.swift \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/tests/CAM16GamutValidation.swift \
+            -o /tmp/SpektrafilmCAM16Validation
+      - name: Verify source default CAM16 reference parity
+        run: /tmp/SpektrafilmCAM16Validation
       - name: Compile native spectral physics separately
         run: |
           xcrun swiftc -Onone -parse-as-library \
@@ -87,6 +102,8 @@ jobs:
             ios/SpektraFilmPort/OriginalHanatosResponse.swift \
             ios/SpektraFilmPort/OriginalScannerMath.swift \
             ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/OriginalCAM16Gamut.swift \
+            ios/SpektraFilmPort/GeneratedCAM16Gamut.swift \
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
             ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
             ios/SpektraFilmPort/GeneratedHanatosData.swift \
@@ -127,33 +144,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.1.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.2.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.2.0-cam16-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.2.0-cam16-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.2.0-cam16-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/scanner-v1.1'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/cam16-v1.2'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.1.0-scanner
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned.ipa
+          TAG=ios1651-v1.2.0-cam16
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.2.0-cam16-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v1.1 — optional source scanner colour pathway" \
-              --notes "iOS16.5.1 v1.1 experimental scanner, based on user-confirmed stable v1.0.1 floating UI. Opt-in original viewing D50/K75P XYZ-to-sRGB source transform; source-supported ACES RGC v1.3 gamut compression, optional black-white correction with measured endpoint references (approximate, not the complete source exposure-calibrated reference), output glare and unsharp on linear RGB. Source default CAM16-UCS is NOT yet ported. All existing v1.0.1 optical grain/scatter algorithms and gesture layout preserved unchanged. New scanning features OFF at launch. Unsigned IPA requires signing and physical device validation." \
+              --title "Spektrafilm iOS 16.5.1 v1.2 — source default CAM16-UCS gamut" \
+              --notes "iOS16.5.1 v1.2 source default CAM16-UCS output gamut compression: source Python/colour-science 64x720 Cmax(Jp,h) table and original Reinhard chroma/lightness knees precomputed at CI into 33^3 extended linear-sRGB lookup. Swift trilinear interpolation approximates source between nodes and falls back to source ACES RGC out of [-0.25,1.75] or undefined source nodes. User switches between ACES and CAM16 within source-scanner option. Black/white reference calibration still endpoint estimate; image-space glare/finishing also remains approximate. All new scanning features are OFF by default, stable v1.0.1 floating UI preserved and 28 stocks unchanged. Unsigned IPA must be signed and tested on iOS 16.5.1." \
               --prerelease
           fi
