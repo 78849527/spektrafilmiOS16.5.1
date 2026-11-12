@@ -64,7 +64,9 @@ def source_scan(profile, density):
         xyz,colourspace="sRGB",apply_cctf_encoding=False,
         illuminant=viewing_xy
     )
-    compressed=compress_rgb_aces_rgc(linear)
+    compressed=compress_rgb_aces_rgc(
+        linear,threshold=0.0,limit=1.0,power=6.0
+    )
     encoded=colour.RGB_to_RGB(
         compressed,"sRGB","sRGB",
         apply_cctf_decoding=False,apply_cctf_encoding=True
