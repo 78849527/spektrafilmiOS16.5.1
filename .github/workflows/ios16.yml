@@ -78,6 +78,7 @@ jobs:
           python3 ios/scripts/generate_original_metal_grain.py
           python3 ios/scripts/generate_original_source_rng.py
           python3 ios/scripts/generate_source_iir.py
+          python3 ios/scripts/generate_original_source_rng.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -92,6 +93,7 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedOriginalMetalGrainReference.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalSourceRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceIIRReference.swift
+          test -s ios/SpektraFilmPort/GeneratedOriginalSourceRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
@@ -253,6 +255,32 @@ jobs:
           assert ".simultaneousGesture(" not in source
           assert "StableImageHoldRecognizer" in source
           print("PASS: launch rendering defers both pickers and adjustment dock")
+          PY
+      - name: Guard clickable right-hand numeric slider reset and original defaults
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+          model = Path("ios/SpektraFilmPort/ContentView.swift").read_text()
+          for token in (
+              '点右侧数值恢复默认',
+              'accessibilityLabel("效果强度，点击数值恢复默认 100%")',
+              '点击数值恢复默认 0 EV',
+              'value.wrappedValue = resetTo',
+              'Text(String(format: "%.2f", value.wrappedValue) + suffix)',
+              'Button {',
+              '.buttonStyle(.plain)',
+          ):
+              assert token in source, token
+          for item in (
+              '@Published var strength = 1.0',
+              '@Published var filmExposureEV = 0.0',
+              '@Published var printExposureEV = 0.0',
+              '@Published var scannerSharpenAmount = 0.7',
+              '@Published var grainAmount = 1.0',
+          ):
+              assert item in model, item
+          print("PASS: all four slider helper kinds expose value-tap default reset; model source defaults retained")
           PY
       - name: Guard full-size Photos save and double-tap defaults
         run: |
