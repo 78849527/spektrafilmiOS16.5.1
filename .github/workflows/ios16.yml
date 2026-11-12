@@ -172,7 +172,7 @@ jobs:
           saver = Path("ios/SpektraFilmPort/PhotoLibrarySaver.swift").read_text()
           assert '12_500_000' not in source
           assert 'to: source, lut: lut' in source
-          assert 'kCGImageDestinationLossyCompressionQuality: 0.98' in source
+          assert 'kCGImageDestinationLossyCompressionQuality as String: 0.98' in source
           assert 'PhotoLibrarySaver.saveJPEG(at: file)' in model
           assert 'Task.detached(priority: .userInitiated)' in model
           assert 'requestAuthorization(for: .addOnly)' in saver
