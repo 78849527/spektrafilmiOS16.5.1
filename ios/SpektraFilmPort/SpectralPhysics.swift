@@ -134,6 +134,8 @@ struct SpectralPhysics {
     private let scanWeights: [[Double]]   // wavelength -> CIE XYZ
     private let mediaWhiteXYZ: [Double]
     private let printReference: Double
+    private let enlargerFlashRaw: [Double]
+    private let advancedEnlarger: OriginalEnlarger.Settings
     private let neutralOutputRGB: [Double]
     private let useOriginalScanner: Bool
     private let useReferenceBlackWhite: Bool
@@ -159,10 +161,14 @@ struct SpectralPhysics {
          sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
          cam16Gamut: Bool = false,
          printReferenceCorrection: Bool = false,
-         printMorph: OriginalPrintMorph.Settings = .init()) throws {
+         printMorph: OriginalPrintMorph.Settings = .init(),
+         enlarger: OriginalEnlarger.Settings = .init()) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
+        }
+        guard enlarger.valid else {
+            throw PhysicsError.invalid("印相 CMY 滤色和预闪光参数无效")
         }
         let originalFilm = try Profile(id: filmID)
         let originalPaper = try Profile(id: paperID)
@@ -173,6 +179,7 @@ struct SpectralPhysics {
         paper = originalPaper
         hanatos = originalHanatos
         isPositive = positive
+        advancedEnlarger = enlarger
         useOriginalScanner = sourceScanner
         useReferenceBlackWhite = scannerBlackWhite
         defaultCAM16Gamut = cam16Gamut
@@ -202,9 +209,41 @@ struct SpectralPhysics {
         let sourceIlluminant =
             GeneratedOriginalOptics.printIlluminantByPair[printKey] ??
             GeneratedOriginalOptics.enlargerNeutral
-        let enlarger = try Self.readOriginalFloat32(
+        let useNewEnlarger = !positive && enlarger.enabled
+        let neutralCC = GeneratedOriginalOptics.printNeutralCCByPair[printKey]
+            ?? [0.0,65.0,55.0]
+        let sourceSpectrum: [Double]
+        if useNewEnlarger {
+            sourceSpectrum = try Self.readOriginalFloat32(
+                GeneratedOriginalOptics.enlargerUnfiltered, count: 81
+            )
+        } else {
+            sourceSpectrum = []
+        }
+        let enlargerSpectrum = try Self.readOriginalFloat32(
             sourceIlluminant, count: 81
         )
+        let enlargerIlluminant = useNewEnlarger
+            ? OriginalEnlarger.filteredSpectrum(
+                source: sourceSpectrum,
+                cc: OriginalEnlarger.mainCC(neutral:neutralCC,
+                                             settings:enlarger)
+            )
+            : enlargerSpectrum
+        let flash: [Double]
+        if useNewEnlarger && enlarger.preflashExposure > 0 {
+            flash = OriginalEnlarger.preflashRaw(
+                filmBaseDensity: (0..<81).map { originalFilm.base($0) },
+                source: sourceSpectrum, neutral: neutralCC,
+                settings: enlarger,
+                paperSensitivity: (0..<81).map { i in
+                    (0..<3).map { originalPaper.sensitivity(i,$0) }
+                }
+            )
+        } else {
+            flash = [0.0,0.0,0.0]
+        }
+        enlargerFlashRaw = flash
         var matrix = Array(repeating: Array(repeating: 0.0, count: 3), count: 3)
         var pWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
         var xyzWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
@@ -222,7 +261,7 @@ struct SpectralPhysics {
                     matrix[ch][rgb] += basis[i * 3 + rgb] * light *
                         originalFilm.sensitivity(i, ch)
                 }
-                pWeights[i][ch] = enlarger[i] *
+                pWeights[i][ch] = enlargerIlluminant[i] *
                     originalPaper.sensitivity(i, ch)
             }
             // Original scanning density-to-light and spectral integration
@@ -264,12 +303,12 @@ struct SpectralPhysics {
             let ref = Self.printRaw(
                 filmDensities: midFilmReference, film: originalFilm, weights: pWeights
             )
-            printReference = exp(
-                ref.reduce(0.0) { $0 + log(max($1, 1e-14)) } / 3.0
-            )
+            printReference = useNewEnlarger && !enlarger.normalizeExposure
+                ? 1.0 : OriginalEnlarger.geometricNormalization(ref)
             midMedium = Self.paperDensities(
                 midFilm, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0.0
+                weights: pWeights, reference: printReference,
+                printEV: 0.0, preflashRaw: flash
             )
         }
         let midLinear = Self.scanLinear(
@@ -313,11 +352,13 @@ struct SpectralPhysics {
             }
             let paperBlack = Self.paperDensities(
                 filmBlack, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0
+                weights: pWeights, reference: printReference,
+                printEV: 0, preflashRaw: flash
             )
             let paperWhite = Self.paperDensities(
                 filmWhite, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0
+                weights: pWeights, reference: printReference,
+                printEV: 0, preflashRaw: flash
             )
             let measuredBlack = Self.scanPhysicalXYZ(
                 densities: paperBlack, paper: originalPaper,
@@ -349,7 +390,8 @@ struct SpectralPhysics {
                              scannerBlackWhite: Bool = false,
                              cam16Gamut: Bool = false,
                              printReferenceCorrection: Bool = false,
-                             printMorph: OriginalPrintMorph.Settings = .init()
+                             printMorph: OriginalPrintMorph.Settings = .init(),
+                             enlarger: OriginalEnlarger.Settings = .init()
     ) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
@@ -361,7 +403,7 @@ struct SpectralPhysics {
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
-            printMorph: printMorph
+            printMorph: printMorph, enlarger: enlarger
         )
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
@@ -403,7 +445,8 @@ struct SpectralPhysics {
         sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
         cam16Gamut: Bool = false,
         printReferenceCorrection: Bool = false,
-        printMorph: OriginalPrintMorph.Settings = .init()
+        printMorph: OriginalPrintMorph.Settings = .init(),
+        enlarger: OriginalEnlarger.Settings = .init()
     ) throws -> DensityStageData {
         guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -414,7 +457,7 @@ struct SpectralPhysics {
             sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
             cam16Gamut: cam16Gamut,
             printReferenceCorrection: printReferenceCorrection,
-            printMorph: printMorph
+            printMorph: printMorph, enlarger: enlarger
         )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
         let step = 1.0 / Double(size-1)
@@ -487,7 +530,8 @@ struct SpectralPhysics {
                 filmDensity, film: film, paper: paper, weights: paperWeights,
                 reference: printReference,
                 printEV: paperEV + correctedPrintExposureEV,
-                morph: printMorphCurve
+                morph: printMorphCurve,
+                preflashRaw: enlargerFlashRaw
             )
             substrate = paper
         }
@@ -535,6 +579,16 @@ struct SpectralPhysics {
         guard let b=correctedReferenceBlack,
               let w=correctedReferenceWhite else { return nil }
         return (b,w,correctedPrintExposureEV)
+    }
+
+    func originalEnlargerRawDiagnostics(_ density: [Double]) -> [Double] {
+        guard density.count == 3 else { return [] }
+        let raw = Self.printRaw(filmDensities:density,
+                                film:film,weights:paperWeights)
+        return OriginalEnlarger.rawWithPreflash(
+            sceneRaw:raw,reference:printReference,
+            flashRaw:enlargerFlashRaw,normalize:true
+        )
     }
 
     func originalPrintMorphDelta(logExposure: Double, channel: Int) -> Double {
@@ -612,11 +666,16 @@ struct SpectralPhysics {
     private static func paperDensities(_ filmDensities: [Double], film: Profile,
                                        paper: Profile, weights: [[Double]],
                                        reference: Double, printEV: Double,
-                                       morph: OriginalPrintMorph.PreparedCurve? = nil
+                                       morph: OriginalPrintMorph.PreparedCurve? = nil,
+                                       preflashRaw: [Double] = [0.0,0.0,0.0]
     ) -> [Double] {
         let raw = printRaw(filmDensities: filmDensities, film: film, weights: weights)
+        let exposed = OriginalEnlarger.rawWithPreflash(
+            sceneRaw:raw, reference:reference,
+            flashRaw:preflashRaw, normalize:true
+        )
         return (0..<3).map { c in
-            let logE = log10(max(1e-14, raw[c]) / reference) +
+            let logE = log10(max(1e-14, exposed[c])) +
                 printEV * 0.301029995664
             let measured = paper.curve(logE, channel: c)
             guard let morph else { return measured }
