@@ -191,7 +191,8 @@ enum PhotoProcessor {
                 workingSource = scaled.cropped(
                     to: CGRect(
                         x: 0, y: 0,
-                        width: target.width, height: target.height
+                        width: CGFloat(target.width),
+                        height: CGFloat(target.height)
                     )
                 )
                 downsampled = true
