@@ -14,6 +14,39 @@ final class PhotoEditorModel: ObservableObject {
     @Published var busy = false
     @Published var photoDimensions = ""
 
+    // Selection stores original upstream identifiers; it does NOT render a
+    // simulated look until a real native spectral engine is connected.
+    @Published var selectedFilmID = "kodak_portra_400"
+    @Published var selectedPaperID = "kodak_portra_endura"
+
+    init() {
+        let catalog = MeasuredStockCatalog.shared
+        let savedFilm = UserDefaults.standard.string(forKey: "selectedFilmStock")
+        let savedPaper = UserDefaults.standard.string(forKey: "selectedPaperStock")
+        selectedFilmID = catalog.filmingStocks.first {
+            $0.id == (savedFilm ?? "kodak_portra_400")
+        }?.id ?? catalog.filmingStocks.first?.id ?? ""
+        selectedPaperID = catalog.papers.first {
+            $0.id == (savedPaper ?? "kodak_portra_endura")
+        }?.id ?? catalog.papers.first?.id ?? ""
+    }
+
+    func filmChanged() {
+        let catalog = MeasuredStockCatalog.shared
+        UserDefaults.standard.set(selectedFilmID, forKey: "selectedFilmStock")
+        if let preferred = catalog.stock(selectedFilmID)?.targetPrint,
+           catalog.papers.contains(where: { $0.id == preferred }) {
+            selectedPaperID = preferred
+            UserDefaults.standard.set(preferred, forKey: "selectedPaperStock")
+        }
+        status = "胶片配置已选择：\(catalog.stock(selectedFilmID)?.name ?? selectedFilmID)。目前尚未连接原版物理计算，照片效果仍由外部 LUT 控制。"
+    }
+
+    func paperChanged() {
+        UserDefaults.standard.set(selectedPaperID, forKey: "selectedPaperStock")
+        status = "相纸配置已选择：\(MeasuredStockCatalog.shared.stock(selectedPaperID)?.name ?? selectedPaperID)。原版物理印相计算待接入。"
+    }
+
     private var source: CIImage?
     var hasPhoto: Bool { source != nil }
 
@@ -155,6 +188,56 @@ struct ContentView: View {
                     }
 
                     Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("原版胶片与相纸").font(.headline)
+                        let catalog = MeasuredStockCatalog.shared
+                        if let error = catalog.error {
+                            Text(error).font(.caption).foregroundStyle(.red)
+                        } else {
+                            Text("已内置 \(catalog.filmingStocks.count) 款拍摄胶片、\(catalog.papers.count) 款相纸的原始实测配置。")
+                                .font(.caption).foregroundStyle(.secondary)
+
+                            Picker("拍摄胶片", selection: $model.selectedFilmID) {
+                                ForEach(catalog.filmingStocks) { film in
+                                    Text(film.name).tag(film.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .onChange(of: model.selectedFilmID) { _ in
+                                model.filmChanged()
+                            }
+
+                            Picker("印相相纸", selection: $model.selectedPaperID) {
+                                ForEach(catalog.papers) { paper in
+                                    Text(paper.name).tag(paper.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .onChange(of: model.selectedPaperID) { _ in
+                                model.paperChanged()
+                            }
+
+                            if let film = catalog.stock(model.selectedFilmID) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("胶片：\(film.categoryLabel) · \(film.polarityLabel) · 光谱采样 \(film.wavelengthCount) 点")
+                                    Text("测量版本：\(film.profileVersion) · 文件：\(film.filename)")
+                                    Text(catalog.hasBundledSource(for: film)
+                                        ? "完整实测文件：已打包"
+                                        : "完整实测文件：未找到")
+                                }
+                                .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            if let paper = catalog.stock(model.selectedPaperID) {
+                                Text("相纸：\(paper.name) · 光谱采样 \(paper.wavelengthCount) 点")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Text("配置是真实上游数据，但当前仅完成读取和选择：切换胶片或相纸不会改变图片色彩。物理显影接入后才会生效。")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+
+                    Divider()
                     HStack {
                         Button {
                             model.status = "请选择 .cube 文件；其他扩展名会在选择后提示"
@@ -203,7 +286,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("阶段 1：只应用标准 3D .cube LUT。要求 sRGB 输入／输出、0–1 Domain。不是完整的光谱胶片模拟；RAW、物理颗粒、光晕待移植。导出超过 1250 万像素会等比缩小。")
+                    Text("v0.2：已内置原版胶片／相纸的实测数据和选择器，但未连接物理渲染。照片效果仍仅应用外部 3D .cube LUT（要求 sRGB 输入输出、0–1 Domain）。RAW、物理颗粒与光晕待移植。超过 1250 万像素会缩小导出。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)

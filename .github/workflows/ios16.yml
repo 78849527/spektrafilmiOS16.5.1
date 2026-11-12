@@ -27,6 +27,10 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Stage exact upstream spectral profiles and license files
+        run: python3 ios/scripts/stage_profiles.py
+      - name: Verify bundled data byte-for-byte against upstream
+        run: python3 ios/scripts/validate_profiles.py
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
@@ -42,25 +46,97 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -q '^com.twogou.spektrafilmport$'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -q '^com.twogou.spektrafilmport
       - name: Package IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-ios16-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-ios16-v0.2.0-unsigned.ipa Payload
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-ios16-unsigned
-          path: ios/build/SpektraFilmPort-ios16-unsigned.ipa
+          name: SpektraFilmPort-ios16-v0.2.0-unsigned
+          path: ios/build/SpektraFilmPort-ios16-v0.2.0-unsigned.ipa
           if-no-files-found: error
       - name: Publish unofficial test prerelease
         if: github.event_name == 'push' && github.ref == 'refs/heads/ios16'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ASSET=ios/build/SpektraFilmPort-ios16-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-ios16-v0.2.0-unsigned.ipa
+          TAG=ios16-v0.2.0
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
+              --title "SpektraFilm Port iOS 16 v0.2.0 — measured profiles (unsigned)" \
+              --notes "Unofficial iOS 16.5.1 test build. Original measured film and paper profiles included with native selectors. External .cube import and JPEG export retained. Stock selection is metadata only, not physical rendering. Unsigned IPA requires signing." \
+              --prerelease
+          fi
+
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -q '^0.2.0
+      - name: Package IPA
+        run: |
+          mkdir -p ios/build/package/Payload
+          cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
+          cd ios/build/package
+          zip -q -r ../SpektraFilmPort-ios16-v0.2.0-unsigned.ipa Payload
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpektraFilmPort-ios16-v0.2.0-unsigned
+          path: ios/build/SpektraFilmPort-ios16-v0.2.0-unsigned.ipa
+          if-no-files-found: error
+      - name: Publish unofficial test prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET=ios/build/SpektraFilmPort-ios16-v0.2.0-unsigned.ipa
+          TAG=ios16-mvp
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
+              --title "SpektraFilm Port iOS 16 v0.1.0 (unsigned)" \
+              --notes "Unofficial iOS 16 test build. Adobe .cube LUT import, photo preview, JPEG export. NOT the native spectral engine. Unsigned IPA must be signed." \
+              --prerelease
+          fi
+
+          test -s "$APP/Resources/profiles/index.json"
+          test -s "$APP/Resources/profiles/kodak_portra_400.json"
+          test -s "$APP/Resources/profiles/kodak_portra_endura.json"
+          test -s "$APP/Resources/licenses/SPEKTRAFILM_LICENSE.txt"
+          python3 - "$APP" <<'PY'
+          import json, pathlib, sys
+          app = pathlib.Path(sys.argv[1])
+          index = json.loads((app / "Resources/profiles/index.json").read_text())
+          assert len(index["profiles"]) >= 20
+          assert any(p["id"] == "kodak_portra_400" for p in index["profiles"])
+          assert any(p["id"] == "kodak_portra_endura" for p in index["profiles"])
+          print("App bundle measured profiles validated")
+          PY
+      - name: Package IPA
+        run: |
+          mkdir -p ios/build/package/Payload
+          cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
+          cd ios/build/package
+          zip -q -r ../SpektraFilmPort-ios16-v0.2.0-unsigned.ipa Payload
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpektraFilmPort-ios16-v0.2.0-unsigned
+          path: ios/build/SpektraFilmPort-ios16-v0.2.0-unsigned.ipa
+          if-no-files-found: error
+      - name: Publish unofficial test prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET=ios/build/SpektraFilmPort-ios16-v0.2.0-unsigned.ipa
           TAG=ios16-mvp
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
