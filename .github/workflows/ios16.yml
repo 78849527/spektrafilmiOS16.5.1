@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.3.0 print exposure reference and s023 morphology
+name: iOS 16.5.1 — v1.4.0 source optical printing and preflash
 
 on:
   push:
-    branches: ['ios16.5.1/print-reference-v1.3']
+    branches: ['ios16.5.1/print-optics-v1.4']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -66,7 +66,9 @@ jobs:
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
+          python3 ios/scripts/generate_print_optics.py
           test -s ios/SpektraFilmPort/GeneratedPrintMorphData.swift
+          test -s ios/SpektraFilmPort/GeneratedPrintOpticsReference.swift
           test -s ios/SpektraFilmPort/GeneratedCAM16Gamut.swift
           test -s ios/SpektraFilmPort/GeneratedScannerReference.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
@@ -110,10 +112,22 @@ jobs:
             -o /tmp/SpektrafilmPrintMorphValidation
       - name: Verify 8 original s023 print media and 16 NumPy exposure references
         run: NSUnbufferedIO=YES /tmp/SpektrafilmPrintMorphValidation
+      - name: Compile and test original CMY dichroic and preflash NumPy references
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalPrintOptics.swift \
+            ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
+            ios/SpektraFilmPort/GeneratedSpectralData.swift \
+            ios/SpektraFilmPort/GeneratedPrintOpticsReference.swift \
+            ios/tests/PrintOpticsValidation.swift \
+            -o /tmp/SpektrafilmPrintOpticsValidation
+      - name: Verify source CMY/preflash/normalization in print exposure buffer
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmPrintOpticsValidation
       - name: Compile native spectral physics separately
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/OriginalPrintOptics.swift \
             ios/SpektraFilmPort/OriginalPrintMorph.swift \
             ios/SpektraFilmPort/OriginalPrintReference.swift \
             ios/SpektraFilmPort/GeneratedPrintMorphData.swift \
@@ -162,33 +176,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.3.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.4.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/print-reference-v1.3'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/print-optics-v1.4'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.3.0-print
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned.ipa
+          TAG=ios1651-v1.4.0-optics
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.4.0-optics-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v1.3 — print exposure reference and s023 development morph" \
-              --notes "v1.3 adds opt-in exposure-calibrated black/white references: measured film min/max propagate through original printing stocks and paper H-D/XYZ, with source ColorReferenceService midgray inverse-H-D EV correction. Adds original s023 three-layer CDF fitted print curve morphology, coupled global/fast/slow/color gamma and Gumbel developer exhaustion, with original Python reference parity. Default gamma/exhaustion and exposure calibration disabled, preserving v1.2; existing iOS16.5.1 safe floating preview, 28 profiles, DIR, Hanatos, CAM16, ACES, grain, halation kept. Mobile printing normalization differs from full upstream enlarger and preflash reference; offset is corrected and bounded. Unsigned IPA requires signing and physical test." \
+              --title "Spektrafilm iOS 16.5.1 v1.4 — source enlarger optics and print preflash" \
+              --notes "v1.4 adds opt-in 81-wavelength CMY dichroic printing with stock-specific neutral filters; real spectral preflash before paper development; compensated midgrey enlarger normalization; works with v1.3 paper s023, black/white reference and density-grain two-stage LUT. Python Float64 source vectors verify illuminant, raw, preflash and log exposure. v1.3 appearance remains the default; reversals bypass printing. Full spatial print diffusion and physical iOS testing remain pending. Unsigned IPA requires personal signing." \
               --prerelease
           fi
