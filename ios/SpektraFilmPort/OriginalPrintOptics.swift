@@ -7,6 +7,8 @@ import Foundation
 enum OriginalPrintOptics {
     struct Settings {
         var enabled = false
+        var normalizePrintExposure = true
+        var printExposureCompensation = true
         var cyanShift = 0.0
         var magentaShift = 0.0
         var yellowShift = 0.0
@@ -96,6 +98,27 @@ enum OriginalPrintOptics {
             $0 + log(max($1, 1e-10))
         } / 3.0
         return exp(meanLog)
+    }
+
+    /// PrintingStage._compute_exposure_factor_midgray implements FOUR
+    /// normalization/compensation switch combinations:
+    ///   normalize  compensate  multiplier
+    ///      true      true       1/G(compensated_midgray)
+    ///      true      false      1/G(midgray)
+    ///      false     true       G(midgray)/G(compensated_midgray)
+    ///      false     false      1
+    /// Here the multiplier is represented by a DIVISOR to avoid another
+    /// multiplication at every LUT sample.
+    static func referenceDivisor(
+        midgrayRaw: [Double], compensatedRaw: [Double],
+        normalize: Bool, compensate: Bool
+    ) -> Double {
+        if !normalize && !compensate { return 1.0 }
+        let midgray = midgrayReference(midgrayRaw)
+        if normalize && !compensate { return midgray }
+        let compensated = midgrayReference(compensatedRaw)
+        if normalize && compensate { return compensated }
+        return compensated / max(midgray, 1e-10)
     }
 
     /// PrintingStage.expose: raw = (enlarger_raw * factor_midgray_comp +
