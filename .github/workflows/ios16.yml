@@ -76,6 +76,7 @@ jobs:
           python3 ios/scripts/generate_dir_spatial.py
           python3 ios/scripts/generate_sublayer_grain.py
           python3 ios/scripts/generate_original_metal_grain.py
+          python3 ios/scripts/generate_original_source_rng.py
           python3 ios/scripts/generate_source_iir.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
@@ -89,6 +90,7 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedDIRSpatialReference.swift
           test -s ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalMetalGrainReference.swift
+          test -s ios/SpektraFilmPort/GeneratedOriginalSourceRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceIIRReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
@@ -269,6 +271,7 @@ jobs:
           assert 'creationRequestForAssetFromImage' in saver
           assert 'onSaveToPhotos' in editor
           assert editor.count('.onTapGesture(count: 2)') >= 6
+          assert editor.count('点击数值恢复默认') >= 4
           assert 'NSPhotoLibraryAddUsageDescription' in Path("ios/project.yml").read_text()
           print("PASS: native add-only save, no silent downsample, per-control double-tap reset")
           PY
