@@ -36,6 +36,8 @@ final class PhotoEditorModel: ObservableObject {
     @Published var printDeveloperExhaustion = 0.0
     // Opt-in original spectral enlarger path; default stays v1.3.
     @Published var originalPrintOpticsEnabled = false
+    @Published var normalizePrintExposure = true
+    @Published var printExposureCompensation = true
     @Published var printCyanShift = 0.0
     @Published var printMagentaShift = 0.0
     @Published var printYellowShift = 0.0
@@ -197,6 +199,8 @@ final class PhotoEditorModel: ObservableObject {
         let useExposureReference = exposureReferenceEnabled
         let printOptics = OriginalPrintOptics.Settings(
             enabled: originalPrintOpticsEnabled,
+            normalizePrintExposure: normalizePrintExposure,
+            printExposureCompensation: printExposureCompensation,
             cyanShift: printCyanShift,
             magentaShift: printMagentaShift,
             yellowShift: printYellowShift,
