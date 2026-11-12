@@ -33,6 +33,9 @@ struct DensityGrainSettings {
     // Source discrete Poisson-thinned particle samples instead of the
     // v1.6 Gaussian moment approximation. Requires measured sublayers.
     var discreteParticlesEnabled = false
+    // v1.8 source-order Metal dye-cloud / clumping / reflect-convolution.
+    // Strict opt-in: failures are thrown, never reverted to fast grain.
+    var originalMetalEnabled = false
 }
 
 enum DensityGrain {
@@ -97,7 +100,7 @@ enum DensityGrain {
         """)
 
     static func apply(to source: CIImage,
-                      settings: DensityGrainSettings) -> CIImage? {
+                      settings: DensityGrainSettings) throws -> CIImage? {
         let stage = settings.stage
         guard stage.maxDensity.count == 3, stage.maxDensity.allSatisfy({
             $0.isFinite && $0 > 0
@@ -113,7 +116,7 @@ enum DensityGrain {
         // This keeps approximately the same material grain scale across
         // preview and JPEG export dimensions.
         let pixelUM = 36_000.0 / max(source.extent.width, source.extent.height, 1)
-        guard let scattered = perturbDensityImage(
+        guard let scattered = try perturbDensityImage(
             d, settings: settings, pixelUM: pixelUM
         ) else { return nil }
 
@@ -131,8 +134,24 @@ enum DensityGrain {
         _ normalizedDensity: CIImage,
         settings: DensityGrainSettings,
         pixelUM: Double
-    ) -> CIImage? {
+    ) throws -> CIImage? {
         let stage = settings.stage
+        if settings.originalMetalEnabled {
+            guard settings.measuredSublayersEnabled else {
+                throw OriginalMetalGrain.Failure.invalid(
+                    "原版 Metal 模式必须开启实测三乳剂亚层"
+                )
+            }
+            return try OriginalMetalGrain.render(
+                normalizedDensity: normalizedDensity,
+                sublayerCubes: stage.sublayerCubes,
+                rawLayerMaxima: stage.sublayerRawMaxima,
+                totalRanges: stage.maxDensity,
+                cubeDimension: stage.cubeDimension,
+                pixelUM: pixelUM, amount: settings.amount,
+                seed: settings.seed
+            )
+        }
         if settings.measuredSublayersEnabled {
             if settings.discreteParticlesEnabled {
                 return OriginalDiscreteGrain.perturb(
