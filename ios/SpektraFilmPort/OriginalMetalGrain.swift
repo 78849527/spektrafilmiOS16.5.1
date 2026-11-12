@@ -178,9 +178,15 @@ enum OriginalMetalGrain {
         }
         let w = min(8, pipeline.threadExecutionWidth)
         let group = MTLSize(width: w, height: 8, depth: 1)
-        encoder.dispatchThreads(
-            MTLSize(width: width, height: height, depth: 1),
-            threadsPerThreadgroup: group
+        // Integer-aligned threadgroups work on Intel Mac GPUs and older
+        // iPhone Metal feature sets without nonuniform dispatch support.
+        // All kernels explicitly guard the excess border threads.
+        encoder.dispatchThreadgroups(
+            MTLSize(
+                width: (width + group.width - 1) / group.width,
+                height: (height + group.height - 1) / group.height,
+                depth: 1
+            ), threadsPerThreadgroup: group
         )
         encoder.endEncoding()
     }
