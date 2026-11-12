@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v0.9 film density grain
+name: iOS 16.5.1 — v1.0 floating photo preview
 
 on:
   push:
-    branches: ['ios16.5.1/density-grain-v0.9']
+    branches: ['ios16.5.1/floating-editor-v1.0']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -93,33 +93,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.9.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.0.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/density-grain-v0.9'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/floating-editor-v1.0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.9.0-density-grain
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.9.0-density-grain-unsigned.ipa
+          TAG=ios1651-v1.0.0-floating-ui
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.9 — measured film density grain" \
-              --notes "Xcode16.4 and iOS16.5.1 only. Adds two-stage source Hanatos+DIR film-density LUT and downstream measured print/scan LUT with GPU optical density grain between, using normal approximation to original Poisson/Binomial grain moments. Stock exposure and physical pixel size affect variance, with fixed seed. Full original multi-sublayer grain, dye cloud, spatial DIR diffusion, color gamut calibration remain unported. Preserves 28 profiles, two wheels, long-press original, v0.8 scatter/halation, and JPEG export. Unsigned IPA must be signed." \
+              --title "Spektrafilm iOS 16.5.1 v1.0 — floating photo preview and draggable panels" \
+              --notes "Xcode 16.4 iOS 16.5.1 only. New fixed full-screen photo preview; draggable/collapsible floating film/paper wheels (left) and exposure/scatter/halation/grain panel (right), top import/export toolbar, hide/show controls, drag-the-divider original/effect comparison, UIKit press-and-hold original. Retains v0.9 density grain, Hanatos and DIR, 28 measured profiles, Photos/Files/.cube and JPEG output. Unsigned IPA requires signing." \
               --prerelease
           fi
