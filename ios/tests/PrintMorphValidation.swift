@@ -56,6 +56,31 @@ struct OriginalPrintMorphValidation {
             }
         }
         print("PASS: 840 original Python s023 CDF fit/curve morphology probes for all 8 print stocks.")
+        // v1.8.12 uses absolute fitted source 256-node print H-D,
+        // NOT measured curve plus morphology delta. Check all seven
+        // source modes at the original Python source-exposure taps.
+        var absoluteProbes=0
+        for ref in GeneratedPrintMorphData.references {
+            guard let stock=GeneratedSpectralData.profiles[ref.stock],
+                  let curve=OriginalPrintMorph.prepareSource(
+                    stock:ref.stock,logExposure:decode(stock.logExposure,count:256),
+                    settings:mode(ref.mode),
+                    positive:stock.type == "positive"
+                  ) else {
+                preconditionFailure("Missing exact source print H-D model " + ref.stock)
+            }
+            for i in 0..<5 {
+                for ch in 0..<3 {
+                    let actual=curve.density(ref.sampleLE[i],channel:ch)
+                    let truth=ref.densityAtSamples[i*3+ch]
+                    precondition(abs(actual-truth)<0.00005,
+                        "Absolute source print H-D reference parity \(ref.stock) \(ref.mode) \(i)/\(ch): \(actual) vs \(truth)")
+                    absoluteProbes+=1
+                }
+            }
+        }
+        precondition(absoluteProbes==840)
+        print("PASS: 840 ABSOLUTE source fitted CDF -> 256-node fast_interp print H-D reference values.")
         // Verify the compensated film-density curve is identity
         // at default settings and preserves original emulsion maxima.
         precondition(OriginalPrintMorph.Settings().isIdentity)
