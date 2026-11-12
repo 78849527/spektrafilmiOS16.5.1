@@ -31,6 +31,17 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_16.4.app
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+      - name: Check GitHub Release shell branches are correctly closed
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path(".github/workflows/ios16.yml").read_text(encoding="utf-8")
+          assert src.count("          fi\n          gh release view") == 1, "experimental Release missing fi"
+          assert src.count('          fi\n          echo "PASS: release asset') == 1, "certified Release missing fi"
+          assert "precision_certificate.outcome == 'success'" in src
+          assert "Reject source Metal certification" in src
+          print("PASS: both shell Release if/else/fi closures and original certification guard")
+          PY
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Compile native Core Image spatial optics tests
@@ -689,6 +700,7 @@ jobs:
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
               --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.10 - SOURCE NaN WAVELENGTH FIX" \
               --notes "EXPERIMENTAL UNVERIFIED TEST: v1.8.10 fixes original Python missing dye/base spectral wavelengths, where NaN transmissions must contribute ZERO to XYZ integration. All 28 masks generated and verified; native 24 source positive-film RGB cases now gate on >0.002 channel errors. Unverified complete RAW/negative->paper, random Numba stream, full images/JPEG, exact Float64. A15 8/8 was verified on previous v1.8.9 build, not this commit. UI, Metal grain, high-resolution export and photo save unchanged. Unsigned IPA requires signing."
+          fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish isolated v1.8.10 prerelease and synchronize tag
@@ -711,6 +723,7 @@ jobs:
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
               --title "SpektraFilm iOS 16.5.1 v1.8.10 — source NaN wavelength correction" \
               --notes "v1.8.10 fixes source NaN->zero-light wavelength semantics in the original spectrum scanner for all 28 profiles; native RGB source stages and independent Python checks required. Full real-device numerical, RNG, Float64 and whole-image certification still required by precision certificate gate. Unsigned IPA needs signing."
+          fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
