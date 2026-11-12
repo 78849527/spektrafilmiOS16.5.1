@@ -121,11 +121,13 @@ def main() -> None:
     media = [x["stock"] for x in all_infos if x["stage"] == "printing"]
     assert len(negatives) == 16 and len(media) == 8
     print_illuminants = {}
+    neutral_cc_by_pair = {}
     for medium in media:
         for stock in negatives:
             cc = (filter_db.get(medium, {}).get("TH-KG3", {})
                   .get(stock, (0.0, 65.0, 55.0)))
             print_illuminants[stock + "|" + medium] = source * default_dichroic(cc)
+            neutral_cc_by_pair[stock + "|" + medium] = [float(x) for x in cc]
     assert len(print_illuminants) == 128
 
     names = {
@@ -135,6 +137,7 @@ def main() -> None:
         "k75p": k75,
         "cie1931": cie,
         "enlargerNeutral": print_illuminant,
+        "enlargerSource": source,
         "schottKG3": kg3_filter(),
         "dichroicCMYNeutral": default_dichroic(),
     }
@@ -169,6 +172,10 @@ def main() -> None:
     lines.append("    static let printIlluminantByPair: [String: String] = [")
     for key, values in print_illuminants.items():
         lines.append(f"        {json.dumps(key)}: {json.dumps(encoded(values))},")
+    lines.append("    ]")
+    lines.append("    static let neutralCMYByPair: [String: [Double]] = [")
+    for key, values in neutral_cc_by_pair.items():
+        lines.append(f"        {json.dumps(key)}: {json.dumps(values)},")
     lines.append("    ]")
     for index, (stock, rgb, response) in enumerate(validation):
         def numbers(vals):
