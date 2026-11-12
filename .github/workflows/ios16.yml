@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.14 source-scanned RGB numerical evidence
+name: iOS 16.5.1 — v1.8.15 source-scanned RGB numerical evidence
 
 on:
   push:
-    branches: ['ios16.5.1/film-hd-dir-print-chain-v1.8.14']
+    branches: ['ios16.5.1/hanatos-camera-film-print-v1.8.15']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.14-original-film-hd-dir-print-rgb.md'
+      - 'docs/v1.8.15-hanatos-camera-film-print-dual-precision.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-film-hd-dir-print-v1.8.14-release
+  group: ios1651-hanatos-camera-film-v1.8.15-release
   cancel-in-progress: true
 
 jobs:
@@ -89,6 +89,7 @@ jobs:
           python3 ios/scripts/generate_source_print_scanner_parity.py
           python3 ios/scripts/generate_source_negative_print_chain.py
           python3 ios/scripts/generate_source_film_dir_print_chain.py
+          python3 ios/scripts/generate_source_camera_film_print_chain.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -111,6 +112,8 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedSourcePrintScannerReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceNegativePrintChainReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceFilmDIRPrintReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceCameraFilmPrintReference.swift
+          test -s ios/SpektraFilmPort/GeneratedHanatosPreciseData.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
@@ -358,6 +361,8 @@ jobs:
             ios/SpektraFilmPort/GeneratedSourceNegativePrintChainReference.swift \
             ios/SpektraFilmPort/OriginalFilmDIRPrintParity.swift \
             ios/SpektraFilmPort/GeneratedSourceFilmDIRPrintReference.swift \
+            ios/SpektraFilmPort/OriginalCameraFilmPrintParity.swift \
+            ios/SpektraFilmPort/GeneratedSourceCameraFilmPrintReference.swift \
             ios/SpektraFilmPort/SpatialDIR.swift \
             ios/SpektraFilmPort/DensityGrain.swift \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
@@ -385,6 +390,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
             ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
             ios/SpektraFilmPort/GeneratedHanatosData.swift \
+            ios/SpektraFilmPort/GeneratedHanatosPreciseData.swift \
             ios/SpektraFilmPort/GeneratedDIRData.swift \
             ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift \
             ios/tests/SpectralValidation.swift \
@@ -417,6 +423,13 @@ jobs:
           assert "OriginalNegativePrintChainParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalFilmDIRPrintParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalFilmDIRPrintParity.evaluate()" in model
+          assert "OriginalCameraFilmPrintParity.evaluate()" in model
+          assert "OriginalCameraFilmPrintParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
+          assert "result.channels==72" in model
+          assert "result.preciseStageExceed==0" in model
+          assert "hanatosOriginalPrecisionEnabled = true" in model
+          assert "sourceCameraFilmPrintStages" in printing
+          assert "GeneratedHanatosPreciseData" in Path("ios/scripts/generate_hanatos.py").read_text()
           assert "evidence.channels==54" in model
           assert "evidence.stageOutsideTolerance==0" in model
           assert "evidence.outputOutsideTolerance==0" in model
@@ -715,31 +728,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.14'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.15'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '39'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '40'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8.14 unsigned IPA
+      - name: Package v1.8.15 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.14-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.14 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.15-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.15 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.14-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.14-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.15-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.15-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/film-hd-dir-print-chain-v1.8.14' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/hanatos-camera-film-print-v1.8.15' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.14-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.14-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.14-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/film-hd-dir-print-chain-v1.8.14" --jq '.object.sha')
+          TAG=ios1651-v1.8.15-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.15-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.15-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/hanatos-camera-film-print-v1.8.15" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -750,20 +763,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.14 - ORIGINAL FILM H-D DIR PRINT RGB" \
-              --notes "EXPERIMENTAL UNSIGNED v1.8.14 / Build 39. The SOURCE print optical mode now uses original s023 absolute 3-layer CDF fitted 256-node H-D instead of measured density plus morph delta, preserving independent v1.8.11 dye/base/sensitivity NaN masks. 840 source print model probes and 18 contiguous Python Float64 negative CMY->enlarger optical raw->paper logE->CDF H-D->XYZ/ACES/display sRGB vectors added to existing positive/printing scanner and 8/8 diagnostic tests. The whole-image/RAW/film H-D/DIR/Numba random thread/default CAM16 and exact Float64 paths are NOT yet certified. User separately verified v1.8.13 Build 38 on Apple A15: original Metal 8/8 and continuous negative CMY->paper RGB 0/54 on seven stages. This v1.8.14 adds a NEW, separate ten-stage source Python negative measured film H-D + nonspatial DIR -> optical print/paper H-D->sRGB appendix (54 channels), with explicit pass/fail/error and unchanged 8/8 count. Camera RAW/Hanatos, spatial DIR, grain, Numba RNG and full-image parity are not certified. This is an experimental unsigned IPA requiring signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.15 - HANATOS SOURCE CAMERA TO FILM AND PAPER" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.15 Build40. Actual upstream Hanatos Float64 LUTs for 20 stocks plus existing Float16 quick mode. 24 cases / 72 channels x 13 stages from Hanatos EV through measured film H-D/DIR, optical print CDF and scanner ACES/sRGB, independently tested on device. No whole image/RAW/Numba thread claim. Shooting compensation unmodified. Unsigned IPA needs signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.14 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/film-hd-dir-print-chain-v1.8.14' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.15 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/hanatos-camera-film-print-v1.8.15' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.14-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.14-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.15-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.15-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/film-hd-dir-print-chain-v1.8.14" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/hanatos-camera-film-print-v1.8.15" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -773,12 +786,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.14 — source film H-D/DIR to print RGB ten-stage parity" \
-              --notes "v1.8.14 invokes actual original Python measured negative H-D and DIR source modules, adds a 54-channel ten-stage film logE->negative H-D/DIR->optical print CDF H-D->sRGB reference and on-iPhone appendix, with no change to 8/8. Source certification remains conditional on GPU, full image, RNG and A15 evidence. Unsigned IPA needs signing."
+              --title "SpektraFilm iOS 16.5.1 v1.8.15 — original Hanatos Float64 camera-film-paper RGB thirteen-stage reference" \
+               --notes "Original Hanatos Float64 and mobile Float16 13-stage source camera-film-paper parity across 72 RGB channels. Source certification still separately requires real hardware full image and RNG. Unsigned IPA."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.14 certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.15 certified release."
           exit 1
