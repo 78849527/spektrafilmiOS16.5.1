@@ -275,8 +275,7 @@ struct SpectralPhysics {
         // while the actual film processing uses the original DIR chemistry.
         let midFilmReference = Self.filmDensities(
             [0.184, 0.184, 0.184], film: originalFilm,
-            hanatos: originalHanatos,
-            exposureEV: useOriginalPrintOptics ? cameraExposureEV : 0,
+            hanatos: originalHanatos, exposureEV: 0,
             applyDIR: false
         )
         let midFilm = Self.filmDensities(
@@ -295,10 +294,30 @@ struct SpectralPhysics {
                 weights: pWeights, clampDensity: !useOriginalPrintOptics
             )
             if useOriginalPrintOptics {
-                // Default upstream flags normalize_print_exposure=true and
-                // print_exposure_compensation=true. Camera EV compensates the
-                // middle-grey reference before adding independent preflash.
-                printReference = OriginalPrintOptics.midgrayReference(ref)
+                // Original four-mode branch in PrintingStage's midgray
+                // exposure compensation. The source computes both 0 EV
+                // and camera-compensated 18.4% gray using develop_simple.
+                let referenceComp: [Double]
+                if printOptics.printExposureCompensation {
+                    let compensatedDensity = Self.filmDensities(
+                        [0.184, 0.184, 0.184], film: originalFilm,
+                        hanatos: originalHanatos,
+                        exposureEV: cameraExposureEV,
+                        applyDIR: false
+                    )
+                    referenceComp = Self.printRaw(
+                        filmDensities: compensatedDensity,
+                        film: originalFilm, weights: pWeights,
+                        clampDensity: false
+                    )
+                } else {
+                    referenceComp = ref
+                }
+                printReference = OriginalPrintOptics.referenceDivisor(
+                    midgrayRaw: ref, compensatedRaw: referenceComp,
+                    normalize: printOptics.normalizePrintExposure,
+                    compensate: printOptics.printExposureCompensation
+                )
             } else {
                 printReference = exp(
                     ref.reduce(0.0) { $0 + log(max($1, 1e-14)) } / 3.0
