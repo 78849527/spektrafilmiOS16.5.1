@@ -370,6 +370,83 @@ struct SpectralValidation {
         }
         print("PASS: measured density-grain split supports calibrated print and s023 morph.")
 
+        // Source optical enlarger: neutral matrix, M/Y dye filters and
+        // spectrally separate preflash must be compatible with all
+        // physical print media and never touch reversal direct scanning.
+        let sourceEnlarger = OriginalEnlarger.Settings(
+            enabled:true,normalizeExposure:true,mShift:12,yShift:-9,
+            preflashExposure:0.15,preflashMShift:6,preflashYShift:-7
+        )
+        var sourcePrintPairs = 0
+        var changedMain = 0
+        var changedFlash = 0
+        for filmID in negatives {
+            for paperID in media {
+                let neutral = try SpectralPhysics(
+                    filmID:filmID,paperID:paperID,sourceScanner:true
+                )
+                let filtered = try SpectralPhysics(
+                    filmID:filmID,paperID:paperID,sourceScanner:true,
+                    enlarger:sourceEnlarger
+                )
+                let withoutFlash = try SpectralPhysics(
+                    filmID:filmID,paperID:paperID,sourceScanner:true,
+                    enlarger:OriginalEnlarger.Settings(
+                        enabled:true,mShift:12,yShift:-9
+                    )
+                )
+                let sample = [0.33,0.24,0.71]
+                let a = neutral.render(sample,exposureEV:0,paperEV:0)
+                let b = filtered.render(sample,exposureEV:0,paperEV:0)
+                let c = withoutFlash.render(sample,exposureEV:0,paperEV:0)
+                check(b,"source optical enlarger \(filmID) \(paperID)")
+                if zip(a,c).contains(where: {abs($0-$1)>0.00001}) {
+                    changedMain += 1
+                }
+                if zip(b,c).contains(where: {abs($0-$1)>0.00001}) {
+                    changedFlash += 1
+                }
+                let diagnostics=filtered.originalEnlargerRawDiagnostics(
+                    [0.2,0.36,0.70]
+                )
+                precondition(diagnostics.count==3 &&
+                    diagnostics.allSatisfy({ $0.isFinite && $0>0 }))
+                sourcePrintPairs += 1
+            }
+        }
+        precondition(sourcePrintPairs==128)
+        precondition(changedMain>100 && changedFlash>100,
+                     "CMY and preflash must change real optical print")
+        print("PASS: 128 negative/print optical enlarger CMY and preflash combinations.")
+
+        for reversal in positives {
+            let base=try SpectralPhysics(
+                filmID:reversal,paperID:media[0],sourceScanner:true
+            )
+            let test=try SpectralPhysics(
+                filmID:reversal,paperID:media[3],sourceScanner:true,
+                enlarger:sourceEnlarger
+            )
+            let a=base.render(samples[1],exposureEV:0,paperEV:0)
+            let b=test.render(samples[1],exposureEV:0,paperEV:0)
+            for ch in 0..<3 {
+                precondition(abs(a[ch]-b[ch]) < 1e-9)
+            }
+        }
+        print("PASS: 4 reversal direct scans ignore enlarger, CMY and flash.")
+
+        let mediaLUT=try SpectralPhysics.makeDensityStageData(
+            filmID:negatives[0],paperID:media[0],
+            exposureEV:0,paperEV:0,size:9,
+            sourceScanner:true,scannerBlackWhite:true,
+            cam16Gamut:true,printReferenceCorrection:true,
+            printMorph:OriginalPrintMorph.Settings(gamma:1.13),
+            enlarger:sourceEnlarger
+        )
+        precondition(mediaLUT.inputCube.count==9*9*9*16)
+        precondition(mediaLUT.printCube.count==9*9*9*16)
+        print("PASS: density-grain print LUT supports all source enlarger options.")
+
         do {
             _ = try SpectralPhysics(filmID: "missing_profile", paperID: media[0])
             preconditionFailure("Unknown materials must reject")
