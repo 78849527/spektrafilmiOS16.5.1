@@ -195,6 +195,33 @@ struct SpectralPhysics {
     private let scannedReferenceYBlack: Double
     private let scannedReferenceYWhite: Double
 
+    /// Independent source H-D layer interpolation diagnostics for v1.6.
+    /// Each layer is in optical density (never display RGB).
+    static func measuredSublayers(
+        filmID: String, normalizedTotal: [Double]
+    ) throws -> (layers: [Double], maxima: [Double]) {
+        guard normalizedTotal.count == 3,
+              normalizedTotal.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+            throw PhysicsError.invalid("无效的测量亚层密度向量")
+        }
+        let measured = try Profile(id: filmID)
+        guard measured.sublayerMaxima.count == 9 else {
+            throw PhysicsError.invalid("缺少实测亚层曲线")
+        }
+        return (
+            (0..<3).flatMap { layer in
+                (0..<3).map { channel in
+                    measured.layerDensity(
+                        total: normalizedTotal[channel],
+                        channel: channel,
+                        sublayer: layer
+                    )
+                }
+            },
+            measured.sublayerMaxima
+        )
+    }
+
     static var supportedFilmIDs: [String] { GeneratedSpectralData.filmIDs }
     static var supportedPaperIDs: [String] { GeneratedSpectralData.printMediumIDs }
     static var positiveFilmIDs: [String] { GeneratedSpectralData.positiveFilmIDs }
