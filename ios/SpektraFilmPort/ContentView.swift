@@ -19,16 +19,13 @@ final class PhotoEditorModel: ObservableObject {
     @Published var selectedFilmID = "kodak_portra_400"
     @Published var selectedPaperID = "kodak_portra_endura"
 
+    // Do not parse bundled JSON during app startup: on iOS 16 the editor
+    // must open even if the new stock catalog or a signed resource is damaged.
     init() {
-        let catalog = MeasuredStockCatalog.shared
-        let savedFilm = UserDefaults.standard.string(forKey: "selectedFilmStock")
-        let savedPaper = UserDefaults.standard.string(forKey: "selectedPaperStock")
-        selectedFilmID = catalog.filmingStocks.first {
-            $0.id == (savedFilm ?? "kodak_portra_400")
-        }?.id ?? catalog.filmingStocks.first?.id ?? ""
-        selectedPaperID = catalog.papers.first {
-            $0.id == (savedPaper ?? "kodak_portra_endura")
-        }?.id ?? catalog.papers.first?.id ?? ""
+        selectedFilmID = UserDefaults.standard.string(forKey: "selectedFilmStock")
+            ?? "kodak_portra_400"
+        selectedPaperID = UserDefaults.standard.string(forKey: "selectedPaperStock")
+            ?? "kodak_portra_endura"
     }
 
     func filmChanged() {
@@ -135,12 +132,14 @@ struct ContentView: View {
     private enum ImportSheet: Identifiable {
         case photo
         case lut
+        case stocks
         case share(URL)
 
         var id: String {
             switch self {
             case .photo: return "photo-file"
             case .lut: return "lut-file"
+            case .stocks: return "stock-catalog"
             case .share(let url): return "share-" + url.absoluteString
             }
         }
@@ -189,52 +188,19 @@ struct ContentView: View {
 
                     Divider()
 
-                    VStack(alignment: .leading, spacing: 12) {
+                    // Keep this main editor identical to the stable v0.1
+                    // startup path. Open the measured-profile view explicitly.
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("原版胶片与相纸").font(.headline)
-                        let catalog = MeasuredStockCatalog.shared
-                        if let error = catalog.error {
-                            Text(error).font(.caption).foregroundStyle(.red)
-                        } else {
-                            Text("已内置 \(catalog.filmingStocks.count) 款拍摄胶片、\(catalog.papers.count) 款相纸的原始实测配置。")
-                                .font(.caption).foregroundStyle(.secondary)
-
-                            Picker("拍摄胶片", selection: $model.selectedFilmID) {
-                                ForEach(catalog.filmingStocks) { film in
-                                    Text(film.name).tag(film.id)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: model.selectedFilmID) { _ in
-                                model.filmChanged()
-                            }
-
-                            Picker("印相相纸", selection: $model.selectedPaperID) {
-                                ForEach(catalog.papers) { paper in
-                                    Text(paper.name).tag(paper.id)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: model.selectedPaperID) { _ in
-                                model.paperChanged()
-                            }
-
-                            if let film = catalog.stock(model.selectedFilmID) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("胶片：\(film.categoryLabel) · \(film.polarityLabel) · 光谱采样 \(film.wavelengthCount) 点")
-                                    Text("测量版本：\(film.profileVersion) · 文件：\(film.filename)")
-                                    Text(catalog.hasBundledSource(for: film)
-                                        ? "完整实测文件：已打包"
-                                        : "完整实测文件：未找到")
-                                }
-                                .font(.caption2).foregroundStyle(.secondary)
-                            }
-                            if let paper = catalog.stock(model.selectedPaperID) {
-                                Text("相纸：\(paper.name) · 光谱采样 \(paper.wavelengthCount) 点")
-                                    .font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Text("配置是真实上游数据，但当前仅完成读取和选择：切换胶片或相纸不会改变图片色彩。物理显影接入后才会生效。")
-                                .font(.caption).foregroundStyle(.orange)
+                        Button {
+                            activeSheet = .stocks
+                        } label: {
+                            Label("打开胶片 / 相纸配置", systemImage: "film.stack")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .buttonStyle(.bordered)
+                        Text("胶片配置在独立页面读取；不会影响照片导入和启动。选择配置尚不等于应用物理模拟。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
 
                     Divider()
@@ -314,6 +280,8 @@ struct ContentView: View {
                     }, onCancel: {
                         activeSheet = nil
                     })
+                case .stocks:
+                    StockCatalogSheet(model: model)
                 case .share(let url):
                     ActivitySheet(items: [url])
                 }
@@ -392,6 +360,97 @@ private struct FilesDocumentPicker: UIViewControllerRepresentable {
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             onCancel()
+        }
+    }
+}
+
+
+/// The catalog is opt-in and loaded only after the user opens this sheet.
+/// Avoid eager file reads in the editor's init/body, so corrupted or missing
+/// re-signed bundle resources cannot prevent the basic app from launching.
+private struct StockCatalogSheet: View {
+    @ObservedObject var model: PhotoEditorModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var catalog: MeasuredStockCatalog?
+    @State private var selectedCategory = 0
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let catalog {
+                    if let error = catalog.error {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("配置读取失败").font(.headline)
+                            Text(error).font(.footnote).textSelection(.enabled)
+                            Text("照片导入与外部 LUT 功能仍可使用。")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding()
+                    } else {
+                        VStack(spacing: 0) {
+                            Picker("类型", selection: $selectedCategory) {
+                                Text("拍摄胶片").tag(0)
+                                Text("印相相纸").tag(1)
+                            }
+                            .pickerStyle(.segmented).padding()
+
+                            List {
+                                Section {
+                                    Text("已读取 \(catalog.filmingStocks.count) 款拍摄胶片和 \(catalog.papers.count) 款相纸。配置来自原版实测资料，尚未接入物理显影计算。")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                ForEach(selectedCategory == 0 ? catalog.filmingStocks : catalog.papers) { stock in
+                                    Button {
+                                        if selectedCategory == 0 {
+                                            model.selectedFilmID = stock.id
+                                            model.filmChanged()
+                                        } else {
+                                            model.selectedPaperID = stock.id
+                                            model.paperChanged()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(stock.name)
+                                                    .foregroundStyle(.primary)
+                                                Text("\(stock.polarityLabel) · \(stock.wavelengthCount) 个光谱采样点")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            if selectedCategory == 0 && model.selectedFilmID == stock.id ||
+                                               selectedCategory == 1 && model.selectedPaperID == stock.id {
+                                                Image(systemName: "checkmark.circle.fill")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .listStyle(.plain)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("正在验证原版光谱配置…").font(.footnote)
+                    }
+                }
+            }
+            .navigationTitle("原版胶片与相纸")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+            // Loading here instead of during App/PhotoEditorModel initialization
+            // is the critical launch-isolation change of v0.2.1.
+            .task {
+                if catalog == nil {
+                    catalog = MeasuredStockCatalog()
+                }
+            }
         }
     }
 }
