@@ -41,9 +41,10 @@ struct SpectralPhysics {
             }
             // spektrafilm.model.develop.develop() subtracts the full channel
             // minimum (not just densityCurves[0]) before interpolating.
+            let measuredCurves = densityCurves
             minimumDensity = (0..<3).map { ch in
                 (0..<256).map { i in
-                    Double(densityCurves[i * 3 + ch])
+                    Double(measuredCurves[i * 3 + ch])
                 }.min() ?? 0.0
             }
         }
