@@ -34,7 +34,9 @@ enum PhotoProcessor {
         to source: CIImage, lut: FilmLUT?, strength: Double,
         spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
         grain: DensityGrainSettings? = nil,
-        scanner: ScannerFinishSettings = ScannerFinishSettings()
+        scanner: ScannerFinishSettings = ScannerFinishSettings(),
+        dirStage: SpatialDIRStage? = nil,
+        dirSettings: SpatialDIRSettings = SpatialDIRSettings()
     ) -> CIImage {
         // Spatial optical propagation precedes spectral film colour response.
         // Operate at requested output resolution, not full source resolution,
@@ -42,7 +44,14 @@ enum PhotoProcessor {
         let optical = SpatialOptics.apply(to: source, settings: spatial)
         guard let lut = lut, strength > 0 else { return optical }
         let film: CIImage
-        if let grain = grain, let output = DensityGrain.apply(to: optical, settings: grain) {
+        if let dirStage = dirStage, dirSettings.enabled,
+           let output = SpatialDIR.apply(
+                to: optical, stage: dirStage,
+                settings: dirSettings, grain: grain
+           ) {
+            film = output
+        } else if let grain = grain,
+                  let output = DensityGrain.apply(to: optical, settings: grain) {
             // Grain is inserted after measured negative/positive development,
             // before the original measured paper/scan optics. Not RGB overlay.
             film = output
@@ -75,14 +84,17 @@ enum PhotoProcessor {
         _ source: CIImage, lut: FilmLUT?, strength: Double,
         spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
         grain: DensityGrainSettings? = nil,
-        scanner: ScannerFinishSettings = ScannerFinishSettings()
+        scanner: ScannerFinishSettings = ScannerFinishSettings(),
+        dirStage: SpatialDIRStage? = nil,
+        dirSettings: SpatialDIRSettings = SpatialDIRSettings()
     ) throws -> UIImage {
         let factor = min(1.0, 1500 / max(source.extent.width, source.extent.height))
         let resized = source.transformed(by:
             CGAffineTransform(scaleX: factor, y: factor))
         let image = apply(
             to: resized, lut: lut, strength: strength,
-            spatial: spatial, grain: grain, scanner: scanner
+            spatial: spatial, grain: grain, scanner: scanner,
+            dirStage: dirStage, dirSettings: dirSettings
         )
         guard let cg = context.createCGImage(image, from: image.extent) else {
             throw ImageProcessingError.invalid("预览渲染失败")
@@ -101,7 +113,9 @@ enum PhotoProcessor {
         _ source: CIImage, lut: FilmLUT?, strength: Double,
         spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
         grain: DensityGrainSettings? = nil,
-        scanner: ScannerFinishSettings = ScannerFinishSettings()
+        scanner: ScannerFinishSettings = ScannerFinishSettings(),
+        dirStage: SpatialDIRStage? = nil,
+        dirSettings: SpatialDIRSettings = SpatialDIRSettings()
     ) throws -> ExportResult {
         // Full-resolution output: NEVER silently shrink high-resolution
         // images to 12.5 MP. The preview remains 1500 px for performance.
@@ -112,7 +126,8 @@ enum PhotoProcessor {
         }
         let image = apply(
             to: source, lut: lut, strength: strength,
-            spatial: spatial, grain: grain, scanner: scanner
+            spatial: spatial, grain: grain, scanner: scanner,
+            dirStage: dirStage, dirSettings: dirSettings
         )
         // Core Image's CIImageRepresentationOption has no JPEG quality key
         // on iOS 16.5. Use ImageIO CGImageDestination for a real 0.98
