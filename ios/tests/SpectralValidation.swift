@@ -497,5 +497,13 @@ struct SpectralValidation {
             preconditionFailure("Unknown materials must reject")
         } catch is SpectralPhysics.PhysicsError {}
         print("PASS: 28 original source materials, native spectral film/print routing and invalid-selection rejection.")
+        // Quantify actual source Python to Swift OUTPUT RGB deviation for
+        // direct reversal scans; this stage is deliberately not a
+        // whole-film/printing/grain certification.
+        let rgbEvidence = try OriginalSourceRGBParity.evaluate()
+        precondition(rgbEvidence.samples == 72)
+        precondition(rgbEvidence.mae.isFinite && rgbEvidence.rmse.isFinite)
+        precondition(rgbEvidence.maximum.isFinite)
+        print(rgbEvidence.text)
     }
 }
