@@ -13,6 +13,8 @@ final class PhotoEditorModel: ObservableObject {
     @Published var status = "选择照片，再导入 sRGB→sRGB .cube LUT。"
     @Published var busy = false
     @Published var photoDimensions = ""
+    @Published var filmExposureEV = 0.0
+    @Published var printExposureEV = 0.0
 
     private var source: CIImage?
     var hasPhoto: Bool { source != nil }
@@ -62,6 +64,46 @@ final class PhotoEditorModel: ObservableObject {
             try refresh()
         } catch {
             status = "LUT 导入失败：" + error.localizedDescription
+        }
+    }
+
+    /// Compute an internal optical LUT from measured wavelength data.
+    /// Keep the proven photo importer and CoreImage renderer unchanged.
+    func applyMeasuredSimulation() {
+        guard hasPhoto else {
+            status = "请先选择照片，再模拟真实胶片数据。"
+            return
+        }
+        let filmID = UserDefaults.standard.string(forKey: "compactFilmStock") ?? "kodak_portra_400"
+        let paperID = UserDefaults.standard.string(forKey: "compactPaperStock") ?? "kodak_portra_endura"
+        guard filmID == "kodak_portra_400" && paperID == "kodak_portra_endura" else {
+            status = "v0.3 实验引擎目前仅支持 Portra 400 + Portra Endura；请在胶片目录中选回这一组合。"
+            return
+        }
+        guard !busy else { return }
+        busy = true
+        status = "正在使用 81 个波长采样计算 Portra 400 → Portra Endura 的光学色彩表…"
+        let cameraExposure = filmExposureEV
+        let enlargerExposure = printExposureEV
+        Task {
+            do {
+                let cubeData = try await Task.detached(priority: .userInitiated) {
+                    try SpectralPhysics.makeCubeData(
+                        exposureEV: cameraExposure, paperEV: enlargerExposure,
+                        size: 17
+                    )
+                }.value
+                lut = FilmLUT(
+                    title: "实测曲线·Portra 400 + Portra Endura (实验)",
+                    dimension: 17, rgbaFloatData: cubeData
+                )
+                strength = 1.0
+                try refresh()
+                status = "已应用简化光谱模拟 · 胶片 \(String(format: "%+.2f", cameraExposure)) EV · 相纸 \(String(format: "%+.2f", enlargerExposure)) EV。非原版完整渲染。"
+            } catch {
+                status = "光谱计算失败：" + error.localizedDescription
+            }
+            busy = false
         }
     }
 
@@ -164,8 +206,40 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
-                    Text("轻量数据目录；未加入物理胶片渲染。")
+                    Text("轻量目录保留；v0.3 新增 Portra 400 + Portra Endura 简化光谱模拟。")
                         .font(.caption2).foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("原版实测曲线模拟 · v0.3 实验").font(.headline)
+                        Text("当前仅支持 Kodak Portra 400 → Kodak Portra Endura。采用原始感光曲线、负片与相纸特性曲线及染料光谱；谱线重建与色彩校正仍是简化版本。")
+                            .font(.caption).foregroundStyle(.secondary)
+
+                        HStack {
+                            Text("胶片曝光")
+                            Spacer()
+                            Text(String(format: "%+.2f EV", model.filmExposureEV)).monospacedDigit()
+                        }
+                        Slider(value: $model.filmExposureEV, in: -2...2, step: 0.25)
+                            .disabled(model.busy)
+                        HStack {
+                            Text("印相曝光")
+                            Spacer()
+                            Text(String(format: "%+.2f EV", model.printExposureEV)).monospacedDigit()
+                        }
+                        Slider(value: $model.printExposureEV, in: -2...2, step: 0.25)
+                            .disabled(model.busy)
+                        Button {
+                            model.applyMeasuredSimulation()
+                        } label: {
+                            Label("计算并应用光谱模拟", systemImage: "waveform.path")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.busy || !model.hasPhoto)
+                        if model.busy {
+                            ProgressView("光谱数据计算中…")
+                        }
+                    }
 
                     Divider()
                     HStack {
@@ -216,7 +290,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("阶段 1：只应用标准 3D .cube LUT。要求 sRGB 输入／输出、0–1 Domain。不是完整的光谱胶片模拟；RAW、物理颗粒、光晕待移植。导出超过 1250 万像素会等比缩小。")
+                    Text("v0.3 实验：81 波长实测数据驱动的简化胶片／印相光学计算。内部生成 17³ 颜色加速表。没有移植原版 Hanatos 光谱重建、染料耦合、光晕、颗粒与完整色彩校正。仍支持外部 sRGB .cube LUT 和 JPEG 导出（最多 1250 万像素）。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
