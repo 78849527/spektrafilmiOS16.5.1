@@ -86,7 +86,8 @@ def main():
       "    let stock: String",
       "    let yBlack: Double",
       "    let yWhite: Double",
-      "    let exposureEV: Double",
+      "    let exposureEVOriginal: Double",
+      "    let exposureEVRounded: Double",
       "  }",
       "  static let models: [String: Model] = [",
     ]
@@ -124,12 +125,7 @@ def main():
     lines.append("  ]")
     lines.append("  static let exposureReferences: [ExposureReference] = [")
     for ix,(stock,info,data) in enumerate(stocks):
-        le=np.asarray(data["log_exposure"],dtype=float)
-        curves=np.asarray(data["density_curves"],dtype=float).mean(axis=1)
-        base=float(np.asarray(data["base_density"],dtype=float).mean())
-        for case in range(2):
-            y_black=0.018+ix*0.002+case*0.009
-            y_white=0.79+ix*0.008-case*0.024
+        def reference_ev(y_black,y_white,le,curves,base):
             target_black=((0.01+0.055)/1.055)**2.4
             target_white=((0.98+0.055)/1.055)**2.4
             slope=(target_white-target_black)/(y_white-y_black+1e-10)
@@ -139,14 +135,28 @@ def main():
             d_base=-np.log10(0.184)
             corr=np.interp(d_corr-base,curves,le)
             initial=np.interp(d_base-base,curves,le)
-            ev=float(np.clip(np.log2(10**(corr-initial)),-4,4))
-            lines.append(f'    ExposureReference(stock: "{stock}", yBlack: {y_black:.17g}, yWhite: {y_white:.17g}, exposureEV: {ev:.17g}),')
+            return float(np.clip(np.log2(10**(corr-initial)),-4,4))
+        le=np.asarray(data["log_exposure"],dtype=float)
+        curves=np.asarray(data["density_curves"],dtype=float).mean(axis=1)
+        base=float(np.asarray(data["base_density"],dtype=float).mean())
+        # The original project stores Float64 profile curves, whereas
+        # the iOS port intentionally packs original numbers to Float32.
+        # Use the same source NumPy formula for both data precision paths.
+        le32=np.asarray(data["log_exposure"],dtype=np.float32).astype(float)
+        curves32=np.asarray(data["density_curves"],dtype=np.float32).astype(float).mean(axis=1)
+        base32=float(np.asarray(data["base_density"],dtype=np.float32).astype(float).mean())
+        for case in range(2):
+            y_black=0.018+ix*0.002+case*0.009
+            y_white=0.79+ix*0.008-case*0.024
+            original_ev=reference_ev(y_black,y_white,le,curves,base)
+            rounded_ev=reference_ev(y_black,y_white,le32,curves32,base32)
+            lines.append(f'    ExposureReference(stock: "{stock}", yBlack: {y_black:.17g}, yWhite: {y_white:.17g}, exposureEVOriginal: {original_ev:.17g}, exposureEVRounded: {rounded_ev:.17g}),')
     lines.extend(["  ]","}"])
     OUTPUT.write_text("\n".join(lines)+"\n",encoding="utf-8")
     assert len(stocks)==8 and len(refs)==56
     print("PASS: 8 original printing models (6 paper, 2 motion print film) with 3-layer s023 CDF")
     print("PASS: 56 upstream reference profiles x morph modes, 5 exposure nodes x 3 channels")
-    print("PASS: 16 original NumPy inverse-H&D midgray print exposure correction vectors")
+    print("PASS: 16 original NumPy inverse-H&D EV references in source Float64 and iOS Float32 precision")
     print("Generated print s023 morphology:",OUTPUT.stat().st_size,"bytes")
 
 if __name__=="__main__":
