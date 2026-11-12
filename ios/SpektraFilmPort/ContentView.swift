@@ -22,6 +22,9 @@ final class PhotoEditorModel: ObservableObject {
     // Original measured 3-emulsion sublayer variance is opt-in.
     @Published var grainSublayersEnabled = false
     @Published var grainDiscreteParticlesEnabled = false
+    // Source-order Metal: three emulsion layers, per-layer dye clouds,
+    // conditional lognormal microstructure and reflect boundaries.
+    @Published var grainOriginalMetalEnabled = false
     // Experimental source-scanner path is OPT-IN. Initial UI and
     // old calculated looks remain identical to user-tested v1.0.1.
     @Published var originalScannerEnabled = false
@@ -81,7 +84,8 @@ final class PhotoEditorModel: ObservableObject {
         return DensityGrainSettings(
             stage: stage, amount: grainAmount, seed: 8888,
             measuredSublayersEnabled: grainSublayersEnabled,
-            discreteParticlesEnabled: grainDiscreteParticlesEnabled
+            discreteParticlesEnabled: grainDiscreteParticlesEnabled,
+            originalMetalEnabled: grainOriginalMetalEnabled
         )
     }
 
@@ -103,6 +107,7 @@ final class PhotoEditorModel: ObservableObject {
     // Debounce scrolling wheels; never let a stale render replace new settings.
     private var renderGeneration = 0
     private var pendingRender: Task<Void, Never>?
+    private var originalMetalPreviewVersion = 0
 
     func queueSpectralPreview() {
         pendingRender?.cancel()
@@ -175,6 +180,7 @@ final class PhotoEditorModel: ObservableObject {
             grainEnabled = false
             grainSublayersEnabled = false
             grainDiscreteParticlesEnabled = false
+            grainOriginalMetalEnabled = false
             lut = importedLUT
             busy = false
             try refresh()
@@ -315,6 +321,44 @@ final class PhotoEditorModel: ObservableObject {
     func refresh() throws {
         guard let source else {
             status = lut == nil ? "请先导入照片。" : "LUT 已导入，请选择照片。"
+            return
+        }
+        originalMetalPreviewVersion &+= 1
+        let revision = originalMetalPreviewVersion
+        // The full source-law Metal stage is synchronous and can perform
+        // multiple tiled GPU passes; never run it on the SwiftUI actor.
+        if grainOriginalMetalEnabled, grainEnabled, grainAmount > 0, lut != nil {
+            let currentLUT = lut
+            let currentStrength = strength
+            let currentSpatial = spatialSettings
+            let currentGrain = grainSettings
+            let currentScanner = scannerFinishSettings
+            let currentDIR = spatialDIRStage
+            let currentDIRSettings = spatialDIRSettings
+            status = "原版 Metal 显影中：实测乳剂、染料云、微结构与反射边界…"
+            Task.detached(priority: .userInitiated) {
+                do {
+                    let preview = try PhotoProcessor.preview(
+                        source, lut: currentLUT, strength: currentStrength,
+                        spatial: currentSpatial, grain: currentGrain,
+                        scanner: currentScanner,
+                        dirStage: currentDIR, dirSettings: currentDIRSettings
+                    )
+                    await MainActor.run {
+                        guard revision == self.originalMetalPreviewVersion
+                        else { return }
+                        self.processedPreview = preview
+                        self.status = "原版 Metal 颗粒预览完成 · \(self.photoDimensions)"
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard revision == self.originalMetalPreviewVersion
+                        else { return }
+                        self.status = "原版 Metal 显影失败（未退回快速模式）：" +
+                            error.localizedDescription
+                    }
+                }
+            }
             return
         }
         processedPreview = try PhotoProcessor.preview(
