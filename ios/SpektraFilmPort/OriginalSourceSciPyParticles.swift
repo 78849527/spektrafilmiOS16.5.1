@@ -190,6 +190,104 @@ enum OriginalSourceSciPyParticles {
         return Result(texture: output, backingBuffer: resultBuffer)
     }
 
+    /// Real-iPhone test for the new CPU->shared texture->Metal production
+    /// interface. Compare the *actual* physical particle density against
+    /// original Python grain.py's SciPy particle fields, independently
+    /// of the separate FIR/YVV blur and final composition.
+    static func hardwareDiagnostic() throws -> String {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let queue = device.makeCommandQueue() else {
+            throw Failure.invalid("原版 SciPy GPU 接入：没有 Metal 设备")
+        }
+        let library = try device.makeDefaultLibrary(bundle: .main)
+        let fixtures = GeneratedSourceReplayReference.cases
+        guard fixtures.count >= 2 else {
+            throw Failure.invalid("原版 SciPy GPU 接入：Python 九路参考数据缺失")
+        }
+        var maximaError = 0.0
+        var totalPixels = 0
+        for fixture in fixtures {
+            let width = fixture.width
+            let height = fixture.height
+            let count = width * height
+            let physical = try OriginalMetalGrain.physicalCoefficients(
+                maxima: fixture.maxima, pixelUM: fixture.pixelUM
+            )
+            guard count > 0, fixture.particlesBySublayer.count == 3 else {
+                throw Failure.invalid("原版 SciPy GPU 接入：参考尺寸不完整")
+            }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba32Float,
+                width: width, height: height, mipmapped: false
+            )
+            descriptor.storageMode = .shared
+            descriptor.usage = [.shaderRead]
+            // Reference generator: gradient = 0.10 + xx*0.55/W + yy*0.12/H.
+            var input = [Float](repeating: 0, count: count * 4)
+            for y in 0..<height {
+                for x in 0..<width {
+                    let pixel = y * width + x
+                    let gradient = 0.10 +
+                        Double(x) * (0.55 / Double(width)) +
+                        Double(y) * (0.12 / Double(height))
+                    for ch in 0..<3 { input[pixel*4+ch] = Float(gradient) }
+                    input[pixel*4+3] = 1
+                }
+            }
+            for sl in 0..<3 {
+                guard let source = device.makeTexture(descriptor: descriptor) else {
+                    throw Failure.invalid("原版 SciPy GPU 接入：测试纹理创建失败")
+                }
+                input.withUnsafeBytes { bytes in
+                    source.replace(
+                        region: MTLRegionMake2D(0,0,width,height),
+                        mipmapLevel: 0, withBytes: bytes.baseAddress!,
+                        bytesPerRow: width * 4 * MemoryLayout<Float>.stride
+                    )
+                }
+                let result = try renderLayer(
+                    normalizedLayer: source, sublayer: sl,
+                    physical: physical, pixelUM: fixture.pixelUM,
+                    device: device, queue: queue, library: library
+                )
+                var rgba = [Float](repeating: 0, count: count*4)
+                rgba.withUnsafeMutableBytes { bytes in
+                    result.texture.getBytes(
+                        bytes.baseAddress!,
+                        bytesPerRow: width*4*MemoryLayout<Float>.stride,
+                        from: MTLRegionMake2D(0,0,width,height), mipmapLevel:0
+                    )
+                }
+                let expected = fixture.particlesBySublayer[sl]
+                guard expected.count == count * 3 else {
+                    throw Failure.invalid("原版 SciPy GPU 接入：参考密度数据长度错误")
+                }
+                for pixel in 0..<count {
+                    for ch in 0..<3 {
+                        let value = Double(rgba[pixel*4+ch])
+                        let sourceValue = expected[pixel*3+ch]
+                        let error = abs(value - sourceValue)
+                        maximaError = max(maximaError, error)
+                        guard value.isFinite &&
+                              error <= 0.00005 + abs(sourceValue)*0.00001 else {
+                            throw Failure.invalid(
+                                "原版 SciPy GPU 颗粒与 Python 不一致：" +
+                                "\(fixture.name) 层\(sl) 像素\(pixel) 通道\(ch)，" +
+                                "Metal=\(value)，Python=\(sourceValue)，" +
+                                "绝对误差=\(error)"
+                            )
+                        }
+                    }
+                }
+                totalPixels += count
+                withExtendedLifetime(result.backingBuffer) {}
+            }
+        }
+        return "原版 SciPy 九路颗粒生产路径对照通过：" +
+            "\(fixtures.count) 组 × 3 亚层，\(totalPixels) 颗粒像素；" +
+            "Float32 最大密度误差 \(maximaError)"
+    }
+
     /// Lower bound is intentionally conservative: all working GPU fields,
     /// two shared transport buffers, Poisson seeds and CI intermediates.
     static func validateMemory(width: Int, height: Int,
