@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.3.0 print exposure reference and s023 morphology
+name: iOS 16.5.1 — v1.4.0 original CMY enlarger and preflash
 
 on:
   push:
-    branches: ['ios16.5.1/print-reference-v1.3']
+    branches: ['ios16.5.1/enlarger-v1.4']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -61,6 +61,8 @@ jobs:
           python3 ios/scripts/generate_compact_catalog.py
           python3 ios/scripts/generate_spectral_data.py
           python3 ios/scripts/generate_original_optics.py
+          python3 ios/scripts/generate_enlarger_reference.py
+          test -s ios/SpektraFilmPort/GeneratedEnlargerReference.swift
           python3 ios/scripts/generate_hanatos.py
           python3 ios/scripts/generate_dir.py
           python3 ios/scripts/generate_scanner_reference.py
@@ -110,12 +112,24 @@ jobs:
             -o /tmp/SpektrafilmPrintMorphValidation
       - name: Verify 8 original s023 print media and 16 NumPy exposure references
         run: NSUnbufferedIO=YES /tmp/SpektrafilmPrintMorphValidation
+      - name: Compile source optical CMY and preflash tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalEnlarger.swift \
+            ios/SpektraFilmPort/GeneratedEnlargerReference.swift \
+            ios/SpektraFilmPort/GeneratedSpectralData.swift \
+            ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
+            ios/tests/OriginalEnlargerValidation.swift \
+            -o /tmp/SpektrafilmEnlargerValidation
+      - name: Verify original 128 CMY+preflash measured routes
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmEnlargerValidation
       - name: Compile native spectral physics separately
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalPrintMorph.swift \
             ios/SpektraFilmPort/OriginalPrintReference.swift \
+            ios/SpektraFilmPort/OriginalEnlarger.swift \
             ios/SpektraFilmPort/GeneratedPrintMorphData.swift \
             ios/SpektraFilmPort/OriginalHanatosResponse.swift \
             ios/SpektraFilmPort/OriginalScannerMath.swift \
@@ -162,33 +176,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.3.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.4.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.4.0-enlarger-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.4.0-enlarger-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.4.0-enlarger-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/print-reference-v1.3'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/enlarger-v1.4'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.3.0-print
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.3.0-print-unsigned.ipa
+          TAG=ios1651-v1.4.0-enlarger
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.4.0-enlarger-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v1.3 — print exposure reference and s023 development morph" \
-              --notes "v1.3 adds opt-in exposure-calibrated black/white references: measured film min/max propagate through original printing stocks and paper H-D/XYZ, with source ColorReferenceService midgray inverse-H-D EV correction. Adds original s023 three-layer CDF fitted print curve morphology, coupled global/fast/slow/color gamma and Gumbel developer exhaustion, with original Python reference parity. Default gamma/exhaustion and exposure calibration disabled, preserving v1.2; existing iOS16.5.1 safe floating preview, 28 profiles, DIR, Hanatos, CAM16, ACES, grain, halation kept. Mobile printing normalization differs from full upstream enlarger and preflash reference; offset is corrected and bounded. Unsigned IPA requires signing and physical test." \
+              --title "Spektrafilm iOS 16.5.1 v1.4 — CMY enlarger filtration and independent preflash" \
+              --notes "v1.4 adds opt-in ORIGINAL optical enlarger: 3400K Schott KG3 source spectrum, 128 film/print neutral CMY database settings, physical 81-wavelength Kodak CC dichroic M/Y filter shifts, independent preflash CMY filtration and exposure, and source geometric midgray normalization option. Preflash added to RAW print exposure before the print H-D curve, not RGB post-effect; reversal direct scan ignores enlarger. Prior v1.3 and safe v1.0.1 UI untouched until opt-in. Exact source midgray DIR compensation, preflash diffusion and full source pipeline parity are still incomplete. Includes source numerical test of 128 pairs and iOS16.5.1 device build. Unsigned IPA requires signing and real-device test." \
               --prerelease
           fi
