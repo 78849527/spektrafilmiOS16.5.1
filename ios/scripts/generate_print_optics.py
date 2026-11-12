@@ -63,8 +63,12 @@ def main():
     for film, paper, shift, flash, flash_m, flash_y, ev in routes:
         film_data = json.loads((ROOT / "src/spektrafilm/data/profiles" / (film + ".json")).read_text())["data"]
         paper_data = json.loads((ROOT / "src/spektrafilm/data/profiles" / (paper + ".json")).read_text())["data"]
-        base = np.asarray(film_data["base_density"], dtype=float)
-        dyes = np.asarray(film_data["channel_density"], dtype=float)
+        # The v1.3 embedded profile format maps upstream JSON nulls to 0
+        # before Float32 packing. Mirror that *before* the Float64 source
+        # exposure computation, rather than propagating NaN through the
+        # spectrum or silently relaxing parity tolerances.
+        base = np.nan_to_num(np.asarray(film_data["base_density"], dtype=float), nan=0.0)
+        dyes = np.nan_to_num(np.asarray(film_data["channel_density"], dtype=float), nan=0.0)
         paper_sens = np.nan_to_num(10**np.asarray(paper_data["log_sensitivity"], dtype=float))
         neutral = np.asarray(db.get(paper, {}).get("TH-KG3", {}).get(film, [0,65,55]), dtype=float)
         print_light = source * default_dichroic(neutral + shift)
