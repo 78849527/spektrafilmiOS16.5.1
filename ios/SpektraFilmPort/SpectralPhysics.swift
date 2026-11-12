@@ -25,7 +25,8 @@ struct SpectralPhysics {
     private struct Profile {
         let logSensitivity: [Float]       // 81 x 3, wavelength-major
         let channelDensity: [Float]       // 81 x 3, wavelength-major
-        let baseDensity: [Float]          // 81
+        let baseDensity: [Float]          // 81; absent entries packed as zero
+        let scannerWavelengthValid: [Bool] // 81 source NaN validity bits
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
         let densityCurvesLayers: [Float]  // 256 x 3 layers x 3 CMY
@@ -45,6 +46,13 @@ struct SpectralPhysics {
             logSensitivity = try Self.decode(record.logSensitivity, count: 243)
             channelDensity = try Self.decode(record.channelDensity, count: 243)
             baseDensity = try Self.decode(record.baseDensity, count: 81)
+            guard let valid = Data(base64Encoded: record.scannerValidWavelengths),
+                  valid.count == 81,
+                  valid.allSatisfy({ $0 == 0 || $0 == 1 }),
+                  valid.contains(1) else {
+                throw PhysicsError.invalid("原版扫描缺失波长标记无效：" + id)
+            }
+            scannerWavelengthValid = valid.map { $0 == 1 }
             logExposure = try Self.decode(record.logExposure, count: 256)
             densityCurves = try Self.decode(record.densityCurves, count: 768)
             densityCurvesLayers = record.densityCurvesLayers.isEmpty
@@ -326,10 +334,14 @@ struct SpectralPhysics {
             }
             // Original scanning density-to-light and spectral integration
             // uses the 1931 2-degree CMFs and D50 viewing illumination.
-            for ch in 0..<3 {
-                xyzWeights[i][ch] = viewing[i] * cie[i * 3 + ch]
-                white[ch] += xyzWeights[i][ch] *
-                    pow(10.0, -viewed.base(i))
+            // Original Python density_to_light: any NaN dye/base channel
+            // means ZERO light for the entire wavelength, not 0 absorption.
+            if viewed.scannerWavelengthValid[i] {
+                for ch in 0..<3 {
+                    xyzWeights[i][ch] = viewing[i] * cie[i * 3 + ch]
+                    white[ch] += xyzWeights[i][ch] *
+                        pow(10.0, -viewed.base(i))
+                }
             }
         }
         guard midgrayGreen.isFinite && midgrayGreen > 1e-12 else {
@@ -984,6 +996,7 @@ struct SpectralPhysics {
     ) -> [Double] {
         var xyz = [0.0, 0.0, 0.0]
         for wl in 0..<81 {
+            if !paper.scannerWavelengthValid[wl] { continue }
             var density = paper.base(wl)
             for channel in 0..<3 {
                 density += paper.dyeAbsorbance(wl,channel)*densities[channel]
@@ -1001,6 +1014,7 @@ struct SpectralPhysics {
                                    weights: [[Double]], mediaWhite: [Double]) -> [Double] {
         var xyz = [0.0, 0.0, 0.0]
         for i in 0..<81 {
+            if !paper.scannerWavelengthValid[i] { continue }
             var density = paper.base(i)
             for c in 0..<3 {
                 density += paper.dyeAbsorbance(i, c) * densities[c]
