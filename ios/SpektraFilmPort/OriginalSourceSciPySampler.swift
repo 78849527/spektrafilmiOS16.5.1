@@ -254,6 +254,61 @@ struct OriginalSourceSciPySampler {
         return n - (try binomialBTPE(n, q))
     }
 
+    /// Can run on the actual iPhone, independent of broken hosted Metal GPU.
+    /// Requires exact values AND next MT state word after each whole array.
+    static func validateSourceReference() throws -> String {
+        let cases = GeneratedOriginalSciPyRNGReference.cases
+        guard cases.count >= 5 else {
+            throw Failure.invalid("原版 SciPy：参考向量缺失")
+        }
+        var tested = 0
+        for fixture in cases {
+            let n = fixture.rates.count
+            guard n > 0, fixture.probabilities.count == n,
+                  fixture.poisson.count == n, fixture.binomial.count == n else {
+                throw Failure.invalid("原版 SciPy：源参考数组尺寸错误")
+            }
+            var generator = Self(seed: fixture.seed)
+            var poisson = [Int64]()
+            poisson.reserveCapacity(n)
+            for i in 0..<n {
+                let output = try generator.poisson(fixture.rates[i])
+                guard output == fixture.poisson[i] else {
+                    throw Failure.invalid(
+                        "原版 SciPy Poisson \(fixture.name) 像素 \(i)：" +
+                        "源=\(fixture.poisson[i]) Swift=\(output)"
+                    )
+                }
+                poisson.append(output)
+            }
+            var afterPoisson = generator
+            guard afterPoisson.nextUInt32() == fixture.nextAfterPoisson else {
+                throw Failure.invalid(
+                    "原版 SciPy Poisson 随机数消耗次序不一致：" + fixture.name
+                )
+            }
+            for i in 0..<n {
+                let output = try generator.binomial(
+                    poisson[i], probability: fixture.probabilities[i]
+                )
+                guard output == fixture.binomial[i] else {
+                    throw Failure.invalid(
+                        "原版 SciPy Binomial \(fixture.name) 像素 \(i)：" +
+                        "源=\(fixture.binomial[i]) Swift=\(output)"
+                    )
+                }
+            }
+            guard generator.nextUInt32() == fixture.nextAfterBinomial else {
+                throw Failure.invalid(
+                    "原版 SciPy Binomial 随机数消耗次序不一致：" + fixture.name
+                )
+            }
+            tested += n
+        }
+        return "原版 SciPy 两阶段 Poisson→Binomial：\(cases.count) 组，" +
+            "\(tested) 像素逐计数及后续 MT 字验证通过（尚未接入生产采样）"
+    }
+
     /// Preserve the two-source-array order of grain.py:
     /// (1) all Poisson seeds; (2) all Binomial development counts.
     /// Stream is re-seeded PER channel/sublayer, not per image or tile.
