@@ -465,6 +465,7 @@ enum OriginalMetalGrain {
         }) else {
             throw Failure.invalid("原版 Metal 高斯滤波：无效或超出边界的 sigma")
         }
+        // Upstream FIR runs vertical then horizontal; see axis=1 then axis=0.
         // Upstream fast_gaussian_filter dispatches sigma >= 3.0 to a
         // Young–van Vliet recursive IIR, not the reflect FIR kernel below.
         // That IIR has non-local support: substituting FIR or running IIR
@@ -485,14 +486,14 @@ enum OriginalMetalGrain {
         )
         var args = BlurParameters(
             sigma: vec(sigmas), width: UInt32(image.width),
-            height: UInt32(image.height), axis: 0
+            height: UInt32(image.height), axis: 1
         )
         try execute(
             command: command, pipeline: pipeline,
             textures: [image, scratch], params: &args,
             width: image.width, height: image.height
         )
-        args.axis = 1
+        args.axis = 0
         try execute(
             command: command, pipeline: pipeline,
             textures: [scratch, output], params: &args,
@@ -527,14 +528,14 @@ enum OriginalMetalGrain {
         if small.allSatisfy({ $0 == 0 }) { return }
         var args = BlurParameters(
             sigma: vec(small), width: UInt32(image.width),
-            height: UInt32(image.height), axis: 0
+            height: UInt32(image.height), axis: 1
         )
         try execute(
             command: command, pipeline: gaussian,
             textures: [image, scratch], params: &args,
             width: image.width, height: image.height
         )
-        args.axis = 1
+        args.axis = 0
         try execute(
             command: command, pipeline: gaussian,
             textures: [scratch, image], params: &args,
@@ -574,12 +575,14 @@ enum OriginalMetalGrain {
             )
         }
         let accumulated = try makeTexture(device, width: width, height: height)
-        let accumulate = try device.makeComputePipelineState(
-            function: library.makeFunction(name: "originalFilmAccumulate")!
-        )
-        let compose = try device.makeComputePipelineState(
-            function: library.makeFunction(name: "originalFilmCompositeAccumulated")!
-        )
+        guard let addKernel = library.makeFunction(name: "originalFilmAccumulate"),
+              let composeKernel = library.makeFunction(
+                name: "originalFilmCompositeAccumulated"
+              ) else {
+            throw Failure.invalid("原版 Metal 全图 IIR：缺少逐层累加或微结构合成内核")
+        }
+        let accumulate = try device.makeComputePipelineState(function: addKernel)
+        let compose = try device.makeComputePipelineState(function: composeKernel)
         let linearSpace = CGColorSpace(name: CGColorSpace.linearSRGB)!
         var params = Parameters(
             ranges: vec(totalRanges),
