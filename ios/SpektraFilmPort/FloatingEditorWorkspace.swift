@@ -447,13 +447,27 @@ struct FloatingEditorWorkspace: View {
                      : "可选色域 · ACES RGC")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Toggle("黑白场校准（端点估算）",
+                Toggle("黑白场校准",
                        isOn: $model.scannerBlackWhiteEnabled)
                     .font(.caption2)
                     .disabled(!model.hasPhoto || model.busy)
                     .onChange(of: model.scannerBlackWhiteEnabled) { _ in
                         model.queueSpectralPreview()
                     }
+                if model.scannerBlackWhiteEnabled && !isReversal {
+                    Toggle("按印相曝光计算黑白参考",
+                           isOn: $model.exposureReferenceEnabled)
+                        .font(.caption2)
+                        .disabled(!model.hasPhoto || model.busy)
+                        .onChange(of: model.exposureReferenceEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    Text(model.exposureReferenceEnabled
+                         ? "胶片两端 → 印相显影 → 曝光补偿"
+                         : "使用旧版密度端点近似")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             Toggle("扫描锐化 / 微眩光",
                    isOn: $model.scannerFinishingEnabled)
@@ -466,6 +480,27 @@ struct FloatingEditorWorkspace: View {
                                 range: 0...1.5, suffix: "×")
             }
             Divider()
+            if !isReversal {
+                Toggle("相纸显影曲线 s023", isOn: $model.printMorphEnabled)
+                    .font(.caption)
+                    .disabled(!model.hasPhoto || model.busy)
+                    .onChange(of: model.printMorphEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.printMorphEnabled {
+                    morphSlider("总体伽马", value: $model.printGamma,
+                                range: 0.65...1.45)
+                    morphSlider("快乳剂层", value: $model.printFastGamma,
+                                range: 0.7...1.4)
+                    morphSlider("慢乳剂层", value: $model.printSlowGamma,
+                                range: 0.7...1.4)
+                    morphSlider("显影剂疲劳", value: $model.printDeveloperExhaustion,
+                                range: 0...1)
+                    Text("原版三层 CDF，默认不改变已有曲线")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
             Toggle("乳剂散射", isOn: $model.scatterEnabled)
                 .font(.caption)
                 .disabled(!model.hasPhoto)
@@ -524,6 +559,23 @@ struct FloatingEditorWorkspace: View {
                 if !editing { onCommit() }
             })
             .disabled(!enabled)
+        }
+    }
+
+    private func morphSlider(_ title: String, value: Binding<Double>,
+                             range: ClosedRange<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title).font(.caption2)
+                Spacer(minLength: 0)
+                Text(String(format: "%.2f", value.wrappedValue))
+                    .font(.caption2).monospacedDigit()
+            }
+            Slider(value: value, in: range, step: 0.05,
+                   onEditingChanged: { editing in
+                if !editing { model.queueSpectralPreview() }
+            })
+            .disabled(!model.hasPhoto || model.busy)
         }
     }
 
