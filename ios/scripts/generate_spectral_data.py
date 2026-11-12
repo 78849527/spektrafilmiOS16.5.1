@@ -6,6 +6,9 @@ Important classification: 20 exposure films (16 negative, 4 positive),
 numeric fields are copied as Float32; invalid/null spectral measurements are
 represented as zeros only where upstream np.nan_to_num would do so.
 The original 200KB JSONs remain checked in upstream, but are not bundled.
+For the source scanner, a separate 81-wavelength validity mask preserves
+None/NaN measured dye/base values. The original Python density_to_light
+turns any NaN-transmission wavelength into ZERO light, *not* zero density.
 """
 from __future__ import annotations
 import base64
@@ -51,6 +54,25 @@ def to_f32(name: str, field: str, values, expected: int) -> str:
     return base64.b64encode(struct.pack("<" + "f" * expected, *flat)).decode("ascii")
 
 
+def source_scanner_validity_mask(data: dict) -> str:
+    """Preserve upstream np.nan semantics during scanner transmission.
+
+    compute_density_spectral uses all three dye channels, even when an input
+    channel density is zero: NaN * 0 remains NaN. density_to_light then
+    zeroes the entire transmitted wavelength. The Float32 packing alone
+    converts None into zero absorption and incorrectly adds light.
+    """
+    dyes = data["channel_density"]
+    base = data["base_density"]
+    if len(dyes) != 81 or len(base) != 81 or any(len(row) != 3 for row in dyes):
+        raise ValueError("Invalid 81-wavelength scanner measurements")
+    valid = bytes(
+        0 if base[i] is None or any(value is None for value in dyes[i]) else 1
+        for i in range(81)
+    )
+    return base64.b64encode(valid).decode("ascii")
+
+
 def main() -> None:
     paths = sorted(SRC.glob("*.json"))
     if len(paths) != 28:
@@ -92,6 +114,7 @@ def main() -> None:
         "        let logSensitivity: String",
         "        let channelDensity: String",
         "        let baseDensity: String",
+        "        let scannerValidWavelengths: String",
         "        let logExposure: String",
         "        let densityCurves: String",
         "        let densityCurvesLayers: String",
@@ -127,6 +150,7 @@ def main() -> None:
             ("logSensitivity", encoded["log_sensitivity"]),
             ("channelDensity", encoded["channel_density"]),
             ("baseDensity", encoded["base_density"]),
+            ("scannerValidWavelengths", source_scanner_validity_mask(data)),
             ("logExposure", encoded["log_exposure"]),
             ("densityCurves", encoded["density_curves"]),
             ("densityCurvesLayers", encoded["density_curves_layers"]),
@@ -152,6 +176,12 @@ def main() -> None:
     print("PASS: 20 measured 256×3×3 sublayer emulsions encoded.")
     print(f"PASS: {len(negatives) * len(printmedia)} negative-print "
           f"pairs and {len(positives)} positive film scans")
+    missing_scanner = sum(
+        81 - sum(base64.b64decode(source_scanner_validity_mask(data)))
+        for _, data, _ in originals
+    )
+    print(f"PASS: source scanner missing-wavelength masks retain "
+          f"{missing_scanner} original NaN wavelength slots across 28 profiles")
     print(f"Generated embedded Swift data: {DEST.stat().st_size} bytes")
 
 if __name__ == "__main__":

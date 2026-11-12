@@ -21,6 +21,18 @@ struct SpectralValidation {
         precondition(GeneratedSpectralData.paperIDs.count == 6)
         precondition(GeneratedSpectralData.printFilmIDs.count == 2)
         precondition(Set(films).count == 20 && Set(media).count == 8)
+        // True original scanner null semantics: upstream NaNs are skipped
+        // after spectral density integration, never converted into clear film.
+        for (stock, atLeast) in [("fujifilm_provia_100f", 14),
+                                 ("fujifilm_velvia_100", 17)] {
+            guard let record = all[stock],
+                  let mask = Data(base64Encoded: record.scannerValidWavelengths)
+            else { preconditionFailure("Missing source scanner NaN mask " + stock) }
+            precondition(mask.count == 81 && mask.allSatisfy({ $0 <= 1 }))
+            precondition(mask.filter({ $0 == 0 }).count >= atLeast,
+                         "Original dye NaNs must remain absent in scanner")
+        }
+        print("PASS: original measured-spectrum NaNs retained as zero transmitted light.")
 
         let samples: [[Double]] = [
             [0.05, 0.05, 0.05],
@@ -168,6 +180,15 @@ struct SpectralValidation {
         }
         print("PASS: 16 original NumPy measured 3×3 H-D layer inversions, positive and negative stocks.")
 
+        // The complete stage-scoped source POSITIVE scanner comparison
+        // is a hard regression guard. It does not certify RAW/print/full RGB.
+        let directRGB = try OriginalSourceRGBParity.evaluate()
+        print(directRGB.text)
+        precondition(directRGB.samples == 72)
+        precondition(directRGB.outsideTolerance == 0,
+                     "Python direct scanner RGB has >0.002 channel deviations")
+        print("PASS: 72-channel original positive-film direct scan RGB <=0.002.")
+        
         var pairs = 0
         for film in negatives {
             for medium in media {

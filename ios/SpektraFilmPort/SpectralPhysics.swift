@@ -26,6 +26,7 @@ struct SpectralPhysics {
         let logSensitivity: [Float]       // 81 x 3, wavelength-major
         let channelDensity: [Float]       // 81 x 3, wavelength-major
         let baseDensity: [Float]          // 81
+        let scannerValidWavelengths: [UInt8] // original scanner NaN-transmission mask
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
         let densityCurvesLayers: [Float]  // 256 x 3 layers x 3 CMY
@@ -45,6 +46,12 @@ struct SpectralPhysics {
             logSensitivity = try Self.decode(record.logSensitivity, count: 243)
             channelDensity = try Self.decode(record.channelDensity, count: 243)
             baseDensity = try Self.decode(record.baseDensity, count: 81)
+            guard let scannerMask = Data(base64Encoded: record.scannerValidWavelengths),
+                  scannerMask.count == 81,
+                  scannerMask.allSatisfy({ $0 == 0 || $0 == 1 }) else {
+                throw PhysicsError.invalid("缺少原版扫描染料光谱 NaN 有效波长掩码：" + id)
+            }
+            scannerValidWavelengths = Array(scannerMask)
             logExposure = try Self.decode(record.logExposure, count: 256)
             densityCurves = try Self.decode(record.densityCurves, count: 768)
             densityCurvesLayers = record.densityCurvesLayers.isEmpty
@@ -984,6 +991,11 @@ struct SpectralPhysics {
     ) -> [Double] {
         var xyz = [0.0, 0.0, 0.0]
         for wl in 0..<81 {
+            // Original compute_density_spectral propagates an absent dye/base
+            // sample as NaN (including NaN * 0), then density_to_light sets
+            // its entire wavelength's transmitted irradiance to zero.
+            // A packed Float32 NaN -> zero would instead ADD false light.
+            guard paper.scannerValidWavelengths[wl] == 1 else { continue }
             var density = paper.base(wl)
             for channel in 0..<3 {
                 density += paper.dyeAbsorbance(wl,channel)*densities[channel]
@@ -994,7 +1006,8 @@ struct SpectralPhysics {
             }
         }
         let safe = max(1e-12,normalization)
-        return xyz.map { max(0,$0/safe) }
+        // Source: 10**log10(max(XYZ,0)+1e-10). Preserve that floor.
+        return xyz.map { max(0,$0/safe) + 1e-10 }
     }
 
     private static func scanLinear(_ densities: [Double], paper: Profile,
