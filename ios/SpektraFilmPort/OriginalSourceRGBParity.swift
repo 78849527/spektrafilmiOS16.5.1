@@ -145,7 +145,7 @@ enum OriginalSourceRGBParity {
         }
         let n = Double(samples)
         let names = ["密度→XYZ", "XYZ→线性sRGB", "ACES RGC", "sRGB CCTF"]
-        let firstDivergent = stageOver.firstIndex(where: { $0 > 0.002 })
+        let firstDivergent = stageOver.firstIndex(where: { $0 > 0 })
         let stageEvidence = (0..<4).map { i in
             "\(names[i]): MAE=\(stageAbs[i]/n), " +
             "RMSE=\(sqrt(stageSquares[i]/n)), max=\(stageMax[i]), " +
