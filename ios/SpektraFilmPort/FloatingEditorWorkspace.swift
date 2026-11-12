@@ -676,7 +676,15 @@ struct FloatingEditorWorkspace: View {
                         Text("实测三乳剂 → 离散显影 → 染料云 → 微结构 → 反射滤波")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        Text("使用原版数学公式；GPU 浮点与随机序列尚非逐位一致")
+                        resetToggle("SciPy 原版随机序列（实验性，较慢）",
+                                    value: $model.grainOriginalSciPyEnabled,
+                                    enabled: model.hasPhoto && !model.busy)
+                            .onChange(of: model.grainOriginalSciPyEnabled) { _ in
+                                onRefresh()
+                            }
+                        Text(model.grainOriginalSciPyEnabled
+                             ? "逐通道全图 Poisson→Binomial，源固定种子；Metal Float32 后处理。大图可能耗时并受内存预算限制。"
+                             : "Metal 快速随机颗粒；统计分布一致，但并非 SciPy 原版逐像素随机序列。")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                         Button {
