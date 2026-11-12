@@ -83,8 +83,8 @@ struct OriginalMetalGrainValidation {
             &probeArgs,length:MemoryLayout<OriginalMetalGrain.BlurParameters>.stride,
             index:0
         )
-        probeEncoder.dispatchThreads(
-            MTLSize(width:w,height:h,depth:1),
+        probeEncoder.dispatchThreadgroups(
+            MTLSize(width:(w+7)/8,height:(h+7)/8,depth:1),
             threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1)
         )
         probeEncoder.endEncoding()
@@ -124,8 +124,8 @@ struct OriginalMetalGrainValidation {
             encoder.setBytes(&settings,
                              length:MemoryLayout<OriginalMetalGrain.BlurParameters>.stride,
                              index:0)
-            encoder.dispatchThreads(
-                MTLSize(width:w,height:h,depth:1),
+            encoder.dispatchThreadgroups(
+                MTLSize(width:(w+7)/8,height:(h+7)/8,depth:1),
                 threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1)
             )
             encoder.endEncoding()
