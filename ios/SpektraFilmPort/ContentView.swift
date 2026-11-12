@@ -27,6 +27,9 @@ final class PhotoEditorModel: ObservableObject {
     // Source-order Metal: three emulsion layers, per-layer dye clouds,
     // conditional lognormal microstructure and reflect boundaries.
     @Published var grainOriginalMetalEnabled = false
+    // Only after explicit user opt-in: source NumPy/SciPy per-channel RNG
+    // and existing whole-frame source FIR/YVV Metal filters.
+    @Published var grainOriginalSciPyEnabled = false
     // Experimental source-scanner path is OPT-IN. Initial UI and
     // old calculated looks remain identical to user-tested v1.0.1.
     @Published var originalScannerEnabled = false
@@ -87,7 +90,9 @@ final class PhotoEditorModel: ObservableObject {
             stage: stage, amount: grainAmount, seed: 8888,
             measuredSublayersEnabled: grainSublayersEnabled,
             discreteParticlesEnabled: grainDiscreteParticlesEnabled,
-            originalMetalEnabled: grainOriginalMetalEnabled
+            originalMetalEnabled: grainOriginalMetalEnabled,
+            sourceSciPySampling: grainOriginalMetalEnabled &&
+                grainOriginalSciPyEnabled
         )
     }
 
@@ -183,6 +188,7 @@ final class PhotoEditorModel: ObservableObject {
             grainSublayersEnabled = false
             grainDiscreteParticlesEnabled = false
             grainOriginalMetalEnabled = false
+            grainOriginalSciPyEnabled = false
             lut = importedLUT
             busy = false
             try refresh()
@@ -345,7 +351,9 @@ final class PhotoEditorModel: ObservableObject {
             let currentScanner = scannerFinishSettings
             let currentDIR = spatialDIRStage
             let currentDIRSettings = spatialDIRSettings
-            status = "原版 Metal 显影中：实测乳剂、染料云、微结构与反射边界…"
+            status = grainOriginalSciPyEnabled
+                ? "原版 SciPy 两阶段整图抽样中：需要串行计算全部九路颗粒…"
+                : "原版 Metal 显影中：实测乳剂、染料云、微结构与反射边界…"
             Task.detached(priority: .userInitiated) {
                 do {
                     let preview = try PhotoProcessor.preview(
@@ -358,7 +366,10 @@ final class PhotoEditorModel: ObservableObject {
                         guard revision == self.originalMetalPreviewVersion
                         else { return }
                         self.processedPreview = preview
-                        self.status = "原版 Metal 颗粒预览完成 · \(self.photoDimensions)"
+                        self.status = (self.grainOriginalSciPyEnabled
+                            ? "SciPy 原版序列 + Metal 显影预览完成 · "
+                            : "原版 Metal 颗粒预览完成 · ") +
+                            self.photoDimensions
                     }
                 } catch {
                     await MainActor.run {
