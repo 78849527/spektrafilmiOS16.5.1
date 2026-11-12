@@ -15,6 +15,7 @@ struct OriginalHanatosResponse {
     }
 
     private let rawLUT: [Double]
+    private let rgbToXYZ: [Double]
     private let n: Int
 
     init(filmID: String) throws {
@@ -26,6 +27,11 @@ struct OriginalHanatosResponse {
               raw.count == n * n * 3 * 2 else {
             throw DecodeError.unavailable("Hanatos2025 光谱数据数量不匹配")
         }
+        guard let matrix = GeneratedHanatosData.sRGBToXYZByFilm[filmID],
+              matrix.count == 9 else {
+            throw DecodeError.unavailable("该胶片没有 CAT16 参考光源投影矩阵")
+        }
+        rgbToXYZ = matrix
         self.n = n
         // Decode from little-endian binary16 without assuming aligned pointers.
         rawLUT = raw.withUnsafeBytes { buffer in
@@ -42,7 +48,7 @@ struct OriginalHanatosResponse {
         guard linearRGB.count == 3 else { return [] }
         // Original _rgb_to_tc_b: input linear-sRGB -> XYZ-D55 with CAT16.
         // The adaptation matrix is generated via colour.RGB_to_XYZ at build.
-        let m = GeneratedHanatosData.sRGBToD55XYZ
+        let m = rgbToXYZ
         let xyz = (0..<3).map { c in
             (0..<3).reduce(0.0) { sum, rgb in
                 sum + m[rgb * 3 + c] * linearRGB[rgb]
