@@ -16,6 +16,7 @@ final class PhotoEditorModel: ObservableObject {
     @Published var photoDimensions = ""
     @Published var filmExposureEV = 0.0
     @Published var printExposureEV = 0.0
+    @Published var hanatosOriginalPrecisionEnabled = true
     @Published var scatterEnabled = false
     @Published var halationEnabled = false
     @Published var halationAmount = 1.0
@@ -229,6 +230,8 @@ final class PhotoEditorModel: ObservableObject {
         status = "正在计算 \(selectionDescription)，原版 Hanatos2025 光谱输入…"
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
+        let hanatosPrecision: OriginalHanatosResponse.Precision =
+            hanatosOriginalPrecisionEnabled ? .originalFloat64 : .mobileFloat16
         let requiresGrainStage = grainEnabled
         let requiresSpatialDIRStage = spatialDIREnabled
         let originalScanner = originalScannerEnabled
@@ -264,7 +267,8 @@ final class PhotoEditorModel: ObservableObject {
                         cam16Gamut: cam16,
                         printReferenceCorrection: useExposureReference,
                         printMorph: printMorph,
-                        printOptics: printOptics
+                        printOptics: printOptics,
+                        hanatosPrecision: hanatosPrecision
                     )
                     let density = try requiresGrainStage
                         ? SpectralPhysics.makeDensityStageData(
@@ -276,7 +280,8 @@ final class PhotoEditorModel: ObservableObject {
                             cam16Gamut: cam16,
                             printReferenceCorrection: useExposureReference,
                             printMorph: printMorph,
-                            printOptics: printOptics
+                            printOptics: printOptics,
+                        hanatosPrecision: hanatosPrecision
                           ) : nil
                     let spatialDIR = try requiresSpatialDIRStage
                         ? SpectralPhysics.makeSpatialDIRStageData(
@@ -288,7 +293,8 @@ final class PhotoEditorModel: ObservableObject {
                             cam16Gamut: cam16,
                             printReferenceCorrection: useExposureReference,
                             printMorph: printMorph,
-                            printOptics: printOptics
+                            printOptics: printOptics,
+                        hanatosPrecision: hanatosPrecision
                           ) : nil
                     return (cube, density, spatialDIR)
                 }.value
