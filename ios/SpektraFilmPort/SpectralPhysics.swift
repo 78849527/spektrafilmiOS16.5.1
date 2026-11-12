@@ -907,6 +907,40 @@ struct SpectralPhysics {
         let encoded: [Double]
     }
 
+    /// Contiguous source stage from already-computed CAMERA FILM log10 RAW
+    /// exposure through original measured negative H-D, non-spatial DIR,
+    /// source enlarger, fitted paper H-D, print scan and encoded RGB.
+    /// Traces the same developLogExposureStages/developLogExposure used by
+    /// production image LUT; no second, approximate film-DIR algorithm.
+    struct SourceFilmDIRPrintStages {
+        let filmDIR: FilmDIRStages
+        let printStages: SourceNegativePrintStages
+    }
+
+    func sourceFilmDIRPrintStages(
+        _ filmLogRaw: [Double], paperEV: Double
+    ) throws -> SourceFilmDIRPrintStages {
+        guard !isPositive,filmLogRaw.count==3,
+              filmLogRaw.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid(
+                "负片 H-D/DIR→印相链诊断输入需三个有限 log10 曝光分量")
+        }
+        let filmStages=Self.developLogExposureStages(
+            filmLogRaw,film:film,applyDIR:true
+        )
+        let measuredByProduction=dirDevelopedDensity(logRaw:filmLogRaw)
+        guard zip(filmStages.developedDensity,measuredByProduction)
+            .allSatisfy({ abs($0.0-$0.1) < 1e-12 }) else {
+            throw PhysicsError.invalid("负片原版 DIR 分段与生产显影路径不一致")
+        }
+        let printed=try sourceNegativePrintStages(
+            filmStages.developedDensity,paperEV:paperEV
+        )
+        return SourceFilmDIRPrintStages(
+            filmDIR:filmStages,printStages:printed
+        )
+    }
+
     func sourceNegativePrintStages(
         _ filmDensity: [Double], paperEV: Double
     ) throws -> SourceNegativePrintStages {
@@ -1020,38 +1054,57 @@ struct SpectralPhysics {
 
     /// Original DIR nonspatial inhibition chemistry from
     /// model/couplers.py with film-specific params_builder presets.
-    /// Spatial diffusion is disabled while baking the color cube,
-    /// exactly as source debug.lut_mode requires.
+    /// Spatial diffusion disabled in debug.lut_mode. Keep diagnostics
+    /// on EXACTLY the same native routine used by production LUT/preview.
+    struct FilmDIRStages {
+        let initialDensity: [Double]
+        let correctedLogRaw: [Double]
+        let developedDensity: [Double]
+    }
+
+    private static func developLogExposureStages(
+        _ logRaw: [Double], film: Profile, applyDIR: Bool
+    ) -> FilmDIRStages {
+        let densityInitial=(0..<3).map { ch in
+            film.curve(logRaw[ch],channel:ch)
+        }
+        guard applyDIR, !film.dirCorrectedCurves.isEmpty else {
+            return FilmDIRStages(
+                initialDensity:densityInitial,correctedLogRaw:logRaw,
+                developedDensity:densityInitial
+            )
+        }
+        // Source model/couplers.py: positive silver=dmax-D, otherwise D.
+        let silver=(0..<3).map { donor -> Double in
+            film.polarity == "positive"
+                ? film.densityMaximum[donor]-densityInitial[donor]
+                : densityInitial[donor]
+        }
+        // Original np.einsum('ijk,km->ijm'): donor rows, receiver columns.
+        let logCorrected=(0..<3).map { receiver -> Double in
+            let inhibitor=(0..<3).reduce(0.0) { total,donor in
+                total+silver[donor]*film.dirMatrix[donor*3+receiver]
+            }
+            return logRaw[receiver]-inhibitor
+        }
+        let afterDIR=(0..<3).map { channel in
+            film.curve(
+                logCorrected[channel],channel:channel,
+                correctedBeforeDIR:true
+            )
+        }
+        return FilmDIRStages(
+            initialDensity:densityInitial,correctedLogRaw:logCorrected,
+            developedDensity:afterDIR
+        )
+    }
+
     private static func developLogExposure(
         _ logRaw: [Double], film: Profile, applyDIR: Bool
     ) -> [Double] {
-        let densityInitial = (0..<3).map { ch in
-            film.curve(logRaw[ch], channel: ch)
-        }
-        guard applyDIR, !film.dirCorrectedCurves.isEmpty else {
-            return densityInitial
-        }
-
-        // Original: silver = d_max - density for reversal, else density.
-        let silver = (0..<3).map { donor -> Double in
-            film.polarity == "positive"
-                ? film.densityMaximum[donor] - densityInitial[donor]
-                : densityInitial[donor]
-        }
-        // Original np.einsum('ijk,km->ijm'): donor rows, receiver cols.
-        let logCorrected = (0..<3).map { receiver -> Double in
-            let inhibitor = (0..<3).reduce(0.0) { total, donor in
-                total + silver[donor] *
-                    film.dirMatrix[donor * 3 + receiver]
-            }
-            return logRaw[receiver] - inhibitor
-        }
-        return (0..<3).map { channel in
-            film.curve(
-                logCorrected[channel],
-                channel: channel, correctedBeforeDIR: true
-            )
-        }
+        developLogExposureStages(
+            logRaw,film:film,applyDIR:applyDIR
+        ).developedDensity
     }
 
     /// Unit-test access to film chemistry independently of RGB/scan math.
