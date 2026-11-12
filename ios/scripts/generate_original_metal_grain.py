@@ -82,6 +82,12 @@ def main():
             f"    static let {name}: [Double] = " +
             values(gaussian_filter(impulse,sigma,mode="reflect",truncate=3.0))
         )
+    impulse2d=np.zeros((7,11),np.float64)
+    impulse2d[0,0]=1.0
+    result.append(
+        "    static let reflect2dCorner065: [Double] = " +
+        values(gaussian_filter(impulse2d,0.65,mode="reflect",truncate=3.0))
+    )
     result.append("}")
     DEST.write_text("\n".join(result)+"\n",encoding="utf-8")
     assert count==12
