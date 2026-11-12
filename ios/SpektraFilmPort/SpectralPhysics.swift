@@ -214,6 +214,7 @@ struct SpectralPhysics {
     private let useReferenceBlackWhite: Bool
     private let useExposureCorrectedPrintReference: Bool
     private let printMorphCurve: OriginalPrintMorph.PreparedCurve?
+    private let sourcePaperHDCurve: OriginalPrintMorph.SourceCurve?
     private var correctedPrintExposureEV = 0.0
     private var correctedReferenceBlack: Double?
     private var correctedReferenceWhite: Double?
@@ -290,6 +291,18 @@ struct SpectralPhysics {
             stock: paperID, logExposure: originalPaper.logExposure,
             settings: printMorph, positive: originalPaper.polarity == "positive"
         )
+        if useOriginalPrintOptics {
+            guard let source = OriginalPrintMorph.prepareSource(
+                stock:paperID,logExposure:originalPaper.logExposure,
+                settings:printMorph,
+                positive:originalPaper.polarity == "positive"
+            ) else {
+                throw PhysicsError.invalid("原版相纸 H-D 三层 CDF 曲线缺失或无效")
+            }
+            sourcePaperHDCurve = source
+        } else {
+            sourcePaperHDCurve = nil
+        }
 
         let basis = try Self.readOriginalFloat32(
             GeneratedOriginalOptics.mallettBasis, count: 81 * 3
@@ -432,7 +445,8 @@ struct SpectralPhysics {
                 midFilm, film: originalFilm, paper: originalPaper,
                 weights: pWeights, reference: printReference, printEV: 0.0,
                 preflashRaw: opticalPreflashRaw,
-                opticalPrint: useOriginalPrintOptics
+                opticalPrint: useOriginalPrintOptics,
+                sourceHD: sourcePaperHDCurve
             )
         }
         let midLinear = Self.scanLinear(
@@ -478,13 +492,15 @@ struct SpectralPhysics {
                 filmBlack, film: originalFilm, paper: originalPaper,
                 weights: pWeights, reference: printReference, printEV: 0,
                 preflashRaw: opticalPreflashRaw,
-                opticalPrint: useOriginalPrintOptics
+                opticalPrint: useOriginalPrintOptics,
+                sourceHD: sourcePaperHDCurve
             )
             let paperWhite = Self.paperDensities(
                 filmWhite, film: originalFilm, paper: originalPaper,
                 weights: pWeights, reference: printReference, printEV: 0,
                 preflashRaw: opticalPreflashRaw,
-                opticalPrint: useOriginalPrintOptics
+                opticalPrint: useOriginalPrintOptics,
+                sourceHD: sourcePaperHDCurve
             )
             let measuredBlack = Self.scanPhysicalXYZ(
                 densities: paperBlack, paper: originalPaper,
@@ -809,7 +825,8 @@ struct SpectralPhysics {
                 printEV: paperEV + correctedPrintExposureEV,
                 morph: printMorphCurve,
                 preflashRaw: opticalPreflashRaw,
-                opticalPrint: useOriginalPrintOptics
+                opticalPrint: useOriginalPrintOptics,
+                sourceHD: sourcePaperHDCurve
             )
             substrate = paper
         }
@@ -1025,7 +1042,8 @@ struct SpectralPhysics {
                                        reference: Double, printEV: Double,
                                        morph: OriginalPrintMorph.PreparedCurve? = nil,
                                        preflashRaw: [Double] = [0, 0, 0],
-                                       opticalPrint: Bool = false
+                                       opticalPrint: Bool = false,
+                                       sourceHD: OriginalPrintMorph.SourceCurve? = nil
     ) -> [Double] {
         let raw = printRaw(
             filmDensities: filmDensities, film: film, weights: weights,
@@ -1040,6 +1058,15 @@ struct SpectralPhysics {
             let logE = opticalPrint ? originalExposure[c]
                 : log10(max(1e-14, raw[c]) / reference) +
                     printEV * 0.301029995664
+            // Original printing.py: absolute source fitted 3-layer CDF,
+            // sampled at 256 exposure nodes and linearly interpolated.
+            // Never substitute measured curve or apply a delta in source mode.
+            if opticalPrint {
+                guard let sourceHD else {
+                    preconditionFailure("原版相纸 CDF H-D 数据缺失")
+                }
+                return sourceHD.density(logE, channel:c)
+            }
             let measured = paper.curve(logE, channel: c)
             guard let morph else { return measured }
             // Apply the ORIGINAL s023 CDF morphology delta on top of
