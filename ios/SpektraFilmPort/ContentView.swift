@@ -117,8 +117,11 @@ final class PhotoEditorModel: ObservableObject {
         )
         let filmName = sourceNames[filmID] ?? filmID
         let paperName = sourceNames[paperID] ?? paperID
+        let selectionDescription = SpectralPhysics.isPositiveFilm(filmID)
+            ? (filmName + " · 反转片直扫")
+            : (filmName + " → " + paperName)
         busy = true
-        status = "正在计算 \(filmName) → \(paperName)，81 波长实测数据…"
+        status = "正在计算 \(selectionDescription)，原版 Hanatos2025 光谱输入…"
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
         Task {
@@ -132,12 +135,12 @@ final class PhotoEditorModel: ObservableObject {
                 }.value
                 guard generation == renderGeneration else { return }
                 lut = FilmLUT(
-                    title: "实测曲线·\(filmName) → \(paperName) (实验)",
+                    title: "实测光谱 · \(selectionDescription) (实验)",
                     dimension: 17, rgbaFloatData: cubeData
                 )
                 strength = 1.0
                 try refresh()
-                status = "已应用 \(filmName) → \(paperName) · 胶片 \(String(format: "%+.2f", cameraExposure)) EV · 相纸 \(String(format: "%+.2f", enlargerExposure)) EV。仍是简化光谱模拟。"
+                status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。原版 Hanatos 光谱输入已启用，其他原版模块仍在移植。"
             } catch {
                 guard generation == renderGeneration else { return }
                 status = "光谱计算失败：" + error.localizedDescription
@@ -200,17 +203,22 @@ struct ContentView: View {
             .replacingOccurrences(of: "Crystal Archive Type II", with: "Crystal II")
     }
 
+    private var selectedIsPositive: Bool {
+        SpectralPhysics.isPositiveFilm(selectedFilmID)
+    }
+
     private var activePairIsSupported: Bool {
         SpectralPhysics.supportedFilmIDs.contains(selectedFilmID) &&
-        SpectralPhysics.supportedPaperIDs.contains(selectedPaperID)
+        (selectedIsPositive || SpectralPhysics.supportedPaperIDs.contains(selectedPaperID))
     }
 
     private var currentStockDescription: String {
         let names = Dictionary(uniqueKeysWithValues:
             GeneratedMeasuredProfiles.entries.map { ($0.id, $0.name) }
         )
-        return (names[selectedFilmID] ?? selectedFilmID) +
-               " → " + (names[selectedPaperID] ?? selectedPaperID)
+        let film = names[selectedFilmID] ?? selectedFilmID
+        if selectedIsPositive { return film + " → 反转片直接扫描（无需印相）" }
+        return film + " → " + (names[selectedPaperID] ?? selectedPaperID)
     }
 
     // Use a single native document picker for both file entry points. A
@@ -327,21 +335,34 @@ struct ContentView: View {
 
                                 Divider().padding(.vertical, 3)
 
-                                Text("相纸 PAPER")
+                                Text(selectedIsPositive ? "反转 DIRECT" : "印相 PRINT")
                                     .font(.caption2)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.secondary)
-                                Picker("相纸", selection: $selectedPaperID) {
-                                    ForEach(wheelPapers) { paper in
-                                        Text(shortStockName(paper))
+                                if selectedIsPositive {
+                                    VStack(spacing: 5) {
+                                        Image(systemName: "film")
+                                            .font(.title2)
+                                        Text("反转片直扫")
                                             .font(.caption)
-                                            .tag(paper.id)
+                                        Text("不经过相纸")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
                                     }
+                                    .frame(width: columnWidth - 14, height: 128)
+                                } else {
+                                    Picker("印相介质", selection: $selectedPaperID) {
+                                        ForEach(wheelPapers) { paper in
+                                            Text(shortStockName(paper))
+                                                .font(.caption)
+                                                .tag(paper.id)
+                                        }
+                                    }
+                                    .pickerStyle(.wheel)
+                                    .labelsHidden()
+                                    .frame(width: columnWidth - 14, height: 128)
+                                    .clipped()
                                 }
-                                .pickerStyle(.wheel)
-                                .labelsHidden()
-                                .frame(width: columnWidth - 14, height: 128)
-                                .clipped()
 
                                 Button("完整胶片目录") {
                                     activeSheet = .stocks
@@ -379,7 +400,7 @@ struct ContentView: View {
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text("相纸曝光")
+                                    Text(selectedIsPositive ? "无需印相" : "印相曝光")
                                         .font(.caption)
                                     Text(String(format: "%+.2f EV", model.printExposureEV))
                                         .font(.caption2)
@@ -390,6 +411,7 @@ struct ContentView: View {
                                            onEditingChanged: { editing in
                                         if !editing { model.queueSpectralPreview() }
                                     })
+                                    .disabled(selectedIsPositive)
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
@@ -443,7 +465,7 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)
-                    Text("6 款负片 × 3 款相纸；原版 Mallett2019 输入与光学曲线模拟。")
+                    Text("20 款拍摄胶片（16 负片＋4 反转片）· 6 相纸＋2 电影印片；Hanatos2025 光谱输入。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
 
@@ -481,7 +503,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.5：接入原版 Mallett2019 感光积分、D55/D50 标准光源、Schott KG3 放大机滤镜、默认 CMY 配色及 CIE1931 标准观察者。仍缺少 Hanatos2025、DIR 耦合、颗粒、光晕和完整扫描校色。18 组可选；预览长按持续显示原图。")
+                    Text("v0.6：28 份原版实测资料全量接入。20 种拍摄胶片可选；负片可组合 6 相纸或 Kodak 2383/2393 电影印片，反转片跳过印相直接扫描。启用原始 Hanatos2025 光谱查找表及窗口匹配；DIR 耦合、物理颗粒、光晕和完整扫描校色仍未完成。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
