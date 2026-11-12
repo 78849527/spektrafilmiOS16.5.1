@@ -8,14 +8,45 @@ with a separately reimplemented approximation.
 from pathlib import Path
 import json
 import sys
+import importlib.util
+import types
 import numpy as np
 
 ROOT=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(ROOT/"src"))
-from spektrafilm.utils.morph_curves import (
-    PrintCurvesMorphParams, apply_print_curves_morph
+
+# Import the ORIGINAL s023 source module without executing the parent
+# spektrafilm package __init__ (which eagerly imports unrelated RAW
+# exiv2 libraries). The only runtime source dependency required by the
+# algorithm is a simple fitted-model data container.
+class DensityCurvesModel:
+    def __init__(self, model_type, centers, amplitudes, sigmas):
+        self.model_type=model_type
+        self.centers=np.asarray(centers,dtype=float)
+        self.amplitudes=np.asarray(amplitudes,dtype=float)
+        self.sigmas=np.asarray(sigmas,dtype=float)
+    @property
+    def n_layers(self):
+        return self.centers.shape[1]
+    @property
+    def n_channels(self):
+        return self.centers.shape[0]
+
+for package in ("spektrafilm","spektrafilm.profiles","spektrafilm.utils"):
+    obj=types.ModuleType(package)
+    obj.__path__=[]
+    sys.modules[package]=obj
+profile_shim=types.ModuleType("spektrafilm.profiles.io")
+profile_shim.DensityCurvesModel=DensityCurvesModel
+sys.modules["spektrafilm.profiles.io"]=profile_shim
+source_path=ROOT/"src/spektrafilm/utils/morph_curves.py"
+spec=importlib.util.spec_from_file_location(
+    "spektrafilm.utils.morph_curves",source_path
 )
-from spektrafilm.profiles.io import DensityCurvesModel
+source_module=importlib.util.module_from_spec(spec)
+sys.modules[spec.name]=source_module
+spec.loader.exec_module(source_module)
+PrintCurvesMorphParams=source_module.PrintCurvesMorphParams
+apply_print_curves_morph=source_module.apply_print_curves_morph
 
 DATA=ROOT/"src/spektrafilm/data/profiles"
 OUTPUT=ROOT/"ios/SpektraFilmPort/GeneratedPrintMorphData.swift"
