@@ -428,8 +428,19 @@ struct FloatingEditorWorkspace: View {
                             onRefresh()
                         }
                     Spacer(minLength: 0)
-                    Text("\(Int(model.strength * 100))%")
-                        .font(.caption2).monospacedDigit()
+                    Button {
+                        guard model.hasPhoto && model.lut != nil && !model.busy else { return }
+                        model.strength = 1.0
+                        onRefresh()
+                    } label: {
+                        Text("\(Int(model.strength * 100))%")
+                            .font(.caption2).monospacedDigit()
+                            .frame(minWidth: 49, minHeight: 30, alignment: .trailing)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!model.hasPhoto || model.lut == nil || model.busy)
+                    .accessibilityLabel("效果强度，点击数值恢复默认 100%")
                 }
                 Slider(value: $model.strength, in: 0...1, step: 0.05,
                        onEditingChanged: { editing in
@@ -439,7 +450,7 @@ struct FloatingEditorWorkspace: View {
             }
 
             Divider()
-            Text("原版扫描实验 · 双击左侧参数名称复原")
+            Text("点右侧数值恢复默认 · 双击左侧名称复原")
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
@@ -687,8 +698,19 @@ struct FloatingEditorWorkspace: View {
                         onCommit()
                     }
                 Spacer(minLength: 0)
-                Text(String(format: "%+.2f EV", value.wrappedValue))
-                    .font(.caption2).monospacedDigit()
+                Button {
+                    guard enabled else { return }
+                    value.wrappedValue = 0
+                    onCommit()
+                } label: {
+                    Text(String(format: "%+.2f EV", value.wrappedValue))
+                        .font(.caption2).monospacedDigit()
+                        .frame(minWidth: 67, minHeight: 30, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!enabled)
+                .accessibilityLabel("\(title)，点击数值恢复默认 0 EV")
             }
             Slider(value: value, in: -2...2, step: 0.25,
                    onEditingChanged: { editing in
@@ -711,8 +733,19 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
                 Spacer(minLength: 0)
-                Text(String(format: "%.2f", value.wrappedValue))
-                    .font(.caption2).monospacedDigit()
+                Button {
+                    guard model.hasPhoto && !model.busy else { return }
+                    value.wrappedValue = resetTo
+                    model.queueSpectralPreview()
+                } label: {
+                    Text(String(format: "%.2f", value.wrappedValue))
+                        .font(.caption2).monospacedDigit()
+                        .frame(minWidth: 59, minHeight: 30, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.hasPhoto || model.busy)
+                .accessibilityLabel("\(title)，点击数值恢复默认 \(String(format: "%.2f", resetTo))")
             }
             Slider(value: value, in: range, step: 0.05,
                    onEditingChanged: { editing in
@@ -735,8 +768,19 @@ struct FloatingEditorWorkspace: View {
                         onRefresh()
                     }
                 Spacer(minLength: 0)
-                Text(String(format: "%.2f", value.wrappedValue) + suffix)
-                    .font(.caption2).monospacedDigit()
+                Button {
+                    guard model.hasPhoto && !model.busy else { return }
+                    value.wrappedValue = resetTo
+                    onRefresh()
+                } label: {
+                    Text(String(format: "%.2f", value.wrappedValue) + suffix)
+                        .font(.caption2).monospacedDigit()
+                        .frame(minWidth: 59, minHeight: 30, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.hasPhoto || model.busy)
+                .accessibilityLabel("\(title)，点击数值恢复默认 \(String(format: "%.2f", resetTo))\(suffix)")
             }
             Slider(value: value, in: range, step: 0.25,
                    onEditingChanged: { editing in
