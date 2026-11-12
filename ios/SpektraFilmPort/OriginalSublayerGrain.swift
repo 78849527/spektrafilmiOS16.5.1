@@ -46,9 +46,9 @@ enum OriginalSublayerGrain {
                 let d = densityLayers[layer*3 + channel]
                 let p = min(1-1e-6, max(1e-6, (d+minLayer)/fullMax))
                 let saturation = 1 - p*uniformity[channel]*(1-1e-6)
-                let n = (pixelUM*pixelUM*fraction) /
-                        (particleAreaUM2*channelScales[channel]*
-                         sublayerScales[layer])
+                let area = particleAreaUM2 * channelScales[channel] *
+                    sublayerScales[layer]
+                let n = pixelUM * pixelUM * fraction / area
                 // source: E[particle D] = (fullMax/n)*(n/sat)*p*sat = p*fullMax
                 resultMean[channel] += p*fullMax
                 resultVariance[channel] += fullMax*fullMax*p*saturation /
