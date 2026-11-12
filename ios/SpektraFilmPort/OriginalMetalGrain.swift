@@ -113,9 +113,14 @@ enum OriginalMetalGrain {
                 cloud[layer][ch] = sqrt((maxD + dMinLayer) / n)
             }
         }
-        let microSigma = 30.0 * 0.001 / pixelUM
-        let microBlur = 0.2 / pixelUM
-        let useMicro = microSigma > 0.05
+        // Source grain.py and Numba fast_stats.py deterministic physical
+        // terms now share the independently validated original formula.
+        let sourceMicro = try OriginalSourceMicrostructure.physical(
+            pixelUM: pixelUM
+        )
+        let microSigma = sourceMicro.microStd
+        let microBlur = sourceMicro.blur
+        let useMicro = sourceMicro.enabled
         let useMicroBlur = useMicro && microBlur > 0.4
         let maxCloud = cloud.flatMap { $0 }.max() ?? 0
         // Composition of separately truncated kernels: each contribution
