@@ -65,7 +65,7 @@ struct OriginalPrintMorphValidation {
                   let curve=OriginalPrintMorph.prepareSource(
                     stock:ref.stock,logExposure:decode(stock.logExposure,count:256),
                     settings:mode(ref.mode),
-                    positive:stock.type == "positive"
+                    positive:stock.polarity == "positive"
                   ) else {
                 preconditionFailure("Missing exact source print H-D model " + ref.stock)
             }
