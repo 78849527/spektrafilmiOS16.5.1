@@ -438,7 +438,7 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    func exportJPEG() async throws -> URL {
+    func exportJPEG(resolution: ExportResolutionMode = .original) async throws -> URL {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
@@ -465,10 +465,12 @@ final class PhotoEditorModel: ObservableObject {
                 spatial: currentSpatial, grain: currentGrain,
                 scanner: currentScanner,
                 dirStage: currentDIRStage,
-                dirSettings: currentDIRSettings
+                dirSettings: currentDIRSettings,
+                resolution: resolution
             )
         }.value
-        status = "高清原尺寸 \(output.width) × \(output.height) JPEG 已完成"
+        let label = resolution == .safe ? "安全分辨率" : "原始分辨率"
+        status = "\(label) \(output.width) × \(output.height) JPEG 已完成"
         return output.url
     }
 }
@@ -518,8 +520,12 @@ struct ContentView: View {
                 onOpenCatalog: {
                     activeSheet = .stocks
                 },
-                onExport: { performExport(saveToPhotos: false) },
-                onSaveToPhotos: { performExport(saveToPhotos: true) },
+                onExport: { resolution in
+                    performExport(saveToPhotos: false, resolution: resolution)
+                },
+                onSaveToPhotos: { resolution in
+                    performExport(saveToPhotos: true, resolution: resolution)
+                },
                 onRefresh: { refresh() }
             )
             .toolbar(.hidden, for: .navigationBar)
@@ -570,19 +576,22 @@ struct ContentView: View {
         catch { message = error.localizedDescription }
     }
 
-    private func performExport(saveToPhotos: Bool) {
+    private func performExport(
+        saveToPhotos: Bool, resolution: ExportResolutionMode
+    ) {
         guard model.hasPhoto && !model.busy else { return }
         model.busy = true
+        let mode = resolution == .safe ? "安全分辨率" : "原始分辨率"
         model.status = saveToPhotos
-            ? "正在制作高清 JPEG 并写入系统相册…"
-            : "正在制作高清原尺寸 JPEG…"
+            ? "正在制作\(mode) JPEG 并写入系统相册…"
+            : "正在制作\(mode) JPEG…"
         Task { @MainActor in
             defer { model.busy = false }
             do {
-                let file = try await model.exportJPEG()
+                let file = try await model.exportJPEG(resolution: resolution)
                 if saveToPhotos {
                     try await PhotoLibrarySaver.saveJPEG(at: file)
-                    model.status = "高清照片已保存到系统相册"
+                    model.status = "\(mode)照片已保存到系统相册"
                 } else {
                     activeSheet = .share(file)
                 }
