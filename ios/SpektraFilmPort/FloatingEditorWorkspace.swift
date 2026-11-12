@@ -26,6 +26,7 @@ struct FloatingEditorWorkspace: View {
     @State private var wheelsCollapsed = false
     @State private var adjustmentCollapsed = false
     @State private var comparisonEnabled = false
+    @State private var statusReportPresented = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
 
@@ -93,11 +94,21 @@ struct FloatingEditorWorkspace: View {
             }
             .overlay(alignment: .topLeading) {
                 if controlsVisible && model.hasPhoto {
-                    statusChip
-                        .padding(.top, 61)
-                        .padding(.horizontal, 9)
-                        .allowsHitTesting(false)
+                    Button {
+                        statusReportPresented = true
+                    } label: {
+                        statusChip
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("查看完整状态及 Metal 数值诊断报告")
+                    .padding(.top, 61)
+                    .padding(.horizontal, 9)
                 }
+            }
+            .sheet(isPresented: $statusReportPresented) {
+                statusReportSheet
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
             .background(Color.black.ignoresSafeArea())
             // Avoid reentrant @State changes from derived model.hasPhoto
@@ -250,16 +261,69 @@ struct FloatingEditorWorkspace: View {
         .accessibilityLabel(name)
     }
 
+    /// Compact, always tappable summary. Full diagnostic evidence is scrollable.
     private var statusChip: some View {
-        Text(model.busy ? "正在生成胶片预览…" : model.status)
-            .font(.caption2)
-            .foregroundColor(.primary)
-            .lineLimit(2)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-             .background(Color(uiColor: .secondarySystemBackground).opacity(0.9),
-                    in: RoundedRectangle(cornerRadius: 10))
+        HStack(alignment: .center, spacing: 8) {
+            Text(model.busy ? "正在生成胶片预览…" : model.status)
+                .font(.caption2)
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(uiColor: .secondarySystemBackground).opacity(0.93),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var statusReportSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if model.hardwareDiagnosticReport != nil {
+                        Label("检测结果已完整保存，向下滚动查看全部项目",
+                              systemImage: "checklist")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(model.hardwareDiagnosticReport ?? model.status)
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("完整检测报告")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        UIPasteboard.general.string =
+                            model.hardwareDiagnosticReport ?? model.status
+                    } label: {
+                        Label("复制全文", systemImage: "doc.on.doc")
+                    }
+                    .accessibilityLabel("复制完整诊断报告")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("关闭") {
+                        statusReportPresented = false
+                    }
+                }
+            }
+        }
     }
 
     private func wheelDock(width: CGFloat) -> some View {
