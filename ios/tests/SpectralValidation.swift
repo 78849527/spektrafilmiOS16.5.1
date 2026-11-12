@@ -178,6 +178,77 @@ struct SpectralValidation {
         }
         print("PASS: 4 reversal films directly scan and bypass all print media.")
 
+        // v1.4: optical-printing opt-in must preserve the previous
+        // shipped result when disabled, even with nonzero dormant values.
+        let experimentalOptics = OriginalPrintOptics.Settings(
+            enabled: true,
+            cyanShift: 25, magentaShift: -30, yellowShift: 18,
+            preflashExposure: 0.03,
+            preflashMagentaShift: 8, preflashYellowShift: -12
+        )
+        let dormantOptics = OriginalPrintOptics.Settings(
+            enabled: false,
+            cyanShift: 25, preflashExposure: 0.1
+        )
+        let referenceOld = try SpectralPhysics(
+            filmID: "kodak_portra_400", paperID: "kodak_portra_endura"
+        )
+        let legacyDisabled = try SpectralPhysics(
+            filmID: "kodak_portra_400", paperID: "kodak_portra_endura",
+            printOptics: dormantOptics
+        )
+        let opticalNew = try SpectralPhysics(
+            filmID: "kodak_portra_400", paperID: "kodak_portra_endura",
+            printOptics: experimentalOptics, cameraExposureEV: 0.7
+        )
+        var meaningfulChanges = 0
+        for color in samples {
+            let oldRGB = referenceOld.render(
+                color, exposureEV: 0.7, paperEV: -0.5
+            )
+            let sameRGB = legacyDisabled.render(
+                color, exposureEV: 0.7, paperEV: -0.5
+            )
+            let newRGB = opticalNew.render(
+                color, exposureEV: 0.7, paperEV: -0.5
+            )
+            check(newRGB, "original CMY/preflash print optics")
+            for c in 0..<3 {
+                precondition(oldRGB[c] == sameRGB[c],
+                             "Disabled v1.4 must preserve v1.3 optical maths")
+                if abs(newRGB[c] - oldRGB[c]) > 0.0001 {
+                    meaningfulChanges += 1
+                }
+            }
+        }
+        precondition(meaningfulChanges > 0,
+                     "Active source CMY/preflash must affect real paper exposure")
+        let positiveLegacy = try SpectralPhysics(
+            filmID: positives[0], paperID: media[0]
+        )
+        let positiveOptics = try SpectralPhysics(
+            filmID: positives[0], paperID: media[0],
+            printOptics: experimentalOptics
+        )
+        for color in samples {
+            let old = positiveLegacy.render(color, exposureEV: 0, paperEV: 0)
+            let new = positiveOptics.render(color, exposureEV: 0, paperEV: 0)
+            precondition(old == new, "Reversal must bypass preflash/CMY")
+        }
+        let opticalStages = try SpectralPhysics.makeDensityStageData(
+            filmID: "kodak_portra_400", paperID: "kodak_portra_endura",
+            exposureEV: 0.7, paperEV: -0.5, size: 9,
+            printOptics: experimentalOptics
+        )
+        precondition(opticalStages.printCube.count == 9*9*9*16)
+        let opticalCube = try SpectralPhysics.makeCubeData(
+            filmID: "kodak_portra_400", paperID: "kodak_portra_endura",
+            exposureEV: 0.7, paperEV: -0.5, size: 9,
+            printOptics: experimentalOptics
+        )
+        precondition(opticalCube.count == opticalStages.printCube.count)
+        print("PASS: v1.4 opt-in optical print path, default parity, reversals and double-stage grain support.")
+
         let lut = try SpectralPhysics.makeCubeData(
             filmID: "kodak_portra_400", paperID: "kodak_2383",
             exposureEV: 0, paperEV: 0, size: 9
