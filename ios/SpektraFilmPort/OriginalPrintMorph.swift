@@ -275,7 +275,7 @@ enum OriginalPrintMorph {
         guard settings.valid, logExposure.count == 256 else { return nil }
         let xs = logExposure.map(Double.init)
         guard xs.allSatisfy({ $0.isFinite }),
-              zip(xs,xs.dropFirst()).allSatisfy({ $0 < $1 }) else {
+              zip(xs,xs.dropFirst()).allSatisfy({ $0.0 < $0.1 }) else {
             return nil
         }
         var channels = [[Double]]()
