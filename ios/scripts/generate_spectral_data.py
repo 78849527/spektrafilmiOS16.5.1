@@ -4,7 +4,9 @@
 Important classification: 20 exposure films (16 negative, 4 positive),
 6 photographic papers and 2 colour motion-picture print stocks. All original
 numeric fields are copied as Float32; invalid/null spectral measurements are
-represented as zeros only where upstream np.nan_to_num would do so.
+represented as zeros in Float32 arrays, but source missing-wavelength
+positions are preserved separately: original density_to_light() turns NaN
+into ZERO transmitted light at the whole wavelength (not zero absorbance).
 The original 200KB JSONs remain checked in upstream, but are not bundled.
 """
 from __future__ import annotations
@@ -50,6 +52,21 @@ def to_f32(name: str, field: str, values, expected: int) -> str:
         raise ValueError(f"Bad size {name}/{field} {len(flat)} != {expected}")
     return base64.b64encode(struct.pack("<" + "f" * expected, *flat)).decode("ascii")
 
+def scan_validity_mask(stock: str, data: dict) -> str:
+    """Original NaN anywhere in CMY dye/base => zero transmission at wavelength."""
+    dye, base = data["channel_density"], data["base_density"]
+    if len(dye) != 81 or len(base) != 81:
+        raise ValueError(f"Invalid source scanner spectral shape: {stock}")
+    valid = []
+    for i in range(81):
+        row = dye[i]
+        if not isinstance(row, list) or len(row) != 3:
+            raise ValueError(f"Invalid source CMY row: {stock}:{i}")
+        valid.append(int(base[i] is not None and all(v is not None for v in row)))
+    if not any(valid):
+        raise ValueError(f"No source-measured scanner wavelengths for {stock}")
+    return base64.b64encode(bytes(valid)).decode("ascii")
+
 
 def main() -> None:
     paths = sorted(SRC.glob("*.json"))
@@ -85,13 +102,14 @@ def main() -> None:
         "// Generated from all 28 original Spektrafilm measured profiles.",
         "// Upstream source and original GPLv3 / profile CC BY-SA notices retained",
         "// under src/spektrafilm and SPEKTRAFILM_LICENSE.txt.",
-        "// Spectral arrays: original float64 rounded to Float32; null -> 0.",
+        "// Float32 spectra + original source NaN zero-light 81-wavelength mask.",
         "// This contains ALL measured arrays, not the complete source engine.",
         "enum GeneratedSpectralData {",
         "    struct Record {",
         "        let logSensitivity: String",
         "        let channelDensity: String",
         "        let baseDensity: String",
+        "        let scannerValidWavelengths: String",
         "        let logExposure: String",
         "        let densityCurves: String",
         "        let densityCurvesLayers: String",
@@ -127,6 +145,7 @@ def main() -> None:
             ("logSensitivity", encoded["log_sensitivity"]),
             ("channelDensity", encoded["channel_density"]),
             ("baseDensity", encoded["base_density"]),
+            ("scannerValidWavelengths", scan_validity_mask(stock, data)),
             ("logExposure", encoded["log_exposure"]),
             ("densityCurves", encoded["density_curves"]),
             ("densityCurvesLayers", encoded["density_curves_layers"]),
