@@ -64,53 +64,6 @@ struct OriginalMetalGrainValidation {
                      abs(uploaded[1]-1)<0.000001 &&
                      abs(uploaded[2]-1)<0.000001,
                      "GPU edge test source texture upload failed")
-        // Diagnostic minimal GPU roundtrip: prove texture(0), buffer(0)
-        // and texture(1) are bound before testing convolution maths.
-        let probe=device.makeTexture(descriptor: {
-            let desc=MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat:.rgba32Float,width:w,height:h,mipmapped:false
-            )
-            desc.storageMode = .shared
-            desc.usage = [.shaderRead,.shaderWrite]
-            return desc
-        }())!
-        let debugPipe=try device.makeComputePipelineState(
-            function:library.makeFunction(name:"originalFilmDebugProbe")!
-        )
-        let testCommand=device.makeCommandQueue()!.makeCommandBuffer()!
-        let testEncoder=testCommand.makeComputeCommandEncoder()!
-        testEncoder.setComputePipelineState(debugPipe)
-        testEncoder.setTexture(a,index:0)
-        testEncoder.setTexture(probe,index:1)
-        var probeArgs=OriginalMetalGrain.BlurParameters(
-            sigma:SIMD4<Float>(0.65,0.65,0.65,0),
-            width:UInt32(w),height:UInt32(h),axis:0
-        )
-        testEncoder.setBytes(
-            &probeArgs,length:MemoryLayout<OriginalMetalGrain.BlurParameters>.stride,
-            index:0
-        )
-        testEncoder.dispatchThreads(
-            MTLSize(width:w,height:h,depth:1),
-            threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1)
-        )
-        testEncoder.endEncoding()
-        testCommand.commit()
-        testCommand.waitUntilCompleted()
-        precondition(testCommand.status == .completed)
-        var probePixels=[Float](repeating:0,count:pixels.count)
-        probePixels.withUnsafeMutableBytes { raw in
-            probe.getBytes(raw.baseAddress!,bytesPerRow:w*4*4,
-                from:MTLRegionMake2D(0,0,w,h),mipmapLevel:0)
-        }
-        print("Metal binding probe RGB: ",
-              probePixels[0],probePixels[1],probePixels[2])
-        precondition(abs(probePixels[0]-1)<0.0001 &&
-                     abs(probePixels[1]-0.65)<0.0001 &&
-                     abs(probePixels[2]-11)<0.0001,
-                     "Metal texture/constant-buffer binding not faithful")
-        print("PASS: native Metal texture upload, shader binding and parameters.")
-
         // Probe the identical uploaded texture and packed Swift/Metal
         // BlurParameters before judging the Gaussian convolution.
         guard let probeFunc = library.makeFunction(name: "originalFilmDebugProbe")
