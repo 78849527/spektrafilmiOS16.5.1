@@ -11,7 +11,16 @@ No claim is made that a Metal hash PRNG matches SciPy or Numba RNG.
 from __future__ import annotations
 import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
+
+# The source functions are imported from AST under a dynamic module. Numba
+# cache pickles for that dynamically named module are not portable between
+# independent reference generators. Use a clean cache per generator process
+# rather than changing the source's @njit/fastmath algorithms.
+os.environ["NUMBA_CACHE_DIR"] = tempfile.mkdtemp(prefix="spektra-source-replay-")
+
 import numpy as np
 from generate_original_source_rng import original_functions
 from generate_original_metal_grain import ROOT, PROFILES
