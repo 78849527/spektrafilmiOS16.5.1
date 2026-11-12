@@ -90,7 +90,9 @@ enum OriginalSourceSciPyParticles {
             width: w, height: h, mipmapped: false
         )
         textureDescriptor.storageMode = .shared
-        textureDescriptor.usage = [.shaderRead]
+        // The validated YVV path filters this same texture IN PLACE.
+        // Both read and write usage are required for four Metal sweeps.
+        textureDescriptor.usage = [.shaderRead, .shaderWrite]
         guard let output = resultBuffer.makeTexture(
             descriptor: textureDescriptor, offset: 0,
             bytesPerRow: rowBytes
