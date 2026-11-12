@@ -58,10 +58,11 @@ enum OriginalPrintOptics {
     static func prepare(
         source: [Double], neutralCC: [Double],
         settings: Settings, filmBase: [Double],
-        paperSensitivity: [[Double]]
+        filmBaseValid: [Bool], paperSensitivity: [[Double]]
     ) -> Prepared {
         precondition(source.count == 81 && neutralCC.count == 3 &&
-                     filmBase.count == 81 && paperSensitivity.count == 81)
+                     filmBase.count == 81 && filmBaseValid.count == 81 &&
+                     paperSensitivity.count == 81)
         let printingCC = [
             neutralCC[0] + settings.cyanShift,
             neutralCC[1] + settings.magentaShift,
@@ -79,6 +80,10 @@ enum OriginalPrintOptics {
             ]
             let flashLight = filteredIlluminant(source, cc: preflashCC)
             for i in 0..<81 {
+                // Source _compute_raw_preflash scans the FILM BASE only:
+                // dye-null wavelengths may still transmit preflash light.
+                // Missing BASE wavelengths alone transmit zero light.
+                if !filmBaseValid[i] { continue }
                 let light = flashLight[i] * pow(10.0, -filmBase[i])
                 for c in 0..<3 {
                     preflash[c] += light * paperSensitivity[i][c]
