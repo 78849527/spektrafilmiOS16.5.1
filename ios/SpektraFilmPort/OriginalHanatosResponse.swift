@@ -43,9 +43,26 @@ struct OriginalHanatosResponse {
             let byteIndex = index * 2
             let low = UInt16(bytes[byteIndex])
             let high = UInt16(bytes[byteIndex + 1]) << 8
-            decoded[index] = Double(Float16(bitPattern: low | high))
+            decoded[index] = Self.binary16ToDouble(low | high)
         }
         rawLUT = decoded
+    }
+
+    /// Platform-independent IEEE-754 binary16 to Double conversion.
+    /// Avoids Float16(bitPattern:) overload availability differences on
+    /// macOS-15 Intel and the user's iOS 16.5.1 deployment target.
+    private static func binary16ToDouble(_ bits: UInt16) -> Double {
+        let sign = (bits & 0x8000) == 0 ? 1.0 : -1.0
+        let exponent = Int((bits >> 10) & 0x1f)
+        let fraction = Int(bits & 0x03ff)
+        if exponent == 0 {
+            return sign * Double(fraction) * pow(2.0, -24.0)
+        }
+        if exponent == 31 {
+            return fraction == 0 ? sign * Double.infinity : Double.nan
+        }
+        return sign * Double(1024 + fraction) *
+               pow(2.0, Double(exponent - 25))
     }
 
     func raw(linearRGB: [Double]) -> [Double] {
