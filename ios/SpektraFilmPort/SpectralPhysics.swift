@@ -2,9 +2,9 @@ import Foundation
 
 /// Experimental, native iOS 16.5.1 spectral negative->paper calculation.
 ///
-/// This physically motivated *subset* uses upstream Portra 400 / Portra
-/// Endura measured sensitivity, H-D characteristic curves and wavelength-
-/// dependent dye absorbances. It does NOT yet port original Hanatos spectral
+/// This physically motivated *subset* uses selected original negative films
+/// and print papers with their measured sensitivity, H-D characteristic
+/// curves, and wavelength-dependent dye absorbances. It does NOT yet port original Hanatos spectral
 /// upsampling, enlarger heat filters, color reference balancing, couplers,
 /// film grain, halation, glare, or complete spectral rendering parity.
 /// A small, runtime-generated CoreImage color cube accelerates pixel preview.
@@ -24,29 +24,17 @@ struct SpectralPhysics {
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
 
-        init(prefix: String) throws {
-            func encoded(_ key: String) -> String {
-                switch (prefix, key) {
-                case ("film", "log_sensitivity"): return GeneratedSpectralData.film_log_sensitivity
-                case ("film", "channel_density"): return GeneratedSpectralData.film_channel_density
-                case ("film", "base_density"): return GeneratedSpectralData.film_base_density
-                case ("film", "log_exposure"): return GeneratedSpectralData.film_log_exposure
-                case ("film", "density_curves"): return GeneratedSpectralData.film_density_curves
-                case ("paper", "log_sensitivity"): return GeneratedSpectralData.paper_log_sensitivity
-                case ("paper", "channel_density"): return GeneratedSpectralData.paper_channel_density
-                case ("paper", "base_density"): return GeneratedSpectralData.paper_base_density
-                case ("paper", "log_exposure"): return GeneratedSpectralData.paper_log_exposure
-                case ("paper", "density_curves"): return GeneratedSpectralData.paper_density_curves
-                default: return ""
-                }
+        init(id: String) throws {
+            guard let record = GeneratedSpectralData.profiles[id] else {
+                throw PhysicsError.invalid("没有该胶片／相纸的实测曲线：" + id)
             }
-            logSensitivity = try Self.decode(encoded("log_sensitivity"), count: 243)
-            channelDensity = try Self.decode(encoded("channel_density"), count: 243)
-            baseDensity = try Self.decode(encoded("base_density"), count: 81)
-            logExposure = try Self.decode(encoded("log_exposure"), count: 256)
-            densityCurves = try Self.decode(encoded("density_curves"), count: 768)
+            logSensitivity = try Self.decode(record.logSensitivity, count: 243)
+            channelDensity = try Self.decode(record.channelDensity, count: 243)
+            baseDensity = try Self.decode(record.baseDensity, count: 81)
+            logExposure = try Self.decode(record.logExposure, count: 256)
+            densityCurves = try Self.decode(record.densityCurves, count: 768)
             guard logExposure[0] < logExposure[255] else {
-                throw PhysicsError.invalid("光谱数据的曝光曲线无效")
+                throw PhysicsError.invalid("光谱数据的曝光曲线无效：" + id)
             }
         }
 
@@ -108,9 +96,16 @@ struct SpectralPhysics {
     private let printReference: [Double]
     private let neutralOutputRGB: [Double]
 
-    init() throws {
-        let originalFilm = try Profile(prefix: "film")
-        let originalPaper = try Profile(prefix: "paper")
+    static var supportedFilmIDs: [String] { GeneratedSpectralData.filmIDs }
+    static var supportedPaperIDs: [String] { GeneratedSpectralData.paperIDs }
+
+    init(filmID: String, paperID: String) throws {
+        guard Self.supportedFilmIDs.contains(filmID),
+              Self.supportedPaperIDs.contains(paperID) else {
+            throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
+        }
+        let originalFilm = try Profile(id: filmID)
+        let originalPaper = try Profile(id: paperID)
         film = originalFilm
         paper = originalPaper
 
@@ -170,14 +165,15 @@ struct SpectralPhysics {
         neutralOutputRGB = midLinear.map { max(1e-4, $0) }
     }
 
-    static func makeCubeData(exposureEV: Double, paperEV: Double,
+    static func makeCubeData(filmID: String, paperID: String,
+                             exposureEV: Double, paperEV: Double,
                              size: Int = 17) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
             throw PhysicsError.invalid("无效的光谱模拟参数")
         }
-        let engine = try SpectralPhysics()
+        let engine = try SpectralPhysics(filmID: filmID, paperID: paperID)
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
         output.reserveCapacity(size * size * size * 4)
