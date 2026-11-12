@@ -135,6 +135,7 @@ struct SpectralPhysics {
     private let neutralOutputRGB: [Double]
     private let useOriginalScanner: Bool
     private let useReferenceBlackWhite: Bool
+    private let defaultCAM16Gamut: Bool
     private let viewingStock: String
     private let viewingNormalization: Double
     private let scannedReferenceYBlack: Double
@@ -148,7 +149,8 @@ struct SpectralPhysics {
     }
 
     init(filmID: String, paperID: String,
-         sourceScanner: Bool = false, scannerBlackWhite: Bool = false) throws {
+         sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
+         cam16Gamut: Bool = false) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
@@ -164,6 +166,7 @@ struct SpectralPhysics {
         isPositive = positive
         useOriginalScanner = sourceScanner
         useReferenceBlackWhite = scannerBlackWhite
+        defaultCAM16Gamut = cam16Gamut
 
         let basis = try Self.readOriginalFloat32(
             GeneratedOriginalOptics.mallettBasis, count: 81 * 3
@@ -285,7 +288,8 @@ struct SpectralPhysics {
                              exposureEV: Double, paperEV: Double,
                              size: Int = 17,
                              sourceScanner: Bool = false,
-                             scannerBlackWhite: Bool = false) throws -> Data {
+                             scannerBlackWhite: Bool = false,
+                             cam16Gamut: Bool = false) throws -> Data {
         guard (9...33).contains(size),
               exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -293,7 +297,8 @@ struct SpectralPhysics {
         }
         let engine = try SpectralPhysics(
             filmID: filmID, paperID: paperID,
-            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite
+            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
+            cam16Gamut: cam16Gamut
         )
         let interval = 1.0 / Double(size - 1)
         var output = [Float]()
@@ -332,7 +337,8 @@ struct SpectralPhysics {
     static func makeDensityStageData(
         filmID: String, paperID: String,
         exposureEV: Double, paperEV: Double, size: Int = 17,
-        sourceScanner: Bool = false, scannerBlackWhite: Bool = false
+        sourceScanner: Bool = false, scannerBlackWhite: Bool = false,
+        cam16Gamut: Bool = false
     ) throws -> DensityStageData {
         guard (9...33).contains(size), exposureEV.isFinite, paperEV.isFinite,
               abs(exposureEV) <= 4, abs(paperEV) <= 4 else {
@@ -340,7 +346,8 @@ struct SpectralPhysics {
         }
         let engine = try SpectralPhysics(
             filmID: filmID, paperID: paperID,
-            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite
+            sourceScanner: sourceScanner, scannerBlackWhite: scannerBlackWhite,
+            cam16Gamut: cam16Gamut
         )
         let ranges = engine.film.densityMaximum.map { max(0.25, $0 + 0.25) }
         let step = 1.0 / Double(size-1)
@@ -429,9 +436,14 @@ struct SpectralPhysics {
             let linear = OriginalScannerMath.linearSRGB(
                 xyz: xyz, viewing: viewingStock
             )
-            // Original source-selectable ACES RGC compression; the
-            // full source default CAM16-UCS table is not yet integrated.
-            let compressed = OriginalScannerMath.compressACESRGC(linear)
+            // Source default output option CAM16-UCS (64×720 Cmax +
+            // Reinhard knees) is precomputed into a 33³ extended-gamut
+            // table from the upstream Python implementation. Native
+            // trilinear interpolation is an approximation between nodes.
+            // ACES is the original source's supported alternative.
+            let compressed = defaultCAM16Gamut
+                ? OriginalCAM16Gamut.compress(linear)
+                : OriginalScannerMath.compressACESRGC(linear)
             return compressed.map {
                 OriginalScannerMath.encodeSRGB(Self.clamp($0))
             }
