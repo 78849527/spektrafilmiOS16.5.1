@@ -21,6 +21,21 @@ struct SpectralValidation {
             precondition(mask.count == 81 && mask.contains(1) &&
                          mask.allSatisfy({ $0 == 0 || $0 == 1 }),
                          "Invalid source 81-wavelength mask: " + stock)
+            guard let baseMask = Data(base64Encoded: record.baseValidWavelengths),
+                  let sensitivityMask = Data(base64Encoded: record.sensitivityValidSamples) else {
+                preconditionFailure("Missing independent base/sensitivity null masks: " + stock)
+            }
+            precondition(baseMask.count == 81 && baseMask.contains(1) &&
+                         baseMask.allSatisfy({ $0 <= 1 }))
+            precondition(sensitivityMask.count == 243 &&
+                         sensitivityMask.contains(1) &&
+                         sensitivityMask.allSatisfy({ $0 <= 1 }))
+            for index in 0..<81 {
+                if mask[index] == 1 {
+                    precondition(baseMask[index] == 1,
+                                 "Scanner-valid wavelength cannot have invalid base")
+                }
+            }
         }
         for stock in ["fujifilm_provia_100f", "fujifilm_velvia_100"] {
             let mask = Data(base64Encoded: all[stock]!.scannerValidWavelengths)!
