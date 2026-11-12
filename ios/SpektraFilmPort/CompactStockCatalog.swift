@@ -30,7 +30,7 @@ struct CompactStockCatalogView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("适配 iOS 16.5.1 · 配置仅供选择，当前不影响照片")
+                Text("适配 iOS 16.5.1 · 当前仅 Portra400+Endura 支持模拟")
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 8)
                 Picker("类型", selection: $category) {
                     Text("胶片 \(films.count)").tag(0)
@@ -64,7 +64,7 @@ struct CompactStockCatalogView: View {
                     }
                 }
                 .listStyle(.plain)
-                Text("此诊断版本未打包大体积光谱 JSON，物理模拟待 iOS 16.5.1 启动问题解决后接入。")
+                Text("胶片和相纸全目录只显示原始元数据；v0.3 的实验光学引擎仅支持 Portra 400 与 Portra Endura，其他组合尚不可用。")
                     .font(.caption).foregroundStyle(.secondary).padding()
             }
             .navigationTitle("原始胶片数据目录")

@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — compact diagnostic IPA
+name: iOS 16.5.1 — measured spectral v0.3 alpha
 
 on:
   push:
-    branches: ['ios16.5.1/compact-catalog']
+    branches: ['ios16.5.1/spectral-v0.3']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -12,35 +12,46 @@ permissions:
   contents: write
 
 jobs:
-  ios1651:
+  build:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
-      - name: Checkout stable v0.1 based branch
+      - name: Checkout v0.2.3 based experimental branch
         uses: actions/checkout@v4
-      - name: Pin Xcode 16.4 for iOS 16.5.1
+      - name: Pin verified iOS 16.5.1 toolchain
         run: |
           sudo xcode-select -s /Applications/Xcode_16.4.app
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Generate compact original profile metadata
+      - name: Generate original profile metadata and spectral numeric arrays
         run: |
           python3 ios/scripts/generate_compact_catalog.py
+          python3 ios/scripts/generate_spectral_data.py
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
+          test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
           test ! -d ios/SpektraFilmPort/Resources
+      - name: Compile native spectral physics separately
+        run: |
+          xcrun swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/GeneratedSpectralData.swift \
+            ios/tests/SpectralValidation.swift \
+            -o /tmp/SpektrafilmSpectralValidation
+      - name: Run numeric physics and LUT regression checks
+        run: /tmp/SpektrafilmSpectralValidation
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
-      - name: Compile unsigned device release
+      - name: Compile unsigned iPhoneOS device release
         run: |
           xcodebuild -project ios/SpektraFilmPort.xcodeproj \
             -scheme SpektraFilmPort -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath ios/build/DerivedData \
             CODE_SIGNING_ALLOWED=NO build
-      - name: Check bundle identity and iOS 16.5 deployment target
+      - name: Verify iOS 16.5 and bundle identity
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
@@ -49,33 +60,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.2.3'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.3.0'
           test ! -e "$APP/Resources/profiles/index.json"
-      - name: Package diagnostic unsigned IPA
+      - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned.ipa Payload
-      - name: Upload diagnostic IPA
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned.ipa Payload
+      - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned.ipa
           if-no-files-found: error
-      - name: Publish diagnostic prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/compact-catalog'
+      - name: Publish isolated v0.3 alpha release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/spectral-v0.3'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.2.3-compact
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned.ipa
+          TAG=ios1651-v0.3-spectral-alpha
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.3-alpha-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v0.2.3 — startup diagnostic" \
-              --notes "Crash log: iOS16.5.1 UIKit startup BackBoardServices bundle ID nil. Known-good v0.1 editor, only compact generated stock metadata and no bundled JSON; pinned Xcode16.4, target iOS16.5, explicit bundle ID checks. Not a physical spectral engine. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.3 alpha — measured spectral prototype" \
+              --notes "Original Portra 400 and Portra Endura measured curves feed an on-device simplified spectral negative/print renderer, baked at runtime into a 17-cube for Core Image preview. Adjustable film and paper exposure. Original Hanatos projection, couplers, color reference, grain and halation are not ported; this is not full original visual parity. Inherits stable v0.2.3 Xcode16.4 startup setup. Unsigned IPA requires signing." \
               --prerelease
           fi
