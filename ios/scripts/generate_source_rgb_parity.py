@@ -135,7 +135,7 @@ def main():
         ROOT / "src/spektrafilm/utils/conversions.py",
         ROOT / "src/spektrafilm/utils/gamut_compression.py",
     ]
-    src=(sources[0]).read_text()
+    src=(ROOT / "src/spektrafilm/runtime/stages/scanning.py").read_text()
     for guard in (
         "log_xyz = self._lut_service.spectral_compute_scanner(",
         "xyz = 10 ** log_xyz",
