@@ -9,7 +9,6 @@ final class PhotoEditorModel: ObservableObject {
     @Published var processedPreview: UIImage?
     @Published var lut: FilmLUT?
     @Published var strength = 1.0
-    @Published var showOriginal = false
     @Published var status = "选择照片，再导入 sRGB→sRGB .cube LUT。"
     @Published var busy = false
     @Published var photoDimensions = ""
@@ -153,7 +152,6 @@ final class PhotoEditorModel: ObservableObject {
             return
         }
         processedPreview = try PhotoProcessor.preview(source, lut: lut, strength: strength)
-        showOriginal = false
         if let lut {
             status = "已应用 \(lut.title) · \(lut.dimension)³ LUT · \(photoDimensions)"
         } else {
@@ -177,6 +175,7 @@ struct ContentView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
+    @State private var holdingOriginal = false
     @AppStorage("compactFilmStock") private var selectedFilmID = "kodak_portra_400"
     @AppStorage("compactPaperStock") private var selectedPaperID = "kodak_portra_endura"
 
@@ -242,7 +241,7 @@ struct ContentView: View {
 
                     ZStack {
                         Rectangle().fill(Color(white: 0.10))
-                        if let preview = model.showOriginal
+                        if let preview = holdingOriginal
                             ? model.originalPreview : model.processedPreview {
                             Image(uiImage: preview)
                                 .resizable().scaledToFit().padding(4)
@@ -259,7 +258,7 @@ struct ContentView: View {
                                 Spacer()
                                 HStack {
                                     Spacer()
-                                    Text(model.showOriginal ? "原图" : "长按查看原图")
+                                    Text(holdingOriginal ? "原图" : "按住看原图")
                                         .font(.caption2)
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 9)
@@ -274,16 +273,14 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 370)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                    // iOS 16.5.1: press on preview to see the unedited original;
-                    // the pressing callback restores the current processing on release.
-                    .onLongPressGesture(
-                        minimumDuration: 0.18,
-                        maximumDistance: 18,
-                        pressing: { isPressing in
-                            model.showOriginal = model.hasPhoto && isPressing
-                        },
-                        perform: {}
-                    )
+                    // UIKit recognizer stays in .began/.changed for the entire
+                    // physical hold. SwiftUI onLongPressGesture pressing: can
+                    // turn false immediately upon successful recognition on iOS 16.
+                    .overlay {
+                        if model.hasPhoto {
+                            StablePreviewHoldOverlay(isHolding: $holdingOriginal)
+                        }
+                    }
 
                     HStack {
                         PhotosPicker(selection: $selectedPhoto, matching: .images) {
@@ -592,6 +589,65 @@ private struct FilesDocumentPicker: UIViewControllerRepresentable {
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             onCancel()
+        }
+    }
+}
+
+
+/// UIKit continuous long-press state for iOS 16.5.1. Unlike SwiftUI's
+/// onLongPressGesture(pressing:perform:), .began/.changed remains active
+/// until the user actually lifts the finger or the gesture is cancelled.
+/// The state belongs to ContentView, so a fresh film preview cannot clear it.
+private struct StablePreviewHoldOverlay: UIViewRepresentable {
+    @Binding var isHolding: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isHolding: $isHolding)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let overlay = UIView(frame: .zero)
+        overlay.backgroundColor = .clear
+        overlay.isUserInteractionEnabled = true
+        let press = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePress(_:))
+        )
+        press.minimumPressDuration = 0.12
+        press.allowableMovement = 50
+        press.cancelsTouchesInView = false
+        press.delegate = context.coordinator
+        overlay.addGestureRecognizer(press)
+        return overlay
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.isHolding = $isHolding
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isHolding: Binding<Bool>
+
+        init(isHolding: Binding<Bool>) {
+            self.isHolding = isHolding
+        }
+
+        @objc func handlePress(_ recognizer: UILongPressGestureRecognizer) {
+            switch recognizer.state {
+            case .began, .changed:
+                if !isHolding.wrappedValue { isHolding.wrappedValue = true }
+            case .ended, .cancelled, .failed:
+                if isHolding.wrappedValue { isHolding.wrappedValue = false }
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
     }
 }
