@@ -412,6 +412,12 @@ enum OriginalMetalGrain {
             maxima: rawLayerMaxima, pixelUM: pixelUM
         )
         try requireSupportedOriginalFilters(physical)
+        // A completed command buffer can still return invalid GPU output
+        // (observed on Intel hosted CI). Verify the actual shader before
+        // trusting or exporting results from the original Metal path.
+        if libraryURL == nil {
+            _ = try hardwareDiagnostic()
+        }
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else {
             throw Failure.invalid("原版 Metal 颗粒：本设备没有可用的 Metal GPU")
