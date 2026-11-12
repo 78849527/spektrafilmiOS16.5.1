@@ -381,6 +381,25 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Real-device, nonblocking GPU test. The UI reports native texture
+    /// passthrough and source NumPy reflect convolution independently.
+    func checkOriginalMetalHardware() {
+        status = "正在检测本机 GPU：Metal 纹理透传与原版 reflect 卷积…"
+        Task.detached(priority: .userInitiated) {
+            do {
+                let result = try OriginalMetalGrain.hardwareDiagnostic()
+                await MainActor.run {
+                    self.status = result
+                }
+            } catch {
+                await MainActor.run {
+                    self.status = "Metal 硬件自检失败：" +
+                        error.localizedDescription
+                }
+            }
+        }
+    }
+
     func exportJPEG() async throws -> URL {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
