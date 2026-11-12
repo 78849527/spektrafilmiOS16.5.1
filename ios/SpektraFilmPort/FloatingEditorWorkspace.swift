@@ -496,6 +496,18 @@ struct FloatingEditorWorkspace: View {
                     Text("胶片 → 二色滤色光谱 → 相纸曝光")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                    resetToggle("归一化印相曝光", value: $model.normalizePrintExposure,
+                                enabled: model.hasPhoto && !model.busy,
+                                resetTo: true)
+                        .onChange(of: model.normalizePrintExposure) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    resetToggle("补偿拍摄曝光", value: $model.printExposureCompensation,
+                                enabled: model.hasPhoto && !model.busy,
+                                resetTo: true)
+                        .onChange(of: model.printExposureCompensation) { _ in
+                            model.queueSpectralPreview()
+                        }
                     morphSlider("青色 C / CC", value: $model.printCyanShift,
                                 range: -40...40)
                     morphSlider("洋红 M / CC", value: $model.printMagentaShift,
@@ -584,16 +596,16 @@ struct FloatingEditorWorkspace: View {
     // retains native single-tap action; no drag/tap recognizer is placed
     // over the actual controls (iOS 16.5.1-safe).
     private func resetToggle(_ title: String, value: Binding<Bool>,
-                             enabled: Bool) -> some View {
+                             enabled: Bool, resetTo: Bool = false) -> some View {
         HStack(spacing: 5) {
             Text(title)
                 .font(.caption2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
-                    value.wrappedValue = false
+                    value.wrappedValue = resetTo
                 }
-                .accessibilityHint("双击标签恢复默认关闭")
+                .accessibilityHint("双击标签恢复该模块默认状态")
             Toggle(title, isOn: value)
                 .labelsHidden()
         }
