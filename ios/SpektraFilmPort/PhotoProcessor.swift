@@ -129,8 +129,8 @@ enum PhotoProcessor {
         ) else {
             throw ImageProcessingError.invalid("无法创建高清 JPEG 文件")
         }
-        let properties: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: 0.98
+        let properties: [String: Any] = [
+            kCGImageDestinationLossyCompressionQuality as String: 0.98
         ]
         CGImageDestinationAddImage(destination, rendered, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
