@@ -14,6 +14,20 @@ struct SpectralValidation {
         let positives = GeneratedSpectralData.positiveFilmIDs
 
         precondition(all.count == 28, "All 28 original measured profiles needed")
+        for (stock, record) in all {
+            guard let mask = Data(base64Encoded: record.scannerValidWavelengths) else {
+                preconditionFailure("Missing source scanner mask: " + stock)
+            }
+            precondition(mask.count == 81 && mask.contains(1) &&
+                         mask.allSatisfy({ $0 == 0 || $0 == 1 }),
+                         "Invalid source 81-wavelength mask: " + stock)
+        }
+        for stock in ["fujifilm_provia_100f", "fujifilm_velvia_100"] {
+            let mask = Data(base64Encoded: all[stock]!.scannerValidWavelengths)!
+            precondition(mask.filter({ $0 == 0 }).count > 10,
+                         "Original missing dyes must not become zero density")
+        }
+        print("PASS: scanner NaN masks for all 28 source profiles.")
         precondition(films.count == 20, "20 original filming stocks needed")
         precondition(negatives.count == 16 && positives.count == 4,
                      "Wrong reversal/negative classification")
@@ -505,5 +519,7 @@ struct SpectralValidation {
         precondition(rgbEvidence.mae.isFinite && rgbEvidence.rmse.isFinite)
         precondition(rgbEvidence.maximum.isFinite)
         print(rgbEvidence.text)
+        precondition(rgbEvidence.outsideTolerance == 0,
+                     "SOURCE RGB regression: >0.002 encoded channel deviation")
     }
 }
