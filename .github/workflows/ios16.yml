@@ -55,7 +55,7 @@ jobs:
           python-version: '3.11'
       - name: Install original colour-science reference dependencies
         run: |
-          python -m pip install --disable-pip-version-check --quiet 'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' 'matplotlib==3.10.7' 'numba==0.61.2'
+          python -m pip install --disable-pip-version-check --quiet 'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' 'matplotlib==3.10.7' 'numba==0.61.2' 'opt_einsum==3.4.0'
       - name: Verify low-rate original Poisson numerical sampler and reject silent approximation
         run: python3 ios/scripts/validate_poisson_sampler.py
       - name: Generate original profile metadata and spectral numeric arrays
