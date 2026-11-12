@@ -521,5 +521,14 @@ struct SpectralValidation {
         print(rgbEvidence.text)
         precondition(rgbEvidence.outsideTolerance == 0,
                      "SOURCE RGB regression: >0.002 encoded channel deviation")
+        // Separate source-backed scan of ALREADY-DEVELOPED printing media.
+        // Do not mislabel as full negative->paper/RAW/whole-image parity.
+        let printRGBEvidence = try OriginalPrintScannerParity.evaluate()
+        precondition(printRGBEvidence.samples == 72)
+        precondition(printRGBEvidence.mae.isFinite &&
+                     printRGBEvidence.maximum.isFinite)
+        print(printRGBEvidence.text)
+        precondition(printRGBEvidence.outsideTolerance == 0,
+                     "SOURCE PAPER SCANNER RGB: >0.002 encoded channel deviation")
     }
 }
