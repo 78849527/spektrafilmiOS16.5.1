@@ -339,6 +339,15 @@ struct SpectralPhysics {
         )
     }
 
+    /// Diagnostics: inspect the actual negative/reversal developed
+    /// densities to compare CIColorCube source values against original maths.
+    func developedFilmDensity(_ srgb: [Double], exposureEV: Double) -> [Double] {
+        let linear = srgb.map { Self.decodeSRGB(Self.clamp($0)) }
+        return Self.filmDensities(
+            linear, film: film, hanatos: hanatos, exposureEV: exposureEV
+        )
+    }
+
     /// Encoded sRGB -> approximately measured negative and paper -> encoded sRGB.
     func render(_ srgb: [Double], exposureEV: Double, paperEV: Double) -> [Double] {
         let linear = srgb.map { Self.decodeSRGB(Self.clamp($0)) }
