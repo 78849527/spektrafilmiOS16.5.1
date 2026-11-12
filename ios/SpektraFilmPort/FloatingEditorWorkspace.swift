@@ -1,0 +1,591 @@
+import PhotosUI
+import SwiftUI
+import UIKit
+
+/// iOS 16.5.1 portrait editor: the actual photograph is a permanently
+/// mounted full-window canvas. All film wheels and continuous adjustments
+/// live in independently collapsible, draggable translucent dock panels.
+/// No scrolling container is allowed to move or resize the preview.
+struct FloatingEditorWorkspace: View {
+    @ObservedObject var model: PhotoEditorModel
+    @Binding var selectedPhoto: PhotosPickerItem?
+    @Binding var selectedFilmID: String
+    @Binding var selectedPaperID: String
+
+    let onOpenPhotoFile: () -> Void
+    let onOpenLUT: () -> Void
+    let onOpenCatalog: () -> Void
+    let onExport: () -> Void
+    let onRefresh: () -> Void
+
+    @State private var originalHeld = false
+    @State private var controlsVisible = true
+    @State private var wheelsCollapsed = false
+    @State private var adjustmentCollapsed = false
+    @State private var comparisonEnabled = false
+    @State private var compareFraction = 0.5
+    @State private var photoScale: CGFloat = 1.0
+    @State private var persistedZoom: CGFloat = 1.0
+    @GestureState private var liveZoom: CGFloat = 1.0
+
+    @State private var wheelOffset = CGSize.zero
+    @State private var adjustOffset = CGSize.zero
+    @GestureState private var wheelDragging = CGSize.zero
+    @GestureState private var adjustDragging = CGSize.zero
+
+    private var films: [MeasuredStock] {
+        SpectralPhysics.supportedFilmIDs.compactMap { id in
+            GeneratedMeasuredProfiles.entries.first { $0.id == id }
+        }
+    }
+    private var media: [MeasuredStock] {
+        SpectralPhysics.supportedPaperIDs.compactMap { id in
+            GeneratedMeasuredProfiles.entries.first { $0.id == id }
+        }
+    }
+    private var isReversal: Bool {
+        SpectralPhysics.isPositiveFilm(selectedFilmID)
+    }
+    private func shortName(_ stock: MeasuredStock) -> String {
+        stock.name
+            .replacingOccurrences(of: "Kodak Professional ", with: "")
+            .replacingOccurrences(of: "Kodak ", with: "")
+            .replacingOccurrences(of: "Fujifilm ", with: "Fuji ")
+            .replacingOccurrences(of: "Crystal Archive Type II", with: "Crystal II")
+    }
+
+    var body: some View {
+        GeometryReader { canvas in
+            let available = canvas.size
+            let wheelWidth = max(132, min(168, available.width * 0.42))
+            let adjustWidth = max(148, min(204, available.width - wheelWidth - 24))
+            ZStack {
+                Color.black
+                previewArea(size: available)
+                    .frame(width: available.width, height: available.height)
+                    .clipped()
+            }
+            .overlay(alignment: .top) {
+                topToolbar
+                    .padding(.horizontal, 8)
+                    .padding(.top, 7)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if controlsVisible {
+                    wheelDock(width: wheelWidth)
+                        .offset(
+                            x: wheelOffset.width + wheelDragging.width,
+                            y: wheelOffset.height + wheelDragging.height
+                        )
+                        .padding(.leading, 8)
+                        .padding(.bottom, 10)
+                        .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if controlsVisible {
+                    adjustmentDock(width: adjustWidth, maxHeight: available.height * 0.43)
+                        .offset(
+                            x: adjustOffset.width + adjustDragging.width,
+                            y: adjustOffset.height + adjustDragging.height
+                        )
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 10)
+                        .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if controlsVisible && model.hasPhoto {
+                    statusChip
+                        .padding(.top, 61)
+                        .padding(.horizontal, 9)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background(Color.black.ignoresSafeArea())
+            .animation(.easeOut(duration: 0.18), value: controlsVisible)
+            .onChange(of: model.hasPhoto) { hasPhoto in
+                if !hasPhoto { originalHeld = false; comparisonEnabled = false }
+                photoScale = 1
+                persistedZoom = 1
+            }
+        }
+    }
+
+    private func previewImage(_ picture: UIImage?, size: CGSize) -> some View {
+        Group {
+            if let picture {
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size.width, height: size.height)
+                    .scaleEffect(photoScale * liveZoom)
+            } else {
+                VStack(spacing: 11) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 42))
+                    Text("导入照片开始")
+                        .font(.subheadline)
+                }
+                .foregroundColor(.white.opacity(0.7))
+                .frame(width: size.width, height: size.height)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func previewArea(size: CGSize) -> some View {
+        if comparisonEnabled,
+           model.originalPreview != nil, model.processedPreview != nil {
+            comparisonArea(size: size)
+        } else {
+            ZStack(alignment: .bottom) {
+                previewImage(
+                    originalHeld ? model.originalPreview : model.processedPreview,
+                    size: size
+                )
+                if model.hasPhoto && controlsVisible {
+                    Text(originalHeld ? "原图" : "按住照片查看原图 · 双击放大")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.5), in: Capsule())
+                        .padding(.bottom, 6)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                let next = photoScale > 1 ? CGFloat(1) : CGFloat(2)
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    photoScale = next
+                    persistedZoom = next
+                }
+            }
+            .simultaneousGesture(
+                MagnificationGesture()
+                    .updating($liveZoom) { value, state, _ in
+                        state = value
+                    }
+                    .onEnded { value in
+                        photoScale = min(4, max(1, photoScale * value))
+                        persistedZoom = photoScale
+                    }
+            )
+            .overlay {
+                if model.hasPhoto {
+                    StableImageHoldRecognizer(isHolding: $originalHeld)
+                }
+            }
+        }
+    }
+
+    private func comparisonArea(size: CGSize) -> some View {
+        ZStack {
+            previewImage(model.processedPreview, size: size)
+            previewImage(model.originalPreview, size: size)
+                .mask(alignment: .leading) {
+                    Rectangle()
+                        .frame(width: size.width * compareFraction)
+                }
+            Rectangle()
+                .fill(.white)
+                .frame(width: 2)
+                .position(x: size.width * compareFraction, y: size.height / 2)
+            Image(systemName: "arrow.left.and.right")
+                .font(.caption)
+                .foregroundColor(.black)
+                .padding(10)
+                .background(.white, in: Circle())
+                .position(x: size.width * compareFraction, y: size.height / 2)
+            HStack {
+                Text("原图")
+                Spacer()
+                Text("效果")
+            }
+            .font(.caption2)
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .padding(.bottom, 8)
+            .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { gesture in
+                    compareFraction = min(0.98, max(0.02,
+                        gesture.location.x / max(1, size.width)))
+                }
+        )
+    }
+
+    private var topToolbar: some View {
+        HStack(spacing: 7) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Image(systemName: "photo")
+            }
+            .accessibilityLabel("从相册导入照片")
+
+            toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
+            toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
+            toolButton("square.and.arrow.up", name: "导出 JPEG", action: onExport)
+                .disabled(!model.hasPhoto || model.busy)
+
+            Spacer(minLength: 2)
+
+            toolButton(comparisonEnabled ? "rectangle.split.2x1.fill" : "rectangle.split.2x1",
+                       name: "左右滑动对比", action: {
+                comparisonEnabled.toggle()
+                originalHeld = false
+                compareFraction = 0.5
+            })
+            .disabled(!model.hasPhoto)
+
+            toolButton(controlsVisible ? "eye" : "eye.slash",
+                       name: controlsVisible ? "隐藏所有控件" : "显示全部控件",
+                       action: { controlsVisible.toggle() })
+        }
+        .font(.system(size: 17, weight: .medium))
+        .foregroundColor(.primary)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .frame(height: 46)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private func toolButton(_ symbol: String, name: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 33, height: 40)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(name)
+    }
+
+    private var statusChip: some View {
+        Text(model.busy ? "正在生成胶片预览…" : model.status)
+            .font(.caption2)
+            .foregroundColor(.primary)
+            .lineLimit(2)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func wheelDock(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundColor(.secondary)
+                Text("胶片 · 相纸")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Spacer(minLength: 2)
+                Button {
+                    wheelsCollapsed.toggle()
+                } label: {
+                    Image(systemName: wheelsCollapsed ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .frame(width: 25, height: 31)
+                }
+                .accessibilityLabel(wheelsCollapsed ? "展开拨轮" : "收起拨轮")
+            }
+            .frame(height: 38)
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .updating($wheelDragging) { value, state, _ in
+                        state = value.translation
+                    }
+                    .onEnded { gesture in
+                        wheelOffset = clampedOffset(
+                            previous: wheelOffset, translation: gesture.translation,
+                            available: UIScreen.main.bounds.size, panelWidth: width,
+                            panelHeight: wheelsCollapsed ? 40 : 296, anchor: .left
+                        )
+                    }
+            )
+
+            if !wheelsCollapsed {
+                Divider().padding(.horizontal, 6)
+                Text("胶片 FILM")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.top, 5)
+                Picker("胶片", selection: $selectedFilmID) {
+                    ForEach(films) { film in
+                        Text(shortName(film)).font(.caption2).tag(film.id)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .labelsHidden()
+                .frame(width: width - 6, height: 103)
+                .clipped()
+
+                Divider().padding(.horizontal, 7)
+                Text(isReversal ? "反转片 DIRECT" : "相纸 PAPER")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.top, 4)
+                if isReversal {
+                    VStack(spacing: 3) {
+                        Image(systemName: "film")
+                        Text("反转片直接扫描")
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)
+                } else {
+                    Picker("相纸", selection: $selectedPaperID) {
+                        ForEach(media) { stock in
+                            Text(shortName(stock)).font(.caption2).tag(stock.id)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(width: width - 6, height: 103)
+                    .clipped()
+                }
+                Button(action: onOpenCatalog) {
+                    Text("全部 28 款材料")
+                        .font(.caption2)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 7)
+                }
+            }
+        }
+        .frame(width: width)
+        .foregroundColor(.primary)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15)
+            .stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
+    }
+
+    private func adjustmentDock(width: CGFloat, maxHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundColor(.secondary)
+                Text("调整")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Spacer(minLength: 2)
+                Button {
+                    adjustmentCollapsed.toggle()
+                } label: {
+                    Image(systemName: adjustmentCollapsed ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .frame(width: 25, height: 31)
+                }
+                .accessibilityLabel(adjustmentCollapsed ? "展开调整" : "收起调整")
+            }
+            .frame(height: 38)
+            .padding(.horizontal, 9)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .updating($adjustDragging) { value, state, _ in
+                        state = value.translation
+                    }
+                    .onEnded { gesture in
+                        adjustOffset = clampedOffset(
+                            previous: adjustOffset, translation: gesture.translation,
+                            available: UIScreen.main.bounds.size, panelWidth: width,
+                            panelHeight: adjustmentCollapsed ? 40 : maxHeight,
+                            anchor: .right
+                        )
+                    }
+            )
+            if !adjustmentCollapsed {
+                Divider()
+                ScrollView {
+                    adjustmentControls
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                }
+                .frame(height: max(170, min(maxHeight, 365)))
+            }
+        }
+        .frame(width: width)
+        .foregroundColor(.primary)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15)
+            .stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
+    }
+
+    private var adjustmentControls: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            exposureControl("胶片曝光", value: $model.filmExposureEV, enabled: model.hasPhoto,
+                            onCommit: { model.queueSpectralPreview() })
+            exposureControl(isReversal ? "反转片无需印相" : "相纸曝光",
+                            value: $model.printExposureEV,
+                            enabled: model.hasPhoto && !isReversal,
+                            onCommit: { model.queueSpectralPreview() })
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("效果强度").font(.caption)
+                    Spacer(minLength: 0)
+                    Text("\(Int(model.strength * 100))%")
+                        .font(.caption2).monospacedDigit()
+                }
+                Slider(value: $model.strength, in: 0...1, step: 0.05,
+                       onEditingChanged: { editing in
+                    if !editing { onRefresh() }
+                })
+                .disabled(!model.hasPhoto || model.lut == nil)
+            }
+
+            Divider()
+            Toggle("乳剂散射", isOn: $model.scatterEnabled)
+                .font(.caption)
+                .disabled(!model.hasPhoto)
+                .onChange(of: model.scatterEnabled) { _ in onRefresh() }
+            Toggle("背反射光晕", isOn: $model.halationEnabled)
+                .font(.caption)
+                .disabled(!model.hasPhoto)
+                .onChange(of: model.halationEnabled) { _ in onRefresh() }
+            if model.halationEnabled {
+                strengthControl("光晕倍率", value: $model.halationAmount,
+                                range: 0...3, suffix: "×")
+            }
+            Toggle("密度颗粒", isOn: $model.grainEnabled)
+                .font(.caption)
+                .disabled(!model.hasPhoto || model.busy)
+                .onChange(of: model.grainEnabled) { enabled in
+                    if enabled { model.queueSpectralPreview() }
+                    else { onRefresh() }
+                }
+            if model.grainEnabled {
+                strengthControl("颗粒强度", value: $model.grainAmount,
+                                range: 0...2, suffix: "×")
+            }
+
+            Button {
+                model.applyMeasuredSimulation()
+            } label: {
+                Text("应用模拟")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!model.hasPhoto || model.busy)
+
+            if model.busy {
+                ProgressView("计算中").font(.caption2)
+            } else {
+                Text("拨轮停止后自动计算")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func exposureControl(_ title: String, value: Binding<Double>,
+                                 enabled: Bool, onCommit: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title).font(.caption)
+                Spacer(minLength: 0)
+                Text(String(format: "%+.2f EV", value.wrappedValue))
+                    .font(.caption2).monospacedDigit()
+            }
+            Slider(value: value, in: -2...2, step: 0.25,
+                   onEditingChanged: { editing in
+                if !editing { onCommit() }
+            })
+            .disabled(!enabled)
+        }
+    }
+
+    private func strengthControl(_ title: String, value: Binding<Double>,
+                                 range: ClosedRange<Double>, suffix: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title).font(.caption)
+                Spacer(minLength: 0)
+                Text(String(format: "%.2f", value.wrappedValue) + suffix)
+                    .font(.caption2).monospacedDigit()
+            }
+            Slider(value: value, in: range, step: 0.25,
+                   onEditingChanged: { editing in
+                if !editing { onRefresh() }
+            })
+            .disabled(!model.hasPhoto)
+        }
+    }
+
+    private enum DockAnchor { case left, right }
+
+    private func clampedOffset(previous: CGSize, translation: CGSize,
+                               available: CGSize, panelWidth: CGFloat,
+                               panelHeight: CGFloat, anchor: DockAnchor) -> CGSize {
+        let x = previous.width + translation.width
+        let y = previous.height + translation.height
+        let horizontal = max(0, available.width - panelWidth - 16)
+        let vertical = min(0, -available.height + panelHeight + 85)
+        return CGSize(
+            width: anchor == .left ? min(horizontal, max(0, x))
+                 : min(0, max(-horizontal, x)),
+            height: min(0, max(vertical, y))
+        )
+    }
+}
+
+/// Continuous UIKit recognition survives SwiftUI view refresh on iOS 16.5.1:
+/// .began/.changed hold original; only .ended/.cancelled/.failed restore look.
+private struct StableImageHoldRecognizer: UIViewRepresentable {
+    @Binding var isHolding: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isHolding: $isHolding)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let overlay = UIView(frame: .zero)
+        overlay.backgroundColor = .clear
+        let recognizer = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.onPress(_:))
+        )
+        recognizer.minimumPressDuration = 0.12
+        recognizer.allowableMovement = 45
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = context.coordinator
+        overlay.addGestureRecognizer(recognizer)
+        return overlay
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.isHolding = $isHolding
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isHolding: Binding<Bool>
+        init(isHolding: Binding<Bool>) {
+            self.isHolding = isHolding
+        }
+        @objc func onPress(_ recognizer: UILongPressGestureRecognizer) {
+            switch recognizer.state {
+            case .began, .changed:
+                if !isHolding.wrappedValue { isHolding.wrappedValue = true }
+            case .ended, .cancelled, .failed:
+                if isHolding.wrappedValue { isHolding.wrappedValue = false }
+            default:
+                break
+            }
+        }
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool { true }
+    }
+}
