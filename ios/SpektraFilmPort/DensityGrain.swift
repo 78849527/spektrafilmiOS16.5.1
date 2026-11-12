@@ -36,6 +36,9 @@ struct DensityGrainSettings {
     // v1.8 source-order Metal dye-cloud / clumping / reflect-convolution.
     // Strict opt-in: failures are thrown, never reverted to fast grain.
     var originalMetalEnabled = false
+    // v1.8.5 opt-in source-sequential SciPy Poisson -> Binomial count stream;
+    // unchanged original Metal hash particles remain the default.
+    var sourceSciPySampling = false
 }
 
 enum DensityGrain {
@@ -149,7 +152,8 @@ enum DensityGrain {
                 totalRanges: stage.maxDensity,
                 cubeDimension: stage.cubeDimension,
                 pixelUM: pixelUM, amount: settings.amount,
-                seed: settings.seed
+                seed: settings.seed,
+                sourceSciPySampling: settings.sourceSciPySampling
             )
         }
         if settings.measuredSublayersEnabled {
