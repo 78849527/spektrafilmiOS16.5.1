@@ -26,6 +26,14 @@ final class PhotoEditorModel: ObservableObject {
     @Published var scannerBlackWhiteEnabled = false
     @Published var scannerFinishingEnabled = false
     @Published var scannerSharpenAmount = 0.7
+    // New v1.3 effects opt-in. The confirmed-safe v1.0.1 floating UI
+    // and old v1.2 scanner results remain unchanged until toggled.
+    @Published var exposureReferenceEnabled = false
+    @Published var printMorphEnabled = false
+    @Published var printGamma = 1.0
+    @Published var printFastGamma = 1.0
+    @Published var printSlowGamma = 1.0
+    @Published var printDeveloperExhaustion = 0.0
     private var densityGrainStage: DensityGrainStage?
 
     private var scannerFinishSettings: ScannerFinishSettings {
@@ -177,6 +185,13 @@ final class PhotoEditorModel: ObservableObject {
         let originalScanner = originalScannerEnabled
         let referenceBW = scannerBlackWhiteEnabled
         let cam16 = scannerCAM16Enabled
+        let useExposureReference = exposureReferenceEnabled
+        let printMorph = printMorphEnabled
+            ? OriginalPrintMorph.Settings(
+                gamma: printGamma, fast: printFastGamma,
+                slow: printSlowGamma, developerExhaustion: printDeveloperExhaustion
+              )
+            : OriginalPrintMorph.Settings()
         Task {
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
@@ -186,7 +201,9 @@ final class PhotoEditorModel: ObservableObject {
                         size: 17,
                         sourceScanner: originalScanner,
                         scannerBlackWhite: referenceBW,
-                        cam16Gamut: cam16
+                        cam16Gamut: cam16,
+                        printReferenceCorrection: useExposureReference,
+                        printMorph: printMorph
                     )
                     let density = try requiresGrainStage
                         ? SpectralPhysics.makeDensityStageData(
@@ -195,7 +212,9 @@ final class PhotoEditorModel: ObservableObject {
                             size: 17,
                             sourceScanner: originalScanner,
                             scannerBlackWhite: referenceBW,
-                            cam16Gamut: cam16
+                            cam16Gamut: cam16,
+                            printReferenceCorrection: useExposureReference,
+                            printMorph: printMorph
                           ) : nil
                     return (cube, density)
                 }.value
