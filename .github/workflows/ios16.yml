@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v0.7 original DIR chemistry
+name: iOS 16.5.1 — v0.8 scatter and halation spatial optics
 
 on:
   push:
-    branches: ['ios16.5.1/dir-v0.7']
+    branches: ['ios16.5.1/spatial-v0.8']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -58,6 +58,14 @@ jobs:
             -o /tmp/SpektrafilmSpectralValidation
       - name: Run numeric physics and LUT regression checks
         run: /tmp/SpektrafilmSpectralValidation
+      - name: Compile native Core Image spatial optics tests
+        run: |
+          xcrun swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/SpatialOptics.swift \
+            ios/tests/SpatialOpticsValidation.swift \
+            -o /tmp/SpektrafilmSpatialValidation
+      - name: Verify spatial optics energy conservation and real blur
+        run: /tmp/SpektrafilmSpatialValidation
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
@@ -77,33 +85,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.7.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.8.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/dir-v0.7'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/spatial-v0.8'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v0.7.0-dir
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.7.0-dir-unsigned.ipa
+          TAG=ios1651-v0.8.0-spatial
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.8.0-spatial-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v0.7 — original DIR film chemistry" \
-              --notes "Xcode 16.4 and iOS 16.5.1 only. Includes all 28 measured materials, Hanatos2025 source TC spectra, film/paper neutral CC data, and original film-specific nonspatial DIR coupler matrices with corrected H-D curves. Original Python/Swift DIR reference parity tested for positive and negative film. Spatial DIR diffusion, stochastic grain, physical halation, paper morph and scanner gamut correction remain pending; this is not full source parity. Unsigned IPA needs signing." \
+              --title "Spektrafilm iOS 16.5.1 v0.8 — spatial emulsion scatter and halation" \
+              --notes "Xcode 16.4 and iOS 16.5.1 only. Adds real Core Image pixel-space scatter and original three-bounce halation convolution formulas with six film-use/antihalation presets. Pre-LUT image-space linear RGB approximation, NOT original upstream film irradiance parity; spatial DIR diffusion and true stochastic density-based grain remain pending. Existing Hanatos2025, 28 stocks, source DIR chemistry, twin wheels, long-press and export retained. Unsigned IPA requires signing." \
               --prerelease
           fi
