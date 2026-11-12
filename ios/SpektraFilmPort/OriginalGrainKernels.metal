@@ -364,3 +364,27 @@ kernel void originalFilmIIRVerticalBackward(
         y3=y2; y2=y1; y1=v;
     }
 }
+
+    
+// Test-only, real GPU Poisson sampler. Uses production filmPoisson directly:
+// no CPU substitute and no source random-sequence parity claim. Explicitly
+// verifies the resolved low-rate Float32 CDF stall on an actual iPhone GPU.
+struct FilmPoissonDiagnosticParams {
+    float lambda;
+    uint width;
+    uint height;
+    uint seed;
+};
+kernel void originalFilmPoissonDiagnostic(
+    device float* samples [[buffer(0)]],
+    constant FilmPoissonDiagnosticParams& args [[buffer(1)]],
+    device atomic_uint* errors [[buffer(2)]],
+    uint tid [[thread_position_in_grid]]) {
+    uint n = args.width * args.height;
+    if(tid >= n) { return; }
+    uint x = tid % args.width;
+    uint y = tid / args.width;
+    samples[tid] = filmPoisson(
+        args.lambda, args.seed, x, y, 0u, 0u, errors
+    );
+}
