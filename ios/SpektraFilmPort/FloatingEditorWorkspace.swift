@@ -585,6 +585,19 @@ struct FloatingEditorWorkspace: View {
                     else { onRefresh() }
                 }
             if model.grainEnabled {
+                resetToggle("实测三乳剂亚层", value: $model.grainSublayersEnabled,
+                            enabled: model.hasPhoto && !model.busy)
+                    .onChange(of: model.grainSublayersEnabled) { _ in
+                        onRefresh()
+                    }
+                if model.grainSublayersEnabled {
+                    Text("原版 3×3 亚层密度 · 独立显影颗粒")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("保留源颗粒方差；分布与微结构使用 GPU 近似")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                 strengthControl("颗粒强度", value: $model.grainAmount,
                                 range: 0...2, suffix: "×", resetTo: 1.0)
             }
