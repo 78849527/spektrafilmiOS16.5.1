@@ -121,11 +121,14 @@ def main() -> None:
     media = [x["stock"] for x in all_infos if x["stage"] == "printing"]
     assert len(negatives) == 16 and len(media) == 8
     print_illuminants = {}
+    neutral_cc = {}
     for medium in media:
         for stock in negatives:
             cc = (filter_db.get(medium, {}).get("TH-KG3", {})
                   .get(stock, (0.0, 65.0, 55.0)))
-            print_illuminants[stock + "|" + medium] = source * default_dichroic(cc)
+            key = stock + "|" + medium
+            print_illuminants[key] = source * default_dichroic(cc)
+            neutral_cc[key] = list(map(float,cc))
     assert len(print_illuminants) == 128
 
     names = {
@@ -135,6 +138,7 @@ def main() -> None:
         "k75p": k75,
         "cie1931": cie,
         "enlargerNeutral": print_illuminant,
+        "enlargerUnfiltered": source,
         "schottKG3": kg3_filter(),
         "dichroicCMYNeutral": default_dichroic(),
     }
@@ -170,6 +174,10 @@ def main() -> None:
     for key, values in print_illuminants.items():
         lines.append(f"        {json.dumps(key)}: {json.dumps(encoded(values))},")
     lines.append("    ]")
+    lines.append("    static let printNeutralCCByPair: [String: [Double]] = [")
+    for key, cc in neutral_cc.items():
+        lines.append(f"        {json.dumps(key)}: [{','.join(format(float(x),'.17g') for x in cc)}],")
+    lines.append("    ]")
     for index, (stock, rgb, response) in enumerate(validation):
         def numbers(vals):
             return "[" + ",".join(format(float(v), ".16g") for v in vals) + "]"
@@ -184,7 +192,8 @@ def main() -> None:
     lines.append("}")
     DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("PASS: Mallett2019 basis, D55/D50, CIE1931, KG3, default CMY filter")
-    print("PASS: 128 original film×print neutral CMY database filter spectra")
+    print("PASS: 128 original film×print neutral CMY database filter spectra and CC values")
+    print("PASS: original unfiltered 3400K/Schott KG3 enlarger illuminant")
     print(f"PASS: {len(validation)} Python reference Mallett response samples")
     print(f"Generated: {DEST.stat().st_size} bytes")
     print(f"colour-science version: {colour.__version__}")
