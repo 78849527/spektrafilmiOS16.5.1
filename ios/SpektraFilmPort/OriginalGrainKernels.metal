@@ -98,10 +98,17 @@ float filmLogFactorial(float k) {
 // For lambda >= 30 retain transformed-rejection PTRS.
 // Any genuine bad parameter/iteration exhaustion still increments errors
 // and MUST block original-mode export; never conceal failures.
+// Four atomic counters: total, invalid lambda, low-rate exhaustion,
+// high-rate PTRS exhaustion. The renderer must reject if total > 0.
+void filmSamplerFault(device atomic_uint* errors, uint reason) {
+    atomic_fetch_add_explicit(&errors[0],1u,memory_order_relaxed);
+    atomic_fetch_add_explicit(&errors[reason],1u,memory_order_relaxed);
+}
+
 float filmPoisson(float lambda, uint seed, uint x, uint y,
                   uint ch, uint sl, device atomic_uint *errors) {
     if (!(isfinite(lambda)) || lambda < 0.0f) {
-        atomic_fetch_add_explicit(errors,1u,memory_order_relaxed);
+        filmSamplerFault(errors,1u);
         return 0.0f;
     }
     if (lambda < 30.0f) {
@@ -116,7 +123,7 @@ float filmPoisson(float lambda, uint seed, uint x, uint y,
             if(product <= threshold) { return float(k); }
         }
         // True sampler exhaustion (not a numerical CDF saturation).
-        atomic_fetch_add_explicit(errors,1u,memory_order_relaxed);
+        filmSamplerFault(errors,2u);
         return 0.0f;
     }
     float root=sqrt(lambda);
@@ -139,7 +146,7 @@ float filmPoisson(float lambda, uint seed, uint x, uint y,
             return k;
         }
     }
-    atomic_fetch_add_explicit(errors,1u,memory_order_relaxed);
+    filmSamplerFault(errors,3u);
     return 0.0f;
 }
 
