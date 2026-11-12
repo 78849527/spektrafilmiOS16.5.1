@@ -139,6 +139,133 @@ enum OriginalMetalGrain {
         )
     }
 
+    /// Run this on a REAL iPhone from the floating editor. GitHub's
+    /// Intel VM accepted Metal command buffers but returned all zeros even
+    /// for a constant-value passthrough shader. This separates unavailable
+    /// runner graphics acceleration from errors in the physical grain model.
+    /// It deliberately verifies two actual GPU kernels, not library presence.
+    static func hardwareDiagnostic() throws -> String {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let queue = device.makeCommandQueue() else {
+            throw Failure.invalid("Metal 自检：找不到可执行计算内核的 GPU")
+        }
+        let library: MTLLibrary
+        do {
+            library = try device.makeDefaultLibrary(bundle: .main)
+        } catch {
+            throw Failure.invalid("Metal 自检：缺少随 App 打包的内核：" +
+                                  error.localizedDescription)
+        }
+        func state(_ name: String) throws -> MTLComputePipelineState {
+            guard let function = library.makeFunction(name: name) else {
+                throw Failure.invalid("Metal 自检：缺少 GPU 内核 " + name)
+            }
+            return try device.makeComputePipelineState(function: function)
+        }
+        let passthrough = try state("originalFilmDebugProbe")
+        let sourceGaussian = try state("originalFilmGaussianReflect")
+
+        let width = 11
+        let height = 7
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba32Float, width: width,
+            height: height, mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = .shared
+        guard let source = device.makeTexture(descriptor: descriptor),
+              let destination = device.makeTexture(descriptor: descriptor)
+        else {
+            throw Failure.invalid("Metal 自检：GPU 无法分配 11×7 测试纹理")
+        }
+        var impulse = [Float](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for channel in 0..<4 {
+                impulse[row * width * 4 + channel] = 1
+            }
+        }
+        impulse.withUnsafeBytes { raw in
+            source.replace(
+                region: MTLRegionMake2D(0, 0, width, height),
+                mipmapLevel: 0, withBytes: raw.baseAddress!,
+                bytesPerRow: width * 4 * MemoryLayout<Float>.size
+            )
+        }
+
+        var args = BlurParameters(
+            sigma: SIMD4<Float>(0.65, 0.65, 0.65, 0),
+            width: UInt32(width), height: UInt32(height), axis: 0
+        )
+        func executeDiagnostic(_ pipeline: MTLComputePipelineState)
+        throws -> [Float] {
+            guard let command = queue.makeCommandBuffer(),
+                  let encoder = command.makeComputeCommandEncoder() else {
+                throw Failure.invalid("Metal 自检：无法创建 GPU 指令")
+            }
+            encoder.setComputePipelineState(pipeline)
+            encoder.setTexture(source, index: 0)
+            encoder.setTexture(destination, index: 1)
+            encoder.setBytes(
+                &args, length: MemoryLayout<BlurParameters>.stride, index: 0
+            )
+            let group = MTLSize(width: 8, height: 8, depth: 1)
+            encoder.dispatchThreadgroups(
+                MTLSize(width: (width + 7) / 8,
+                        height: (height + 7) / 8, depth: 1),
+                threadsPerThreadgroup: group
+            )
+            encoder.endEncoding()
+            command.commit()
+            command.waitUntilCompleted()
+            guard command.status == .completed else {
+                throw Failure.invalid(
+                    "Metal 自检：GPU 指令执行失败：" +
+                    (command.error?.localizedDescription ?? "unknown")
+                )
+            }
+            var output = [Float](
+                repeating: 0, count: width * height * 4
+            )
+            output.withUnsafeMutableBytes { bytes in
+                destination.getBytes(
+                    bytes.baseAddress!,
+                    bytesPerRow: width * 4 * MemoryLayout<Float>.size,
+                    from: MTLRegionMake2D(0, 0, width, height),
+                    mipmapLevel: 0
+                )
+            }
+            return output
+        }
+        let p = try executeDiagnostic(passthrough)
+        let actualSigma = Double(p[1])
+        let shaderWidth = Double(p[2])
+        guard abs(Double(p[0]) - 1) < 0.00001,
+              abs(Double(p[3 * width * 4]) - 1) < 0.00001,
+              abs(actualSigma - 0.65) < 0.00001,
+              abs(shaderWidth - Double(width)) < 0.00001 else {
+            throw Failure.invalid(
+                "Metal 纹理透传失败：GPU=\(device.name), " +
+                "输入=1, 输出=\(p[0]), sigma=\(actualSigma), " +
+                "width=\(shaderWidth)"
+            )
+        }
+        let filtered = try executeDiagnostic(sourceGaussian)
+        // Actual upstream fast_gaussian_filter_small (reflect,
+        // truncate=3.0): a unit impulse at the first column.
+        let expectedEdge = 0.8013463515071368
+        let observed = Double(filtered[3 * width * 4])
+        let err = abs(observed - expectedEdge)
+        guard err <= 0.0002 else {
+            throw Failure.invalid(
+                "Metal reflect 数值未对齐：GPU=\(device.name), " +
+                "原版=\(expectedEdge), 实测=\(observed), " +
+                "误差=\(err)"
+            )
+        }
+        return "Metal 硬件自检通过 · \(device.name) · " +
+            "纹理透传 PASS · reflect 误差 \(String(format: "%.7f", err))"
+    }
+
     private static func makeTexture(
         _ device: MTLDevice, width: Int, height: Int,
         format: MTLPixelFormat = .rgba32Float
@@ -168,7 +295,13 @@ enum OriginalMetalGrain {
         for (index, texture) in textures.enumerated() {
             encoder.setTexture(texture, index: index)
         }
-        encoder.setBytes(&params, length: MemoryLayout<P>.stride, index: 0)
+        // Params are plain SIMD/number POD in every source kernel.
+        // Use an explicit byte view rather than a generic raw pointer.
+        withUnsafeBytes(of: &params) { bytes in
+            encoder.setBytes(
+                bytes.baseAddress!, length: bytes.count, index: 0
+            )
+        }
         if let errors {
             encoder.setBuffer(errors, offset: 0, index: 1)
         }
