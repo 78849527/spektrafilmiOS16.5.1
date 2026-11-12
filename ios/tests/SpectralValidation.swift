@@ -554,5 +554,16 @@ struct SpectralValidation {
                      "SOURCE NEGATIVE-PRINT RGB: >0.002 encoded channel deviation")
         precondition(chainEvidence.stageOutsideTolerance == 0,
                      "SOURCE NEGATIVE-PRINT H-D/RAW/XYZ: >0.002 stage deviation")
+        // v1.8.14 extends the SAME source optics and CDF H-D chain
+        // BACKWARDS through upstream Python measured negative H-D and
+        // model/couplers.py nonspatial DIR. Exposure log10 RAW input is
+        // known; camera RAW/Hanatos is NOT certified by this test.
+        let filmEvidence = try OriginalFilmDIRPrintParity.evaluate()
+        print(filmEvidence.text)
+        precondition(filmEvidence.channels == 54)
+        precondition(filmEvidence.outputOutsideTolerance == 0,
+                     "SOURCE FILM H-D/DIR→PRINT RGB: >0.002 encoded deviation")
+        precondition(filmEvidence.stageOutsideTolerance == 0,
+                     "SOURCE FILM H-D/DIR→PRINT: >0.002 intermediate deviation")
     }
 }
