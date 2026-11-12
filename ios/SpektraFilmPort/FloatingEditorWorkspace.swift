@@ -591,18 +591,37 @@ struct FloatingEditorWorkspace: View {
                         onRefresh()
                     }
                 if model.grainSublayersEnabled {
+                    resetToggle("原版 Metal 显影链",
+                                value: $model.grainOriginalMetalEnabled,
+                                enabled: model.hasPhoto && !model.busy)
+                        .onChange(of: model.grainOriginalMetalEnabled) { _ in
+                            onRefresh()
+                        }
+                    if model.grainOriginalMetalEnabled {
+                        Text("实测三乳剂 → 离散显影 → 染料云 → 微结构 → 反射滤波")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("使用原版数学公式；GPU 浮点与随机序列尚非逐位一致")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                     resetToggle("原版离散 Poisson 颗粒",
                                 value: $model.grainDiscreteParticlesEnabled,
-                                enabled: model.hasPhoto && !model.busy)
+                                enabled: model.hasPhoto && !model.busy &&
+                                         !model.grainOriginalMetalEnabled)
                         .onChange(of: model.grainDiscreteParticlesEnabled) { _ in
                             onRefresh()
                         }
                     Text("原版 3×3 亚层密度 · 独立显影颗粒")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text(model.grainDiscreteParticlesEnabled
-                         ? "Poisson 薄化：小 λ 精确逆 CDF，大 λ PTRS 拒绝采样"
-                         : "保留源颗粒方差；Gaussian 快速近似")
+                    if !model.grainOriginalMetalEnabled {
+                        Text(model.grainDiscreteParticlesEnabled
+                             ? "Poisson 薄化：小 λ 逆 CDF，大 λ PTRS"
+                             : "保留源颗粒方差；Gaussian 快速近似")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
