@@ -18,9 +18,9 @@ concurrency:
 
 jobs:
   build:
-    # M1 GitHub runner offers a real Apple Silicon Metal target for
-    # native shader correctness; Intel macOS VM returned zero outputs.
-    runs-on: macos-15
+    # Intel CI availability for rapid iOS16 compatibility validation.
+    # GPU shader dispatch now uses universal dispatchThreadgroups.
+    runs-on: macos-15-intel
     timeout-minutes: 40
     steps:
       - name: Checkout v1.4 optical-print branch
