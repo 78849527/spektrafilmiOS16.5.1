@@ -262,9 +262,43 @@ enum OriginalMetalIIR {
                     largestError = max(largestError,error)
                 }
             }
+            // Validate the *production* in-place route as well. Merely
+            // testing the independent four-texture reference filter would
+            // not certify the renderer's new memory-saving kernels.
+            guard let inplace = queue.makeCommandBuffer() else {
+                throw Error.invalid("原版 IIR 自检：无法创建原地滤波命令")
+            }
+            try encodeInPlace(
+                source, sigmas: fixture.sigmas, device: device,
+                library: library, command: inplace
+            )
+            inplace.commit()
+            inplace.waitUntilCompleted()
+            guard inplace.status == .completed else {
+                throw Error.invalid("原版 IIR 自检：原地滤波内核执行失败：" +
+                                    (inplace.error?.localizedDescription ?? "unknown"))
+            }
+            observed.withUnsafeMutableBytes { bytes in
+                source.getBytes(
+                    bytes.baseAddress!,
+                    bytesPerRow: w*4*MemoryLayout<Float>.stride,
+                    from: MTLRegionMake2D(0,0,w,h), mipmapLevel: 0
+                )
+            }
+            for pixel in 0..<(w*h) {
+                for channel in 0..<3 {
+                    let actual = Double(observed[pixel*4+channel])
+                    let expected = fixture.expected[pixel*3+channel]
+                    guard actual.isFinite && abs(actual - expected) <= 0.0005 else {
+                        throw Error.invalid(
+                            "原版 IIR 原地内核不一致：\(fixture.name) 像素\(pixel) 通道\(channel)，GPU=\(actual) 源=\(expected)"
+                        )
+                    }
+                }
+            }
         }
         let count = fixtures.reduce(0) { $0 + $1.expected.count }
-        return "原版 YVV IIR 两组图 / 三通道对照 PASS，" +
+        return "原版 YVV IIR（独立与生产原地内核）两组图 / 三通道对照 PASS，" +
                "MAE=\(String(format:"%.7g",totalError/Double(count)))，" +
                "max=\(String(format:"%.7g",largestError))，设备\(device.name)"
     }
