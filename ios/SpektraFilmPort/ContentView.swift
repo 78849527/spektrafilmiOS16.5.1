@@ -21,6 +21,7 @@ final class PhotoEditorModel: ObservableObject {
     @Published var grainAmount = 1.0
     // Original measured 3-emulsion sublayer variance is opt-in.
     @Published var grainSublayersEnabled = false
+    @Published var grainDiscreteParticlesEnabled = false
     // Experimental source-scanner path is OPT-IN. Initial UI and
     // old calculated looks remain identical to user-tested v1.0.1.
     @Published var originalScannerEnabled = false
@@ -79,7 +80,8 @@ final class PhotoEditorModel: ObservableObject {
         }
         return DensityGrainSettings(
             stage: stage, amount: grainAmount, seed: 8888,
-            measuredSublayersEnabled: grainSublayersEnabled
+            measuredSublayersEnabled: grainSublayersEnabled,
+            discreteParticlesEnabled: grainDiscreteParticlesEnabled
         )
     }
 
@@ -172,6 +174,7 @@ final class PhotoEditorModel: ObservableObject {
             spatialDIREnabled = false
             grainEnabled = false
             grainSublayersEnabled = false
+            grainDiscreteParticlesEnabled = false
             lut = importedLUT
             busy = false
             try refresh()
