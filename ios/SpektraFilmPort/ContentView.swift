@@ -34,6 +34,15 @@ final class PhotoEditorModel: ObservableObject {
     @Published var printFastGamma = 1.0
     @Published var printSlowGamma = 1.0
     @Published var printDeveloperExhaustion = 0.0
+    // Original enlarger/filtered-light experiments. OFF by default:
+    // v1.0.1 UI and all v1.3 optics retain existing results.
+    @Published var enlargerEnabled = false
+    @Published var enlargerNormalize = true
+    @Published var enlargerMShift = 0.0
+    @Published var enlargerYShift = 0.0
+    @Published var enlargerPreflash = 0.0
+    @Published var enlargerFlashMShift = 0.0
+    @Published var enlargerFlashYShift = 0.0
     private var densityGrainStage: DensityGrainStage?
 
     private var scannerFinishSettings: ScannerFinishSettings {
@@ -185,6 +194,14 @@ final class PhotoEditorModel: ObservableObject {
         let originalScanner = originalScannerEnabled
         let referenceBW = scannerBlackWhiteEnabled
         let cam16 = scannerCAM16Enabled
+        let enlargerSettings = OriginalEnlarger.Settings(
+            enabled: enlargerEnabled,
+            normalizeExposure: enlargerNormalize,
+            mShift: enlargerMShift, yShift: enlargerYShift,
+            preflashExposure: enlargerPreflash,
+            preflashMShift: enlargerFlashMShift,
+            preflashYShift: enlargerFlashYShift
+        )
         let useExposureReference = exposureReferenceEnabled
         let printMorph = printMorphEnabled
             ? OriginalPrintMorph.Settings(
@@ -203,7 +220,8 @@ final class PhotoEditorModel: ObservableObject {
                         scannerBlackWhite: referenceBW,
                         cam16Gamut: cam16,
                         printReferenceCorrection: useExposureReference,
-                        printMorph: printMorph
+                        printMorph: printMorph,
+                        enlarger: enlargerSettings
                     )
                     let density = try requiresGrainStage
                         ? SpectralPhysics.makeDensityStageData(
@@ -214,7 +232,8 @@ final class PhotoEditorModel: ObservableObject {
                             scannerBlackWhite: referenceBW,
                             cam16Gamut: cam16,
                             printReferenceCorrection: useExposureReference,
-                            printMorph: printMorph
+                            printMorph: printMorph,
+                            enlarger: enlargerSettings
                           ) : nil
                     return (cube, density)
                 }.value
