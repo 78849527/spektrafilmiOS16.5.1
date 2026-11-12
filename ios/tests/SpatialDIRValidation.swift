@@ -33,12 +33,14 @@ struct SpatialDIRValidation {
         let context = CIContext()
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         var floatRGBA = [Float](repeating: 0, count: 4)
-        context.render(
-            image, toBitmap: &floatRGBA,
-            rowBytes: 4*MemoryLayout<Float>.size,
-            bounds: CGRect(x: 12, y: 12, width: 1, height: 1),
-            format: .RGBAf, colorSpace: space
-        )
+        floatRGBA.withUnsafeMutableBytes { buffer in
+            context.render(
+                image, toBitmap: buffer.baseAddress!,
+                rowBytes: 4*MemoryLayout<Float>.size,
+                bounds: CGRect(x: 12, y: 12, width: 1, height: 1),
+                format: .RGBAf, colorSpace: space
+            )
+        }
         return floatRGBA.prefix(3).map { Double($0) }
     }
 
