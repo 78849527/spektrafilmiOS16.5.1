@@ -67,6 +67,22 @@ def scan_validity_mask(stock: str, data: dict) -> str:
         raise ValueError(f"No source-measured scanner wavelengths for {stock}")
     return base64.b64encode(bytes(valid)).decode("ascii")
 
+def numeric_validity_mask(stock: str, field: str, values, expected: int) -> str:
+    """Retain measured None slots independently of Float32 numeric packing."""
+    flat = []
+    def walk(tree):
+        if isinstance(tree, list):
+            for value in tree:
+                walk(value)
+        else:
+            flat.append(int(tree is not None))
+    walk(values)
+    if len(flat) != expected:
+        raise ValueError(f"Unexpected {stock} {field} mask length {len(flat)}")
+    if not any(flat):
+        raise ValueError(f"No valid source spectral samples: {stock} {field}")
+    return base64.b64encode(bytes(flat)).decode("ascii")
+
 
 def main() -> None:
     paths = sorted(SRC.glob("*.json"))
@@ -110,6 +126,8 @@ def main() -> None:
         "        let channelDensity: String",
         "        let baseDensity: String",
         "        let scannerValidWavelengths: String",
+        "        let baseValidWavelengths: String",
+        "        let sensitivityValidSamples: String",
         "        let logExposure: String",
         "        let densityCurves: String",
         "        let densityCurvesLayers: String",
@@ -146,6 +164,8 @@ def main() -> None:
             ("channelDensity", encoded["channel_density"]),
             ("baseDensity", encoded["base_density"]),
             ("scannerValidWavelengths", scan_validity_mask(stock, data)),
+            ("baseValidWavelengths", numeric_validity_mask(stock, "base_density", data["base_density"], 81)),
+            ("sensitivityValidSamples", numeric_validity_mask(stock, "log_sensitivity", data["log_sensitivity"], 243)),
             ("logExposure", encoded["log_exposure"]),
             ("densityCurves", encoded["density_curves"]),
             ("densityCurvesLayers", encoded["density_curves_layers"]),
