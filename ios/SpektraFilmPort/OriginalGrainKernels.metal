@@ -150,6 +150,19 @@ float filmPoisson(float lambda, uint seed, uint x, uint y,
     return 0.0f;
 }
 
+// Opt-in original SciPy two-array RNG path: extract the full image plane
+// in row-major C order. Swift then generates *all* Poisson draws, followed
+// by *all* Binomial draws, and uploads a shared RGBA32Float particle field.
+// This shader does not sample RNG and is intentionally independent of tiles.
+kernel void originalFilmSourceExtractChannel(
+    texture2d<float, access::read> layer [[texture(0)]],
+    constant uint &channel [[buffer(0)]],
+    device float *rowMajor [[buffer(1)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if(tid.x >= layer.get_width() || tid.y >= layer.get_height()) { return; }
+    rowMajor[tid.y * layer.get_width() + tid.x] = layer.read(tid)[channel];
+}
+
 kernel void originalFilmParticles(
     texture2d<float,access::read> layerIn [[texture(0)]],
     texture2d<float,access::write> layerOut [[texture(1)]],
