@@ -144,7 +144,8 @@ enum PhotoProcessor {
         scanner: ScannerFinishSettings = ScannerFinishSettings(),
         dirStage: SpatialDIRStage? = nil,
         dirSettings: SpatialDIRSettings = SpatialDIRSettings(),
-        resolution: ExportResolutionMode = .original
+        resolution: ExportResolutionMode = .original,
+        confirmedPlan: SafeExportResolution.Plan? = nil
     ) throws -> ExportResult {
         // Full-resolution output: NEVER silently shrink high-resolution
         // images to 12.5 MP. The preview remains 1500 px for performance.
@@ -159,13 +160,22 @@ enum PhotoProcessor {
         // chain on that whole output image (no per-tile random stream reset).
         var workingSource = source
         var downsampled = false
-        if resolution == .safe {
+        if resolution != .original {
             let bounds = source.extent.integral
-            let target = try SafeExportResolution.target(
-                width: Int(bounds.width),
-                height: Int(bounds.height),
-                physicalMemory: ProcessInfo.processInfo.physicalMemory
-            )
+            let plan = try confirmedPlan ??
+                SafeExportResolution.capture(
+                    width: Int(bounds.width),
+                    height: Int(bounds.height), mode: resolution
+                )
+            guard plan.sourceWidth == Int(bounds.width),
+                  plan.sourceHeight == Int(bounds.height),
+                  plan.mode == resolution else {
+                throw ImageProcessingError.invalid(
+                    "安全输出：已确认的尺寸与当前照片不匹配，请重新选择"
+                )
+            }
+            try SafeExportResolution.validateBeforeRender(plan)
+            let target = plan.dimensions
             if target.reduced {
                 // Normalize image coordinates to zero before filtering.
                 // Fractional dimensions are cropped to an exact integer
@@ -209,9 +219,9 @@ enum PhotoProcessor {
         // allocation on the main actor).
         guard let rendered = context.createCGImage(image, from: image.extent) else {
             throw ImageProcessingError.invalid(
-                resolution == .safe
-                    ? "安全分辨率渲染失败：设备仍可能内存不足，请检查可用内存"
-                    : "原尺寸高清渲染失败，请检查可用内存"
+                resolution == .original
+                    ? "原尺寸高清渲染失败，请检查可用内存"
+                    : "安全分辨率渲染失败：设备仍可能内存不足，请检查可用内存"
             )
         }
         let url = FileManager.default.temporaryDirectory
