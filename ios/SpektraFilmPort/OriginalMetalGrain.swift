@@ -120,8 +120,14 @@ enum OriginalMetalGrain {
         let maxCloud = cloud.flatMap { $0 }.max() ?? 0
         // Composition of separately truncated kernels: each contribution
         // has a compact support; halo >= sum radii is exact within a tile.
-        let cloudReach = Int(floor(3 * maxCloud + 0.5))
-        let microReach = useMicroBlur ? Int(floor(3 * microBlur + 0.5)) : 0
+        // These halo radii apply ONLY to the sigma<3 FIR tile path.
+        // IIR is global (infinite recursive support) and uses no tile halo.
+        guard maxCloud.isFinite, microBlur.isFinite else {
+            throw Failure.invalid("原版 Metal 颗粒：非有限染料云或微结构扩散半径")
+        }
+        let cloudReach = Int(floor(3 * min(maxCloud, 2.999) + 0.5))
+        let microReach = useMicroBlur ?
+            Int(floor(3 * min(microBlur, 2.999) + 0.5)) : 0
         let finalReach = Int(floor(3 * 0.65 + 0.5))
         let halo = cloudReach + microReach + finalReach + 2
         guard halo <= 128 else {
@@ -133,22 +139,23 @@ enum OriginalMetalGrain {
         )
     }
 
-    /// The upstream fast_gaussian_filter switches to Young–van Vliet
-    /// recursive IIR at sigma >= 3. A tiled FIR is not equivalent.
-    /// Reject unsupported inputs before allocating GPU textures, so a
-    /// high-resolution export cannot silently produce approximate pixels.
+    /// Original source dispatch: sigma<3 -> reflect FIR, sigma>=3 -> YVV IIR.
+    /// Keep coefficients valid; global IIR is handled by the separate
+    /// streaming whole-frame route, never inside a 512px FIR tile.
     static func requireSupportedOriginalFilters(_ coefficients: PhysicalCoefficients) throws {
         let dye = coefficients.cloudSigmas.flatMap { $0 }
-        let usesMicroBlur = coefficients.microSigma > 0.05 &&
-            coefficients.microBlur > 0.4
-        guard dye.allSatisfy({ $0.isFinite && $0 >= 0 && $0 < 3.0 }),
-              !usesMicroBlur || (coefficients.microBlur.isFinite &&
-                                 coefficients.microBlur < 3.0) else {
-            throw Failure.invalid(
-                "原版 Metal 颗粒：需要上游 Young–van Vliet IIR (sigma ≥ 3)；" +
-                "全图 IIR 尚未通过数值对照，禁止用局部 FIR 替代"
-            )
+        guard dye.allSatisfy({ $0.isFinite && $0 >= 0 }),
+              coefficients.microBlur.isFinite &&
+              coefficients.microBlur >= 0 else {
+            throw Failure.invalid("原版 Metal 颗粒：滤波 sigma 无效")
         }
+    }
+
+    static func needsWholeFrameIIR(_ coefficients: PhysicalCoefficients) -> Bool {
+        coefficients.cloudSigmas.flatMap { $0 }.contains(where: { $0 >= 3.0 }) ||
+            (coefficients.microSigma > 0.05 &&
+             coefficients.microBlur > 0.4 &&
+             coefficients.microBlur >= 3.0)
     }
 
     private static func vec(_ values: [Double]) -> SIMD4<Float> {
@@ -494,6 +501,214 @@ enum OriginalMetalGrain {
         return output
     }
 
+
+    /// Whole-frame blur in source order, with per-channel FIR/IIR dispatch.
+    /// IIR mutates the density texture in place; FIR uses one temporary
+    /// texture with two ordered passes. A sigma>=3 must NEVER take FIR.
+    private static func blurWholeFrameInPlace(
+        _ image: MTLTexture, scratch: MTLTexture, sigmas: [Double],
+        command: MTLCommandBuffer, device: MTLDevice,
+        library: MTLLibrary, gaussian: MTLComputePipelineState
+    ) throws {
+        guard image.width == scratch.width, image.height == scratch.height,
+              image.pixelFormat == .rgba32Float,
+              scratch.pixelFormat == .rgba32Float,
+              sigmas.count == 3,
+              sigmas.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+            throw Failure.invalid("原版 Metal 全图滤波：输入纹理或 sigma 不正确")
+        }
+        if sigmas.contains(where: { $0 >= 3.0 }) {
+            try OriginalMetalIIR.encodeInPlace(
+                image, sigmas: sigmas, device: device,
+                library: library, command: command
+            )
+        }
+        let small = sigmas.map { $0 < 3.0 ? $0 : 0.0 }
+        if small.allSatisfy({ $0 == 0 }) { return }
+        var args = BlurParameters(
+            sigma: vec(small), width: UInt32(image.width),
+            height: UInt32(image.height), axis: 0
+        )
+        try execute(
+            command: command, pipeline: gaussian,
+            textures: [image, scratch], params: &args,
+            width: image.width, height: image.height
+        )
+        args.axis = 1
+        try execute(
+            command: command, pipeline: gaussian,
+            textures: [scratch, image], params: &args,
+            width: image.width, height: image.height
+        )
+    }
+
+    /// Full-image YVV pipeline. Each layer is completed and accumulated
+    /// before allocating the next one. Peak resident working images:
+    /// destination + accumulated + particle layer + scratch = four
+    /// RGBA32Float frames, not three retained dye-cloud layer fields.
+    /// Fails explicitly on insufficient iPhone memory (never half-precision).
+    private static func renderWholeFrameIIR(
+        normalizedDensity: CIImage, cubes: [CIImage],
+        physical: PhysicalCoefficients, totalRanges: [Double],
+        pixelUM: Double, amount: Double, seed: Double,
+        bounds: CGRect, device: MTLDevice, queue: MTLCommandQueue,
+        library: MTLLibrary, context: CIContext, destination: MTLTexture,
+        particles: MTLComputePipelineState,
+        clumping: MTLComputePipelineState,
+        gaussian: MTLComputePipelineState,
+        save: MTLComputePipelineState
+    ) throws {
+        let width = destination.width
+        let height = destination.height
+        let projectedBytes = UInt64(width) * UInt64(height) * 16 * 5
+        let memoryBudget = min(
+            UInt64(1_500_000_000),
+            ProcessInfo.processInfo.physicalMemory / 3
+        )
+        guard projectedBytes <= memoryBudget else {
+            throw Failure.invalid(
+                "原版 Metal 全图 IIR：高清图像需要约 " +
+                "\(projectedBytes / 1_000_000) MB GPU 工作空间，" +
+                "超过本机安全预算 \(memoryBudget / 1_000_000) MB；" +
+                "为保持原版全图递归和 Float32，已停止而非降质。"
+            )
+        }
+        let accumulated = try makeTexture(device, width: width, height: height)
+        let accumulate = try device.makeComputePipelineState(
+            function: library.makeFunction(name: "originalFilmAccumulate")!
+        )
+        let compose = try device.makeComputePipelineState(
+            function: library.makeFunction(name: "originalFilmCompositeAccumulated")!
+        )
+        let linearSpace = CGColorSpace(name: CGColorSpace.linearSRGB)!
+        var params = Parameters(
+            ranges: vec(totalRanges),
+            peak0: vec(physical.maxima[0]), peak1: vec(physical.maxima[1]),
+            peak2: vec(physical.maxima[2]),
+            fraction0: vec(physical.fraction[0]),
+            fraction1: vec(physical.fraction[1]),
+            fraction2: vec(physical.fraction[2]),
+            pixelUM: Float(pixelUM), amount: Float(amount),
+            seed: UInt32(seed), originX: 0, originY: 0,
+            width: UInt32(width), height: UInt32(height),
+            microSigma: Float(physical.microSigma),
+            microBlur: Float(physical.microBlur)
+        )
+        for layer in 0..<3 {
+            try autoreleasepool {
+                guard let command = queue.makeCommandBuffer(),
+                      let faults = device.makeBuffer(
+                        length: 4 * MemoryLayout<UInt32>.stride,
+                        options: .storageModeShared
+                      ) else {
+                    throw Failure.invalid("原版 Metal 全图 IIR：指令或 Poisson 计数缓冲分配失败")
+                }
+                let words = faults.contents().bindMemory(
+                    to: UInt32.self, capacity: 4
+                )
+                for index in 0..<4 { words[index] = 0 }
+                let scratch = try makeTexture(device, width: width, height: height)
+                let developed = try makeTexture(device, width: width, height: height)
+                // The CI color-cube emulsion is needed only for this layer.
+                // After the particle encoder it becomes the FIR scratch.
+                context.render(
+                    cubes[layer], to: scratch, commandBuffer: command,
+                    bounds: bounds, colorSpace: linearSpace
+                )
+                try execute(
+                    command: command, pipeline: particles,
+                    textures: [scratch, developed], params: &params,
+                    width: width, height: height, errors: faults,
+                    sublayer: UInt32(layer)
+                )
+                try blurWholeFrameInPlace(
+                    developed, scratch: scratch,
+                    sigmas: physical.cloudSigmas[layer],
+                    command: command, device: device,
+                    library: library, gaussian: gaussian
+                )
+                var first: UInt32 = layer == 0 ? 1 : 0
+                try execute(
+                    command: command, pipeline: accumulate,
+                    textures: [developed, accumulated], params: &first,
+                    width: width, height: height
+                )
+                command.commit()
+                command.waitUntilCompleted()
+                guard command.status == .completed else {
+                    throw Failure.invalid(
+                        "原版 Metal 全图 IIR：亚层 \(layer) 显影失败：" +
+                        (command.error?.localizedDescription ?? "unknown")
+                    )
+                }
+                guard words[0] == 0 else {
+                    throw Failure.invalid(
+                        "原版 Metal 全图 IIR：亚层 \(layer) Poisson 采样失败 " +
+                        "\(words[0]) 次（无效 λ=\(words[1])，低率耗尽=" +
+                        "\(words[2])，高率耗尽=\(words[3])），已停止导出。"
+                    )
+                }
+            }
+        }
+        try autoreleasepool {
+            guard let command = queue.makeCommandBuffer() else {
+                throw Failure.invalid("原版 Metal 全图 IIR：最终合成指令创建失败")
+            }
+            let clump = try makeTexture(device, width: width, height: height)
+            let scratch = try makeTexture(device, width: width, height: height)
+            try execute(
+                command: command, pipeline: clumping,
+                textures: [clump], params: &params,
+                width: width, height: height
+            )
+            if physical.microSigma > 0.05 && physical.microBlur > 0.4 {
+                try blurWholeFrameInPlace(
+                    clump, scratch: scratch,
+                    sigmas: [Double](repeating: physical.microBlur, count: 3),
+                    command: command, device: device,
+                    library: library, gaussian: gaussian
+                )
+            }
+            var unused: UInt32 = 0
+            try execute(
+                command: command, pipeline: compose,
+                textures: [accumulated, clump], params: &unused,
+                width: width, height: height
+            )
+            try blurWholeFrameInPlace(
+                accumulated, scratch: scratch,
+                sigmas: [0.65, 0.65, 0.65],
+                command: command, device: device,
+                library: library, gaussian: gaussian
+            )
+            // The original density is needed only for the final strength
+            // interpolation. Reuse the now-discardable FIR scratch image.
+            context.render(
+                normalizedDensity, to: scratch, commandBuffer: command,
+                bounds: bounds, colorSpace: linearSpace
+            )
+            var write = CoreParameters(
+                ranges: vec(totalRanges), amount: Float(amount),
+                width: UInt32(width), height: UInt32(height),
+                originX: 0, originY: 0, coreX: 0, coreY: 0,
+                coreWidth: UInt32(width), coreHeight: UInt32(height)
+            )
+            try execute(
+                command: command, pipeline: save,
+                textures: [scratch, accumulated, destination], params: &write,
+                width: width, height: height
+            )
+            command.commit()
+            command.waitUntilCompleted()
+            guard command.status == .completed else {
+                throw Failure.invalid(
+                    "原版 Metal 全图 IIR：最终合成失败：" +
+                    (command.error?.localizedDescription ?? "unknown")
+                )
+            }
+        }
+    }
+
     static func render(
         normalizedDensity: CIImage,
         sublayerCubes: [Data], rawLayerMaxima: [Double],
@@ -579,6 +794,18 @@ enum OriginalMetalGrain {
         guard cubes.count == 3, cubes.allSatisfy({ $0 != nil }) else {
             throw Failure.invalid("原版 Metal 颗粒：实测三层光学密度 LUT 无法渲染")
         }
+        if needsWholeFrameIIR(physical) {
+            try renderWholeFrameIIR(
+                normalizedDensity: normalizedDensity,
+                cubes: cubes.compactMap { $0 }, physical: physical,
+                totalRanges: totalRanges, pixelUM: pixelUM,
+                amount: amount, seed: seed, bounds: bounds,
+                device: device, queue: queue, library: library,
+                context: context, destination: destination,
+                particles: particles, clumping: clumping,
+                gaussian: gaussian, save: save
+            )
+        } else {
         let tile = 512
         for yy in stride(from: 0, to: imageHeight, by: tile) {
             for xx in stride(from: 0, to: imageWidth, by: tile) {
@@ -718,6 +945,7 @@ enum OriginalMetalGrain {
                     }
                 }
             }
+        }
         }
         guard let result = CIImage(
             mtlTexture: destination, options: [.colorSpace: NSNull()]
