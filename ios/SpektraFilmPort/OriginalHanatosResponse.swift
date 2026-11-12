@@ -21,7 +21,7 @@ struct OriginalHanatosResponse {
     /// Source-precision mode is the default. The previous Float16 storage
     /// remains available explicitly as a faster, quantized mobile alternative.
     /// Precision selects LUT STORAGE, not a different interpolation algorithm.
-    enum Precision {
+    enum Precision: Sendable {
         case originalFloat64
         case mobileFloat16
     }
