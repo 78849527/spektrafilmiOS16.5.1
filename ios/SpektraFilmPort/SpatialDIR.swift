@@ -193,8 +193,7 @@ enum SpatialDIR {
 
         if let grain, grain.amount > 0 {
             guard let result = DensityGrain.perturbDensityImage(
-                density, maxDensity: stage.densityRanges,
-                pixelUM: pixelUM, amount: grain.amount, seed: grain.seed
+                density, settings: grain, pixelUM: pixelUM
             ) else { return nil }
             density = result
         }
