@@ -69,11 +69,20 @@ struct PrintOpticsValidation {
                 fatalError("Source print test missing original dye NaN mask")
             }
             let validity = Array(mask)
+            guard let baseMask = Data(base64Encoded: film.baseValidWavelengths),
+                  let sensitivityMask = Data(base64Encoded: paper.sensitivityValidSamples),
+                  baseMask.count == 81,
+                  sensitivityMask.count == 243 else {
+                fatalError("Original source preflash/sensitivity mask missing")
+            }
             let base = unpack(film.baseDensity, count: 81)
             let dye = unpack(film.channelDensity, count: 243)
             let paperLog = unpack(paper.logSensitivity, count: 243)
             let paperSens = (0..<81).map { index in
-                (0..<3).map { c in pow(10.0, paperLog[index*3+c]) }
+                (0..<3).map { c in
+                    sensitivityMask[index*3+c] == 1
+                        ? pow(10.0, paperLog[index*3+c]) : 0.0
+                }
             }
             let settings = OriginalPrintOptics.Settings(
                 enabled: true,
@@ -87,7 +96,8 @@ struct PrintOpticsValidation {
             precondition(settings.isValid)
             let prepared = OriginalPrintOptics.prepare(
                 source: source, neutralCC: neutral, settings: settings,
-                filmBase: base, paperSensitivity: paperSens
+                filmBase: base, filmBaseValid: baseMask.map { $0 == 1 },
+                paperSensitivity: paperSens
             )
             for c in 0..<5 {
                 near(prepared.printIlluminant[taps[c]], vector.lightSamples[c],
