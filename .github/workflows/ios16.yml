@@ -78,7 +78,6 @@ jobs:
           python3 ios/scripts/generate_original_metal_grain.py
           python3 ios/scripts/generate_original_source_rng.py
           python3 ios/scripts/generate_source_iir.py
-          python3 ios/scripts/generate_original_source_rng.py
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -93,7 +92,6 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedOriginalMetalGrainReference.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalSourceRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceIIRReference.swift
-          test -s ios/SpektraFilmPort/GeneratedOriginalSourceRNGReference.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
