@@ -54,6 +54,7 @@ def main():
         "        let raw: [Double]",
         "        let preflash: [Double]",
         "        let reference: Double",
+        "        let normalizationFactors: [Double]",
         "        let logExposure: [Double]",
         "    }",
         "    static let vectors: [Vector] = [",
@@ -76,11 +77,20 @@ def main():
         raw = exposure_raw(film_density, base, dyes, paper_sens, print_light)
         middle = exposure_raw(midgray_density, base, dyes, paper_sens, print_light)
         reference = float(np.exp(np.mean(np.log(np.maximum(middle, 1e-10)))))
+        # Independent four-branch Python reference from PrintingStage.
+        comp_density = midgray_density + np.array([0.09, -0.05, 0.10])
+        compensated = exposure_raw(comp_density, base, dyes, paper_sens, print_light)
+        mid_factor = 1.0 / float(np.exp(np.mean(np.log(np.maximum(middle, 1e-10)))))
+        comp_factor = 1.0 / float(np.exp(np.mean(np.log(np.maximum(compensated, 1e-10)))))
+        # [none, normalize only, compensate only, both].
+        normalization_factors = [
+            1.0, mid_factor, comp_factor / mid_factor, comp_factor
+        ]
         flash_raw = (flash * np.einsum("l,lc->c", flash_light * 10**(-base), paper_sens))
         before_enlarger = np.maximum(raw / reference + flash_raw, 0) + 1e-10
         log_exposure = np.log10(np.maximum(before_enlarger * 2**ev, 0) + 1e-10)
         samples = print_light[[0, 17, 40, 64, 80]]
-        for v in [*raw, *flash_raw, *log_exposure, reference, *samples]:
+        for v in [*raw, *flash_raw, *log_exposure, reference, *samples, *normalization_factors]:
             assert np.isfinite(v)
         lines += [
             "        Vector(",
@@ -93,6 +103,7 @@ def main():
             f"            raw: {arr(raw)},",
             f"            preflash: {arr(flash_raw)},",
             f"            reference: {reference:.16g},",
+            f"            normalizationFactors: {arr(normalization_factors)},",
             f"            logExposure: {arr(log_exposure)}",
             "        ),",
         ]
