@@ -622,8 +622,6 @@ struct FloatingEditorWorkspace: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
                 strengthControl("颗粒强度", value: $model.grainAmount,
                                 range: 0...2, suffix: "×", resetTo: 1.0)
