@@ -941,6 +941,12 @@ struct SpectralPhysics {
                                  clampDensity: Bool = true) -> [Double] {
         var raw = [0.0, 0.0, 0.0]
         for i in 0..<81 {
+            // Source PrintingStage._film_cmy_to_print_log_raw calls
+            // compute_density_spectral, then density_to_light. Any absent
+            // CMY dye measurement makes that wavelength NaN (even NaN*0);
+            // density_to_light sets its *transmitted light* to zero.
+            // Previously packing null -> Float32(0) added false exposure.
+            if !film.scannerWavelengthValid[i] { continue }
             var spectralDensity = film.base(i)
             for c in 0..<3 {
                 spectralDensity += film.dyeAbsorbance(i, c) * filmDensities[c]
