@@ -14,7 +14,6 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -22,8 +21,30 @@ import colour
 from opt_einsum import contract
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(ROOT / "src"))
-from spektrafilm.config import STANDARD_OBSERVER_CMFS, SPECTRAL_SHAPE
+
+def original_config():
+    # The package __init__ imports RAW support (exiv2, OpenImageIO). Our
+    # reference requires only these ORIGINAL assignments from config.py.
+    # Execute them unchanged from the AST, not a copied calibration.
+    path=ROOT/"src/spektrafilm/config.py"
+    tree=ast.parse(path.read_text(encoding="utf-8"),filename=str(path))
+    wanted={"SPECTRAL_SHAPE","STANDARD_OBSERVER_CMFS"}
+    nodes=[
+        node for node in tree.body
+        if isinstance(node,ast.Assign) and any(
+            isinstance(t,ast.Name) and t.id in wanted
+            for t in node.targets
+        )
+    ]
+    namespace={"np":np,"colour":colour}
+    exec(compile(ast.fix_missing_locations(
+        ast.Module(body=nodes,type_ignores=[])),str(path),"exec"),namespace)
+    assert wanted.issubset(namespace), "Original CIE 1931/D50 spectral setup changed"
+    return namespace
+
+CONFIG=original_config()
+STANDARD_OBSERVER_CMFS=CONFIG["STANDARD_OBSERVER_CMFS"]
+SPECTRAL_SHAPE=CONFIG["SPECTRAL_SHAPE"]
 
 # Extract the ORIGINAL source functions unchanged. Importing the full
 # illuminants.py module pulls optional exiv2/OpenImageIO dependencies
@@ -75,7 +96,7 @@ def source_scan(profile, density):
     base=np.asarray(data["base_density"],dtype=np.float64)
     light_source=np.asarray(standard_illuminant(info["viewing_illuminant"]),
                              dtype=np.float64)
-    cie=np.asarray(STANDARD_OBSERVER_CMFS,dtype=np.float64)
+    cie=np.asarray(STANDARD_OBSERVER_CMFS[:],dtype=np.float64)
     assert dye.shape==(81,3) and base.shape==(81,)
     assert cie.shape==(81,3) and light_source.shape==(81,)
     normalization=np.sum(light_source*cie[:,1])
@@ -107,6 +128,7 @@ def source_scan(profile, density):
 
 def main():
     sources=[
+        ROOT / "src/spektrafilm/config.py",
         ROOT / "src/spektrafilm/runtime/stages/scanning.py",
         ROOT / "src/spektrafilm/model/develop.py",
         ROOT / "src/spektrafilm/model/illuminants.py",
