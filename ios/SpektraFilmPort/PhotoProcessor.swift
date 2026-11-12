@@ -143,7 +143,8 @@ enum PhotoProcessor {
         grain: DensityGrainSettings? = nil,
         scanner: ScannerFinishSettings = ScannerFinishSettings(),
         dirStage: SpatialDIRStage? = nil,
-        dirSettings: SpatialDIRSettings = SpatialDIRSettings()
+        dirSettings: SpatialDIRSettings = SpatialDIRSettings(),
+        resolution: ExportResolutionMode = .original
     ) throws -> ExportResult {
         // Full-resolution output: NEVER silently shrink high-resolution
         // images to 12.5 MP. The preview remains 1500 px for performance.
@@ -152,8 +153,52 @@ enum PhotoProcessor {
               source.extent.width > 0, source.extent.height > 0 else {
             throw ImageProcessingError.invalid("源照片尺寸无效")
         }
+        // Explicit choice only: ORIGINAL always evaluates at source pixel
+        // dimensions. SAFE first reduces the entire input to a conservative
+        // budget, then executes the exact same optical density/SciPy/Metal
+        // chain on that whole output image (no per-tile random stream reset).
+        var workingSource = source
+        var downsampled = false
+        if resolution == .safe {
+            let bounds = source.extent.integral
+            let target = try SafeExportResolution.target(
+                width: Int(bounds.width),
+                height: Int(bounds.height),
+                physicalMemory: ProcessInfo.processInfo.physicalMemory
+            )
+            if target.reduced {
+                // Normalize image coordinates to zero before filtering.
+                // Fractional dimensions are cropped to an exact integer
+                // output rectangle; never upscale or stretch the aspect.
+                let normalized = source.transformed(
+                    by: CGAffineTransform(
+                        translationX: -bounds.minX, y: -bounds.minY
+                    )
+                ).cropped(to: CGRect(origin: .zero, size: bounds.size))
+                let ratio = max(
+                    Double(target.width) / Double(bounds.width),
+                    Double(target.height) / Double(bounds.height)
+                )
+                let shrink = CIFilter.lanczosScaleTransform()
+                shrink.inputImage = normalized
+                shrink.scale = Float(ratio)
+                shrink.aspectRatio = 1
+                guard let scaled = shrink.outputImage else {
+                    throw ImageProcessingError.invalid(
+                        "安全输出：无法创建 Lanczos 等比例缩小图像"
+                    )
+                }
+                workingSource = scaled.cropped(
+                    to: CGRect(
+                        x: 0, y: 0,
+                        width: target.width, height: target.height
+                    )
+                )
+                downsampled = true
+            }
+        }
         let image = try apply(
-            to: source, lut: lut, strength: strength,
+            to: workingSource, lut: lut, strength: strength,
             spatial: spatial, grain: grain, scanner: scanner,
             dirStage: dirStage, dirSettings: dirSettings
         )
@@ -162,7 +207,11 @@ enum PhotoProcessor {
         // compression setting and write straight to disk (not a giant Data
         // allocation on the main actor).
         guard let rendered = context.createCGImage(image, from: image.extent) else {
-            throw ImageProcessingError.invalid("原尺寸高清渲染失败，请检查可用内存")
+            throw ImageProcessingError.invalid(
+                resolution == .safe
+                    ? "安全分辨率渲染失败：设备仍可能内存不足，请检查可用内存"
+                    : "原尺寸高清渲染失败，请检查可用内存"
+            )
         }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SpektraFilmPort-" + UUID().uuidString)
@@ -179,8 +228,8 @@ enum PhotoProcessor {
         guard CGImageDestinationFinalize(destination) else {
             throw ImageProcessingError.invalid("原尺寸高清 JPEG 写入失败，请检查储存空间")
         }
-        return ExportResult(url: url, width: Int(image.extent.width.rounded()),
-                            height: Int(image.extent.height.rounded()),
-                            downsampled: false)
+        return ExportResult(url: url, width: rendered.width,
+                            height: rendered.height,
+                            downsampled: downsampled)
     }
 }
