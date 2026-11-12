@@ -34,7 +34,11 @@ def q(x):
     return json.dumps(str(x), ensure_ascii=False)
 
 def reference_illuminant(name: str) -> np.ndarray:
-    values = np.asarray(colour.SDS_ILLUMINANTS[name].copy().align(SHAPE).values,
+    # Spektrafilm.standard_illuminant("T") is the incandescent lamp from
+    # colour.SDS_LIGHT_SOURCES, not a CIE standard daylight illuminant.
+    table = colour.SDS_LIGHT_SOURCES if name == "T" else colour.SDS_ILLUMINANTS
+    source = "Incandescent" if name == "T" else name
+    values = np.asarray(table[source].copy().align(SHAPE).values,
                         dtype=np.float64)
     return values / np.mean(values)
 
@@ -95,19 +99,23 @@ def main():
             originals.append((info, measured))
     assert len(originals) == 20
 
-    # This matrix is exactly the linear sRGB -> XYZ with CAT16 adaptation
-    # used in spektrafilm.utils.spectral_upsampling._rgb_to_tc_b.
-    d55 = reference_illuminant("D55")
+    # Every stock can have a different reference illuminant (e.g. D55 for
+    # daylight negatives, T for tungsten stocks). Use the exact upstream
+    # _rgb_to_tc_b CAT16 matrix for that stock, not one global D55 matrix.
     cie = np.asarray(colour.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"]
                      .copy().align(SHAPE).values, dtype=np.float64)
-    ill_xyz = np.einsum("w,wc->c", d55, cie)
-    ill_xy = ill_xyz[:2] / np.sum(ill_xyz)
-    matrix = colour.RGB_to_XYZ(
-        np.eye(3), colourspace="sRGB", apply_cctf_decoding=False,
-        illuminant=ill_xy, chromatic_adaptation_transform="CAT16"
-    )
-    matrix = np.asarray(matrix, dtype=np.float64)
-    assert matrix.shape == (3,3)
+    matrices={}
+    for info, _ in originals:
+        illum = reference_illuminant(info["reference_illuminant"])
+        illum_xyz = np.einsum("w,wc->c", illum, cie)
+        illum_xy = illum_xyz[:2] / np.sum(illum_xyz)
+        mat = np.asarray(colour.RGB_to_XYZ(
+            np.eye(3), colourspace="sRGB", apply_cctf_decoding=False,
+            illuminant=illum_xy, chromatic_adaptation_transform="CAT16"),
+            dtype=np.float64
+        )
+        assert mat.shape == (3,3)
+        matrices[info["stock"]]=mat
 
     lines = [
         "// ORIGINAL Hanatos2025 spectral irradiation TC response from upstream",
@@ -118,8 +126,14 @@ def main():
         "enum GeneratedHanatosData {",
         f"    static let dimension = {n}",
         f'    static let sourceSHA256 = "{hashlib.sha256(NPY.read_bytes()).hexdigest()}"',
-        "    static let sRGBToD55XYZ: [Double] = ["
-        + ",".join(format(float(x), ".17g") for x in matrix.ravel()) + "]",
+        "    static let sRGBToXYZByFilm: [String: [Double]] = [",
+    ]
+    for stock, mat in matrices.items():
+        lines.append("        " + q(stock) + ": [" +
+                     ",".join(format(float(x), ".17g") for x in mat.ravel()) +
+                     "],")
+    lines.extend([
+        "    ]",
         "    static let lutByFilm: [String: String] = [",
     ]
     lut_map={}
@@ -136,8 +150,7 @@ def main():
             ill = reference_illuminant(info["reference_illuminant"])
             normalize = (np.sum(sensitivity * ill[:,None] * window[:,None],axis=0)
                          / np.sum(sensitivity * ill[:,None],axis=0))
-            sensitivity = sensitivity * (window/normalize[0])[:,None] if False else (
-                sensitivity * window[:,None] / normalize[None,:])
+            sensitivity = sensitivity * window[:,None] / normalize[None,:]
         response = np.einsum("xyw,wc->xyc", orig, sensitivity, optimize=True)
         assert response.shape == (n,n,3) and np.isfinite(response).all()
         half = response.astype("<f2")
@@ -155,7 +168,7 @@ def main():
     # test Swift Float16 path allowing for storage quantization.
     for stock in names:
         for x in sample:
-            y=film_response(x,matrix,lut_map[stock])
+            y=film_response(x,matrices[stock],lut_map[stock])
             lines.append(f'    static let refStock{idx} = {q(stock)}')
             lines.append(f'    static let refRGB{idx}: [Double] = ['+
                          ",".join(format(float(a),".16g") for a in x)+"]")
