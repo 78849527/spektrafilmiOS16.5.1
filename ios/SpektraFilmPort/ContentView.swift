@@ -76,30 +76,37 @@ final class PhotoEditorModel: ObservableObject {
         }
         let filmID = UserDefaults.standard.string(forKey: "compactFilmStock") ?? "kodak_portra_400"
         let paperID = UserDefaults.standard.string(forKey: "compactPaperStock") ?? "kodak_portra_endura"
-        guard filmID == "kodak_portra_400" && paperID == "kodak_portra_endura" else {
-            status = "v0.3 实验引擎目前仅支持 Portra 400 + Portra Endura；请在胶片目录中选回这一组合。"
+        guard SpectralPhysics.supportedFilmIDs.contains(filmID),
+              SpectralPhysics.supportedPaperIDs.contains(paperID) else {
+            status = "该组合暂时只有原版目录数据，没有可用的光学模拟。请从目录中选择标注「可模拟」的胶片与相纸。"
             return
         }
+        let sourceNames = Dictionary(uniqueKeysWithValues:
+            GeneratedMeasuredProfiles.entries.map { ($0.id, $0.name) }
+        )
+        let filmName = sourceNames[filmID] ?? filmID
+        let paperName = sourceNames[paperID] ?? paperID
         guard !busy else { return }
         busy = true
-        status = "正在使用 81 个波长采样计算 Portra 400 → Portra Endura 的光学色彩表…"
+        status = "正在计算 \(filmName) → \(paperName)，81 波长实测数据…"
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
         Task {
             do {
                 let cubeData = try await Task.detached(priority: .userInitiated) {
                     try SpectralPhysics.makeCubeData(
+                        filmID: filmID, paperID: paperID,
                         exposureEV: cameraExposure, paperEV: enlargerExposure,
                         size: 17
                     )
                 }.value
                 lut = FilmLUT(
-                    title: "实测曲线·Portra 400 + Portra Endura (实验)",
+                    title: "实测曲线·\(filmName) → \(paperName) (实验)",
                     dimension: 17, rgbaFloatData: cubeData
                 )
                 strength = 1.0
                 try refresh()
-                status = "已应用简化光谱模拟 · 胶片 \(String(format: "%+.2f", cameraExposure)) EV · 相纸 \(String(format: "%+.2f", enlargerExposure)) EV。非原版完整渲染。"
+                status = "已应用 \(filmName) → \(paperName) · 胶片 \(String(format: "%+.2f", cameraExposure)) EV · 相纸 \(String(format: "%+.2f", enlargerExposure)) EV。仍是简化光谱模拟。"
             } catch {
                 status = "光谱计算失败：" + error.localizedDescription
             }
@@ -137,6 +144,21 @@ struct ContentView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
+    @AppStorage("compactFilmStock") private var selectedFilmID = "kodak_portra_400"
+    @AppStorage("compactPaperStock") private var selectedPaperID = "kodak_portra_endura"
+
+    private var activePairIsSupported: Bool {
+        SpectralPhysics.supportedFilmIDs.contains(selectedFilmID) &&
+        SpectralPhysics.supportedPaperIDs.contains(selectedPaperID)
+    }
+
+    private var currentStockDescription: String {
+        let names = Dictionary(uniqueKeysWithValues:
+            GeneratedMeasuredProfiles.entries.map { ($0.id, $0.name) }
+        )
+        return (names[selectedFilmID] ?? selectedFilmID) +
+               " → " + (names[selectedPaperID] ?? selectedPaperID)
+    }
 
     // Use a single native document picker for both file entry points. A
     // restrictive UTType or multiple fileImporter modifiers can hide .cube
@@ -232,12 +254,17 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
-                    Text("轻量目录保留；v0.3 新增 Portra 400 + Portra Endura 简化光谱模拟。")
-                        .font(.caption2).foregroundStyle(.secondary)
+                    Text("当前组合：" + currentStockDescription)
+                        .font(.footnote)
+                    Text(activePairIsSupported
+                         ? "该组合已接入实测曲线，可进行简化光学计算。"
+                         : "该组合目前只有资料目录，尚未接入物理模拟。")
+                        .font(.caption2)
+                        .foregroundStyle(activePairIsSupported ? .secondary : .orange)
 
                     VStack(alignment: .leading, spacing: 9) {
-                        Text("原版实测曲线模拟 · v0.3 实验").font(.headline)
-                        Text("当前仅支持 Kodak Portra 400 → Kodak Portra Endura。采用原始感光曲线、负片与相纸特性曲线及染料光谱；谱线重建与色彩校正仍是简化版本。")
+                        Text("原版实测曲线模拟 · v0.4 实验").font(.headline)
+                        Text("现支持 6 款负片 × 3 款相纸，共 18 种光谱组合。采用原始感光曲线、负片与相纸特性曲线及染料光谱；谱线重建与色彩校正仍是简化版本。"
                             .font(.caption).foregroundStyle(.secondary)
 
                         HStack {
@@ -261,7 +288,7 @@ struct ContentView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.busy || !model.hasPhoto)
+                        .disabled(model.busy || !model.hasPhoto || !activePairIsSupported)
                         if model.busy {
                             ProgressView("光谱数据计算中…")
                         }
@@ -314,7 +341,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.3 实验：81 波长实测数据驱动的简化胶片／印相光学计算。内部生成 17³ 颜色加速表。没有移植原版 Hanatos 光谱重建、染料耦合、光晕、颗粒与完整色彩校正。仍支持外部 sRGB .cube LUT 和 JPEG 导出（最多 1250 万像素）。")
+                    Text("v0.4：已接入 6 款原版负片与 3 款相纸的 81 波长实测曲线，内部生成 17³ 光学色彩加速表。未移植原版 Hanatos 光谱重建、染料耦合、光晕、颗粒与完整色彩校正；反转片仍仅能查看资料。保留 sRGB .cube 和 JPEG 导出。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
