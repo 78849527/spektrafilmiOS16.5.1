@@ -1,60 +1,100 @@
 import Foundation
 
-/// Pure Swift checks run without Metal, on the CI host and on iOS16.
-/// Both user-visible export choices must preserve dimensions exactly
-/// when original is selected; safe target must preserve aspect and RAM.
+/// Pure Swift geometry and live-memory plan regression (CI and iOS 16).
+/// This test does not claim process memory headroom is a reservation.
 @main
 struct SafeExportResolutionValidation {
     static func main() throws {
-        let testCases: [(Int,Int,UInt64)] = [
-            (4032,3024,4_000_000_000),  // iPhone A15 portrait photo
-            (3024,4032,4_000_000_000),
-            (6000,4000,6_000_000_000),
-            (8000,6000,4_000_000_000),
-            (7000,4667,3_000_000_000),
-            (3000,2000,2_000_000_000),
-            (640,480,4_000_000_000),
-            (1,1,4_000_000_000),
+        let photoCases: [(Int,Int,UInt64)] = [
+            (4032,3024,4_000_000_000), (3024,4032,4_000_000_000),
+            (6000,4000,6_000_000_000), (8000,6000,4_000_000_000),
+            (7000,4667,3_000_000_000), (3000,2000,2_000_000_000),
+            (640,480,4_000_000_000), (1,1,4_000_000_000),
         ]
-        precondition(ExportResolutionMode.original != .safe)
-        for (w,h,ram) in testCases {
-            let result = try SafeExportResolution.target(
-                width:w,height:h,physicalMemory:ram
-            )
-            let total = UInt64(w)*UInt64(h)
-            let budget = min(UInt64(1_500_000_000), ram/3)
-            let safeBudget = (budget / 10 * 3) /
-                SafeExportResolution.estimatedBytesPerPixel
-            precondition(result.width > 0 && result.height > 0)
-            precondition(result.width <= w && result.height <= h)
-            precondition(result.pixels <= SafeExportResolution.maximumPixels)
-            precondition(result.pixels <= safeBudget)
-            precondition(result.pixels <= total)
-            precondition(result.reduced == (result.pixels < total))
-            if !result.reduced {
-                precondition(result.width == w && result.height == h)
-            } else {
-                let exact = Double(w)/Double(h)
-                let output = Double(result.width)/Double(result.height)
-                // A one-pixel floor in each dimension must not distort
-                // the original aspect ratio meaningfully.
-                let tolerance = max(0.005,
-                    2.0 / Double(min(result.width,result.height)))
-                precondition(abs(output-exact)/exact < tolerance)
+        for (w,h,ram) in photoCases {
+            for mode in [ExportResolutionMode.original,.safe,.economy] {
+                let plan = try SafeExportResolution.plan(
+                    width:w,height:h,physicalMemory:ram,
+                    processAvailableMemory:1_500_000_000,mode:mode
+                )
+                let d = plan.dimensions
+                precondition(d.width > 0 && d.height > 0)
+                precondition(d.width <= w && d.height <= h)
+                precondition(d.reduced == (d.pixels < UInt64(w)*UInt64(h)))
+                precondition(plan.sourceWidth == w && plan.sourceHeight == h)
+                precondition(!plan.summary.isEmpty)
+                if mode == .original {
+                    precondition(d.width == w && d.height == h)
+                    precondition(!d.reduced)
+                } else {
+                    let percentage:UInt64 = mode == .safe ? 50 : 30
+                    let physicalBudget = min(UInt64(1_500_000_000),ram/3)
+                    let effective = min(physicalBudget,1_500_000_000)
+                    let limit = (effective/100*percentage) /
+                        SafeExportResolution.estimatedBytesPerPixel
+                    precondition(d.pixels <= limit)
+                    precondition(plan.estimatedPeakBytes <= plan.allocationAllowanceBytes)
+                    if mode == .economy {
+                        precondition(d.pixels <= 3_000_000)
+                    }
+                }
+                if d.reduced && min(d.width,d.height)>2 {
+                    let ratio=Double(w)/Double(h)
+                    let outputRatio=Double(d.width)/Double(d.height)
+                    let tolerance=max(0.005,2.0/Double(min(d.width,d.height)))
+                    precondition(abs(outputRatio-ratio)/ratio < tolerance)
+                }
             }
+        }
+        // For a device with an actual ~1500MB budget and enough source
+        // pixels, adaptive 50% should exceed 7MP; 3MP remains an option.
+        let adaptive = try SafeExportResolution.plan(
+            width:6000,height:4000,physicalMemory:6_000_000_000,
+            processAvailableMemory:1_500_000_000,mode:.safe
+        )
+        let economy = try SafeExportResolution.plan(
+            width:6000,height:4000,physicalMemory:6_000_000_000,
+            processAvailableMemory:1_500_000_000,mode:.economy
+        )
+        precondition(adaptive.dimensions.pixels >= 7_000_000)
+        precondition(adaptive.dimensions.pixels <= 7_211_539)
+        precondition(economy.dimensions.pixels <= 3_000_000)
+        precondition(adaptive.dimensions.pixels > economy.dimensions.pixels)
+
+        // Process headroom can reduce the cap BELOW the physical budget.
+        let pressured = try SafeExportResolution.plan(
+            width:6000,height:4000,physicalMemory:6_000_000_000,
+            processAvailableMemory:420_000_000,mode:.safe
+        )
+        precondition(pressured.effectiveBudgetBytes == 420_000_000)
+        precondition(pressured.dimensions.pixels < adaptive.dimensions.pixels)
+        let tiny = try SafeExportResolution.plan(
+            width:640,height:480,physicalMemory:4_000_000_000,
+            processAvailableMemory:1_000_000_000,mode:.economy
+        )
+        precondition(tiny.dimensions.width==640 && tiny.dimensions.height==480)
+        // When current process allocation headroom reaches zero, neither
+        // safe mode may silently fall back to another algorithm/resolution.
+        for mode in [ExportResolutionMode.safe,.economy] {
+            do {
+                _ = try SafeExportResolution.plan(
+                    width:4000,height:3000,physicalMemory:4_000_000_000,
+                    processAvailableMemory:0,mode:mode
+                )
+                fatalError("Must reject zero process-memory allowance")
+            } catch SafeExportResolution.Failure.invalid {}
         }
         for (w,h,ram) in [(0,100,UInt64(4_000_000_000)),
                            (100,0,UInt64(4_000_000_000)),
                            (100,100,UInt64(0))] {
             do {
-                _ = try SafeExportResolution.target(
-                    width:w,height:h,physicalMemory:ram
+                _ = try SafeExportResolution.plan(
+                    width:w,height:h,physicalMemory:ram,
+                    processAvailableMemory:nil,mode:.safe
                 )
-                fatalError("Must reject invalid safe-output inputs")
-            } catch SafeExportResolution.Failure.invalid {
-                // Expected no approximation and no 0x0 image.
-            }
+                fatalError("Must reject invalid export inputs")
+            } catch SafeExportResolution.Failure.invalid {}
         }
-        print("PASS: RAM-safe <=3MP image sizes, source aspect, small-photo no upscale, invalid-input rejection")
+        print("PASS: adaptive 50% (~7.2MP at 1.5GB), original unchanged, <=3MP economy, process-memory cap and aspect ratio")
     }
 }
