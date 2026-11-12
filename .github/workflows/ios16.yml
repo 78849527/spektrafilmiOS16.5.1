@@ -2,7 +2,7 @@ name: iOS 16.5.1 — v1.8.9 source-scanned RGB numerical evidence
 
 on:
   push:
-    branches: ['ios16.5.1/source-rgb-parity-v1.8.9']
+    branches: ['ios16.5.1/source-rgb-stages-v1.8.9']
     paths:
       - 'ios/**'
       - 'docs/v1.8.9-stage-rgb-gpu-probe.md'
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-source-rgb-parity-v1.8.9-release
+  group: ios1651-source-rgb-stages-v1.8.9-release
   cancel-in-progress: true
 
 jobs:
@@ -665,14 +665,14 @@ jobs:
           path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.9-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-rgb-parity-v1.8.9' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-rgb-stages-v1.8.9' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=ios1651-v1.8.9-metal-UNVERIFIED-TEST
           SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.9-original-metal-unsigned.ipa
           ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.9-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-rgb-parity-v1.8.9" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-rgb-stages-v1.8.9" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -694,14 +694,14 @@ jobs:
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish isolated v1.8.9 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-rgb-parity-v1.8.9' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-rgb-stages-v1.8.9' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=ios1651-v1.8.9-metal
           ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.9-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-rgb-parity-v1.8.9" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-rgb-stages-v1.8.9" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
