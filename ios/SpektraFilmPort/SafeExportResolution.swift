@@ -1,7 +1,7 @@
 import Foundation
 
 /// User-selected output resolution. Never change .original on failure.
-enum ExportResolutionMode {
+enum ExportResolutionMode: Equatable {
     case original
     case safe
 }
