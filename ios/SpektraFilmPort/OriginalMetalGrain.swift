@@ -311,7 +311,7 @@ enum OriginalMetalGrain {
                     let rect = CGRect(
                         x: bounds.minX + CGFloat(x0),
                         y: bounds.minY + CGFloat(y0),
-                        width: w, height: h
+                        width: CGFloat(w), height: CGFloat(h)
                     )
                     guard let command = queue.makeCommandBuffer(),
                           let failures = device.makeBuffer(
