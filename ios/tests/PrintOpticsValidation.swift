@@ -101,6 +101,25 @@ struct PrintOpticsValidation {
             )
             let reference = OriginalPrintOptics.midgrayReference(midgray)
             near(reference, vector.reference, label: "midgrey normalization")
+            let compensatedDensity = (0..<3).map {
+                vector.midgrayDensity[$0] + [0.09, -0.05, 0.10][$0]
+            }
+            let compRaw = raw(
+                densities: compensatedDensity, base: base, dye: dye,
+                weights: weights
+            )
+            let modes: [(Bool, Bool)] = [
+                (false, false), (true, false),
+                (false, true), (true, true)
+            ]
+            for (i, flags) in modes.enumerated() {
+                let divisor = OriginalPrintOptics.referenceDivisor(
+                    midgrayRaw: midgray, compensatedRaw: compRaw,
+                    normalize: flags.0, compensate: flags.1
+                )
+                near(1.0 / divisor, vector.normalizationFactors[i],
+                     label: "source enlarger normalization flags \(i)")
+            }
             for c in 0..<3 {
                 near(observed[c], vector.raw[c],
                      label: "paper spectral raw \(vector.paper): \(c)")
