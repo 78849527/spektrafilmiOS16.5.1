@@ -545,5 +545,14 @@ struct SpectralValidation {
         print(printRGBEvidence.text)
         precondition(printRGBEvidence.outsideTolerance == 0,
                      "SOURCE PAPER SCANNER RGB: >0.002 encoded channel deviation")
+        // v1.8.12: CONTIGUOUS source optical chain with already-developed
+        // negative CMY. Not a camera RAW/film-DIR/whole-image certificate.
+        let chainEvidence = try OriginalNegativePrintChainParity.evaluate()
+        print(chainEvidence.text)
+        precondition(chainEvidence.channels == 54)
+        precondition(chainEvidence.outputOutsideTolerance == 0,
+                     "SOURCE NEGATIVE-PRINT RGB: >0.002 encoded channel deviation")
+        precondition(chainEvidence.stageOutsideTolerance == 0,
+                     "SOURCE NEGATIVE-PRINT H-D/RAW/XYZ: >0.002 stage deviation")
     }
 }
