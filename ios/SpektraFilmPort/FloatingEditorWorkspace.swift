@@ -481,6 +481,41 @@ struct FloatingEditorWorkspace: View {
             }
             Divider()
             if !isReversal {
+                Toggle("原版放大机归一化 / CMY", isOn: $model.originalPrintOpticsEnabled)
+                    .font(.caption)
+                    .disabled(!model.hasPhoto || model.busy)
+                    .onChange(of: model.originalPrintOpticsEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.originalPrintOpticsEnabled {
+                    Text("胶片 → 二色滤色光谱 → 相纸曝光")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    morphSlider("青色 C / CC", value: $model.printCyanShift,
+                                range: -40...40)
+                    morphSlider("洋红 M / CC", value: $model.printMagentaShift,
+                                range: -40...40)
+                    morphSlider("黄色 Y / CC", value: $model.printYellowShift,
+                                range: -40...40)
+                    Toggle("相纸预闪光", isOn: $model.preflashEnabled)
+                        .font(.caption2)
+                        .disabled(!model.hasPhoto || model.busy)
+                        .onChange(of: model.preflashEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    if model.preflashEnabled {
+                        morphSlider("预闪曝光", value: $model.preflashExposure,
+                                    range: 0...0.2)
+                        morphSlider("预闪 M / CC", value: $model.preflashMagentaShift,
+                                    range: -40...40)
+                        morphSlider("预闪 Y / CC", value: $model.preflashYellowShift,
+                                    range: -40...40)
+                        Text("原版相纸曝光累加，非 RGB 提亮")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Divider()
                 Toggle("相纸显影曲线 s023", isOn: $model.printMorphEnabled)
                     .font(.caption)
                     .disabled(!model.hasPhoto || model.busy)
