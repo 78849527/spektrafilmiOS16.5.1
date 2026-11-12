@@ -133,6 +133,24 @@ enum OriginalMetalGrain {
         )
     }
 
+    /// The upstream fast_gaussian_filter switches to Young–van Vliet
+    /// recursive IIR at sigma >= 3. A tiled FIR is not equivalent.
+    /// Reject unsupported inputs before allocating GPU textures, so a
+    /// high-resolution export cannot silently produce approximate pixels.
+    static func requireSupportedOriginalFilters(_ coefficients: PhysicalCoefficients) throws {
+        let dye = coefficients.cloudSigmas.flatMap { $0 }
+        let usesMicroBlur = coefficients.microSigma > 0.05 &&
+            coefficients.microBlur > 0.4
+        guard dye.allSatisfy({ $0.isFinite && $0 >= 0 && $0 < 3.0 }),
+              !usesMicroBlur || (coefficients.microBlur.isFinite &&
+                                 coefficients.microBlur < 3.0) else {
+            throw Failure.invalid(
+                "原版 Metal 颗粒：需要上游 Young–van Vliet IIR (sigma ≥ 3)；" +
+                "全图 IIR 尚未通过数值对照，禁止用局部 FIR 替代"
+            )
+        }
+    }
+
     private static func vec(_ values: [Double]) -> SIMD4<Float> {
         SIMD4<Float>(
             Float(values[0]), Float(values[1]), Float(values[2]), 0
@@ -393,6 +411,7 @@ enum OriginalMetalGrain {
         let physical = try physicalCoefficients(
             maxima: rawLayerMaxima, pixelUM: pixelUM
         )
+        try requireSupportedOriginalFilters(physical)
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else {
             throw Failure.invalid("原版 Metal 颗粒：本设备没有可用的 Metal GPU")
