@@ -137,6 +137,68 @@ enum OriginalMetalIIR {
         return result
     }
 
+
+    /// Production encoder for native whole-frame YVV IIR.
+    /// Each pixel is touched by only one thread per sweep (row / column);
+    /// four ordered command encoders guarantee there is no cross-thread
+    /// read/write overlap. This mutates Float32 density IN PLACE so 12 MP
+    /// exports do not allocate three additional full-frame scratch textures.
+    /// Channels using the upstream FIR path (< 3 px) are identity here.
+    static func encodeInPlace(
+        _ texture: MTLTexture, sigmas: [Double],
+        device: MTLDevice, library: MTLLibrary,
+        command: MTLCommandBuffer
+    ) throws {
+        guard texture.pixelFormat == .rgba32Float,
+              sigmas.count == 3,
+              sigmas.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+            throw Error.invalid("原版 IIR：全图纹理格式或混合 sigma 无效")
+        }
+        let coeffs = try sigmas.map { sigma -> Coefficients in
+            if sigma < 3.0 {
+                return Coefficients(b: 1.0, b1: 0.0, b2: 0.0, b3: 0.0)
+            }
+            return try coefficients(sigma: sigma)
+        }
+        func vector(_ key: (Coefficients) -> Double) -> SIMD4<Float> {
+            SIMD4<Float>(
+                Float(key(coeffs[0])), Float(key(coeffs[1])),
+                Float(key(coeffs[2])), 0
+            )
+        }
+        var args = Parameters(
+            b: vector { $0.b }, b1: vector { $0.b1 },
+            b2: vector { $0.b2 }, b3: vector { $0.b3 },
+            width: UInt32(texture.width), height: UInt32(texture.height)
+        )
+        let sweeps: [(String, Int)] = [
+            ("originalFilmIIRHorizontalForwardInPlace", texture.height),
+            ("originalFilmIIRHorizontalBackwardInPlace", texture.height),
+            ("originalFilmIIRVerticalForwardInPlace", texture.width),
+            ("originalFilmIIRVerticalBackwardInPlace", texture.width)
+        ]
+        for (name, count) in sweeps {
+            guard let function = library.makeFunction(name: name) else {
+                throw Error.invalid("原版 IIR：缺少全图原地 Metal 内核 " + name)
+            }
+            let pipeline = try device.makeComputePipelineState(function: function)
+            guard let encoder = command.makeComputeCommandEncoder() else {
+                throw Error.invalid("原版 IIR：全图原地 GPU 编码器创建失败")
+            }
+            encoder.setComputePipelineState(pipeline)
+            encoder.setTexture(texture, index: 0)
+            encoder.setBytes(
+                &args, length: MemoryLayout<Parameters>.stride, index: 0
+            )
+            let width = min(32, pipeline.maxTotalThreadsPerThreadgroup)
+            encoder.dispatchThreadgroups(
+                MTLSize(width: (count + width - 1) / width, height: 1, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
+            )
+            encoder.endEncoding()
+        }
+    }
+
     /// On-device equivalent to the CI IIR shader check, independent from
     /// virtualized GitHub Intel GPU execution. All 3 channels are checked.
     static func hardwareDiagnostic() throws -> String {
