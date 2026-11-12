@@ -49,10 +49,21 @@ struct OriginalMetalGrainValidation {
                 pixels[(y*w)*4+channel] = 1
             }
         }
-        a.replace(
-            region:MTLRegionMake2D(0,0,w,h),mipmapLevel:0,
-            withBytes:pixels,bytesPerRow:w*4*4
-        )
+        pixels.withUnsafeBytes { raw in
+            a.replace(
+                region:MTLRegionMake2D(0,0,w,h),mipmapLevel:0,
+                withBytes:raw.baseAddress!,bytesPerRow:w*4*4
+            )
+        }
+        var uploaded=[Float](repeating:0,count:pixels.count)
+        uploaded.withUnsafeMutableBytes { raw in
+            a.getBytes(raw.baseAddress!,bytesPerRow:w*4*4,
+                from:MTLRegionMake2D(0,0,w,h),mipmapLevel:0)
+        }
+        precondition(abs(uploaded[0]-1)<0.000001 &&
+                     abs(uploaded[1]-1)<0.000001 &&
+                     abs(uploaded[2]-1)<0.000001,
+                     "GPU edge test source texture upload failed")
         let expected=GeneratedOriginalMetalGrainReference.reflect065
         for (s,reference) in [
             (0.65,expected),
