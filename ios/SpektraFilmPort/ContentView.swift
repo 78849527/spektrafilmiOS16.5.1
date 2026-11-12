@@ -381,19 +381,20 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    /// Real-device, nonblocking GPU test. The UI reports native texture
-    /// passthrough and source NumPy reflect convolution independently.
+    /// Device-side, nonblocking numerical checks for both source
+    /// reflect FIR and YVV IIR. A failure is surfaced; never auto-fallback.
     func checkOriginalMetalHardware() {
-        status = "正在检测本机 GPU：Metal 纹理透传与原版 reflect 卷积…"
+        status = "正在检测本机 GPU：Metal 透传 / reflect FIR / 原版 IIR…"
         Task.detached(priority: .userInitiated) {
             do {
-                let result = try OriginalMetalGrain.hardwareDiagnostic()
+                let grain = try OriginalMetalGrain.hardwareDiagnostic()
+                let iir = try OriginalMetalIIR.hardwareDiagnostic()
                 await MainActor.run {
-                    self.status = result
+                    self.status = grain + "；" + iir
                 }
             } catch {
                 await MainActor.run {
-                    self.status = "Metal 硬件自检失败：" +
+                    self.status = "Metal 原版数值自检失败：" +
                         error.localizedDescription
                 }
             }
