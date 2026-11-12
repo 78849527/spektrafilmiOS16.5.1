@@ -224,35 +224,41 @@ struct FloatingEditorWorkspace: View {
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
-            // original unchanged, or explicitly chosen whole-frame safe.
+            // original unchanged, adaptive 50% of live memory, or <=3MP economy.
             // Do not silently shrink after a failed original-size render.
             Menu {
                 Button("原始分辨率（不缩小）") {
                     onSaveToPhotos(.original)
                 }
-                Button("安全分辨率（最高 300 万像素）") {
+                Button("智能安全分辨率（约 50% 内存预算）") {
                     onSaveToPhotos(.safe)
+                }
+                Button("省内存分辨率（最高 300 万像素）") {
+                    onSaveToPhotos(.economy)
                 }
             } label: {
                 Image(systemName: "square.and.arrow.down")
                     .frame(width: 33, height: 40)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("保存相册：选择原始或安全分辨率")
+            .accessibilityLabel("保存相册：选择原始、智能安全或省内存分辨率")
             .disabled(!model.hasPhoto || model.busy)
             Menu {
                 Button("原始分辨率（不缩小）") {
                     onExport(.original)
                 }
-                Button("安全分辨率（最高 300 万像素）") {
+                Button("智能安全分辨率（约 50% 内存预算）") {
                     onExport(.safe)
+                }
+                Button("省内存分辨率（最高 300 万像素）") {
+                    onExport(.economy)
                 }
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .frame(width: 33, height: 40)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("分享存储：选择原始或安全分辨率")
+            .accessibilityLabel("分享存储：选择原始、智能安全或省内存分辨率")
             .disabled(!model.hasPhoto || model.busy)
 
             Spacer(minLength: 2)
