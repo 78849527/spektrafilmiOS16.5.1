@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Generate compact Swift measured spectra for nine original Spektrafilm stocks.
+"""Embed all 28 upstream Spektrafilm measured materials in Swift (iOS16.5.1).
 
-No large JSON folders are copied into the app. Values are sourced from
-unchanged upstream profile JSON; floating point arrays are packed as little-
-endian Float32, replacing absent wavelengths (null) with zero, and embedded
-as strings in generated Swift. Original JSON SHA-256 is retained per record.
-This is a subset of the optical simulation, not the original full renderer.
+Important classification: 20 exposure films (16 negative, 4 positive),
+6 photographic papers and 2 colour motion-picture print stocks. All original
+numeric fields are copied as Float32; invalid/null spectral measurements are
+represented as zeros only where upstream np.nan_to_num would do so.
+The original 200KB JSONs remain checked in upstream, but are not bundled.
 """
 from __future__ import annotations
-
 import base64
 import hashlib
 import json
@@ -17,59 +16,70 @@ import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILES = ROOT / "src/spektrafilm/data/profiles"
-TARGET = ROOT / "ios/SpektraFilmPort/GeneratedSpectralData.swift"
-
-FILM_IDS = [
-    "kodak_portra_160",
-    "kodak_portra_400",
-    "kodak_portra_800",
-    "kodak_gold_200",
-    "kodak_ektar_100",
-    "fujifilm_pro_400h",
-]
-PAPER_IDS = [
-    "kodak_portra_endura",
-    "kodak_endura_premier",
-    "fujifilm_crystal_archive_typeii",
-]
-FIELDS = [
-    ("log_sensitivity", 81 * 3),
-    ("channel_density", 81 * 3),
+SRC = ROOT / "src/spektrafilm/data/profiles"
+DEST = ROOT / "ios/SpektraFilmPort/GeneratedSpectralData.swift"
+FIELDS = (
+    ("log_sensitivity", 243),
+    ("channel_density", 243),
     ("base_density", 81),
     ("log_exposure", 256),
-    ("density_curves", 256 * 3),
-]
+    ("density_curves", 768),
+)
+Q = lambda s: json.dumps(str(s), ensure_ascii=False)
 
 
-def quote(value: str) -> str:
-    return json.dumps(value, ensure_ascii=False)
-
-
-def encode_float32(source_id: str, key: str, values: list, count: int) -> str:
-    flattened = []
+def to_f32(name: str, field: str, values, expected: int) -> str:
+    flat = []
     for row in values:
-        cells = row if isinstance(row, list) else [row]
-        for cell in cells:
-            if cell is not None:
-                cell = float(cell)
-                if not math.isfinite(cell):
-                    raise ValueError(f"{source_id} {key}: non-finite field")
-            flattened.append(0.0 if cell is None else cell)
-    if len(flattened) != count:
-        raise ValueError(f"{source_id} {key}: {len(flattened)} vs {count}")
-    return base64.b64encode(struct.pack("<" + "f" * count, *flattened)).decode("ascii")
+        for elem in (row if isinstance(row, list) else [row]):
+            if elem is None:
+                flat.append(0.0)
+            else:
+                value = float(elem)
+                if not math.isfinite(value):
+                    raise ValueError(f"Nonfinite {name} / {field}")
+                flat.append(value)
+    if len(flat) != expected:
+        raise ValueError(f"Bad size {name}/{field} {len(flat)} != {expected}")
+    return base64.b64encode(struct.pack("<" + "f" * expected, *flat)).decode("ascii")
 
 
-def generate() -> None:
-    ids = FILM_IDS + PAPER_IDS
-    if len(ids) != len(set(ids)):
-        raise ValueError("Duplicate measured profile IDs")
+def main() -> None:
+    paths = sorted(SRC.glob("*.json"))
+    if len(paths) != 28:
+        raise ValueError(f"Expected exact original 28 profiles; got {len(paths)}")
+    originals = []
+    for path in paths:
+        raw = path.read_bytes()
+        doc = json.loads(raw)
+        info, data = doc["info"], doc["data"]
+        if info["stock"] != path.stem:
+            raise ValueError(f"ID mismatch {path}")
+        if info["channel_model"] != "color":
+            raise ValueError(f"Unexpected non-colour profile: {path.stem}")
+        if data["wavelengths"] != list(range(380, 781, 5)):
+            raise ValueError(f"Bad 380–780nm spectral axis: {path}")
+        if len(data["log_exposure"]) != 256:
+            raise ValueError(f"Wrong density response size: {path}")
+        if (info["support"], info["stage"]) not in (
+            ("film", "filming"), ("film", "printing"), ("paper", "printing")
+        ):
+            raise ValueError(f"Unexpected stage: {path}")
+        originals.append((info, data, raw))
+    exposures = [x for x in originals if x[0]["stage"] == "filming"]
+    printmedia = [x for x in originals if x[0]["stage"] == "printing"]
+    positives = [x for x in exposures if x[0]["type"] == "positive"]
+    negatives = [x for x in exposures if x[0]["type"] == "negative"]
+    papers = [x for x in printmedia if x[0]["support"] == "paper"]
+    printfilm = [x for x in printmedia if x[0]["support"] == "film"]
+    assert (len(exposures), len(negatives), len(positives),
+            len(papers), len(printfilm)) == (20, 16, 4, 6, 2)
     lines = [
-        "// AUTO-GENERATED from original Spektrafilm measured spectral profiles.",
-        "// Copyright original authors; source licensing in SPEKTRAFILM_LICENSE.txt.",
-        "// Data arrays are Float32; null wavelengths -> zero; original SHA256 noted.",
-        "// Experimental spectral simulation; not original Hanatos/print parity.",
+        "// Generated from all 28 original Spektrafilm measured profiles.",
+        "// Upstream source and original GPLv3 / profile CC BY-SA notices retained",
+        "// under src/spektrafilm and SPEKTRAFILM_LICENSE.txt.",
+        "// Spectral arrays: original float64 rounded to Float32; null -> 0.",
+        "// This contains ALL measured arrays, not the complete source engine.",
         "enum GeneratedSpectralData {",
         "    struct Record {",
         "        let logSensitivity: String",
@@ -77,51 +87,56 @@ def generate() -> None:
         "        let baseDensity: String",
         "        let logExposure: String",
         "        let densityCurves: String",
+        "        let support: String",
+        "        let stage: String",
+        "        let polarity: String",
+        "        let referenceIlluminant: String",
+        "        let viewingIlluminant: String",
         "        let sourceSHA256: String",
         "    }",
-        "    static let filmIDs = [" + ", ".join(map(quote, FILM_IDS)) + "]",
-        "    static let paperIDs = [" + ", ".join(map(quote, PAPER_IDS)) + "]",
-        "    static let profiles: [String: Record] = [",
     ]
-    for stock_id in ids:
-        raw = (PROFILES / (stock_id + ".json")).read_bytes()
-        document = json.loads(raw)
-        info = document["info"]
-        data = document["data"]
-        if (info["stock"] != stock_id or
-            info["channel_model"] != "color" or
-            info["type"] != "negative"):
-            raise ValueError(f"{stock_id}: only measured color negative supported")
-        medium = "film" if stock_id in FILM_IDS else "paper"
-        expected_stage = "filming" if medium == "film" else "printing"
-        if info["support"] != medium or info["stage"] != expected_stage:
-            raise ValueError(f"{stock_id}: film/paper type mismatch")
-        if data["wavelengths"] != list(range(380, 781, 5)):
-            raise ValueError(f"{stock_id}: wavelength grid mismatch")
-        if len(data["log_exposure"]) != 256:
-            raise ValueError(f"{stock_id}: expected 256 H-D samples")
+    def ids(items):
+        return "[" + ", ".join(Q(x[0]["stock"]) for x in items) + "]"
+    lines.extend([
+        "    static let filmIDs = " + ids(exposures),
+        "    static let negativeFilmIDs = " + ids(negatives),
+        "    static let positiveFilmIDs = " + ids(positives),
+        "    static let paperIDs = " + ids(papers),
+        "    static let printFilmIDs = " + ids(printfilm),
+        "    static let printMediumIDs = " + ids(printmedia),
+        "    static let profiles: [String: Record] = [",
+    ])
+    for info, data, raw in originals:
+        stock = info["stock"]
         encoded = {
-            key: encode_float32(stock_id, key, data[key], count)
-            for key, count in FIELDS
+            field: to_f32(stock, field, data[field], count)
+            for field, count in FIELDS
         }
+        fields = [
+            ("logSensitivity", encoded["log_sensitivity"]),
+            ("channelDensity", encoded["channel_density"]),
+            ("baseDensity", encoded["base_density"]),
+            ("logExposure", encoded["log_exposure"]),
+            ("densityCurves", encoded["density_curves"]),
+            ("support", info["support"]),
+            ("stage", info["stage"]),
+            ("polarity", info["type"]),
+            ("referenceIlluminant", info["reference_illuminant"]),
+            ("viewingIlluminant", info["viewing_illuminant"]),
+            ("sourceSHA256", hashlib.sha256(raw).hexdigest()),
+        ]
         lines.append(
-            "        " + quote(stock_id) + ": Record("
-            + "logSensitivity: " + quote(encoded["log_sensitivity"]) + ", "
-            + "channelDensity: " + quote(encoded["channel_density"]) + ", "
-            + "baseDensity: " + quote(encoded["base_density"]) + ", "
-            + "logExposure: " + quote(encoded["log_exposure"]) + ", "
-            + "densityCurves: " + quote(encoded["density_curves"]) + ", "
-            + "sourceSHA256: " + quote(hashlib.sha256(raw).hexdigest())
-            + "),"
+            "        " + Q(stock) + ": Record(" +
+            ", ".join(f"{k}: {Q(v)}" for k, v in fields) + "),"
         )
     lines.extend(["    ]", "}"])
-    TARGET.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(
-        f"PASS: {len(FILM_IDS)} measured negatives, {len(PAPER_IDS)} papers, "
-        f"{len(FILM_IDS) * len(PAPER_IDS)} combinations; "
-        f"{TARGET.stat().st_size} bytes of generated Swift."
-    )
-
+    DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"PASS: 28 original measured profiles; {len(negatives)} negative + "
+          f"{len(positives)} positive exposure films; "
+          f"{len(papers)} papers + {len(printfilm)} motion print stocks")
+    print(f"PASS: {len(negatives) * len(printmedia)} negative-print "
+          f"pairs and {len(positives)} positive film scans")
+    print(f"Generated embedded Swift data: {DEST.stat().st_size} bytes")
 
 if __name__ == "__main__":
-    generate()
+    main()
