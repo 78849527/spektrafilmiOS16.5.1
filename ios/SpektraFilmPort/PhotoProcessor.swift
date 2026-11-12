@@ -37,24 +37,52 @@ enum PhotoProcessor {
         scanner: ScannerFinishSettings = ScannerFinishSettings(),
         dirStage: SpatialDIRStage? = nil,
         dirSettings: SpatialDIRSettings = SpatialDIRSettings()
-    ) -> CIImage {
+    ) throws -> CIImage {
         // Spatial optical propagation precedes spectral film colour response.
         // Operate at requested output resolution, not full source resolution,
         // so the effective micrometers/pixel remains consistent.
         let optical = SpatialOptics.apply(to: source, settings: spatial)
         guard let lut = lut, strength > 0 else { return optical }
+        // The source-order Metal path is STRICT: never silently replace
+        // it with a fast CoreImage approximation or drop an enabled DIR.
+        let sourceMetal = grain?.originalMetalEnabled == true
+        var spatialOutput: CIImage?
+        if dirSettings.enabled {
+            if let dirStage {
+                spatialOutput = try SpatialDIR.apply(
+                    to: optical, stage: dirStage,
+                    settings: dirSettings, grain: grain
+                )
+            }
+            if sourceMetal && spatialOutput == nil {
+                throw ImageProcessingError.invalid(
+                    "原版 Metal 颗粒：DIR 中间光学密度不可用，禁止退回快速模式"
+                )
+            }
+        }
         let film: CIImage
-        if let dirStage = dirStage, dirSettings.enabled,
-           let output = SpatialDIR.apply(
-                to: optical, stage: dirStage,
-                settings: dirSettings, grain: grain
-           ) {
-            film = output
-        } else if let grain = grain,
-                  let output = DensityGrain.apply(to: optical, settings: grain) {
-            // Grain is inserted after measured negative/positive development,
-            // before the original measured paper/scan optics. Not RGB overlay.
-            film = output
+        if let spatialOutput {
+            film = spatialOutput
+        } else if let grain {
+            if let output = try DensityGrain.apply(
+                to: optical, settings: grain
+            ) {
+                // The original source grain is in film optical density,
+                // preceding physical paper print and scanner output.
+                film = output
+            } else {
+                if sourceMetal {
+                    throw ImageProcessingError.invalid(
+                        "原版 Metal 颗粒：胶片显影失败，禁止退回快速模式"
+                    )
+                }
+                let cube = CIFilter.colorCube()
+                cube.inputImage = optical
+                cube.cubeDimension = Float(lut.dimension)
+                cube.cubeData = lut.rgbaFloatData
+                guard let output = cube.outputImage else { return optical }
+                film = output
+            }
         } else {
             let cube = CIFilter.colorCube()
             cube.inputImage = optical
@@ -91,7 +119,7 @@ enum PhotoProcessor {
         let factor = min(1.0, 1500 / max(source.extent.width, source.extent.height))
         let resized = source.transformed(by:
             CGAffineTransform(scaleX: factor, y: factor))
-        let image = apply(
+        let image = try apply(
             to: resized, lut: lut, strength: strength,
             spatial: spatial, grain: grain, scanner: scanner,
             dirStage: dirStage, dirSettings: dirSettings
@@ -124,7 +152,7 @@ enum PhotoProcessor {
               source.extent.width > 0, source.extent.height > 0 else {
             throw ImageProcessingError.invalid("源照片尺寸无效")
         }
-        let image = apply(
+        let image = try apply(
             to: source, lut: lut, strength: strength,
             spatial: spatial, grain: grain, scanner: scanner,
             dirStage: dirStage, dirSettings: dirSettings
