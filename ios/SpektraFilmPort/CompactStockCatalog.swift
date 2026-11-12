@@ -24,17 +24,17 @@ struct CompactStockCatalogView: View {
         GeneratedMeasuredProfiles.entries.filter { $0.medium == "film" && $0.stage == "filming" }
     }
     private var papers: [MeasuredStock] {
-        GeneratedMeasuredProfiles.entries.filter { $0.medium == "paper" && $0.stage == "printing" }
+        GeneratedMeasuredProfiles.entries.filter { $0.stage == "printing" }
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("iOS 16.5.1 · 可模拟 6 款负片、3 款相纸")
+                Text("iOS 16.5.1 · 20 款胶片、8 种印相介质")
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 8)
                 Picker("类型", selection: $category) {
                     Text("胶片 \(films.count)").tag(0)
-                    Text("相纸 \(papers.count)").tag(1)
+                    Text("印相 \(papers.count)").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -57,7 +57,10 @@ struct CompactStockCatalogView: View {
                                 let canSimulate = category == 0
                                     ? SpectralPhysics.supportedFilmIDs.contains(stock.id)
                                     : SpectralPhysics.supportedPaperIDs.contains(stock.id)
-                                Text(canSimulate ? "实测光谱：可模拟" : "仅原版数据目录")
+                                Text(canSimulate
+                                    ? (category == 0 && stock.polarity == "positive"
+                                       ? "反转片：直接扫描" : "实测光谱：可模拟")
+                                    : "仅原版数据目录")
                                     .font(.caption2)
                                     .foregroundColor(canSimulate ? Color.green : Color.secondary)
                             }
@@ -70,7 +73,7 @@ struct CompactStockCatalogView: View {
                     }
                 }
                 .listStyle(.plain)
-                Text("选择带有「可模拟」标识的负片和相纸，再返回主界面点击计算。18 种组合已接入实测曲线；其他胶片仅展示元数据。")
+                Text("20 款原版拍摄胶片和 8 款印相介质已接入。16 款负片可选择相纸/电影印片；4 款反转片使用直接扫描，不需相纸。仍不代表完整原版显影与颗粒处理已全部移植。")
                     .font(.caption).foregroundStyle(.secondary).padding()
             }
             .navigationTitle("原始胶片数据目录")
