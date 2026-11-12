@@ -91,7 +91,7 @@ struct SpatialDIRValidation {
         let opts = SpatialDIRSettings(enabled: true)
         precondition(opts.valid && stage(positive: false).valid)
         for positive in [false, true] {
-            guard let output = SpatialDIR.apply(
+            guard let output = try SpatialDIR.apply(
                 to: image, stage: stage(positive: positive),
                 settings: opts, grain: nil
             ), let values = sample(output) else {
@@ -107,10 +107,11 @@ struct SpatialDIRValidation {
             }
         }
         let off = SpatialDIRSettings()
-        precondition(SpatialDIR.apply(
+        let offResult = try SpatialDIR.apply(
             to: image, stage: stage(positive: false),
             settings: off, grain: nil
-        ) == nil)
+        )
+        precondition(offResult == nil)
         print("PASS: CoreImage DIR Gaussian + exponential-tail stage renders physical intermediate densities, both negative and reversal.")
     }
 }
