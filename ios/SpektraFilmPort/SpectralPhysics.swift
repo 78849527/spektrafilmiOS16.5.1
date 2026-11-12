@@ -26,7 +26,9 @@ struct SpectralPhysics {
         let logSensitivity: [Float]       // 81 x 3, wavelength-major
         let channelDensity: [Float]       // 81 x 3, wavelength-major
         let baseDensity: [Float]          // 81; absent entries packed as zero
-        let scannerWavelengthValid: [Bool] // 81 source NaN validity bits
+        let scannerWavelengthValid: [Bool] // 81 dye/base scanner validity
+        let baseWavelengthValid: [Bool]    // 81 base-only preflash validity
+        let sensitivitySampleValid: [Bool] // 243 paper sensitivity validity
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
         let densityCurvesLayers: [Float]  // 256 x 3 layers x 3 CMY
@@ -53,6 +55,20 @@ struct SpectralPhysics {
                 throw PhysicsError.invalid("原版扫描缺失波长标记无效：" + id)
             }
             scannerWavelengthValid = valid.map { $0 == 1 }
+            guard let baseMask = Data(base64Encoded: record.baseValidWavelengths),
+                  baseMask.count == 81,
+                  baseMask.allSatisfy({ $0 == 0 || $0 == 1 }),
+                  baseMask.contains(1) else {
+                throw PhysicsError.invalid("原版片基光谱缺失值掩码无效：" + id)
+            }
+            baseWavelengthValid = baseMask.map { $0 == 1 }
+            guard let sensitivityMask = Data(base64Encoded: record.sensitivityValidSamples),
+                  sensitivityMask.count == 243,
+                  sensitivityMask.allSatisfy({ $0 == 0 || $0 == 1 }),
+                  sensitivityMask.contains(1) else {
+                throw PhysicsError.invalid("原版感光度光谱缺失值掩码无效：" + id)
+            }
+            sensitivitySampleValid = sensitivityMask.map { $0 == 1 }
             logExposure = try Self.decode(record.logExposure, count: 256)
             densityCurves = try Self.decode(record.densityCurves, count: 768)
             densityCurvesLayers = record.densityCurvesLayers.isEmpty
@@ -166,7 +182,11 @@ struct SpectralPhysics {
         }
 
         func sensitivity(_ wavelengthIndex: Int, _ ch: Int) -> Double {
-            pow(10.0, Double(logSensitivity[wavelengthIndex * 3 + ch]))
+            // Original printing.py uses np.nan_to_num(10**log_sensitivity),
+            // turning unavailable paper-sensitive bands into ZERO response.
+            let sample = wavelengthIndex * 3 + ch
+            guard sensitivitySampleValid[sample] else { return 0.0 }
+            return pow(10.0, Double(logSensitivity[sample]))
         }
 
         func dyeAbsorbance(_ wavelengthIndex: Int, _ ch: Int) -> Double {
@@ -304,6 +324,7 @@ struct SpectralPhysics {
                     ?? [0, 65, 55],
                 settings: printOptics,
                 filmBase: (0..<81).map { originalFilm.base($0) },
+                filmBaseValid: originalFilm.baseWavelengthValid,
                 paperSensitivity: mediaSensitivities
             )
         } else {
