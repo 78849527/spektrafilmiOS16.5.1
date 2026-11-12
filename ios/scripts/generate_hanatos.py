@@ -135,7 +135,7 @@ def main():
     lines.extend([
         "    ]",
         "    static let lutByFilm: [String: String] = [",
-    ]
+    ])
     lut_map={}
     for info, values in originals:
         stock = info["stock"]
