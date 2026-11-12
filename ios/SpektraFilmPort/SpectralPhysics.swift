@@ -303,8 +303,12 @@ struct SpectralPhysics {
             let ref = Self.printRaw(
                 filmDensities: midFilmReference, film: originalFilm, weights: pWeights
             )
-            printReference = useNewEnlarger && !enlarger.normalizeExposure
-                ? 1.0 : OriginalEnlarger.geometricNormalization(ref)
+            printReference = useNewEnlarger
+                ? (enlarger.normalizeExposure
+                    ? OriginalEnlarger.geometricNormalization(ref) : 1.0)
+                : exp(ref.reduce(0.0) {
+                    $0 + log(max($1,1e-14))
+                  } / 3.0)
             midMedium = Self.paperDensities(
                 midFilm, film: originalFilm, paper: originalPaper,
                 weights: pWeights, reference: printReference,
@@ -670,13 +674,19 @@ struct SpectralPhysics {
                                        preflashRaw: [Double] = [0.0,0.0,0.0]
     ) -> [Double] {
         let raw = printRaw(filmDensities: filmDensities, film: film, weights: weights)
-        let exposed = OriginalEnlarger.rawWithPreflash(
-            sceneRaw:raw, reference:reference,
-            flashRaw:preflashRaw, normalize:true
-        )
+        let flashIsActive = preflashRaw.contains(where: { $0 > 0 })
+        let exposed = flashIsActive
+            ? OriginalEnlarger.rawWithPreflash(
+                sceneRaw:raw,reference:reference,
+                flashRaw:preflashRaw,normalize:true
+              ) : raw
         return (0..<3).map { c in
-            let logE = log10(max(1e-14, exposed[c])) +
-                printEV * 0.301029995664
+            // Exact v1.3 no-preflash formula is retained so switching off
+            // new mode cannot unexpectedly alter previous photos.
+            let logE = flashIsActive
+                ? log10(max(1e-14, exposed[c])) + printEV*0.301029995664
+                : log10(max(1e-14, exposed[c]) / reference) +
+                    printEV*0.301029995664
             let measured = paper.curve(logE, channel: c)
             guard let morph else { return measured }
             // Apply the ORIGINAL s023 CDF morphology delta on top of
