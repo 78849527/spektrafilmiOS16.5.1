@@ -17,6 +17,16 @@ final class PhotoEditorModel: ObservableObject {
     @Published var scatterEnabled = false
     @Published var halationEnabled = false
     @Published var halationAmount = 1.0
+    @Published var grainEnabled = false
+    @Published var grainAmount = 1.0
+    private var densityGrainStage: DensityGrainStage?
+
+    private var grainSettings: DensityGrainSettings? {
+        guard grainEnabled, grainAmount > 0, let stage = densityGrainStage else {
+            return nil
+        }
+        return DensityGrainSettings(stage: stage, amount: grainAmount, seed: 8888)
+    }
 
     // Spatial convolution settings depend on the original stock's base
     // material and antihalation layer. Original film data lives in generated
@@ -102,6 +112,8 @@ final class PhotoEditorModel: ObservableObject {
             let importedLUT = try FilmLUT.read(text: text,
                 filename: url.deletingPathExtension().lastPathComponent)
             invalidateSimulation()
+            densityGrainStage = nil
+            grainEnabled = false
             lut = importedLUT
             busy = false
             try refresh()
@@ -142,23 +154,42 @@ final class PhotoEditorModel: ObservableObject {
         status = "正在计算 \(selectionDescription)，原版 Hanatos2025 光谱输入…"
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
+        let requiresGrainStage = grainEnabled
         Task {
             do {
-                let cubeData = try await Task.detached(priority: .userInitiated) {
-                    try SpectralPhysics.makeCubeData(
+                let result = try await Task.detached(priority: .userInitiated) {
+                    let cube = try SpectralPhysics.makeCubeData(
                         filmID: filmID, paperID: paperID,
                         exposureEV: cameraExposure, paperEV: enlargerExposure,
                         size: 17
                     )
+                    let density = try requiresGrainStage
+                        ? SpectralPhysics.makeDensityStageData(
+                            filmID: filmID, paperID: paperID,
+                            exposureEV: cameraExposure, paperEV: enlargerExposure,
+                            size: 17
+                          ) : nil
+                    return (cube, density)
                 }.value
                 guard generation == renderGeneration else { return }
+                if let stage = result.1 {
+                    densityGrainStage = DensityGrainStage(
+                        toDensity: stage.inputCube,
+                        fromDensity: stage.printCube,
+                        cubeDimension: stage.size,
+                        maxDensity: stage.ranges
+                    )
+                } else {
+                    densityGrainStage = nil
+                }
                 lut = FilmLUT(
                     title: "实测光谱 · \(selectionDescription) (实验)",
-                    dimension: 17, rgbaFloatData: cubeData
+                    dimension: 17, rgbaFloatData: result.0
                 )
                 strength = 1.0
                 try refresh()
-                status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。原版 Hanatos 光谱输入已启用，其他原版模块仍在移植。"
+                status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。" +
+                    (requiresGrainStage ? "显影密度颗粒 → 原版印相链路已启用。" : "原版光谱链路已启用。")
             } catch {
                 guard generation == renderGeneration else { return }
                 status = "光谱计算失败：" + error.localizedDescription
@@ -173,7 +204,8 @@ final class PhotoEditorModel: ObservableObject {
             return
         }
         processedPreview = try PhotoProcessor.preview(
-            source, lut: lut, strength: strength, spatial: spatialSettings
+            source, lut: lut, strength: strength, spatial: spatialSettings,
+            grain: grainSettings
         )
         if let lut {
             status = "已应用 \(lut.title) · \(lut.dimension)³ LUT · \(photoDimensions)"
@@ -187,7 +219,8 @@ final class PhotoEditorModel: ObservableObject {
             throw ImageProcessingError.invalid("请先导入照片")
         }
         let result = try PhotoProcessor.exportJPEG(
-            source, lut: lut, strength: strength, spatial: spatialSettings
+            source, lut: lut, strength: strength, spatial: spatialSettings,
+            grain: grainSettings
         )
         let note = result.downsampled ? "（高于 1250 万像素，已缩小）" : "（原像素尺寸）"
         status = "已导出 \(result.width) × \(result.height) JPEG \(note)"
@@ -462,6 +495,32 @@ struct ContentView: View {
                                     .font(.caption)
                                     .disabled(!model.hasPhoto)
                                     .onChange(of: model.halationEnabled) { _ in refresh() }
+                                Toggle("密度颗粒", isOn: $model.grainEnabled)
+                                    .font(.caption)
+                                    .disabled(!model.hasPhoto || model.busy)
+                                    .onChange(of: model.grainEnabled) { enabled in
+                                        if enabled { model.queueSpectralPreview() }
+                                        else { refresh() }
+                                    }
+                                if model.grainEnabled {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text("颗粒强度")
+                                                .font(.caption2)
+                                            Spacer(minLength: 0)
+                                            Text(String(format: "%.2f×", model.grainAmount))
+                                                .font(.caption2)
+                                                .monospacedDigit()
+                                        }
+                                        Slider(value: $model.grainAmount, in: 0...2,
+                                               step: 0.25, onEditingChanged: { editing in
+                                            if !editing { refresh() }
+                                        })
+                                        Text("显影密度统计模拟")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
                                 if model.halationEnabled {
                                     VStack(alignment: .leading, spacing: 1) {
                                         HStack {
@@ -503,7 +562,8 @@ struct ContentView: View {
                             .padding(.vertical, 7)
                         }
                     }
-                    .frame(height: model.halationEnabled ? 515 : 465)
+                    .frame(height: 500 + (model.halationEnabled ? 55 : 0) +
+                           (model.grainEnabled ? 95 : 0))
                     .onChange(of: selectedFilmID) { _ in
                         model.queueSpectralPreview()
                     }
@@ -552,7 +612,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
 
                     Divider()
-                    Text("v0.8：新增 GPU 像素空间的乳剂散射与三次背反射光晕。使用原版物理参数和胶片防光晕层预设，但在光谱 LUT 前的线性 RGB 上进行近似，尚非原版 RAW 空间结果。v0.7：原版 DIR 化学抑制与胶片专属校正曲线。28 份原版实测资料全量接入。20 种拍摄胶片可选；负片可组合 6 相纸或 Kodak 2383/2393 电影印片，反转片跳过印相直接扫描。启用原始 Hanatos2025 光谱查找表及窗口匹配；DIR 耦合、物理颗粒、光晕和完整扫描校色仍未完成。")
+                    Text("v0.9：新增原版密度颗粒统计模型的 GPU 近似。真实 Hanatos + DIR 显影密度在首个 LUT 中生成，再在胶片密度域按原版 Poisson/Binomial 的均值、方差采样，最后由第二个 LUT 执行负片印相或反转片直扫；尚未做到精确粒子分布、三乳剂亚层或空间 DIR 扩散。v0.8：保留乳剂散射及三次反射光晕。28 份原版配置与双拨轮全部保留，仍仅测试 iOS 16.5.1。")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("基于 Andrea Volpato 的 Spektrafilm。GPLv3，非官方移植。")
                         .font(.caption2).foregroundStyle(.secondary)
