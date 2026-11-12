@@ -561,6 +561,23 @@ struct FloatingEditorWorkspace: View {
                 strengthControl("光晕倍率", value: $model.halationAmount,
                                 range: 0...3, suffix: "×", resetTo: 1.0)
             }
+            Divider()
+            resetToggle("原版 DIR 空间显影", value: $model.spatialDIREnabled,
+                        enabled: model.hasPhoto && !model.busy)
+                .onChange(of: model.spatialDIREnabled) { _ in
+                    model.queueSpectralPreview()
+                }
+            if model.spatialDIREnabled {
+                strengthControl("抑制剂扩散范围",
+                                value: $model.spatialDIRRadiusScale,
+                                range: 0.25...3.0, suffix: "×", resetTo: 1.0)
+                Text("胶片曝光 → DIR 抑制剂空间扩散 → 密度曲线 → 印相")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("原版 20/200 μm 核；GPU 边界近似")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
             resetToggle("密度颗粒", value: $model.grainEnabled,
                         enabled: model.hasPhoto && !model.busy)
                 .onChange(of: model.grainEnabled) { enabled in
