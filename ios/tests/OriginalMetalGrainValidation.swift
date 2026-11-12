@@ -45,8 +45,9 @@ struct OriginalMetalGrainValidation {
         let a=make(), out=make()
         var pixels=[Float](repeating:0,count:w*h*4)
         for y in 0..<h {
-            pixels[(y*w)*4] = 1
-            pixels[(y*w)*4+3] = 1
+            for channel in 0..<4 {
+                pixels[(y*w)*4+channel] = 1
+            }
         }
         a.replace(
             region:MTLRegionMake2D(0,0,w,h),mipmapLevel:0,
