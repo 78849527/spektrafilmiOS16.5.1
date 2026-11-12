@@ -492,12 +492,17 @@ enum OriginalMetalGrain {
                     )
                     guard let command = queue.makeCommandBuffer(),
                           let failures = device.makeBuffer(
-                            length: MemoryLayout<UInt32>.stride,
+                            length: 4 * MemoryLayout<UInt32>.stride,
                             options: .storageModeShared
                           ) else {
                         throw Failure.invalid("原版 Metal 颗粒：GPU 指令或错误缓冲区不足")
                     }
-                    failures.contents().storeBytes(of: UInt32(0), as: UInt32.self)
+                    // Counters: total / invalid lambda / low-rate budget /
+                    // high-rate PTRS budget. Do not hide any failed sample.
+                    let faultWords = failures.contents().bindMemory(
+                        to: UInt32.self, capacity: 4
+                    )
+                    for reason in 0..<4 { faultWords[reason] = 0 }
                     func fromCI(_ source: CIImage) throws -> MTLTexture {
                         let texture = try makeTexture(
                             device, width: w, height: h
@@ -594,10 +599,15 @@ enum OriginalMetalGrain {
                         throw Failure.invalid("原版 Metal 颗粒：GPU 显影执行失败：" +
                             (command.error?.localizedDescription ?? "unknown"))
                     }
-                    let failuresCount = failures.contents().load(as: UInt32.self)
+                    let failuresCount = faultWords[0]
                     guard failuresCount == 0 else {
                         throw Failure.invalid(
-                            "原版 Metal 颗粒：Poisson 采样出现 \(failuresCount) 次不可收敛，已终止导出"
+                            "原版 Metal 颗粒：Poisson 采样失败 \(failuresCount) 次，" +
+                            "其中无效 λ=\(faultWords[1])、" +
+                            "低采样率耗尽=\(faultWords[2])、" +
+                            "高采样率 PTRS 耗尽=\(faultWords[3])；" +
+                            "位置=(\(xx),\(yy))，块=\(cw)×\(ch)。" +
+                            "已终止高清导出，禁止近似降级。"
                         )
                     }
                 }
