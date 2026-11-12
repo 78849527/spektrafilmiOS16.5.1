@@ -19,6 +19,8 @@ final class PhotoEditorModel: ObservableObject {
     @Published var halationAmount = 1.0
     @Published var grainEnabled = false
     @Published var grainAmount = 1.0
+    // Original measured 3-emulsion sublayer variance is opt-in.
+    @Published var grainSublayersEnabled = false
     // Experimental source-scanner path is OPT-IN. Initial UI and
     // old calculated looks remain identical to user-tested v1.0.1.
     @Published var originalScannerEnabled = false
@@ -75,7 +77,10 @@ final class PhotoEditorModel: ObservableObject {
         guard grainEnabled, grainAmount > 0, let stage = densityGrainStage else {
             return nil
         }
-        return DensityGrainSettings(stage: stage, amount: grainAmount, seed: 8888)
+        return DensityGrainSettings(
+            stage: stage, amount: grainAmount, seed: 8888,
+            measuredSublayersEnabled: grainSublayersEnabled
+        )
     }
 
     // Spatial convolution settings depend on the original stock's base
@@ -166,6 +171,7 @@ final class PhotoEditorModel: ObservableObject {
             spatialDIRStage = nil
             spatialDIREnabled = false
             grainEnabled = false
+            grainSublayersEnabled = false
             lut = importedLUT
             busy = false
             try refresh()
@@ -276,7 +282,9 @@ final class PhotoEditorModel: ObservableObject {
                         toDensity: stage.inputCube,
                         fromDensity: stage.printCube,
                         cubeDimension: stage.size,
-                        maxDensity: stage.ranges
+                        maxDensity: stage.ranges,
+                        sublayerCubes: stage.sublayerCubes,
+                        sublayerRawMaxima: stage.sublayerRawMaxima
                     )
                 } else {
                     densityGrainStage = nil
