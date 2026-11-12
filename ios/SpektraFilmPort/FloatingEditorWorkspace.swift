@@ -16,6 +16,7 @@ struct FloatingEditorWorkspace: View {
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
     let onExport: () -> Void
+    let onSaveToPhotos: () -> Void
     let onRefresh: () -> Void
 
     @State private var originalHeld = false
@@ -211,7 +212,9 @@ struct FloatingEditorWorkspace: View {
 
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
-            toolButton("square.and.arrow.up", name: "导出 JPEG", action: onExport)
+            toolButton("square.and.arrow.down", name: "高清保存相册", action: onSaveToPhotos)
+                .disabled(!model.hasPhoto || model.busy)
+            toolButton("square.and.arrow.up", name: "高清分享／存储文件", action: onExport)
                 .disabled(!model.hasPhoto || model.busy)
 
             Spacer(minLength: 2)
@@ -293,9 +296,13 @@ struct FloatingEditorWorkspace: View {
 
             if !wheelsCollapsed {
                 Divider().padding(.horizontal, 6)
-                Text("胶片 FILM")
+                Text("胶片 FILM · 双击复原")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .onTapGesture(count: 2) {
+                        selectedFilmID = "kodak_portra_400"
+                        model.queueSpectralPreview()
+                    }
                     .padding(.horizontal, 9)
                     .padding(.top, 5)
                 Picker("胶片", selection: $selectedFilmID) {
@@ -309,9 +316,13 @@ struct FloatingEditorWorkspace: View {
                 .clipped()
 
                 Divider().padding(.horizontal, 7)
-                Text(isReversal ? "反转片 DIRECT" : "相纸 PAPER")
+                Text(isReversal ? "反转片 DIRECT" : "相纸 PAPER · 双击复原")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .onTapGesture(count: 2) {
+                        selectedPaperID = "kodak_portra_endura"
+                        model.queueSpectralPreview()
+                    }
                     .padding(.horizontal, 9)
                     .padding(.top, 4)
                 if isReversal {
