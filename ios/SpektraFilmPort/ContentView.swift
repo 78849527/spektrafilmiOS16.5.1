@@ -93,14 +93,24 @@ final class PhotoEditorModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var model = PhotoEditorModel()
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var showPhotoPicker = false
-    @State private var showLUTPicker = false
-    @State private var showShare = false
-    @State private var exportedURL: URL?
+    @State private var activeSheet: ImportSheet?
     @State private var message: String?
 
-    private var cubeType: UTType {
-        UTType(filenameExtension: "cube", conformingTo: .data) ?? .data
+    // Use a single native document picker for both file entry points. A
+    // restrictive UTType or multiple fileImporter modifiers can hide .cube
+    // files and nonstandard images from third-party Files providers.
+    private enum ImportSheet: Identifiable {
+        case photo
+        case lut
+        case share(URL)
+
+        var id: String {
+            switch self {
+            case .photo: return "photo-file"
+            case .lut: return "lut-file"
+            case .share(let url): return "share-" + url.absoluteString
+            }
+        }
     }
 
     var body: some View {
@@ -136,7 +146,8 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
 
                         Button {
-                            showPhotoPicker = true
+                            model.status = "请选择 JPEG / HEIC / PNG / TIFF 图片文件"
+                            activeSheet = .photo
                         } label: {
                             Label("文件图片", systemImage: "folder")
                         }
@@ -146,7 +157,8 @@ struct ContentView: View {
                     Divider()
                     HStack {
                         Button {
-                            showLUTPicker = true
+                            model.status = "请选择 .cube 文件；其他扩展名会在选择后提示"
+                            activeSheet = .lut
                         } label: {
                             Label("导入 .cube", systemImage: "square.stack.3d.up")
                         }
@@ -174,8 +186,8 @@ struct ContentView: View {
 
                     Button {
                         do {
-                            exportedURL = try model.exportJPEG()
-                            showShare = true
+                            let url = try model.exportJPEG()
+                            activeSheet = .share(url)
                         } catch {
                             message = error.localizedDescription
                         }
@@ -203,23 +215,24 @@ struct ContentView: View {
             .onChange(of: selectedPhoto) { item in
                 model.selectFromPhotos(item)
             }
-            .fileImporter(isPresented: $showPhotoPicker, allowedContentTypes: [.image]) {
-                result in
-                switch result {
-                case .success(let url): model.loadPhotoFile(url)
-                case .failure(let error): message = error.localizedDescription
-                }
-            }
-            .fileImporter(isPresented: $showLUTPicker, allowedContentTypes: [cubeType]) {
-                result in
-                switch result {
-                case .success(let url): model.loadLUTFile(url)
-                case .failure(let error): message = error.localizedDescription
-                }
-            }
-            .sheet(isPresented: $showShare) {
-                if let exportedURL {
-                    ActivitySheet(items: [exportedURL])
+            .sheet(item: $activeSheet) { selection in
+                switch selection {
+                case .photo:
+                    FilesDocumentPicker(onPick: { url in
+                        model.loadPhotoFile(url)
+                        activeSheet = nil
+                    }, onCancel: {
+                        activeSheet = nil
+                    })
+                case .lut:
+                    FilesDocumentPicker(onPick: { url in
+                        model.loadLUTFile(url)
+                        activeSheet = nil
+                    }, onCancel: {
+                        activeSheet = nil
+                    })
+                case .share(let url):
+                    ActivitySheet(items: [url])
                 }
             }
             .alert("提示", isPresented: Binding(
@@ -247,4 +260,55 @@ private struct ActivitySheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ viewController: UIActivityViewController, context: Context) {}
+}
+
+    
+/// We intentionally open *all* document items instead of filtering .cube or
+/// .image up front. Some providers (iCloud Drive, On My iPhone, third-party
+/// file providers) do not advertise uncommon extensions as these UTTypes.
+/// We validate the extension and actual content after selecting the file.
+private struct FilesDocumentPicker: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.item],
+            asCopy: true
+        )
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        let onCancel: () -> Void
+
+        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
+            self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController,
+                            didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else {
+                onCancel()
+                return
+            }
+            // The picker supplies a sandbox copy. Consume it synchronously
+            // before dismissing the sheet and releasing the temporary URL.
+            onPick(url)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCancel()
+        }
+    }
 }
