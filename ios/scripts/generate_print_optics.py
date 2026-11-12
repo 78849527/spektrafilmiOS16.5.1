@@ -2,7 +2,9 @@
 """Source NumPy/dichroic references for iOS v1.4 optical-printing parity.
 
 Uses source 81-wavelength profiles and the original color_enlarger formula
-(via generate_original_optics.default_dichroic) at Float64. Vectors test
+(via generate_original_optics.default_dichroic) at Float64. Missing dye
+channels are preserved as NaN until transmission and then suppressed, exactly
+as PrintingStage's density_to_light does in upstream Python. Vectors test
 CMY shifts, film-substrate transmission, preflash exposure and normalization
 BEFORE paper development (not merely final RGB).
 """
@@ -21,8 +23,12 @@ def quoted(value):
     return json.dumps(value)
 
 def exposure_raw(film_density, base, dyes, paper_sens, spectrum):
+    # Original develop.compute_density_spectral / conversions.density_to_light:
+    # NaN * 0 is still NaN; missing any dye channel invalidates that wavelength.
     spectral_density = base + dyes @ np.asarray(film_density, dtype=float)
-    return np.einsum("l,lc->c", spectrum * 10**(-spectral_density), paper_sens)
+    light = 10 ** (-spectral_density) * spectrum
+    light[np.isnan(light)] = 0.0
+    return np.einsum("l,lc->c", light, paper_sens)
 
 def main():
     wl = np.arange(380, 781, 5, dtype=float)
@@ -34,7 +40,9 @@ def main():
         ("kodak_portra_400", "kodak_portra_endura", [0, 0, 0], 0.0, 0, 0, 0),
         ("kodak_portra_400", "kodak_portra_endura", [17, -23, 31], 0.025, 10, -8, 1),
         ("fujifilm_pro_400h", "kodak_2383", [-20, 14, -11], 0.08, -12, 24, -1),
-        ("kodak_portra_400", "kodak_2383", [30, 40, -35], 0.12, 28, -21, 2)
+        ("kodak_portra_400", "kodak_2383", [30, 40, -35], 0.12, 28, -21, 2),
+        ("fujifilm_pro_400h", "kodak_portra_endura", [-12, 17, -8], 0.035, 0, 11, 0),
+        ("kodak_portra_400", "kodak_portra_endura", [7, -10, 22], 0.045, 5, -13, -1)
     ]
     lines = [
         "// GENERATED source Float64 optical print exposure comparisons.",
@@ -61,20 +69,26 @@ def main():
     ]
     film_density = np.array([0.11, 0.52, 0.84])
     midgray_density = np.array([0.20, 0.45, 0.60])
+    largest_legacy_error = 0.0
     for film, paper, shift, flash, flash_m, flash_y, ev in routes:
         film_data = json.loads((ROOT / "src/spektrafilm/data/profiles" / (film + ".json")).read_text())["data"]
         paper_data = json.loads((ROOT / "src/spektrafilm/data/profiles" / (paper + ".json")).read_text())["data"]
-        # The v1.3 embedded profile format maps upstream JSON nulls to 0
-        # before Float32 packing. Mirror that *before* the Float64 source
-        # exposure computation, rather than propagating NaN through the
-        # spectrum or silently relaxing parity tolerances.
-        base = np.nan_to_num(np.asarray(film_data["base_density"], dtype=float), nan=0.0)
-        dyes = np.nan_to_num(np.asarray(film_data["channel_density"], dtype=float), nan=0.0)
+        # v1.8.11: retain original NaN absorbance; NumPy source turns its
+        # transmitted light into ZERO, not clear film. Do not coerce to zero.
+        base = np.asarray(film_data["base_density"], dtype=np.float64)
+        dyes = np.asarray(film_data["channel_density"], dtype=np.float64)
         paper_sens = np.nan_to_num(10**np.asarray(paper_data["log_sensitivity"], dtype=float))
         neutral = np.asarray(db.get(paper, {}).get("TH-KG3", {}).get(film, [0,65,55]), dtype=float)
         print_light = source * default_dichroic(neutral + shift)
         flash_light = source * default_dichroic(neutral + [0,flash_m,flash_y])
         raw = exposure_raw(film_density, base, dyes, paper_sens, print_light)
+        old_clear_film = exposure_raw(
+            film_density, np.nan_to_num(base, nan=0.0),
+            np.nan_to_num(dyes, nan=0.0), paper_sens, print_light
+        )
+        largest_legacy_error = max(
+            largest_legacy_error, float(np.max(np.abs(old_clear_film - raw)))
+        )
         middle = exposure_raw(midgray_density, base, dyes, paper_sens, print_light)
         reference = float(np.exp(np.mean(np.log(np.maximum(middle, 1e-10)))))
         # Independent four-branch Python reference from PrintingStage.
@@ -86,7 +100,9 @@ def main():
         normalization_factors = [
             1.0, mid_factor, comp_factor / mid_factor, comp_factor
         ]
-        flash_raw = (flash * np.einsum("l,lc->c", flash_light * 10**(-base), paper_sens))
+        flash_transmission = flash_light * 10 ** (-base)
+        flash_transmission[np.isnan(flash_transmission)] = 0.0
+        flash_raw = flash * np.einsum("l,lc->c", flash_transmission, paper_sens)
         before_enlarger = np.maximum(raw / reference + flash_raw, 0) + 1e-10
         log_exposure = np.log10(np.maximum(before_enlarger * 2**ev, 0) + 1e-10)
         samples = print_light[[0, 17, 40, 64, 80]]
@@ -109,7 +125,12 @@ def main():
         ]
     lines += ["    ]", "}"]
     DEST.write_text("\n".join(lines) + "\n")
-    print("PASS: Python source optical print vectors: 4 routes; 5 irradiance taps + raw/preflash/reference/logE")
+    assert largest_legacy_error > 1e-5, (
+        "No regression witness: old zero-absorbance semantics not detected"
+    )
+    print(f"PASS: Python SOURCE NaN-correct optical print vectors: {len(routes)} routes; "
+          f"5 irradiance taps + raw/preflash/reference/logE; "
+          f"old invalid-clear-film largest error={largest_legacy_error:.9g}")
 
 if __name__ == "__main__":
     main()
