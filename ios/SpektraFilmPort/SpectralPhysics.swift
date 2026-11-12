@@ -1,13 +1,15 @@
 import Foundation
 
-/// Experimental, native iOS 16.5.1 spectral negative->paper calculation.
-///
-/// This physically motivated *subset* uses selected original negative films
-/// and print papers with their measured sensitivity, H-D characteristic
-/// curves, and wavelength-dependent dye absorbances. It does NOT yet port original Hanatos spectral
-/// upsampling, enlarger heat filters, color reference balancing, couplers,
-/// film grain, halation, glare, or complete spectral rendering parity.
-/// A small, runtime-generated CoreImage color cube accelerates pixel preview.
+/// iOS 16.5.1 measured-spectra photo simulation.
+/// Ported ORIGINAL Spektrafilm components: Mallett2019 basis integration,
+/// D55 camera light, sample-wise log-sensitivity, normalized H-D interpolation,
+/// spectral negative/paper Beer-Lambert density, Schott KG3 3400K enlarger
+/// plus original 0/65/55 CMY filtration, D50 viewing and CIE 1931 2° CMFs.
+/// Still pending: original Hanatos2025 LUT and its adaptation, DIR couplers,
+/// print-curve morph, light scattering/grain/halation, glare, full scanner
+/// white/black correction and gamut mapping. Outputs are NOT byte-for-byte
+/// identical to a full original Spektrafilm render.
+/// The per-pixel calculation is accelerated through a dynamic CIColorCube.
 struct SpectralPhysics {
     enum PhysicsError: LocalizedError {
         case invalid(String)
@@ -23,6 +25,7 @@ struct SpectralPhysics {
         let baseDensity: [Float]          // 81
         let logExposure: [Float]          // 256
         let densityCurves: [Float]        // 256 x 3, exposure-major
+        let minimumDensity: [Double]    // upstream nanmin per colour channel
 
         init(id: String) throws {
             guard let record = GeneratedSpectralData.profiles[id] else {
@@ -35,6 +38,13 @@ struct SpectralPhysics {
             densityCurves = try Self.decode(record.densityCurves, count: 768)
             guard logExposure[0] < logExposure[255] else {
                 throw PhysicsError.invalid("光谱数据的曝光曲线无效：" + id)
+            }
+            // spektrafilm.model.develop.develop() subtracts the full channel
+            // minimum (not just densityCurves[0]) before interpolating.
+            minimumDensity = (0..<3).map { ch in
+                (0..<256).map { i in
+                    Double(densityCurves[i * 3 + ch])
+                }.min() ?? 0.0
             }
         }
 
@@ -61,9 +71,13 @@ struct SpectralPhysics {
         func curve(_ logE: Double, channel: Int) -> Double {
             let first = Double(logExposure[0])
             let last = Double(logExposure[255])
-            let lo = Double(densityCurves[channel])
-            if logE <= first { return max(0, lo) }
-            if logE >= last { return max(0, Double(densityCurves[255 * 3 + channel])) }
+            let lo = minimumDensity[channel]
+            if logE <= first {
+                return max(0, Double(densityCurves[channel]) - lo)
+            }
+            if logE >= last {
+                return max(0, Double(densityCurves[255 * 3 + channel]) - lo)
+            }
             // The original profile sampled the same log-exposure grid in each
             // channel, preserving native linear interpolation.
             let u = (logE - first) / (last - first) * 255.0
@@ -93,7 +107,7 @@ struct SpectralPhysics {
     private let paperWeights: [[Double]]  // wavelength -> paper channel
     private let scanWeights: [[Double]]   // wavelength -> CIE XYZ
     private let mediaWhiteXYZ: [Double]
-    private let printReference: [Double]
+    private let printReference: Double
     private let neutralOutputRGB: [Double]
 
     static var supportedFilmIDs: [String] { GeneratedSpectralData.filmIDs }
@@ -109,40 +123,50 @@ struct SpectralPhysics {
         film = originalFilm
         paper = originalPaper
 
+        let basis = try Self.readOriginalFloat32(
+            GeneratedOriginalOptics.mallettBasis, count: 81 * 3
+        )
+        let d55 = try Self.readOriginalFloat32(GeneratedOriginalOptics.d55, count: 81)
+        let d50 = try Self.readOriginalFloat32(GeneratedOriginalOptics.d50, count: 81)
+        let cie = try Self.readOriginalFloat32(
+            GeneratedOriginalOptics.cie1931, count: 81 * 3
+        )
+        let enlarger = try Self.readOriginalFloat32(
+            GeneratedOriginalOptics.enlargerNeutral, count: 81
+        )
         var matrix = Array(repeating: Array(repeating: 0.0, count: 3), count: 3)
         var pWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
         var xyzWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
         var white = Array(repeating: 0.0, count: 3)
 
+        // Exact original rgb_to_raw_mallett2019 einsum:
+        // raw = sum(RGB[3] * basis[wl,3] * D55[wl] * sensitivity[wl,3])
+        // and scalar normalisation against the green channel at 18.4% gray.
+        var midgrayGreen = 0.0
         for i in 0..<81 {
-            let wavelength = 380.0 + Double(i) * 5.0
-            let daylight = Self.blackBody(wavelength, 5500)
-            let enlarger = Self.blackBody(wavelength, 3400)
-            let viewing = Self.blackBody(wavelength, 5000)
-            let bases = [
-                Self.gaussian(wavelength, 615, 44),
-                Self.gaussian(wavelength, 545, 37),
-                Self.gaussian(wavelength, 457, 32)
-            ]
+            let light = d55[i]
+            midgrayGreen += light * 0.184 * originalFilm.sensitivity(i, 1)
             for ch in 0..<3 {
                 for rgb in 0..<3 {
-                    matrix[ch][rgb] += daylight * bases[rgb] * originalFilm.sensitivity(i, ch)
+                    matrix[ch][rgb] += basis[i * 3 + rgb] * light *
+                        originalFilm.sensitivity(i, ch)
                 }
-                pWeights[i][ch] = enlarger * originalPaper.sensitivity(i, ch)
+                pWeights[i][ch] = enlarger[i] *
+                    originalPaper.sensitivity(i, ch)
             }
-
-            let cie = Self.cie1931(wavelength)
+            // Original scanning density-to-light and spectral integration
+            // uses the 1931 2-degree CMFs and D50 viewing illumination.
             for ch in 0..<3 {
-                xyzWeights[i][ch] = viewing * cie[ch]
-                white[ch] += xyzWeights[i][ch] * pow(10.0, -originalPaper.base(i))
+                xyzWeights[i][ch] = d50[i] * cie[i * 3 + ch]
+                white[ch] += xyzWeights[i][ch] *
+                    pow(10.0, -originalPaper.base(i))
             }
         }
-        // Calibrate each film-sensitivity channel so linear sRGB midgray maps
-        // to log10 exposure=0. The spectral upsampling is an approximation,
-        // NOT the original project's Hanatos 2025 transform.
+        guard midgrayGreen.isFinite && midgrayGreen > 1e-12 else {
+            throw PhysicsError.invalid("原版 Mallett 光谱参考白归一化无效")
+        }
         for ch in 0..<3 {
-            let mid = max(1e-14, matrix[ch].reduce(0, +) * 0.184)
-            for rgb in 0..<3 { matrix[ch][rgb] /= mid }
+            for rgb in 0..<3 { matrix[ch][rgb] /= midgrayGreen }
         }
         filmMatrix = matrix
         paperWeights = pWeights
@@ -153,7 +177,9 @@ struct SpectralPhysics {
             [0.184, 0.184, 0.184], film: originalFilm, matrix: matrix, exposureEV: 0.0
         )
         let ref = Self.printRaw(filmDensities: midFilm, film: originalFilm, weights: pWeights)
-        printReference = ref.map { max($0, 1e-14) }
+        printReference = exp(
+            ref.reduce(0.0) { $0 + log(max($1, 1e-14)) } / 3.0
+        )
 
         let midPaper = Self.paperDensities(
             midFilm, film: originalFilm, paper: originalPaper, weights: pWeights,
@@ -208,7 +234,8 @@ struct SpectralPhysics {
         let linOutput = Self.scanLinear(
             paperDensity, paper: paper, weights: scanWeights, mediaWhite: mediaWhiteXYZ
         )
-        // Midgray scanner calibration, leaving paper's tonal response intact.
+        // Display-neutral calibration for the iOS preview. The upstream
+        // full scanner colour-reference calibration is a separate stage.
         return (0..<3).map { ch in
             let balanced = linOutput[ch] * (0.184 / neutralOutputRGB[ch])
             return Self.encodeSRGB(Self.clamp(balanced))
@@ -241,11 +268,11 @@ struct SpectralPhysics {
 
     private static func paperDensities(_ filmDensities: [Double], film: Profile,
                                        paper: Profile, weights: [[Double]],
-                                       reference: [Double], printEV: Double) -> [Double] {
+                                       reference: Double, printEV: Double) -> [Double] {
         let raw = printRaw(filmDensities: filmDensities, film: film, weights: weights)
         return (0..<3).map { c in
             paper.curve(
-                log10(max(1e-14, raw[c]) / reference[c]) +
+                log10(max(1e-14, raw[c]) / reference) +
                     printEV * 0.301029995664, channel: c
             )
         }
@@ -274,28 +301,38 @@ struct SpectralPhysics {
         ]
     }
 
-    private static func cie1931(_ wl: Double) -> [Double] {
-        // Wyman/Sloan/Shirley (2013) smooth CIE 1931 2-degree approximation.
-        [
-            1.056 * gaussian(wl, 599.8, 37.9) +
-            0.362 * gaussian(wl, 442.0, 16.0) -
-            0.065 * gaussian(wl, 501.1, 20.4),
-            0.821 * gaussian(wl, 568.8, 46.9) +
-            0.286 * gaussian(wl, 530.9, 16.3),
-            1.217 * gaussian(wl, 437.0, 11.8) +
-            0.681 * gaussian(wl, 459.0, 26.0),
-        ]
+    /// Unaligned-safe little-endian Float32 decode, shared by the original
+    /// reference spectra compiled into GeneratedOriginalOptics.swift.
+    private static func readOriginalFloat32(_ encoded: String,
+                                            count: Int) throws -> [Double] {
+        guard let bytes = Data(base64Encoded: encoded),
+              bytes.count == count * 4 else {
+            throw PhysicsError.invalid("原版光谱参考数组数据损坏")
+        }
+        return bytes.withUnsafeBytes { raw in
+            let data = raw.bindMemory(to: UInt8.self)
+            return (0..<count).map { i in
+                let j = i * 4
+                let word = UInt32(data[j]) |
+                    (UInt32(data[j + 1]) << 8) |
+                    (UInt32(data[j + 2]) << 16) |
+                    (UInt32(data[j + 3]) << 24)
+                return Double(Float(bitPattern: word))
+            }
+        }
     }
-    private static func gaussian(_ x: Double, _ center: Double, _ sigma: Double) -> Double {
-        let d = (x - center) / sigma
-        return exp(-0.5 * d * d)
+
+    /// Diagnostic: numerically compare this Swift port's Mallett 2019 input
+    /// against exact reference vectors produced by the original Python einsum.
+    func mallettRaw(linearRGB: [Double]) -> [Double] {
+        guard linearRGB.count == 3 else { return [] }
+        return (0..<3).map { channel in
+            max(0, (0..<3).reduce(0.0) {
+                $0 + filmMatrix[channel][$1] * linearRGB[$1]
+            })
+        }
     }
-    private static func blackBody(_ nm: Double, _ kelvin: Double) -> Double {
-        // Relative Planck radiance; absolute normalization cancels.
-        let meters = nm * 1e-9
-        let exponent = 0.0143877696 / (meters * kelvin)
-        return 1.0 / (pow(meters * 1e6, 5) * expm1(exponent))
-    }
+
     private static func clamp(_ x: Double) -> Double {
         min(1, max(0, x.isFinite ? x : 0))
     }
