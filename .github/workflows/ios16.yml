@@ -60,12 +60,12 @@ jobs:
         run: /tmp/SpektrafilmSpectralValidation
       - name: Compile native Core Image spatial optics tests
         run: |
-          xcrun swiftc -O -parse-as-library \
+          xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpatialOptics.swift \
             ios/tests/SpatialOpticsValidation.swift \
             -o /tmp/SpektrafilmSpatialValidation
       - name: Verify spatial optics energy conservation and real blur
-        run: /tmp/SpektrafilmSpatialValidation
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmSpatialValidation
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml

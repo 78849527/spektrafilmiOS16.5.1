@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import CoreImage
+import Darwin
 
 @main
 struct SpatialOpticsValidation {
@@ -23,6 +24,8 @@ struct SpatialOpticsValidation {
     }
 
     static func main() {
+        setbuf(stdout, nil)
+        print("BEGIN: SpatialOptics native regression")
         let originalPresets: [(String, String, Double, [Double])] = [
             ("still", "strong", 65, [0.015, 0.005, 0]),
             ("still", "weak", 65, [0.08, 0.02, 0]),
