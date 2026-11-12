@@ -14,6 +14,17 @@ struct OriginalHanatosResponse {
         }
     }
 
+    private final class CachedLUT: NSObject {
+        let values: [Double]
+        init(_ values:[Double]) { self.values=values;super.init() }
+    }
+    // Source Float64 is memory-heavy but decoding all 192²x3 points
+    // EVERY TIME the user moves a slider is unnecessary. NSCache is
+    // thread-safe and may evict stock data under real-device pressure.
+    // This caches ONLY source values and never changes their precision.
+    private static let originalCache=NSCache<NSString,CachedLUT>()
+    private static let mobileCache=NSCache<NSString,CachedLUT>()
+
     private let rawLUT: [Double]
     private let rgbToXYZ: [Double]
     private let n: Int
@@ -38,6 +49,10 @@ struct OriginalHanatosResponse {
         let itemCount = n*n*3
         switch precision {
         case .originalFloat64:
+            if let cached=Self.originalCache.object(forKey:filmID as NSString) {
+                rawLUT=cached.values
+                break
+            }
             guard GeneratedHanatosPreciseData.dimension == n,
                   GeneratedHanatosPreciseData.sourceSHA256 ==
                     GeneratedHanatosData.sourceSHA256,
@@ -62,7 +77,15 @@ struct OriginalHanatosResponse {
                 throw DecodeError.unavailable("原版 Float64 光谱 LUT 包含非有限数：" + filmID)
             }
             rawLUT=values
+            Self.originalCache.setObject(
+                CachedLUT(values),forKey:filmID as NSString,
+                cost:itemCount*8
+            )
         case .mobileFloat16:
+            if let cached=Self.mobileCache.object(forKey:filmID as NSString) {
+                rawLUT=cached.values
+                break
+            }
             guard let encoded=GeneratedHanatosData.lutByFilm[filmID],
                   let data=Data(base64Encoded:encoded),
                   data.count == itemCount*2 else {
@@ -80,6 +103,10 @@ struct OriginalHanatosResponse {
                 throw DecodeError.unavailable("移动 Float16 光谱 LUT 数值无效：" + filmID)
             }
             rawLUT=values
+            Self.mobileCache.setObject(
+                CachedLUT(values),forKey:filmID as NSString,
+                cost:itemCount*8
+            )
         }
     }
 
