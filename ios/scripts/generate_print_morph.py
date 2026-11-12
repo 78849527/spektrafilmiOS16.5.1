@@ -51,6 +51,12 @@ def main():
       "    let mode: String",
       "    let densityAtSamples: [Double]",
       "  }",
+      "  struct ExposureReference {",
+      "    let stock: String",
+      "    let yBlack: Double",
+      "    let yWhite: Double",
+      "    let exposureEV: Double",
+      "  }",
       "  static let models: [String: Model] = [",
     ]
     stocks=[];refs=[]
@@ -84,11 +90,32 @@ def main():
             sample=modeled[sel].reshape(-1)
             lines.append(f'    Reference(stock: "{stock}", sampleLE: {values(le[sel])}, mode: "{name}", densityAtSamples: {values(sample)}),')
             refs.append((stock,name))
+    lines.append("  ]")
+    lines.append("  static let exposureReferences: [ExposureReference] = [")
+    for ix,(stock,info,data) in enumerate(stocks):
+        le=np.asarray(data["log_exposure"],dtype=float)
+        curves=np.asarray(data["density_curves"],dtype=float).mean(axis=1)
+        base=float(np.asarray(data["base_density"],dtype=float).mean())
+        for case in range(2):
+            y_black=0.018+ix*0.002+case*0.009
+            y_white=0.79+ix*0.008-case*0.024
+            target_black=((0.01+0.055)/1.055)**2.4
+            target_white=((0.98+0.055)/1.055)**2.4
+            slope=(target_white-target_black)/(y_white-y_black+1e-10)
+            intercept=target_black-slope*y_black
+            before=(0.184-intercept)/slope
+            d_corr=-np.log10(max(1e-10,before))
+            d_base=-np.log10(0.184)
+            corr=np.interp(d_corr-base,curves,le)
+            initial=np.interp(d_base-base,curves,le)
+            ev=float(np.clip(np.log2(10**(corr-initial)),-4,4))
+            lines.append(f'    ExposureReference(stock: "{stock}", yBlack: {y_black:.17g}, yWhite: {y_white:.17g}, exposureEV: {ev:.17g}),')
     lines.extend(["  ]","}"])
     OUTPUT.write_text("\n".join(lines)+"\n",encoding="utf-8")
     assert len(stocks)==8 and len(refs)==56
     print("PASS: 8 original printing models (6 paper, 2 motion print film) with 3-layer s023 CDF")
     print("PASS: 56 upstream reference profiles x morph modes, 5 exposure nodes x 3 channels")
+    print("PASS: 16 original NumPy inverse-H&D midgray print exposure correction vectors")
     print("Generated print s023 morphology:",OUTPUT.stat().st_size,"bytes")
 
 if __name__=="__main__":
