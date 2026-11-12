@@ -5,4 +5,5 @@ SpektraFilmPort/GeneratedSpectralData.swift
 SpektraFilmPort/GeneratedOriginalOptics.swift
 SpektraFilmPort/GeneratedHanatosData.swift
 SpektraFilmPort/GeneratedDIRData.swift
+SpektraFilmPort/GeneratedScannerReference.swift
 .DS_Store

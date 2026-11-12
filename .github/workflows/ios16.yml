@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.0.1 safe startup floating editor
+name: iOS 16.5.1 — v1.1.0 source scanner colour options
 
 on:
   push:
-    branches: ['ios16.5.1/floating-safemode-v1.0.1']
+    branches: ['ios16.5.1/scanner-v1.1']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -41,6 +41,14 @@ jobs:
             -o /tmp/SpektrafilmDensityGrainValidation
       - name: Verify optical grain density moments and deterministic sampling
         run: NSUnbufferedIO=YES /tmp/SpektrafilmDensityGrainValidation
+      - name: Compile native scanner XYZ/gamut maths and GPU finishing tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/ScannerFinishing.swift \
+            ios/tests/ScannerFinishingValidation.swift \
+            -o /tmp/ScannerFinishValidation
+      - name: Verify source scanner glare and unsharp Core Image math
+        run: NSUnbufferedIO=YES /tmp/ScannerFinishValidation
       - name: Prepare Python reference generator (build machine only)
         uses: actions/setup-python@v5
         with:
@@ -55,17 +63,30 @@ jobs:
           python3 ios/scripts/generate_original_optics.py
           python3 ios/scripts/generate_hanatos.py
           python3 ios/scripts/generate_dir.py
+          python3 ios/scripts/generate_scanner_reference.py
+          test -s ios/SpektraFilmPort/GeneratedScannerReference.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
           test -s ios/SpektraFilmPort/GeneratedHanatosData.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
           test ! -d ios/SpektraFilmPort/Resources
+      - name: Compile original scanner XYZ/ACES Python reference validation
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalScannerMath.swift \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/tests/ScannerMathValidation.swift \
+            -o /tmp/SpektrafilmScannerMathValidation
+      - name: Verify Python/Swift colour science CAT and ACES references
+        run: /tmp/SpektrafilmScannerMathValidation
       - name: Compile native spectral physics separately
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalHanatosResponse.swift \
+            ios/SpektraFilmPort/OriginalScannerMath.swift \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
             ios/SpektraFilmPort/GeneratedSpectralData.swift \
             ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
             ios/SpektraFilmPort/GeneratedHanatosData.swift \
@@ -106,33 +127,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.0.1'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.1.0'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/floating-safemode-v1.0.1'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/scanner-v1.1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.0.1-safe-ui
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned.ipa
+          TAG=ios1651-v1.1.0-scanner
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.1.0-scanner-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v1.0.1 — launch freeze hotfix" \
-              --notes "iOS16.5.1 v1.0.1 launch freeze hotfix: v1.0 reported unresponsive with 0x8BADF00D process-exit watchdog and SwiftUI AttributeGraph main thread, but exact hang cause not proven. Cold start now lazy-loads the two docks only after a photo is imported and eye control pressed. Removed derived hasPhoto onChange state mutation, continuous GestureState zoom/drag updates and dynamic material. Pinned image canvas, floating wheels and sliders, split compare, long hold original, 28 measured stocks, Hanatos, DIR, grain, optical effects retained. Requires user-side device verification and signing." \
+              --title "Spektrafilm iOS 16.5.1 v1.1 — optional source scanner colour pathway" \
+              --notes "iOS16.5.1 v1.1 experimental scanner, based on user-confirmed stable v1.0.1 floating UI. Opt-in original viewing D50/K75P XYZ-to-sRGB source transform; source-supported ACES RGC v1.3 gamut compression, optional black-white correction with measured endpoint references (approximate, not the complete source exposure-calibrated reference), output glare and unsharp on linear RGB. Source default CAM16-UCS is NOT yet ported. All existing v1.0.1 optical grain/scatter algorithms and gesture layout preserved unchanged. New scanning features OFF at launch. Unsigned IPA requires signing and physical device validation." \
               --prerelease
           fi
