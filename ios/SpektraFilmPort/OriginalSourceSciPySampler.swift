@@ -242,13 +242,16 @@ struct OriginalSourceSciPySampler {
         // inversion even for n==0 and p==0/1. Do not short-circuit and
         // thereby alter the random stream.
         if p <= 0.5 {
-            return p * Double(n) <= 30 ?
-                try binomialInversion(n, p) : binomialBTPE(n, p)
+            if p * Double(n) <= 30 {
+                return try binomialInversion(n, p)
+            }
+            return try binomialBTPE(n, p)
         }
         let q = 1 - p
-        let complement = try (q * Double(n) <= 30 ?
-            binomialInversion(n, q) : binomialBTPE(n, q))
-        return n - complement
+        if q * Double(n) <= 30 {
+            return n - (try binomialInversion(n, q))
+        }
+        return n - (try binomialBTPE(n, q))
     }
 
     /// Preserve the two-source-array order of grain.py:
