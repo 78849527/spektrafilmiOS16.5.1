@@ -352,7 +352,7 @@ struct ContentView: View {
                                 .font(.caption2)
                                 .padding(.top, 6)
                             }
-                            .frame(width: columnWidth, alignment: .leading)
+                            .frame(width: columnWidth - 14, alignment: .leading)
                             .padding(.vertical, 7)
                             .padding(.horizontal, 7)
                             .background(
