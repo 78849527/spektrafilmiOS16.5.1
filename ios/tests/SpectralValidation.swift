@@ -308,6 +308,25 @@ struct SpectralValidation {
             }
         }
         print("PASS: original Hanatos+DIR optical density and downstream print/scan 3D cube separation.")
+        // Exercise the complete new source spatial DIR LUT generator, not
+        // only the standalone inhibition/CI kernels. Negative paper,
+        // negative motion-print and reversal direct-scan paths must all
+        // produce finite shader input data with original exposure ranges.
+        for (film, medium) in densityRoutes {
+            let sourceDIR = try SpectralPhysics.makeSpatialDIRStageData(
+                filmID: film, paperID: medium,
+                exposureEV: 0.5, paperEV: -0.4,
+                size: 9, correctedSize: 17
+            )
+            precondition(sourceDIR.valid,
+                         "Invalid physical DIR spatial intermediate stage")
+            precondition(sourceDIR.rawLogCube.count == 9*9*9*16)
+            precondition(sourceDIR.initialDensityCube.count == 9*9*9*16)
+            precondition(sourceDIR.correctedDensityCube.count == 17*17*17*16)
+            precondition(sourceDIR.printCube.count == 9*9*9*16)
+            precondition(sourceDIR.positive == SpectralPhysics.isPositiveFilm(film))
+        }
+        print("PASS: 3 complete Hanatos -> initial DIR -> spatial DIR corrected H-D -> print/scan data paths.")
 
         // Source-scanner opt-in must not alter the legacy v1.0.1 default.
         // Exercise all measured print media and direct reversal routes, and
