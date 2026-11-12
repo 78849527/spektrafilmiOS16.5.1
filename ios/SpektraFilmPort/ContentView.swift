@@ -102,12 +102,14 @@ struct ContentView: View {
     private enum ImportSheet: Identifiable {
         case photo
         case lut
+        case stocks
         case share(URL)
 
         var id: String {
             switch self {
             case .photo: return "photo-file"
             case .lut: return "lut-file"
+            case .stocks: return "stock-catalog"
             case .share(let url): return "share-" + url.absoluteString
             }
         }
@@ -153,6 +155,17 @@ struct ContentView: View {
                         }
                         .buttonStyle(.bordered)
                     }
+
+                    Divider()
+                    Button {
+                        activeSheet = .stocks
+                    } label: {
+                        Label("原版胶片与相纸（iOS 16.5.1）", systemImage: "film.stack")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    Text("轻量数据目录；未加入物理胶片渲染。")
+                        .font(.caption2).foregroundStyle(.secondary)
 
                     Divider()
                     HStack {
@@ -231,6 +244,8 @@ struct ContentView: View {
                     }, onCancel: {
                         activeSheet = nil
                     })
+                case .stocks:
+                    CompactStockCatalogView()
                 case .share(let url):
                     ActivitySheet(items: [url])
                 }

@@ -1,11 +1,8 @@
-name: iOS 16 — unsigned IPA
+name: iOS 16.5.1 — compact diagnostic IPA
+
 on:
   push:
-    branches: [ios16]
-    paths:
-      - 'ios/**'
-      - '.github/workflows/ios16.yml'
-  pull_request:
+    branches: ['ios16.5.1/compact-catalog']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -15,18 +12,24 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: macos-latest
+  ios1651:
+    runs-on: macos-15
     timeout-minutes: 35
     steps:
-      - name: Checkout
+      - name: Checkout stable v0.1 based branch
         uses: actions/checkout@v4
-      - name: Toolchain
+      - name: Pin Xcode 16.4 for iOS 16.5.1
         run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Generate compact original profile metadata
+        run: |
+          python3 ios/scripts/generate_compact_catalog.py
+          test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
+          test ! -d ios/SpektraFilmPort/Resources
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
@@ -37,37 +40,42 @@ jobs:
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath ios/build/DerivedData \
             CODE_SIGNING_ALLOWED=NO build
-      - name: Verify device app
+      - name: Check bundle identity and iOS 16.5 deployment target
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
-          /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -q '^com.twogou.spektrafilmport$'
-      - name: Package IPA
+          plutil -lint "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.spektrafilmport'
+          /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
+          /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
+          /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '0.2.3'
+          test ! -e "$APP/Resources/profiles/index.json"
+      - name: Package diagnostic unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-ios16-unsigned.ipa Payload
-      - name: Upload unsigned IPA
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned.ipa Payload
+      - name: Upload diagnostic IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-ios16-unsigned
-          path: ios/build/SpektraFilmPort-ios16-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned.ipa
           if-no-files-found: error
-      - name: Publish unofficial test prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16'
+      - name: Publish diagnostic prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/compact-catalog'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ASSET=ios/build/SpektraFilmPort-ios16-unsigned.ipa
-          TAG=ios16-mvp
+          TAG=ios1651-v0.2.3-compact
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v0.2.3-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm Port iOS 16 v0.1.0 (unsigned)" \
-              --notes "Unofficial iOS 16 test build. Adobe .cube LUT import, photo preview, JPEG export. NOT the native spectral engine. Unsigned IPA must be signed." \
+              --title "SpektraFilm iOS 16.5.1 v0.2.3 — startup diagnostic" \
+              --notes "Crash log: iOS16.5.1 UIKit startup BackBoardServices bundle ID nil. Known-good v0.1 editor, only compact generated stock metadata and no bundled JSON; pinned Xcode16.4, target iOS16.5, explicit bundle ID checks. Not a physical spectral engine. Unsigned IPA requires signing." \
               --prerelease
           fi
