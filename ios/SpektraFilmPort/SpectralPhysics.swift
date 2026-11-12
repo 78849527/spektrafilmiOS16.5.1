@@ -151,8 +151,14 @@ struct SpectralPhysics {
         let cie = try Self.readOriginalFloat32(
             GeneratedOriginalOptics.cie1931, count: 81 * 3
         )
+        // Original print balance database selects filter CC values per
+        // film + printing-stock pair; do not reuse one neutral spectrum.
+        let printKey = filmID + "|" + paperID
+        let sourceIlluminant =
+            GeneratedOriginalOptics.printIlluminantByPair[printKey] ??
+            GeneratedOriginalOptics.enlargerNeutral
         let enlarger = try Self.readOriginalFloat32(
-            GeneratedOriginalOptics.enlargerNeutral, count: 81
+            sourceIlluminant, count: 81
         )
         var matrix = Array(repeating: Array(repeating: 0.0, count: 3), count: 3)
         var pWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
