@@ -58,6 +58,51 @@ struct SpectralValidation {
         precondition(maximumDelta(a, b) > 0.005, "Film choice does not change simulated RGB")
         precondition(maximumDelta(a, c) > 0.005, "Paper choice does not change simulated RGB")
 
+        // Compare this Swift port against Python reference samples evaluated
+        // with upstream spektrafilm.rgb_to_raw_mallett2019 and colour-science.
+        // This checks original film input spectral response, NOT entire output
+        // pipeline parity; latter still needs the Hanatos/colour-reference port.
+        let originalMallettCases: [(String, [Double], [Double])] = [
+            (GeneratedOriginalOptics.referenceStock0,
+             GeneratedOriginalOptics.referenceRGB0,
+             GeneratedOriginalOptics.referenceRaw0),
+            (GeneratedOriginalOptics.referenceStock1,
+             GeneratedOriginalOptics.referenceRGB1,
+             GeneratedOriginalOptics.referenceRaw1),
+            (GeneratedOriginalOptics.referenceStock2,
+             GeneratedOriginalOptics.referenceRGB2,
+             GeneratedOriginalOptics.referenceRaw2),
+            (GeneratedOriginalOptics.referenceStock3,
+             GeneratedOriginalOptics.referenceRGB3,
+             GeneratedOriginalOptics.referenceRaw3),
+            (GeneratedOriginalOptics.referenceStock4,
+             GeneratedOriginalOptics.referenceRGB4,
+             GeneratedOriginalOptics.referenceRaw4),
+            (GeneratedOriginalOptics.referenceStock5,
+             GeneratedOriginalOptics.referenceRGB5,
+             GeneratedOriginalOptics.referenceRaw5),
+            (GeneratedOriginalOptics.referenceStock6,
+             GeneratedOriginalOptics.referenceRGB6,
+             GeneratedOriginalOptics.referenceRaw6),
+            (GeneratedOriginalOptics.referenceStock7,
+             GeneratedOriginalOptics.referenceRGB7,
+             GeneratedOriginalOptics.referenceRaw7)
+        ]
+        for (stockID, input, expected) in originalMallettCases {
+            let engine = try SpectralPhysics(
+                filmID: stockID, paperID: "kodak_portra_endura"
+            )
+            let measured = engine.mallettRaw(linearRGB: input)
+            precondition(measured.count == 3)
+            for ch in 0..<3 {
+                let tolerance = max(0.00001, abs(expected[ch]) * 0.0001)
+                precondition(abs(measured[ch] - expected[ch]) <= tolerance,
+                             "Original Mallett mismatch: \(stockID) ch\(ch) " +
+                             "Swift \(measured[ch]), upstream \(expected[ch])")
+            }
+        }
+        print("PASS: original Mallett2019 Python reference / Swift numeric parity (8 samples).")
+
         let cube = try SpectralPhysics.makeCubeData(
             filmID: "kodak_portra_400",
             paperID: "kodak_portra_endura",
