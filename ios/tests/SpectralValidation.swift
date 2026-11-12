@@ -146,6 +146,28 @@ struct SpectralValidation {
         }
         print("PASS: 12 original DIR coupled chemistry reference samples.")
 
+        // v1.6 original emulsion granularity: source interp_density_cmy_layers
+        // inverts measured H-D separately for all 3×3 sublayers, including
+        // positive reversal films (negative density lookup direction).
+        precondition(GeneratedSublayerGrainReference.samples.count == 16)
+        for sample in GeneratedSublayerGrainReference.samples {
+            let source = try SpectralPhysics.measuredSublayers(
+                filmID: sample.stock, normalizedTotal: sample.total
+            )
+            precondition(source.layers.count == 9 && source.maxima.count == 9)
+            for k in 0..<9 {
+                precondition(
+                    abs(source.layers[k]-sample.layers[k]) < 0.006,
+                    "Measured source 3×3 layer mismatch for \(sample.stock), index \(k)"
+                )
+                precondition(
+                    abs(source.maxima[k]-sample.layerRawMaximum[k]) < 0.006,
+                    "Measured source layer maximum mismatch"
+                )
+            }
+        }
+        print("PASS: 16 original NumPy measured 3×3 H-D layer inversions, positive and negative stocks.")
+
         var pairs = 0
         for film in negatives {
             for medium in media {
@@ -325,6 +347,16 @@ struct SpectralValidation {
             precondition(sourceDIR.correctedDensityCube.count == 17*17*17*16)
             precondition(sourceDIR.printCube.count == 9*9*9*16)
             precondition(sourceDIR.positive == SpectralPhysics.isPositiveFilm(film))
+            let layers = try SpectralPhysics.makeDensityStageData(
+                filmID: film, paperID: medium,
+                exposureEV: 0.5, paperEV: -0.4,
+                size: 9
+            )
+            precondition(layers.sublayerCubes.count == 3 &&
+                         layers.sublayerRawMaxima.count == 9)
+            precondition(layers.sublayerCubes.allSatisfy {
+                $0.count == 9*9*9*16
+            })
         }
         print("PASS: 3 complete Hanatos -> initial DIR -> spatial DIR corrected H-D -> print/scan data paths.")
 
