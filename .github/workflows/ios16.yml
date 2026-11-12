@@ -330,6 +330,9 @@ jobs:
           assert 'originalFilmMicroClump' in metal
           assert 'physicalCoefficients(' in original
           assert '原版 Metal 显影链' in ui
+          assert '检测本机 Metal 显影内核' in ui
+          assert 'checkOriginalMetalHardware' in model
+          assert 'hardwareDiagnostic()' in original
           print("PASS: strict source Metal branch, original-density ordering and nonblocking preview")
           PY
       - name: Generate project
@@ -368,6 +371,35 @@ jobs:
           name: SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned
           path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned.ipa
           if-no-files-found: error
+      - name: Publish explicitly unverified on-device diagnostic IPA
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8' && steps.metal_source_gpu.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=ios1651-v1.8.0-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.0-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.0-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/original-metal-grain-v1.8" --jq '.object.sha')
+          if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
+            echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
+            exit 0
+          fi
+          cp "$SOURCE" "$ASSET"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8 - GPU NOT VERIFIED" \
+              --notes "WARNING: EXPERIMENTAL TEST BUILD, NOT A CERTIFIED RELEASE. Full iPhoneOS build and previous color/film regression succeeded, but the Intel CI Metal GPU passthrough returned all zero values. This IPA includes a real-device GPU diagnostic button under Density Grain > 3 Measured Layers > Original Metal. Run that diagnostic before trusting emulsion output. Source Metal path fails explicitly and never silently uses fast approximations; fast mode remains the default. Unsigned IPA requires user signing. Share the on-device diagnostics/result if a failure occurs. GPU parity and physical phone tests have NOT passed." \
+              --prerelease
+          fi
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+            -f sha="$GITHUB_SHA" -F force=true
+          ACTUAL=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')
+          test "$ACTUAL" = "$GITHUB_SHA"
+          gh release view "$TAG" --json tagName,url
+          echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish isolated v1.8 prerelease and synchronize tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/original-metal-grain-v1.8' && steps.metal_source_gpu.outcome == 'success'
         env:
