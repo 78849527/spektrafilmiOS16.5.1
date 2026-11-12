@@ -6,14 +6,19 @@ No SciPy convolution substituted: source large-sigma path is recursive YVV,
 not the ideal Gaussian and not the small-sigma FIR.
 """
 from pathlib import Path
-import sys
+import importlib.util
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
-from spektrafilm.utils.fast_gaussian_filter import (  # noqa: E402
-    fast_gaussian_filter, _yvv_coeffs,
-)
+# Import the exact upstream filter file without loading the whole package
+# (which has unrelated RAW / camera runtime dependencies).
+UPSTREAM = ROOT / "src/spektrafilm/utils/fast_gaussian_filter.py"
+spec = importlib.util.spec_from_file_location("source_fast_gaussian_filter", UPSTREAM)
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+fast_gaussian_filter = module.fast_gaussian_filter
+_yvv_coeffs = module._yvv_coeffs
 
 DEST = ROOT / "ios/SpektraFilmPort/GeneratedSourceIIRReference.swift"
 
