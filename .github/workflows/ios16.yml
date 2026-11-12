@@ -1,8 +1,8 @@
-name: iOS 16.5.1 — v1.0 floating photo preview
+name: iOS 16.5.1 — v1.0.1 safe startup floating editor
 
 on:
   push:
-    branches: ['ios16.5.1/floating-editor-v1.0']
+    branches: ['ios16.5.1/floating-safemode-v1.0.1']
     paths:
       - 'ios/**'
       - '.github/workflows/ios16.yml'
@@ -74,6 +74,19 @@ jobs:
             -o /tmp/SpektrafilmSpectralValidation
       - name: Run numeric physics and LUT regression checks
         run: /tmp/SpektrafilmSpectralValidation
+      - name: Guard iOS 16 floating editor cold-start regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+          assert "@State private var controlsVisible = false" in source
+          assert source.count("if controlsVisible && model.hasPhoto") >= 2
+          assert ".onChange(of: model.hasPhoto)" not in source
+          assert "@GestureState" not in source
+          assert ".simultaneousGesture(" not in source
+          assert "StableImageHoldRecognizer" in source
+          print("PASS: launch rendering defers both pickers and adjustment dock")
+          PY
       - name: Generate project
         working-directory: ios
         run: xcodegen generate --spec project.yml
@@ -93,33 +106,33 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.0.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.0.1'
           test ! -e "$APP/Resources/profiles/index.json"
       - name: Package v0.3 alpha unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned.ipa Payload
       - name: Upload v0.3 alpha IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned.ipa
           if-no-files-found: error
       - name: Publish isolated v0.3 alpha release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/floating-editor-v1.0'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/floating-safemode-v1.0.1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.0.0-floating-ui
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.0.0-floating-ui-unsigned.ipa
+          TAG=ios1651-v1.0.1-safe-ui
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.0.1-safe-ui-unsigned.ipa
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "Spektrafilm iOS 16.5.1 v1.0 — floating photo preview and draggable panels" \
-              --notes "Xcode 16.4 iOS 16.5.1 only. New fixed full-screen photo preview; draggable/collapsible floating film/paper wheels (left) and exposure/scatter/halation/grain panel (right), top import/export toolbar, hide/show controls, drag-the-divider original/effect comparison, UIKit press-and-hold original. Retains v0.9 density grain, Hanatos and DIR, 28 measured profiles, Photos/Files/.cube and JPEG output. Unsigned IPA requires signing." \
+              --title "Spektrafilm iOS 16.5.1 v1.0.1 — launch freeze hotfix" \
+              --notes "iOS16.5.1 v1.0.1 launch freeze hotfix: v1.0 reported unresponsive with 0x8BADF00D process-exit watchdog and SwiftUI AttributeGraph main thread, but exact hang cause not proven. Cold start now lazy-loads the two docks only after a photo is imported and eye control pressed. Removed derived hasPhoto onChange state mutation, continuous GestureState zoom/drag updates and dynamic material. Pinned image canvas, floating wheels and sliders, split compare, long hold original, 28 measured stocks, Hanatos, DIR, grain, optical effects retained. Requires user-side device verification and signing." \
               --prerelease
           fi
