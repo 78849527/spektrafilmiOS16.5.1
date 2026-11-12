@@ -391,9 +391,10 @@ final class PhotoEditorModel: ObservableObject {
                 let poisson = try OriginalMetalGrain.poissonHardwareDiagnostic()
                 let iir = try OriginalMetalIIR.hardwareDiagnostic()
                 let replay = try OriginalMetalSourceReplay.hardwareDiagnostic()
+                let mt = try OriginalSourceMT19937.validateReference()
                 await MainActor.run {
                     self.status = grain + "；" + poisson + "；" + iir +
-                        "；" + replay
+                        "；" + replay + "；" + mt
                 }
             } catch {
                 await MainActor.run {
