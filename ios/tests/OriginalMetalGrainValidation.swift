@@ -146,7 +146,61 @@ struct OriginalMetalGrainValidation {
                 }
             }
         }
-        print("PASS: real Metal reflect Gaussian at 0.20 / 0.65 / 1.20 pixels vs original NumPy.")
+        // Full 2D impulse at TOP-LEFT: validates both axes and the corner
+        // boundary. A column-constant 1D test does not cover vertical blur.
+        let corner=make(), scratch=make()
+        var cornerData=[Float](repeating:0,count:w*h*4)
+        cornerData[0]=1
+        cornerData[1]=1
+        cornerData[2]=1
+        cornerData[3]=1
+        cornerData.withUnsafeBytes { bytes in
+            corner.replace(region:MTLRegionMake2D(0,0,w,h),
+                           mipmapLevel:0,withBytes:bytes.baseAddress!,
+                           bytesPerRow:w*4*MemoryLayout<Float>.stride)
+        }
+        let cornerCommand=device.makeCommandQueue()!.makeCommandBuffer()!
+        func cornerPass(_ input:MTLTexture,_ output:MTLTexture,_ axis:UInt32) {
+            let encoder=cornerCommand.makeComputeCommandEncoder()!
+            encoder.setComputePipelineState(pipeline)
+            encoder.setTexture(input,index:0)
+            encoder.setTexture(output,index:1)
+            var args=OriginalMetalGrain.BlurParameters(
+                sigma:SIMD4<Float>(0.65,0.65,0.65,0),
+                width:UInt32(w),height:UInt32(h),axis:axis)
+            encoder.setBytes(&args,
+                             length:MemoryLayout<OriginalMetalGrain.BlurParameters>.stride,
+                             index:0)
+            encoder.dispatchThreadgroups(
+                MTLSize(width:(w+7)/8,height:(h+7)/8,depth:1),
+                threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1))
+            encoder.endEncoding()
+        }
+        cornerPass(corner,scratch,0)
+        cornerPass(scratch,out,1)
+        cornerCommand.commit()
+        cornerCommand.waitUntilCompleted()
+        precondition(cornerCommand.status == .completed,
+                     "Real Metal 2D corner reflect FIR command failed")
+        var cornerActual=[Float](repeating:0,count:w*h*4)
+        cornerActual.withUnsafeMutableBytes { bytes in
+            out.getBytes(bytes.baseAddress!,
+                         bytesPerRow:w*4*MemoryLayout<Float>.stride,
+                         from:MTLRegionMake2D(0,0,w,h),mipmapLevel:0)
+        }
+        let cornerExpected=GeneratedOriginalMetalGrainReference.reflect2dCorner065
+        precondition(cornerExpected.count==w*h)
+        for y in 0..<h {
+            for x in 0..<w {
+                for ch in 0..<3 {
+                    near(Double(cornerActual[(y*w+x)*4+ch]),
+                         cornerExpected[y*w+x],tolerance:0.00012,
+                         "source 2D corner FIR reflect x=\(x) y=\(y)")
+                }
+            }
+        }
+        print("PASS: real Metal reflect FIR 3 sigma values and full 2D corner vs original SciPy.")
+
     }
 
     static func main() throws {
