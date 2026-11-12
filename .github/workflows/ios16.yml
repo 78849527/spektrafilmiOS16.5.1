@@ -399,6 +399,12 @@ jobs:
           assert "directPrintScannerStages" in printing
           assert "light[np.isnan(light)] = 0.0" in reference
           assert "largest_legacy_error > 1e-5" in reference
+          profiles=Path("ios/scripts/generate_spectral_data.py").read_text()
+          optics=Path("ios/SpektraFilmPort/OriginalPrintOptics.swift").read_text()
+          assert "baseValidWavelengths" in profiles
+          assert "sensitivityValidSamples" in profiles
+          assert "filmBaseValid[i]" in optics
+          assert "sensitivitySampleValid[sample]" in printing
           assert "OriginalPrintScannerParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "scannerWavelengthValid[wl]" in Path("ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
           assert "scannerValidWavelengths" in Path("ios/scripts/generate_spectral_data.py").read_text()
