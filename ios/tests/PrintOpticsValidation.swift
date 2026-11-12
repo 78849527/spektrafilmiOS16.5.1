@@ -30,10 +30,14 @@ struct PrintOpticsValidation {
 
     static func raw(
         densities: [Double], base: [Double], dye: [Double],
-        weights: [[Double]]
+        weights: [[Double]], validity: [UInt8]
     ) -> [Double] {
+        precondition(validity.count == 81)
         var result = [Double](repeating: 0, count: 3)
         for index in 0..<81 {
+            // Source density_to_light propagates missing dyes to NaN and
+            // then sets all channels of that wavelength's light to ZERO.
+            if validity[index] == 0 { continue }
             var absorbance = base[index]
             for c in 0..<3 {
                 absorbance += dye[index*3+c]*densities[c]
@@ -49,7 +53,7 @@ struct PrintOpticsValidation {
     static func main() {
         let source = unpack(GeneratedOriginalOptics.enlargerSource, count: 81)
         let taps = [0, 17, 40, 64, 80]
-        precondition(GeneratedPrintOpticsReference.vectors.count == 4)
+        precondition(GeneratedPrintOpticsReference.vectors.count == 6)
         for vector in GeneratedPrintOpticsReference.vectors {
             guard let film = GeneratedSpectralData.profiles[vector.film],
                   let paper = GeneratedSpectralData.profiles[vector.paper],
@@ -58,6 +62,13 @@ struct PrintOpticsValidation {
                   ] else {
                 fatalError("Missing print source reference material")
             }
+            guard let mask = Data(base64Encoded: film.scannerValidWavelengths),
+                  mask.count == 81,
+                  mask.contains(0),
+                  mask.allSatisfy({ $0 == 0 || $0 == 1 }) else {
+                fatalError("Source print test missing original dye NaN mask")
+            }
+            let validity = Array(mask)
             let base = unpack(film.baseDensity, count: 81)
             let dye = unpack(film.channelDensity, count: 243)
             let paperLog = unpack(paper.logSensitivity, count: 243)
@@ -93,11 +104,11 @@ struct PrintOpticsValidation {
             }
             let observed = raw(
                 densities: vector.density, base: base, dye: dye,
-                weights: weights
+                weights: weights, validity: validity
             )
             let midgray = raw(
                 densities: vector.midgrayDensity, base: base, dye: dye,
-                weights: weights
+                weights: weights, validity: validity
             )
             let reference = OriginalPrintOptics.midgrayReference(midgray)
             near(reference, vector.reference, label: "midgrey normalization")
@@ -106,7 +117,7 @@ struct PrintOpticsValidation {
             }
             let compRaw = raw(
                 densities: compensatedDensity, base: base, dye: dye,
-                weights: weights
+                weights: weights, validity: validity
             )
             let modes: [(Bool, Bool)] = [
                 (false, false), (true, false),
@@ -136,6 +147,6 @@ struct PrintOpticsValidation {
         precondition(!OriginalPrintOptics.Settings(
             enabled: true, preflashExposure: -0.1
         ).isValid)
-        print("PASS: source Python Float64 optical print parity — 4 vectors, CMY spectrum, preflash, raw/normalized/log exposure.")
+        print("PASS: source Python Float64 NaN-correct optical print parity — 6 vectors, CMY spectrum, preflash, raw/normalized/log exposure.")
     }
 }
