@@ -323,6 +323,14 @@ final class PhotoEditorModel: ObservableObject {
             status = lut == nil ? "请先导入照片。" : "LUT 已导入，请选择照片。"
             return
         }
+        if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
+            guard grainSublayersEnabled, densityGrainStage != nil,
+                  lut != nil else {
+                throw ImageProcessingError.invalid(
+                    "原版 Metal 显影缺少实测亚层或光谱输入，禁止降级为快速 LUT"
+                )
+            }
+        }
         originalMetalPreviewVersion &+= 1
         let revision = originalMetalPreviewVersion
         // The full source-law Metal stage is synchronous and can perform
@@ -376,6 +384,14 @@ final class PhotoEditorModel: ObservableObject {
     func exportJPEG() async throws -> URL {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
+        }
+        if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
+            guard grainSublayersEnabled, densityGrainStage != nil,
+                  lut != nil else {
+                throw ImageProcessingError.invalid(
+                    "原版 Metal 导出缺少显影数据，禁止静默使用快速算法"
+                )
+            }
         }
         // Keep full-resolution Core Image evaluation off the SwiftUI main
         // actor to avoid freezing the iOS 16.5.1 floating workspace.
