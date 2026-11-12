@@ -77,7 +77,8 @@ def main():
         middle = exposure_raw(midgray_density, base, dyes, paper_sens, print_light)
         reference = float(np.exp(np.mean(np.log(np.maximum(middle, 1e-10)))))
         flash_raw = (flash * np.einsum("l,lc->c", flash_light * 10**(-base), paper_sens))
-        log_exposure = np.log10(np.maximum((raw / reference + flash_raw) * 2**ev, 0) + 1e-10)
+        before_enlarger = np.maximum(raw / reference + flash_raw, 0) + 1e-10
+        log_exposure = np.log10(np.maximum(before_enlarger * 2**ev, 0) + 1e-10)
         samples = print_light[[0, 17, 40, 64, 80]]
         for v in [*raw, *flash_raw, *log_exposure, reference, *samples]:
             assert np.isfinite(v)
