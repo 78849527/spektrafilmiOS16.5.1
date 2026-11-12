@@ -321,7 +321,7 @@ enum OriginalMetalGrain {
         }
         let reasons = faults.contents().bindMemory(to: UInt32.self, capacity: 4)
         let counts = samples.contents().bindMemory(to: Float.self, capacity: total)
-        for rate: Float in [7.29, 22.71, 29.9] {
+        for rate: Float in [0.1, 7.29, 22.71, 29.9, 30.0, 100.0, 1_000.0] {
             for i in 0..<4 { reasons[i] = 0 }
             var params = PoissonDiagnosticParameters(
                 lambda: rate, width: UInt32(w), height: UInt32(h), seed: 8888
@@ -374,7 +374,11 @@ enum OriginalMetalGrain {
             let mean = sum / Double(total)
             let variance = sumSquares / Double(total) - mean * mean
             let expected = Double(rate)
-            guard abs(mean - expected) < 0.50,
+            // Expected standard error of the mean is sqrt(lambda / N).
+            // Use a seven-sigma guard instead of a fixed 0.5 count cutoff,
+            // which incorrectly rejects correct high-rate Poisson samples.
+            let meanTolerance = max(0.50, 7.0 * sqrt(expected / Double(total)))
+            guard abs(mean - expected) < meanTolerance,
                   abs(variance - expected) / expected < 0.15 else {
                 throw Failure.invalid(
                     "Poisson 自检：λ=\(rate) 统计量异常，" +
@@ -382,7 +386,7 @@ enum OriginalMetalGrain {
                 )
             }
         }
-        return "原生 Metal Poisson 3 档采样通过，" +
+        return "原生 Metal Poisson 7 档（含高率 PTRS）采样通过，" +
             "每档 36,864 点，无失效；非 SciPy 逐像素同序验证"
     }
 
