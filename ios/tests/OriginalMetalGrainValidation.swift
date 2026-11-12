@@ -112,9 +112,9 @@ struct OriginalMetalGrainValidation {
                          tolerance:1e-10,"source dye cloud OD radius")
                 }
             }
-            near(data.microSigma,item.microSigma,1e-12,
+            near(data.microSigma,item.microSigma,tolerance:1e-12,
                  "source lognormal microstructure sigma")
-            near(data.microBlur,item.microBlur,1e-12,
+            near(data.microBlur,item.microBlur,tolerance:1e-12,
                  "source microstructure spatial blur")
             precondition((data.microSigma>0.05) == (item.pixelUM==0.5))
         }
