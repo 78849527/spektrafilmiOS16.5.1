@@ -87,6 +87,65 @@ struct SpectralValidation {
         }
         print("PASS: original Mallett2019 Python/Swift numeric comparison.")
 
+        // Upstream Python model/couplers.py parity including positive films:
+        // density-curve inverse, silver inversion, donor/receiver matrix,
+        // exposure inhibition and final corrected H-D lookup.
+        precondition(GeneratedDIRData.records.count == 20,
+                     "DIR matrices must cover every filming stock")
+        let dirReferenceSamples: [(String, [Double], [Double])] = [
+            (GeneratedDIRData.referenceStock0,
+             GeneratedDIRData.referenceLogRaw0,
+             GeneratedDIRData.referenceDensity0),
+            (GeneratedDIRData.referenceStock1,
+             GeneratedDIRData.referenceLogRaw1,
+             GeneratedDIRData.referenceDensity1),
+            (GeneratedDIRData.referenceStock2,
+             GeneratedDIRData.referenceLogRaw2,
+             GeneratedDIRData.referenceDensity2),
+            (GeneratedDIRData.referenceStock3,
+             GeneratedDIRData.referenceLogRaw3,
+             GeneratedDIRData.referenceDensity3),
+            (GeneratedDIRData.referenceStock4,
+             GeneratedDIRData.referenceLogRaw4,
+             GeneratedDIRData.referenceDensity4),
+            (GeneratedDIRData.referenceStock5,
+             GeneratedDIRData.referenceLogRaw5,
+             GeneratedDIRData.referenceDensity5),
+            (GeneratedDIRData.referenceStock6,
+             GeneratedDIRData.referenceLogRaw6,
+             GeneratedDIRData.referenceDensity6),
+            (GeneratedDIRData.referenceStock7,
+             GeneratedDIRData.referenceLogRaw7,
+             GeneratedDIRData.referenceDensity7),
+            (GeneratedDIRData.referenceStock8,
+             GeneratedDIRData.referenceLogRaw8,
+             GeneratedDIRData.referenceDensity8),
+            (GeneratedDIRData.referenceStock9,
+             GeneratedDIRData.referenceLogRaw9,
+             GeneratedDIRData.referenceDensity9),
+            (GeneratedDIRData.referenceStock10,
+             GeneratedDIRData.referenceLogRaw10,
+             GeneratedDIRData.referenceDensity10),
+            (GeneratedDIRData.referenceStock11,
+             GeneratedDIRData.referenceLogRaw11,
+             GeneratedDIRData.referenceDensity11)
+        ]
+        for (filmID, logRaw, reference) in dirReferenceSamples {
+            let engine = try SpectralPhysics(
+                filmID: filmID, paperID: "kodak_portra_endura"
+            )
+            let simulated = engine.dirDevelopedDensity(logRaw: logRaw)
+            precondition(simulated.count == 3, "Invalid DIR channel count")
+            for channel in 0..<3 {
+                precondition(
+                    abs(simulated[channel] - reference[channel]) < 0.003,
+                    "Original Python DIR mismatch \(filmID) ch\(channel): " +
+                    "\(simulated[channel]) vs \(reference[channel])"
+                )
+            }
+        }
+        print("PASS: 12 original DIR coupled chemistry reference samples.")
+
         var pairs = 0
         for film in negatives {
             for medium in media {
