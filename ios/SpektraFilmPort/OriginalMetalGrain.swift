@@ -427,11 +427,13 @@ enum OriginalMetalGrain {
               imageWidth <= 50_000 && imageHeight <= 50_000 else {
             throw Failure.invalid("原版 Metal 颗粒：图像尺寸无效或过大")
         }
-        // Output is one retained 16-bit density texture. Intermediate
-        // 32-bit source/emulsion textures are recycled tile by tile.
-        // This avoids nine full-size textures on high-resolution RAW exports.
+        // Original-precision mode must not quantize the optical-density
+        // result to Float16 before paper/scan. Keep the destination Float32
+        // and recycle the tile-local Float32 intermediates. If a large RAW
+        // exceeds available GPU memory, fail explicitly; never silently
+        // switch to half precision or the mobile-fast path.
         let destination = try makeTexture(
-            device, width: imageWidth, height: imageHeight, format: .rgba16Float
+            device, width: imageWidth, height: imageHeight, format: .rgba32Float
         )
         let context = CIContext(mtlDevice: device, options: [
             .workingColorSpace: NSNull(), .cacheIntermediates: false
