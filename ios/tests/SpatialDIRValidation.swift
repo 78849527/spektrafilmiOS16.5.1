@@ -120,6 +120,23 @@ struct SpatialDIRValidation {
             settings: off, grain: nil
         )
         precondition(offResult == nil)
+        // A precise source-mode request without Double-calculated optical
+        // nodes must FAIL. It cannot quietly consume mobile Float32 LUTs.
+        var missing = stage(positive: false)
+        missing.float64OpticalNodes = nil
+        var rejected = false
+        do {
+            _ = try SpatialDIR.apply(
+                to: image, stage: missing, settings: opts, grain: nil
+            )
+        } catch SourceSpatialDIRConvolution.Failure.invalid(let message) {
+            precondition(message.contains("Float64"),
+                         "Must identify exactly the missing Double LUT")
+            rejected = true
+        }
+        precondition(rejected,
+                     "Original source DIR silently downgraded to Float32 cubes")
+        print("PASS: source exact path rejects missing Float64 optical nodes.")
         print("PASS: source FIR/YVV spatial DIR stage renders physical intermediate densities, both negative and reversal.")
         // Execute direct source 2D Python convolution references and the
         // exact same CoreImage spatial branch used by production photos.
