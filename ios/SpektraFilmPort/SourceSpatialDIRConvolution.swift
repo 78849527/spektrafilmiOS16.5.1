@@ -206,6 +206,129 @@ enum SourceSpatialDIRConvolution {
         return out
     }
 
+    /// v1.8.24: exact original FIR/YVV full-frame filtering with TWO
+    /// reusable ONE-CHANNEL Double workspaces instead of up to four
+    /// additional THREE-CHANNEL frame allocations per Gaussian mixture.
+    /// This is NOT independent-tile approximation: IIR recurrences traverse
+    /// the full width and full height, retaining true source edge states.
+    ///
+    /// Uses original source pass order (FIR: vertical then horizontal;
+    /// YVV: horizontal then vertical), reflect boundaries and filter
+    /// accumulation order. Channel processing changes only loop grouping.
+    static func diffuseMemoryBounded(
+        _ input:[Double], width:Int,height:Int,
+        coreSigma:Double,tailSigma:Double,tailWeight:Double
+    ) throws -> [Double] {
+        try requireValid(input,width:width,height:height,sigma:coreSigma)
+        guard tailSigma.isFinite,tailSigma>=0,
+              tailWeight.isFinite,(0...1).contains(tailWeight) else {
+            throw Failure.invalid("原版 DIR 流式扩散尾部参数无效")
+        }
+        let pixels=width*height
+        var intermediate=[Double](repeating:0,count:pixels)
+        var filtered=[Double](repeating:0,count:pixels)
+        var result=[Double](repeating:0,count:input.count)
+
+        func gaussianChannel(_ channel:Int,sigma:Double) {
+            if sigma <= 0 {
+                for p in 0..<pixels {
+                    filtered[p]=input[p*3+channel]
+                }
+                return
+            }
+            if sigma < 3.0 {
+                // Original fast_gaussian_filter.py: reflect FIR in vertical,
+                // then horizontal order, Gaussian truncated to 3 sigma.
+                let kernel=weights(sigma)
+                let radius=(kernel.count-1)/2
+                for y in 0..<height {
+                    for x in 0..<width {
+                        var sum=0.0
+                        for k in -radius...radius {
+                            let yy=reflect(y+k,height)
+                            sum+=input[(yy*width+x)*3+channel] *
+                                kernel[k+radius]
+                        }
+                        intermediate[y*width+x]=sum
+                    }
+                }
+                for y in 0..<height {
+                    for x in 0..<width {
+                        var sum=0.0
+                        for k in -radius...radius {
+                            let xx=reflect(x+k,width)
+                            sum+=intermediate[y*width+xx]*kernel[k+radius]
+                        }
+                        filtered[y*width+x]=sum
+                    }
+                }
+                return
+            }
+            // Same Young-van Vliet B/B1/B2/B3 source Double coefficients
+            // and replicated-edge initial states as the original yvv().
+            let (B,B1,B2,B3)=yvvCoefficients(sigma:sigma)
+            for y in 0..<height {
+                var s1=input[(y*width)*3+channel]
+                var s2=s1,s3=s1
+                for x in 0..<width {
+                    let p=y*width+x
+                    let v=B*input[p*3+channel]+B1*s1+B2*s2+B3*s3
+                    intermediate[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+                let last=y*width+width-1
+                s1=intermediate[last];s2=s1;s3=s1
+                for x in stride(from:width-1,through:0,by:-1) {
+                    let p=y*width+x
+                    let v=B*intermediate[p]+B1*s1+B2*s2+B3*s3
+                    intermediate[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+            }
+            for x in 0..<width {
+                var s1=intermediate[x]
+                var s2=s1,s3=s1
+                for y in 0..<height {
+                    let p=y*width+x
+                    let v=B*intermediate[p]+B1*s1+B2*s2+B3*s3
+                    filtered[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+                let last=(height-1)*width+x
+                s1=filtered[last];s2=s1;s3=s1
+                for y in stride(from:height-1,through:0,by:-1) {
+                    let p=y*width+x
+                    let v=B*filtered[p]+B1*s1+B2*s2+B3*s3
+                    filtered[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+            }
+        }
+
+        let sourcePasses:[(gain:Double,sigma:Double)] = [
+            (1.0-tailWeight,coreSigma)
+        ] + (tailWeight == 0 ? [] : mixture.map {
+            (tailWeight*$0.0,tailSigma*$0.1)
+        })
+        for (pass,(gain,sigma)) in sourcePasses.enumerated() {
+            for c in 0..<3 {
+                gaussianChannel(c,sigma:sigma)
+                for p in 0..<pixels {
+                    let k=p*3+c
+                    if pass == 0 {
+                        result[k]=gain*filtered[p]
+                    } else {
+                        result[k]+=gain*filtered[p]
+                    }
+                }
+            }
+        }
+        guard result.allSatisfy({ $0.isFinite }) else {
+            throw Failure.invalid("原版 DIR 低内存 FIR/YVV 出现 NaN/Inf")
+        }
+        return result
+    }
+
     /// Convert the Core Image inhibitor buffer to Float32 RGBA only at
     /// the CI boundary. Perform all original FIR/YVV operations in Double
     /// before converting to Float32 CIImage; NO silent CoreImage fallback.
