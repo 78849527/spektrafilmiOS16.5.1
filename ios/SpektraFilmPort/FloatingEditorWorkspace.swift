@@ -686,13 +686,24 @@ struct FloatingEditorWorkspace: View {
                     model.queueSpectralPreview()
                 }
             if model.spatialDIREnabled {
+                resetToggle("DIR 原版 FIR/YVV", value: $model.spatialDIRSourceConvolutionEnabled,
+                            enabled: model.hasPhoto && !model.busy,
+                            resetTo: true)
+                    .onChange(of: model.spatialDIRSourceConvolutionEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                Text(model.spatialDIRSourceConvolutionEnabled
+                     ? "原版 reflect FIR／YVV IIR，双精度扩散；图像边界为 Float32"
+                     : "移动快速 Core Image Gaussian；非原版精确边界")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
                 strengthControl("抑制剂扩散范围",
                                 value: $model.spatialDIRRadiusScale,
                                 range: 0.25...3.0, suffix: "×", resetTo: 1.0)
                 Text("胶片曝光 → DIR 抑制剂空间扩散 → 密度曲线 → 印相")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("原版 20/200 μm 核；GPU 边界近似")
+                Text("原版 20/200 μm 核；根据模式选择源 FIR/YVV 或 CI 近似")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
