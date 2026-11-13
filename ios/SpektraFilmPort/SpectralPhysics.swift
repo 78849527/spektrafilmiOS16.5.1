@@ -36,11 +36,20 @@ struct SpectralPhysics {
         let dirCorrectedCurves: [Float]  // upstream pre-DIR normalized H-D
         let dirMatrix: [Double]          // donor (row) -> receiver (column)
         let densityMaximum: [Double]
+        // Source mode keeps the ORIGINAL upstream JSON Float64 bits. These
+        // buffers are absent in mobile fast mode (which remains unchanged).
+        let sourceLogSensitivityF64: [Double]?
+        let sourceChannelDensityF64: [Double]?
+        let sourceBaseDensityF64: [Double]?
+        let sourceLogExposureF64: [Double]?
+        let sourceDensityCurvesF64: [Double]?
+        let sourceDensityCurvesLayersF64: [Double]?
+        let sourceCorrectedCurvesF64: [Double]?
         let polarity: String
         let viewingIlluminant: String
         let id: String
 
-        init(id: String) throws {
+        init(id: String, sourceMeasuredFloat64: Bool = false) throws {
             guard let record = GeneratedSpectralData.profiles[id] else {
                 throw PhysicsError.invalid("没有该胶片／相纸的实测曲线：" + id)
             }
@@ -73,13 +82,42 @@ struct SpectralPhysics {
             densityCurves = try Self.decode(record.densityCurves, count: 768)
             densityCurvesLayers = record.densityCurvesLayers.isEmpty
                 ? [] : try Self.decode(record.densityCurvesLayers, count: 2304)
+            sourceLogSensitivityF64 = try Self.decodeOptionalSource(
+                record.sourceLogSensitivityF64, count:243,
+                enabled:sourceMeasuredFloat64
+            )
+            sourceChannelDensityF64 = try Self.decodeOptionalSource(
+                record.sourceChannelDensityF64, count:243,
+                enabled:sourceMeasuredFloat64
+            )
+            sourceBaseDensityF64 = try Self.decodeOptionalSource(
+                record.sourceBaseDensityF64, count:81,
+                enabled:sourceMeasuredFloat64
+            )
+            sourceLogExposureF64 = try Self.decodeOptionalSource(
+                record.sourceLogExposureF64, count:256,
+                enabled:sourceMeasuredFloat64
+            )
+            sourceDensityCurvesF64 = try Self.decodeOptionalSource(
+                record.sourceDensityCurvesF64, count:768,
+                enabled:sourceMeasuredFloat64
+            )
+            sourceDensityCurvesLayersF64 = try Self.decodeOptionalSource(
+                record.sourceDensityCurvesLayersF64, count:2304,
+                enabled:sourceMeasuredFloat64, allowEmpty:true
+            )
             if let dir = GeneratedDIRData.records[id] {
                 dirCorrectedCurves = try Self.decode(dir.correctedCurves, count: 768)
+                sourceCorrectedCurvesF64 = try Self.decodeOptionalSource(
+                    dir.sourceCorrectedCurvesF64, count:768,
+                    enabled:sourceMeasuredFloat64
+                )
                 dirMatrix = dir.donorReceiverMatrix
                 densityMaximum = dir.sourceDensityMax
             } else {
                 // Print media do not use negative-film DIR inhibition.
                 dirCorrectedCurves = []
+                sourceCorrectedCurvesF64 = nil
                 dirMatrix = Array(repeating: 0.0, count: 9)
                 densityMaximum = Array(repeating: 0.0, count: 3)
             }
@@ -91,9 +129,11 @@ struct SpectralPhysics {
             // spektrafilm.model.develop.develop() subtracts the full channel
             // minimum (not just densityCurves[0]) before interpolating.
             let measuredCurves = densityCurves
+            let sourceCurves = sourceDensityCurvesF64
             minimumDensity = (0..<3).map { ch in
                 (0..<256).map { i in
-                    Double(measuredCurves[i * 3 + ch])
+                    sourceCurves?[i * 3 + ch] ??
+                        Double(measuredCurves[i * 3 + ch])
                 }.min() ?? 0.0
             }
         }
@@ -118,24 +158,67 @@ struct SpectralPhysics {
             }
         }
 
+        /// Decode raw original JSON number binary64, never Float32-round
+        /// first. The separate mobile arrays remain bit-for-bit unchanged.
+        private static func decodeOptionalSource(
+            _ string:String, count:Int, enabled:Bool,
+            allowEmpty:Bool = false
+        ) throws -> [Double]? {
+            guard enabled else { return nil }
+            if string.isEmpty && allowEmpty { return nil }
+            guard let bytes=Data(base64Encoded:string),
+                  bytes.count == count * MemoryLayout<Double>.size else {
+                throw PhysicsError.invalid(
+                    "原版 Float64 实测光谱或 H-D 缺失，禁止精确模式降级"
+                )
+            }
+            return bytes.withUnsafeBytes { raw in
+                (0..<count).map { i in
+                    let offset=i*8
+                    let value=raw.loadUnaligned(
+                        fromByteOffset:offset,as:UInt64.self
+                    )
+                    return Double(bitPattern:UInt64(littleEndian:value))
+                }
+            }
+        }
+
+        var sourceExposureAxis: [Double] {
+            sourceLogExposureF64 ?? logExposure.map(Double.init)
+        }
+
+        func densityAt(_ index:Int) -> Double {
+            sourceDensityCurvesF64?[index] ?? Double(densityCurves[index])
+        }
+
+        func layerAt(_ index:Int) -> Double {
+            sourceDensityCurvesLayersF64?[index] ??
+                Double(densityCurvesLayers[index])
+        }
+
         func curve(_ logE: Double, channel: Int,
                    correctedBeforeDIR: Bool = false) -> Double {
-            let first = Double(logExposure[0])
-            let last = Double(logExposure[255])
+            let first = sourceLogExposureF64?[0] ?? Double(logExposure[0])
+            let last = sourceLogExposureF64?[255] ?? Double(logExposure[255])
             let useCorrected = correctedBeforeDIR && !dirCorrectedCurves.isEmpty
             let curves = useCorrected ? dirCorrectedCurves : densityCurves
+            let precise = useCorrected
+                ? sourceCorrectedCurvesF64 : sourceDensityCurvesF64
             let minDensity = useCorrected ? 0 : minimumDensity[channel]
+            func sample(_ index:Int) -> Double {
+                precise?[index] ?? Double(curves[index])
+            }
             if logE <= first {
-                return max(0, Double(curves[channel]) - minDensity)
+                return max(0, sample(channel) - minDensity)
             }
             if logE >= last {
-                return max(0, Double(curves[255 * 3 + channel]) - minDensity)
+                return max(0, sample(255 * 3 + channel) - minDensity)
             }
             let u = (logE - first) / (last - first) * 255
             let index = min(254, max(0, Int(floor(u))))
             let weight = min(1, max(0, u - Double(index)))
-            let y0 = Double(curves[index * 3 + channel])
-            let y1 = Double(curves[(index + 1) * 3 + channel])
+            let y0 = sample(index * 3 + channel)
+            let y1 = sample((index + 1) * 3 + channel)
             return max(0, y0 + (y1 - y0) * weight - minDensity)
         }
 
@@ -149,13 +232,11 @@ struct SpectralPhysics {
             let sign = polarity == "positive" ? -1.0 : 1.0
             let desired = total * sign
             func domain(_ index: Int) -> Double {
-                (Double(densityCurves[index * 3 + channel]) -
+                (densityAt(index * 3 + channel) -
                  minimumDensity[channel]) * sign
             }
             func value(_ index: Int) -> Double {
-                Double(densityCurvesLayers[
-                    index * 9 + sublayer * 3 + channel
-                ])
+                layerAt(index * 9 + sublayer * 3 + channel)
             }
             if desired <= domain(0) { return max(0, value(0)) }
             if desired >= domain(255) { return max(0, value(255)) }
@@ -176,7 +257,7 @@ struct SpectralPhysics {
             guard !densityCurvesLayers.isEmpty else { return [] }
             return (0..<9).map { k in
                 (0..<256).reduce(0.0) { maximum, i in
-                    max(maximum, Double(densityCurvesLayers[i*9+k]))
+                    max(maximum, layerAt(i*9+k))
                 }
             }
         }
@@ -186,15 +267,19 @@ struct SpectralPhysics {
             // turning unavailable paper-sensitive bands into ZERO response.
             let sample = wavelengthIndex * 3 + ch
             guard sensitivitySampleValid[sample] else { return 0.0 }
-            return pow(10.0, Double(logSensitivity[sample]))
+            let logS=sourceLogSensitivityF64?[sample] ??
+                Double(logSensitivity[sample])
+            return pow(10.0, logS)
         }
 
         func dyeAbsorbance(_ wavelengthIndex: Int, _ ch: Int) -> Double {
-            Double(channelDensity[wavelengthIndex * 3 + ch])
+            sourceChannelDensityF64?[wavelengthIndex * 3 + ch] ??
+                Double(channelDensity[wavelengthIndex * 3 + ch])
         }
 
         func base(_ wavelengthIndex: Int) -> Double {
-            Double(baseDensity[wavelengthIndex])
+            sourceBaseDensityF64?[wavelengthIndex] ??
+                Double(baseDensity[wavelengthIndex])
         }
     }
 
@@ -265,13 +350,18 @@ struct SpectralPhysics {
          printMorph: OriginalPrintMorph.Settings = .init(),
          printOptics: OriginalPrintOptics.Settings = .init(),
          cameraExposureEV: Double = 0,
-         hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64) throws {
+         hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64,
+         sourceMeasuredFloat64: Bool = false) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
         }
-        let originalFilm = try Profile(id: filmID)
-        let originalPaper = try Profile(id: paperID)
+        let originalFilm = try Profile(
+            id:filmID,sourceMeasuredFloat64:sourceMeasuredFloat64
+        )
+        let originalPaper = try Profile(
+            id:paperID,sourceMeasuredFloat64:sourceMeasuredFloat64
+        )
         let originalHanatos = try OriginalHanatosResponse(
             filmID: filmID, precision: hanatosPrecision
         )
@@ -296,7 +386,7 @@ struct SpectralPhysics {
         )
         if useOriginalPrintOptics {
             guard let source = OriginalPrintMorph.prepareSource(
-                stock:paperID,logExposure:originalPaper.logExposure,
+                stock:paperID,logExposure:originalPaper.sourceExposureAxis,
                 settings:printMorph,
                 positive:originalPaper.polarity == "positive"
             ) else {
