@@ -247,6 +247,16 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Camera hands the original JPEG bytes to the SAME importer as Photos.
+    func loadCapturedPhoto(_ data: Data) {
+        do {
+            try loadPhoto(data)
+            status = "拍摄成功 · 已使用当前胶片和相纸进行冲印"
+        } catch {
+            status = "相机照片导入失败：" + error.localizedDescription
+        }
+    }
+
     func loadPhotoFile(_ url: URL) {
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
@@ -838,6 +848,7 @@ final class PhotoEditorModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var model = PhotoEditorModel()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var cameraPresented = false
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
     @State private var pendingExport: ExportProposal?
@@ -881,6 +892,10 @@ struct ContentView: View {
                     model.status = "请选择 JPEG / HEIC / PNG / TIFF 图片文件"
                     activeSheet = .photo
                 },
+                onOpenCamera: {
+                    guard !model.busy else { return }
+                    cameraPresented = true
+                },
                 onOpenLUT: {
                     model.status = "请选择 .cube 文件"
                     activeSheet = .lut
@@ -905,6 +920,15 @@ struct ContentView: View {
             }
             .onChange(of: selectedPaperID) { _ in
                 model.queueSpectralPreview()
+            }
+            .fullScreenCover(isPresented: $cameraPresented) {
+                NextLevelCameraScreen(
+                    onCancel: { cameraPresented = false },
+                    onCapture: { bytes in
+                        cameraPresented = false
+                        model.loadCapturedPhoto(bytes)
+                    }
+                )
             }
             .sheet(item: $activeSheet) { selection in
                 switch selection {
