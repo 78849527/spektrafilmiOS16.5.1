@@ -2,12 +2,13 @@
 """Embed all 28 upstream Spektrafilm measured materials in Swift (iOS16.5.1).
 
 Important classification: 20 exposure films (16 negative, 4 positive),
-6 photographic papers and 2 colour motion-picture print stocks. All original
-numeric fields are copied as Float32; invalid/null spectral measurements are
-represented as zeros in Float32 arrays, but source missing-wavelength
-positions are preserved separately: original density_to_light() turns NaN
-into ZERO transmitted light at the whole wavelength (not zero absorbance).
-The original 200KB JSONs remain checked in upstream, but are not bundled.
+6 photographic papers and 2 colour motion-picture print stocks. Fast/mobile profile values retain legacy Float32 packing exactly, while
+the opt-in original physical pixel engine gets a SEPARATE bit-exact Float64
+copy of every upstream JSON numeric field. Original None values use zero
+plus a separate exact validity mask, so original density_to_light() still
+sets missing-wavelength transmitted light to ZERO. Never mix mobile F32
+profile values into exact source per-pixel material evaluation.
+Original JSON measurements remain checked in upstream, not bundled.
 """
 from __future__ import annotations
 import base64
@@ -33,7 +34,7 @@ FIELDS = (
 Q = lambda s: json.dumps(str(s), ensure_ascii=False)
 
 
-def to_f32(name: str, field: str, values, expected: int) -> str:
+def to_bytes(name: str, field: str, values, expected: int, fmt: str) -> str:
     flat = []
     def gather(tree):
         if isinstance(tree, list):
@@ -50,7 +51,13 @@ def to_f32(name: str, field: str, values, expected: int) -> str:
     gather(values)
     if len(flat) != expected:
         raise ValueError(f"Bad size {name}/{field} {len(flat)} != {expected}")
-    return base64.b64encode(struct.pack("<" + "f" * expected, *flat)).decode("ascii")
+    return base64.b64encode(struct.pack("<" + fmt * expected, *flat)).decode("ascii")
+
+def to_f32(name: str, field: str, values, expected: int) -> str:
+    return to_bytes(name, field, values, expected, "f")
+
+def to_f64(name: str, field: str, values, expected: int) -> str:
+    return to_bytes(name, field, values, expected, "d")
 
 def scan_validity_mask(stock: str, data: dict) -> str:
     """Original NaN anywhere in CMY dye/base => zero transmission at wavelength."""
@@ -118,8 +125,9 @@ def main() -> None:
         "// Generated from all 28 original Spektrafilm measured profiles.",
         "// Upstream source and original GPLv3 / profile CC BY-SA notices retained",
         "// under src/spektrafilm and SPEKTRAFILM_LICENSE.txt.",
-        "// Float32 spectra + original source NaN zero-light 81-wavelength mask.",
-        "// This contains ALL measured arrays, not the complete source engine.",
+        "// Separate FAST Float32 and ORIGINAL Float64 measured arrays.",
+        "// Original JSON NaN/null zero-light masks remain independent.",
+        "// Original Float64 arrays are loaded only by opt-in source image mode.",
         "enum GeneratedSpectralData {",
         "    struct Record {",
         "        let logSensitivity: String",
@@ -131,6 +139,12 @@ def main() -> None:
         "        let logExposure: String",
         "        let densityCurves: String",
         "        let densityCurvesLayers: String",
+        "        let sourceLogSensitivityF64: String",
+        "        let sourceChannelDensityF64: String",
+        "        let sourceBaseDensityF64: String",
+        "        let sourceLogExposureF64: String",
+        "        let sourceDensityCurvesF64: String",
+        "        let sourceDensityCurvesLayersF64: String",
         "        let support: String",
         "        let stage: String",
         "        let polarity: String",
@@ -159,6 +173,13 @@ def main() -> None:
             )
             for field, count in FIELDS
         }
+        source_double = {
+            field: (
+                to_f64(stock, field, data[field], count)
+                if field in data else ""
+            )
+            for field, count in FIELDS
+        }
         fields = [
             ("logSensitivity", encoded["log_sensitivity"]),
             ("channelDensity", encoded["channel_density"]),
@@ -169,6 +190,12 @@ def main() -> None:
             ("logExposure", encoded["log_exposure"]),
             ("densityCurves", encoded["density_curves"]),
             ("densityCurvesLayers", encoded["density_curves_layers"]),
+            ("sourceLogSensitivityF64", source_double["log_sensitivity"]),
+            ("sourceChannelDensityF64", source_double["channel_density"]),
+            ("sourceBaseDensityF64", source_double["base_density"]),
+            ("sourceLogExposureF64", source_double["log_exposure"]),
+            ("sourceDensityCurvesF64", source_double["density_curves"]),
+            ("sourceDensityCurvesLayersF64", source_double["density_curves_layers"]),
             ("support", info["support"]),
             ("stage", info["stage"]),
             ("polarity", info["type"]),
@@ -191,6 +218,8 @@ def main() -> None:
     print("PASS: 20 measured 256×3×3 sublayer emulsions encoded.")
     print(f"PASS: {len(negatives) * len(printmedia)} negative-print "
           f"pairs and {len(positives)} positive film scans")
+    print("PASS: original Float64 bit representation of six measured arrays " +
+          "retained separately from unchanged mobile Float32 for all 28 stocks.")
     print(f"Generated embedded Swift data: {DEST.stat().st_size} bytes")
 
 if __name__ == "__main__":
