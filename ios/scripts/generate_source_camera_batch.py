@@ -21,6 +21,27 @@ from skimage.transform import rescale
 root = Path(__file__).resolve().parents[2]
 src = root / "src/spektrafilm"
 
+# Pin the original, unmodified Python source *Git blob* identity.
+# Hashes are the repository's main-branch upstream baseline. Regenerating
+# expected Swift vectors must NOT silently legitimize source-code drift.
+SOURCE_BLOBS={
+    "autoexposure": (src / "utils/autoexposure.py", "59533605bab853f5cb57232b19edd286df3b8b4d"),
+    "highlight_boost": (src / "utils/numba_boost_hightlights.py", "61cb5ca89163762335674279a9743801e13e0e8f"),
+    "camera_diffusion": (src / "model/diffusion.py", "cb22136f9d6a65e32ab54fc6f46f64f308e1a4f7"),
+    "source_gaussian": (src / "utils/fast_gaussian_filter.py", "8918c673ea0fb3f5d9ae820ca85bf6db4aba457a"),
+}
+for label,(path,expected_git_blob) in SOURCE_BLOBS.items():
+    payload=path.read_bytes()
+    header=b"blob "+str(len(payload)).encode("ascii")+b"\x00"
+    actual_git_blob=hashlib.sha1(header+payload).hexdigest()
+    if actual_git_blob != expected_git_blob:
+        raise RuntimeError(
+            f"Original Python source changed ({label}): "
+            f"{actual_git_blob} != pinned {expected_git_blob}; "
+            "review upstream delta and intentionally rebaseline references"
+        )
+print("PASS: four original Python camera dependency Git blobs pinned")
+
 # Upstream package __init__ eagerly loads optional exiv2/RAW bindings.
 # Import the ORIGINAL source function files directly, exactly as the
 # existing source DIR parity generators do. No reimplemented Python math.
