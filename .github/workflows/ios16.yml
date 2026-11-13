@@ -477,8 +477,9 @@ jobs:
           # Core Image half-float boundary; Metal bit-pattern proof occurs
           # only in real-device hardwareDiagnostic and never certifies the
           # complete image algorithm.
-          assert "sourceRGBOverride:[Double]?=nil" in shader
-          assert "stageDoubleObserver" in shader
+          dirSource=Path("ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift").read_text()
+          assert "sourceRGBOverride:[Double]?=nil" in dirSource
+          assert "stageDoubleObserver" in dirSource
           assert "Float64 原版数组输入→计算阶段" in parity
           assert "directStageStatistics" in parity
           assert "result.directOutside==0" in model
