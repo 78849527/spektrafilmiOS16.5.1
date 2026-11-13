@@ -470,7 +470,9 @@ jobs:
           assert "softwareInputBridge=Metrics()" in parity
           assert "softwareRenderer:true" in parity
           assert "默认 CI 与 Float16 数值吻合" in parity
-          assert "Float16(Float(c.input[i]))" in parity
+          assert "float16Reference(c.input[i])" in parity
+          assert "let bits=Float(value).bitPattern" in parity
+          assert "if rem > tie" in parity
           assert "SourceSpatialDIR2DParity.evaluate()" in model
           assert "result.channels==1287" in model
           assert "result.numericOutside==0" in model
