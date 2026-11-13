@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.25 source 28-material Float64 spectrum/film/paper/DIR full-optics port
+name: iOS 16.5.1 — v1.8.26 original linear RGB scanner lens FIR/YVV Unsharp
 
 on:
   push:
-    branches: ['ios16.5.1/source-float64-profiles-v1.8.25']
+    branches: ['ios16.5.1/source-scanner-optics-v1.8.26']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.25-source-float64-measurements.md'
+      - 'docs/v1.8.26-original-linear-scanner-optics.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-source-float64-profiles-v1.8.25-release
+  group: ios1651-source-scanner-optics-v1.8.26-release
   cancel-in-progress: true
 
 jobs:
@@ -51,6 +51,8 @@ jobs:
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/SourceFloat64ProfileValidation.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerOptics.swift \
+            ios/tests/SourceScannerOpticsValidation.swift \
             ios/tests/SourcePhysicalImageParity.swift \
             ios/tests/SpatialDIRValidation.swift \
             ios/tests/SourceFullFrameParity.swift \
@@ -113,6 +115,8 @@ jobs:
           python3 ios/scripts/validate_source_float64_original.py
           NUMBA_CACHE_DIR="$(mktemp -d)" python3 ios/scripts/generate_source_physical_frame.py
           test -s ios/verification/generated-physical-v1.8.22/manifest.json
+          NUMBA_CACHE_DIR="$(mktemp -d)" python3 ios/scripts/generate_source_scanner_optics.py
+          test -s ios/verification/generated-scanner-optics-v1.8.26/manifest.json
           python3 ios/scripts/generate_scanner_reference.py
           python3 ios/scripts/generate_cam16_gamut.py
           python3 ios/scripts/generate_print_morph.py
@@ -413,6 +417,8 @@ jobs:
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerOptics.swift \
+            ios/tests/SourceScannerOpticsValidation.swift \
             ios/tests/SourcePhysicalImageParity.swift \
             ios/SpektraFilmPort/OriginalSourceRGBParity.swift \
             ios/SpektraFilmPort/GeneratedSourceRGBReference.swift \
@@ -487,7 +493,7 @@ jobs:
           assert "OriginalFilmDIRPrintParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalFilmDIRPrintParity.evaluate()" in model
           assert "OriginalCameraFilmPrintParity.evaluate()" in model
-          # v1.8.25 executes exact upstream source FIR/YVV spatial
+          # v1.8.26 executes exact upstream source FIR/YVV spatial
           # diffusion and the real CoreImage production path, not grep-only.
           # On-device source precision: quantify iOS CI RGBAh input
           # boundary separately from the source FIR/YVV Double kernel.
@@ -499,14 +505,14 @@ jobs:
           assert "float16Reference(c.input[i])" in parity
           assert "let bits=Float(value).bitPattern" in parity
           assert "if rem > tie" in parity
-          # v1.8.25: test source Double arrays before the iOS
+          # v1.8.26: test source Double arrays before the iOS
           # Core Image half-float boundary; Metal bit-pattern proof occurs
           # only in real-device hardwareDiagnostic and never certifies the
           # complete image algorithm.
           dirSource=Path("ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift").read_text()
           assert "sourceRGBOverride:[Double]?=nil" in dirSource
           assert "stageDoubleObserver" in dirSource
-          # v1.8.25: source mode must consume actual Double-calculated
+          # v1.8.26: source mode must consume actual Double-calculated
           # nonlinear Hanatos/H-D/paper/scan optical nodes. CI/mobile retains
           # its separate Float32 cubes, never selected as a fallback.
           physics=Path("ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
@@ -555,6 +561,19 @@ jobs:
           assert "engine.sourceSpatialDevelopCorrectedLog(" in physical
           assert "engine.sourceSpatialScan(" in physical
           assert "SourcePhysicalImageParity.evaluate(" in Path("ios/tests/SpectralValidation.swift").read_text()
+          # v1.8.26: literal source order XYZ/ACES LINEAR ->
+          # original full 2D lens Gaussian -> Unsharp -> sRGB CCTF.
+          scanner_code=Path("ios/SpektraFilmPort/OriginalSourceScannerOptics.swift").read_text()
+          source_scan_py=Path("ios/scripts/generate_source_scanner_optics.py").read_text()
+          assert "engine.sourceSpatialScanLinear(" in physical
+          assert "OriginalSourceScannerOptics.applyInPlace(" in physical
+          assert "sourceSpatialScanLinear(" in measured
+          assert "sourceScannerOpticalEnabled = false" in model
+          assert "original source scanner" in source_scan_py.lower()
+          assert "fast_gaussian_filter.py" in source_scan_py
+          assert "SourceScannerOpticsValidation.evaluate(" in Path("ios/tests/SpectralValidation.swift").read_text()
+          assert "SourceSpatialDIRConvolution.diffuseMemoryBounded(" in scanner_code
+
           assert "couplers.apply_density_correction_dir_couplers(" in original_python
           assert "raw_hanatos(" in original_python
           assert "source_scan_print(" in original_python
@@ -922,31 +941,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
           /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.25'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '50'
-          echo "PASS: device bundle 1.8.25 Build50, iOS16.5 minimum and original metal library"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '51'
+          echo "PASS: device bundle 1.8.25 Build51, iOS16.5 minimum and original metal library"
 
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8.25 unsigned IPA
+      - name: Package v1.8.26 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.25-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.25 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.26-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.26 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.25-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.25-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.26-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.26-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-float64-profiles-v1.8.25' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-scanner-optics-v1.8.26' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.25-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.25-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.25-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-float64-profiles-v1.8.25" --jq '.object.sha')
+          TAG=ios1651-v1.8.26-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.26-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.26-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-scanner-optics-v1.8.26" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -957,20 +976,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.25 - original physical image nonlinear Hanatos DIR paper scanner" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.25 Build50. Opt-in real photo 8bit ImageIO-to-Double DIR-to-JPEG without CI image pixel buffers, with the 3888x2592 10MP full-physical export functionally confirmed by user. Source physical mode now uses 28 original Float64 material profiles, 20 Float64 pre-DIR H-D curves, source s023 Double print axes, Float64 CIE1931 illuminants/KG3 and 128 original print pair spectra. Fast Float32 remains byte-identical. Independent upstream JSON-byte checks, native Swift profile SHA checks, Python seven-stage real-image RGB parity required. Source 12MP memory guard unchanged. Functional export does not imply original full-device numerical certification. Original A15 Metal Float32 evidence retained. Other nonported effects fail explicitly. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Full camera-film-print Float64 RGB, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.26 - original physical image nonlinear Hanatos DIR paper scanner" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.26 Build51. Opt-in real photo 8bit ImageIO-to-Double DIR-to-JPEG without CI image pixel buffers, with independent opt-in original scanner linear-RGB lens blur and Unsharp after true ACES optical scan but before sRGB CCTF. Python upstream eight whole-frame tests cover FIR/YVV and sigma boundaries. Extra 40B/pixel explicit memory safety; existing 10MP original source no-scanner export preserved. Float64 source 28 materials and 20 DIR plus Python seven-stage full-image verification retained. Stochastic source scanner glare, whole Numba RNG, RAW and GPU still NOT certified. Original A15 Metal Float32 evidence retained. Other nonported effects fail explicitly. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Full camera-film-print Float64 RGB, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.25 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-float64-profiles-v1.8.25' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.26 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-scanner-optics-v1.8.26' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.25-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.25-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.26-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.26-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-float64-profiles-v1.8.25" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-scanner-optics-v1.8.26" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -980,12 +999,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.25 — original source nonlinear real-image optical pipeline" \
-               --notes "v1.8.25 source precision batch includes original Float64 for all 28 measured profiles, 20 original pre-DIR H-D curves, 256 s023 paper exposure samples, CIE1931/Mallett/KG3/illuminants and 128 enlarger pair spectra. Mobile fast arrays unchanged. Source JSON byte parity + native SHA/all 28 materials + Python seven-stage image validation required. User confirmed 10MP physical export functional; full GPU, Numba random and RAW certification outstanding."
+              --title "SpektraFilm iOS 16.5.1 v1.8.26 — original source nonlinear real-image optical pipeline" \
+               --notes "v1.8.26 source full-size linear RGB scanner Gaussian and Unsharp use the exact source reflect FIR/YVV after optical XYZ/ACES and before display CCTF, gated by independent original Python eight whole-frame Double parity and explicit mode-specific memory budget. Previous user 10MP original physical output unaffected when new option is off. Original Float64 material 28 profiles and 20 DIR curves remain mandatory; GPU, stochastic glare/Numba RNG and RAW unported."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.25 fully certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.26 fully certified release."
           exit 1
