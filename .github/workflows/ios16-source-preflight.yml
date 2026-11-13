@@ -1,0 +1,67 @@
+name: SpektraFilm v1.8.31 independent Linux source parity preflight
+
+on:
+  push:
+    branches:
+      - 'ios16.5.1/source-halation-preflight-v1.8.31'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source port commit
+        uses: actions/checkout@v4
+      - name: Record immutable upstream and Swift source identities
+        run: |
+          git rev-parse HEAD
+          git hash-object src/spektrafilm/model/diffusion.py
+          git hash-object src/spektrafilm/utils/fast_gaussian_filter.py
+          git hash-object ios/SpektraFilmPort/OriginalSourceFilmHalation.swift
+      - name: Parse changed Swift with native Swift frontend (not iOS SDK)
+        run: |
+          command -v swiftc
+          swiftc --version
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/OriginalSourceFilmHalation.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/tests/OriginalSourceCameraBatchValidation.swift
+      - name: Prepare original Python dependency set
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original upstream numerical libraries
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
+            'numba==0.61.2' 'scikit-image==0.25.2' 'matplotlib==3.10.7'
+      - name: Generate genuine Python upstream full-frame reference vectors
+        run: |
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_camera_batch.py
+      - name: Assert original five source halation cases are present
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('ios/SpektraFilmPort/GeneratedSourceCameraReference.swift').read_text()
+          start=text.index('static let filmHalation:[HalationCase] = [')
+          end=text.index('static let sourceSHA256:',start)
+          fixture=text[start:end]
+          n=fixture.count('.init(width:')
+          assert n==5, f'expected five independent Python full RGB frames, got {n}'
+          assert text.count('sourceSHA256:')==1
+          for k in ('autoexposure','highlight_boost','camera_diffusion','source_gaussian'):
+              assert '"'+k+'"' in text
+          print('PASS: five real upstream Python scatter/halation frames and pinned hashes')
+          PY
+      - name: Upload Python fixtures as evidence only (not IPA)
+        uses: actions/upload-artifact@v4
+        with:
+          name: v1.8.31-original-python-source-halation-reference
+          path: ios/SpektraFilmPort/GeneratedSourceCameraReference.swift
