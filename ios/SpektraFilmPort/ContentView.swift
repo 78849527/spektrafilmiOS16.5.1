@@ -62,12 +62,16 @@ final class PhotoEditorModel: ObservableObject {
     // Original DIR inhibition diffusion, opt-in to retain v1.4.1 visuals.
     @Published var spatialDIREnabled = false
     @Published var spatialDIRRadiusScale = 1.0
+    // The source FIR/YVV reflect boundary route is default. Fast CI blur
+    // remains an explicit user selection, never an implicit failure path.
+    @Published var spatialDIRSourceConvolutionEnabled = true
 
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
             enabled: spatialDIREnabled && spatialDIRStage != nil,
             diffusionRadiusScale: spatialDIRRadiusScale,
-            tailWeight: 0.06
+            tailWeight: 0.06,
+            sourceConvolutionEnabled: spatialDIRSourceConvolutionEnabled
         )
     }
 
