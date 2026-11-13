@@ -11,8 +11,7 @@ settings:
     CURRENT_PROJECT_VERSION: "53"
 packages:
   NextLevel:
-    url: https://github.com/NextLevel/NextLevel
-    exactVersion: 0.18.0
+    path: Vendor/NextLevel
 targets:
   SpektraFilmPort:
     type: application
