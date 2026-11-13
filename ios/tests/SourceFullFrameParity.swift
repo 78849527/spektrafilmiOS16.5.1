@@ -184,7 +184,7 @@ enum SourceFullFrameParity {
                     fixtures, sample: c, stage: "input"
                 ), label: "\(c.name) actual ImageIO RGB source"
             )
-            let stage = SpatialDIRStage(
+            var stage = SpatialDIRStage(
                 rawLogCube: nine,
                 initialDensityCube: nine,
                 correctedDensityCube: seventeen,
@@ -196,6 +196,9 @@ enum SourceFullFrameParity {
                 logExposureSpans: [2,2,2],
                 donorReceiverMatrix: c.matrix,
                 positive: c.positive
+            )
+            stage.float64OpticalNodes = .identity(
+                sourceSize: 9, correctedSize: 17
             )
             var settings = SpatialDIRSettings(enabled: true)
             settings.diffusionRadiusScale = c.radiusScale
