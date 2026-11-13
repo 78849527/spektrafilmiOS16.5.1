@@ -115,7 +115,9 @@ enum SpatialDIR {
     /// Both preview and export invoke this SAME code path at their own sizes.
     static func apply(to source: CIImage, stage: SpatialDIRStage,
                       settings: SpatialDIRSettings,
-                      grain: DensityGrainSettings?) throws -> CIImage? {
+                      grain: DensityGrainSettings?,
+                      stageObserver: ((String, CIImage) -> Void)? = nil
+    ) throws -> CIImage? {
         guard settings.enabled, settings.valid, stage.valid,
               !source.extent.isEmpty,
               let tailKernel, let subtractionKernel else { return nil }
@@ -125,12 +127,14 @@ enum SpatialDIR {
         rawCube.cubeDimension = Float(stage.sourceCubeSize)
         rawCube.cubeData = stage.rawLogCube
         guard let raw = rawCube.outputImage else { return nil }
+        stageObserver?("raw",raw)
 
         let initCube = CIFilter.colorCube()
         initCube.inputImage = source
         initCube.cubeDimension = Float(stage.sourceCubeSize)
         initCube.cubeData = stage.initialDensityCube
         guard let initial = initCube.outputImage else { return nil }
+        stageObserver?("initial",initial)
 
         // CIColorMatrix computes source contract('ijk,km->ijm').
         // Inputs are normalized densities, so matrix columns include
@@ -167,6 +171,7 @@ enum SpatialDIR {
                                     z: bias[2], w: 0)
         guard let inhibitors = color.outputImage?.cropped(to: source.extent)
         else { return nil }
+        stageObserver?("inhibitors",inhibitors)
 
         let imageLongSide = max(1, source.extent.width, source.extent.height)
         let pixelUM = settings.referencePixelSizeUM ?? (36_000.0 / imageLongSide)
@@ -202,6 +207,7 @@ enum SpatialDIR {
             diffused=approximate
         }
 
+        stageObserver?("diffused",diffused)
         // Exposure subtraction before pre-DIR corrected paper H-D/scan.
         guard let logCorrected = subtractionKernel.apply(
             extent: source.extent,
@@ -210,6 +216,7 @@ enum SpatialDIR {
                         Float(stage.logExposureSpans[1]),
                         Float(stage.logExposureSpans[2])]
         ) else { return nil }
+        stageObserver?("log",logCorrected)
 
         let correctedCube = CIFilter.colorCube()
         correctedCube.inputImage = logCorrected
@@ -217,6 +224,7 @@ enum SpatialDIR {
         correctedCube.cubeData = stage.correctedDensityCube
         guard var density = correctedCube.outputImage else { return nil }
 
+        stageObserver?("densityPreGrain",density)
         if let grain, grain.amount > 0 {
             guard let result = try DensityGrain.perturbDensityImage(
                 density, settings: grain, pixelUM: pixelUM
@@ -227,6 +235,8 @@ enum SpatialDIR {
         printed.inputImage = density
         printed.cubeDimension = Float(stage.sourceCubeSize)
         printed.cubeData = stage.printCube
-        return printed.outputImage?.cropped(to: source.extent)
+        let result=printed.outputImage?.cropped(to: source.extent)
+        if let result { stageObserver?("printed",result) }
+        return result
     }
 }
