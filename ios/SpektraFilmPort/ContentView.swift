@@ -505,6 +505,29 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // v1.8.16: distinct source 2D spatial DIR parity appendix;
+                // real 13x11 CIImage production path, not an extra 8/8 item.
+                do {
+                    let result=try SourceSpatialDIR2DParity.evaluate()
+                    if result.cases==3 && result.channels==1287 &&
+                       result.numericOutside==0 &&
+                       result.productionOutside==0 {
+                        checks.append(
+                            "附录【原版二维空间 DIR FIR/YVV｜本机通过，不计入 8/8 认证】\n" +
+                            result.text
+                        )
+                    } else {
+                        checks.append(
+                            "附录【原版二维空间 DIR FIR/YVV｜本机未通过】\n" +
+                            result.text
+                        )
+                    }
+                } catch {
+                    checks.append(
+                        "附录【原版二维空间 DIR FIR/YVV｜无法完成】\n" +
+                        error.localizedDescription
+                    )
+                }
                 let report = "本机原版算法诊断 · 8/8 项全部通过\n" +
                     "注意：通过的是列出的数值测试，不代表完整 Numba 随机流、RAW 或 Float64 整图 RGB 已认证。\n\n" +
                     checks.joined(separator: "\n\n")
