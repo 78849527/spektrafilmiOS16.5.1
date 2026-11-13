@@ -142,7 +142,7 @@ private struct NextLevelCameraPreview: UIViewRepresentable {
 }
 
 /// Photo-only NextLevel session. No microphone permission; no RAW claim.
-/// NextLevel 0.19.1 has an incomplete isRawCaptureEnabled branch.
+/// NextLevel 0.18.0 has an incomplete isRawCaptureEnabled branch.
 private final class NextLevelCameraController: NSObject,
     ObservableObject, NextLevelDelegate, NextLevelPhotoDelegate {
     @Published private(set) var ready = false
@@ -220,6 +220,7 @@ private final class NextLevelCameraController: NSObject,
 
     func flip() {
         guard active, ready, !capturing else { return }
+        engine.flashMode = .off
         engine.flipCaptureDevicePosition()
         frontCamera.toggle()
         flashEnabled = false

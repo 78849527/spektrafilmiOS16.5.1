@@ -12,7 +12,7 @@ settings:
 packages:
   NextLevel:
     url: https://github.com/NextLevel/NextLevel
-    exactVersion: 0.19.1
+    exactVersion: 0.18.0
 targets:
   SpektraFilmPort:
     type: application

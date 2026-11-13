@@ -13,7 +13,7 @@ ui = (root / "SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
 camera = (root / "SpektraFilmPort/NextLevelCamera.swift").read_text()
 
 required = {
-    "pinned NextLevel package": "exactVersion: 0.19.1" in project and "- package: NextLevel" in project,
+    "pinned NextLevel package": "exactVersion: 0.18.0" in project and "- package: NextLevel" in project,
     "deployment target": 'iOS: "16.5"' in project,
     "camera permission": "NSCameraUsageDescription:" in project,
     "no microphone permission": "NSMicrophoneUsageDescription:" not in project,
