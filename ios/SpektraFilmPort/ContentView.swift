@@ -65,6 +65,9 @@ final class PhotoEditorModel: ObservableObject {
     // The source FIR/YVV reflect boundary route is default. Fast CI blur
     // remains an explicit user selection, never an implicit failure path.
     @Published var spatialDIRSourceConvolutionEnabled = true
+    // v1.8.19 experimental: photo 8-bit ImageIO -> direct Double DIR
+    // -> direct JPEG. Not a certified all-modules accuracy mode.
+    @Published var sourcePixelIOEnabled = false
 
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
@@ -139,7 +142,28 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     private var source: CIImage?
+    private var originalPhotoData: Data?
     var hasPhoto: Bool { source != nil }
+
+    /// Explicitly reject all unported combinations in direct source mode.
+    /// No silent switch back to Core Image when the user selected precision.
+    private func validateSourcePixelIO() throws -> (Data,SpatialDIRStage) {
+        guard let data=originalPhotoData, let stage=spatialDIRStage,
+              spatialDIREnabled,spatialDIRSourceConvolutionEnabled,
+              lut != nil,abs(strength-1.0)<1e-9 else {
+            throw ImageProcessingError.invalid(
+                "原版 8-bit 像素直连需要先选胶片/相纸，启用原版 DIR FIR/YVV 和 100% 强度"
+            )
+        }
+        guard !spatialSettings.enabled,!grainEnabled,
+              !scannerFinishingEnabled else {
+            throw ImageProcessingError.invalid(
+                "原版像素直连当前不支持光晕/散射、密度颗粒或扫描后处理。" +
+                "请显式关闭这些模块，禁止静默退回 Core Image。"
+            )
+        }
+        return (data,stage)
+    }
 
     func selectFromPhotos(_ selection: PhotosPickerItem?) {
         guard let selection else { return }
@@ -172,6 +196,7 @@ final class PhotoEditorModel: ObservableObject {
         invalidateSimulation()
         let decoded = try PhotoProcessor.decode(data)
         source = decoded
+        originalPhotoData = data
         photoDimensions = "\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
         originalPreview = try PhotoProcessor.preview(decoded, lut: nil, strength: 0)
         try refresh()
@@ -351,6 +376,31 @@ final class PhotoEditorModel: ObservableObject {
         }
         originalMetalPreviewVersion &+= 1
         let revision = originalMetalPreviewVersion
+        if sourcePixelIOEnabled {
+            let (data,stage)=try validateSourcePixelIO()
+            let settings=spatialDIRSettings
+            status="原版 8-bit 像素直连：ImageIO→Double DIR→无 CI 预览计算中…"
+            Task.detached(priority:.userInitiated) {
+                do {
+                    let image=try OriginalSourcePixelIO.preview(
+                        data,stage:stage,settings:settings
+                    )
+                    await MainActor.run {
+                        guard revision==self.originalMetalPreviewVersion else {return}
+                        self.processedPreview=image
+                        self.status="原版 8-bit 像素直连预览成功 · " + self.photoDimensions
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard revision==self.originalMetalPreviewVersion else {return}
+                        self.processedPreview=nil
+                        self.status="原版 8-bit 像素直连失败（禁止回退）："+
+                            error.localizedDescription
+                    }
+                }
+            }
+            return
+        }
         // The full source-law Metal stage is synchronous and can perform
         // multiple tiled GPU passes; never run it on the SwiftUI actor.
         if grainOriginalMetalEnabled, grainEnabled, grainAmount > 0, lut != nil {
@@ -616,6 +666,22 @@ final class PhotoEditorModel: ObservableObject {
                     "原版 Metal 导出缺少显影数据，禁止静默使用快速算法"
                 )
             }
+        }
+        if sourcePixelIOEnabled {
+            let (data,stage)=try validateSourcePixelIO()
+            guard resolution == .original else {
+                throw ImageProcessingError.invalid(
+                    "原版像素直连实验版仅支持原尺寸高清输出，不允许隐式缩图"
+                )
+            }
+            let settings=spatialDIRSettings
+            let url=try await Task.detached(priority:.userInitiated) {
+                try OriginalSourcePixelIO.exportJPEG(
+                    data,stage:stage,settings:settings
+                )
+            }.value
+            status="原版像素直连：原尺寸 JPEG 已输出（8-bit，不含 CI 中间量化）"
+            return url
         }
         // Keep full-resolution Core Image evaluation off the SwiftUI main
         // actor to avoid freezing the iOS 16.5.1 floating workspace.
