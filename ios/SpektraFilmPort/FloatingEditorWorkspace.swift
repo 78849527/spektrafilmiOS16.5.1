@@ -703,8 +703,28 @@ struct FloatingEditorWorkspace: View {
                                 enabled:model.hasPhoto && !model.busy,
                                 resetTo:false)
                         .onChange(of:model.sourcePixelIOEnabled) { _ in
+                            if !model.sourcePixelIOEnabled {
+                                model.sourcePhysicalDirectEnabled = false
+                            }
                             model.queueSpectralPreview()
                         }
+                    if model.sourcePixelIOEnabled {
+                        resetToggle("逐像素全光学（实验）",
+                                    value:$model.sourcePhysicalDirectEnabled,
+                                    enabled:model.hasPhoto && !model.busy,
+                                    resetTo:false)
+                            .onChange(of:model.sourcePhysicalDirectEnabled) { _ in
+                                model.queueSpectralPreview()
+                            }
+                        Text("实算 Hanatos→胶片 H-D→空间 DIR FIR/YVV→" +
+                             "相纸 H-D→光谱扫描；不经过颜色 3D LUT。" +
+                             "原图最多 200 万像素，超限明确报错不缩图；" +
+                             "需开启原版 ACES 扫描、Hanatos Float64、" +
+                             "负片原版放大机，关闭 CAM16/黑白参考。" +
+                             "尚不支持随机颗粒、光晕与 RAW。")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                     Text("仅不透明 8-bit 照片：ImageIO→Double DIR→原尺寸 JPEG；" +
                          "不支持颗粒、光晕、散射和扫描后处理；不静默降级。")
                         .font(.caption2)
