@@ -90,7 +90,7 @@ jobs:
         run: python3 ios/scripts/validate_poisson_sampler.py
       - name: Generate original profile metadata and spectral numeric arrays
         run: |
-          python3 ios/scripts/generate_source_camera_batch.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python3 ios/scripts/generate_source_camera_batch.py
           test -s ios/SpektraFilmPort/GeneratedSourceCameraReference.swift
           python3 ios/scripts/generate_compact_catalog.py
           python3 ios/scripts/generate_spectral_data.py
