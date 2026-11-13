@@ -157,6 +157,41 @@ enum OriginalSourceCameraBatchValidation {
             )
         }
 
+        // Original upstream Python apply_halation_um: full 2D RGB frames,
+        // reflect FIR/YVV, exponential three-Gaussian tail, all bounces.
+        for rec in GeneratedSourceCameraReference.filmHalation {
+            var values=raw(rec.width,rec.height)
+            let expected=try decode(rec.output,count:values.count)
+            try OriginalSourceFilmHalation.applyInPlace(
+                &values,width:rec.width,height:rec.height,
+                settings:.init(
+                    active:true,
+                    scatterAmount:rec.scatter,
+                    scatterSpatialScale:rec.scatterScale,
+                    halationAmount:rec.halation,
+                    halationSpatialScale:rec.halationScale,
+                    filmFormatMM:rec.pixelUM * Double(max(rec.width,rec.height))/1000
+                )
+            )
+            try compare(values,expected,label:
+                "source emulsion scatter/halation " +
+                String(rec.width) + "x" + String(rec.height) +
+                " scatter=" + String(rec.scatter) +
+                " halation=" + String(rec.halation),
+                tolerance:3e-8
+            )
+        }
+        do {
+            var wrong=[Double](repeating:0,count:3)
+            try OriginalSourceFilmHalation.applyInPlace(
+                &wrong,width:Int.max,height:2,
+                settings:.init(active:true)
+            )
+            throw Failure.invalid("Oversized source halation input accepted")
+        } catch OriginalSourceFilmHalation.Failure.invalid {
+            print("PASS: source full-frame halation rejects overflowing dimensions")
+        }
+
         // A malformed full-frame geometry must fail explicitly. It must
         // never overflow Int arithmetic or crash before source validation.
         do {
@@ -201,6 +236,6 @@ enum OriginalSourceCameraBatchValidation {
                     label:"source pre-H-D photon exposure order",tolerance:1e-12)
         try compare(old.initialDensity,next.initialDensity,
                     label:"source original film H-D unchanged",tolerance:1e-12)
-        print("PASS: 7 metering modes + high-light boost + raw lens blur + source H-D integration")
+        print("PASS: source meters, highlight, lens, scatter, halation and H-D integration")
     }
 }

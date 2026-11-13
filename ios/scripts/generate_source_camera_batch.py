@@ -142,6 +142,38 @@ for w,h,um,mm in [
     px=mm*1000/max(w,h)
     expected=apply_gaussian_blur_um(raw,um,px)
     lens_records.append((w,h,um,mm,encode(expected)))
+# Real upstream Python per-channel emulsion scatter and three-bounce halation.
+# Test all source paths: combined, varied size/scales, identity,
+# scatter-only and halation-only. No reimplemented Python expected math.
+halation_records=[]
+for w,h,pixel_um,scatter_amount,hal_amount,scatter_scale,hal_scale in [
+    (11,9,2.0,1.0,1.0,1.0,1.0),
+    (17,13,5.0,0.35,0.8,1.7,0.6),
+    (11,9,11.0,0.0,0.0,1.0,1.0),
+    (15,11,40.0,1.0,0.0,1.0,1.0),
+    (12,10,6.0,0.0,1.0,1.0,1.0),
+]:
+    params=types.SimpleNamespace(
+        active=True,
+        scatter_amount=scatter_amount,
+        scatter_spatial_scale=scatter_scale,
+        scatter_tail_weight=(0.78,0.65,0.67),
+        scatter_core_um=(2.2,2.0,1.6),
+        scatter_tail_um=(9.3,9.7,9.1),
+        halation_amount=hal_amount,
+        halation_spatial_scale=hal_scale,
+        halation_strength=(0.05,0.015,0.0),
+        halation_first_sigma_um=(65.0,65.0,65.0),
+        halation_n_bounces=3,
+        halation_bounce_decay=0.5,
+        halation_renormalize=True,
+    )
+    expected=diffusion.apply_halation_um(photon(w,h),params,pixel_um)
+    halation_records.append((
+        w,h,pixel_um,scatter_amount,hal_amount,
+        scatter_scale,hal_scale,encode(expected)
+    ))
+
 # The original colour-science implementation owns its actual sRGB
 # RGB_to_XYZ Y-row. Never substitute matrix constants from a different
 # library/release; the 17x13 original Python regression is stricter than
@@ -161,6 +193,7 @@ lines=[
     "    struct EdgeMeterCase {let width:Int;let height:Int;let level:Double;let ev:[Double]}",
     "    struct BoostCase {let width:Int;let height:Int;let ev:Double;let span:Double;let protect:Double;let output:String}",
     "    struct LensCase {let width:Int;let height:Int;let microns:Double;let formatMM:Double;let output:String}",
+    "    struct HalationCase {let width:Int;let height:Int;let pixelUM:Double;let scatter:Double;let halation:Double;let scatterScale:Double;let halationScale:Double;let output:String}",
     "    static let meter:[MeterCase] = [",
 ]
 for w,h,ev in meter_records:
@@ -182,6 +215,12 @@ for w,h,um,mm,b64 in lens_records:
     lines.append("        .init(width:%d,height:%d,microns:%r,formatMM:%r,output:\"%s\")," %(
         w,h,um,mm,b64
     ))
+lines.extend(["    ]","    static let filmHalation:[HalationCase] = ["])
+for w,h,px,sc,ha,ss,hs,b64 in halation_records:
+    lines.append(
+        '        .init(width:%d,height:%d,pixelUM:%r,scatter:%r,halation:%r,scatterScale:%r,halationScale:%r,output:"%s"),' %
+        (w,h,px,sc,ha,ss,hs,b64)
+    )
 # Record the real upstream byte identity, including the filter dependency.
 # Re-generated fixtures after an upstream change are not automatically
 # considered certified: source hashes remain visible in native tests/reports.
@@ -201,4 +240,5 @@ print("PASS: source camera true colour-science luminance weights:",source_lumina
 print("PASS: source camera reference:",(len(meter_records)+len(meter_edge_records))*len(methods),
       "Python meter vectors,",
       len(boost_records),"Numba highlight full fields,",
-      len(lens_records),"source FIR/YVV full-image lenses",out)
+      len(lens_records),"source FIR/YVV full-image lenses,",
+      len(halation_records),"source full-image scatter/halation fields",out)

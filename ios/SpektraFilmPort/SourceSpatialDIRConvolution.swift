@@ -217,9 +217,18 @@ enum SourceSpatialDIRConvolution {
     /// accumulation order. Channel processing changes only loop grouping.
     static func diffuseMemoryBounded(
         _ input:[Double], width:Int,height:Int,
-        coreSigma:Double,tailSigma:Double,tailWeight:Double
+        coreSigma:Double,tailSigma:Double,tailWeight:Double,
+        coreSigmaRGB:[Double]?=nil,tailSigmaRGB:[Double]?=nil
     ) throws -> [Double] {
         try requireValid(input,width:width,height:height,sigma:coreSigma)
+        for vector in [coreSigmaRGB,tailSigmaRGB] {
+            if let vector {
+                guard vector.count==3,
+                      vector.allSatisfy({$0.isFinite && $0>=0}) else {
+                    throw Failure.invalid("原版每通道 FIR/YVV sigma 必须为三个非负 Double")
+                }
+            }
+        }
         guard tailSigma.isFinite,tailSigma>=0,
               tailWeight.isFinite,(0...1).contains(tailWeight) else {
             throw Failure.invalid("原版 DIR 流式扩散尾部参数无效")
@@ -312,7 +321,15 @@ enum SourceSpatialDIRConvolution {
         })
         for (pass,(gain,sigma)) in sourcePasses.enumerated() {
             for c in 0..<3 {
-                gaussianChannel(c,sigma:sigma)
+                let actualSigma:Double
+                if pass==0 {
+                    actualSigma=coreSigmaRGB.map {$0[c]} ?? sigma
+                } else {
+                    actualSigma=tailSigmaRGB.map {
+                        $0[c]*mixture[pass-1].1
+                    } ?? sigma
+                }
+                gaussianChannel(c,sigma:actualSigma)
                 for p in 0..<pixels {
                     let k=p*3+c
                     if pass == 0 {
@@ -327,6 +344,36 @@ enum SourceSpatialDIRConvolution {
             throw Failure.invalid("原版 DIR 低内存 FIR/YVV 出现 NaN/Inf")
         }
         return result
+    }
+
+    /// Original 2D RGB per-channel Gaussian: source Float64 FIR/YVV and
+    /// full-frame edge behavior with reusable single-channel workspaces.
+    static func gaussianPerChannelMemoryBounded(
+        _ input:[Double],width:Int,height:Int,sigmas:[Double]
+    ) throws -> [Double] {
+        guard sigmas.count==3 else {
+            throw Failure.invalid("原版 Gaussian 需要三通道 sigma")
+        }
+        return try diffuseMemoryBounded(
+            input,width:width,height:height,
+            coreSigma:0,tailSigma:0,tailWeight:0,
+            coreSigmaRGB:sigmas
+        )
+    }
+
+    /// Same three-Gaussian mixture as Python fast_exponential_filter,
+    /// with distinct per-channel decay constants and pass ordering.
+    static func exponentialPerChannelMemoryBounded(
+        _ input:[Double],width:Int,height:Int,decay:[Double]
+    ) throws -> [Double] {
+        guard decay.count==3 else {
+            throw Failure.invalid("原版指数散射需要三通道衰减尺度")
+        }
+        return try diffuseMemoryBounded(
+            input,width:width,height:height,
+            coreSigma:0,tailSigma:0,tailWeight:1,
+            tailSigmaRGB:decay
+        )
     }
 
     /// Convert the Core Image inhibitor buffer to Float32 RGBA only at

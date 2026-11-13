@@ -763,6 +763,33 @@ struct FloatingEditorWorkspace: View {
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
+                            resetToggle("原版乳剂散射＋背反射光晕（Double）",
+                                        value:$model.sourceFilmHalationEnabled,
+                                        enabled:model.hasPhoto && !model.busy,
+                                        resetTo:false)
+                                .onChange(of:model.sourceFilmHalationEnabled) { _ in
+                                    model.queueSpectralPreview()
+                                }
+                            if model.sourceFilmHalationEnabled {
+                                morphSlider("乳剂散射比例",
+                                            value:$model.sourceFilmScatterAmount,
+                                            range:0...1,resetTo:1)
+                                morphSlider("乳剂散射空间倍率",
+                                            value:$model.sourceFilmScatterScale,
+                                            range:0...3,resetTo:1)
+                                morphSlider("背反射光晕比例",
+                                            value:$model.sourceFilmHalationAmount,
+                                            range:0...2,resetTo:1)
+                                morphSlider("背反射空间倍率",
+                                            value:$model.sourceFilmHalationScale,
+                                            range:0...3,resetTo:1)
+                                Text("Python 原版 HalationParams：RGB 独立核与指数尾巴；" +
+                                     "三次反射、宽度乘 sqrt(k)、衰减 0.5、能量归一。" +
+                                     "光子域镜头模糊→乳剂散射→背反射→H-D。" +
+                                     "整图 Double，新增内存预算；与旧版 Core Image 散射分离。")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                             resetToggle("原版扫描镜头 / Unsharp（Double）",
                                         value:$model.sourceScannerOpticalEnabled,
                                         enabled:model.hasPhoto && !model.busy,

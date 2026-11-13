@@ -10,7 +10,7 @@ import os
 /// s023 paper development and measured-spectrum scanner for EACH pixel.
 /// Unlike the older exact-DIR path, it never creates or interpolates a
 /// colour 3D LUT. Only original 2D FIR/YVV is used for spatial DIR.
-/// Unsupported stochastic grain, RAW, halation and post-scanner effects
+/// Unsupported stochastic grain, RAW and post-scanner effects
 /// remain deliberately unavailable, without a silent approximate fallback.
 ///
 /// Remaining limits: some original measured data are Float32-packed; this
@@ -34,6 +34,7 @@ enum OriginalSourcePhysicalImage {
     // filtered result and two 1-channel Double Gaussian workspaces.
     static let scannerFinishExtraBytesPerPixel: UInt64 = 40
     static let cameraLensExtraBytesPerPixel: UInt64 = 40
+    static let filmHalationExtraBytesPerPixel: UInt64 = 120
     static let maximumSourceMemoryBudget: UInt64 = 1_500_000_000
 
     static func validateMemoryBudget(
@@ -97,6 +98,7 @@ enum OriginalSourcePhysicalImage {
         // Defaults preserve all user-validated v1.8.25 RGB and memory paths.
         var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
         var cameraOptics: OriginalSourceCameraOptics.Settings = .init()
+        var filmHalation: OriginalSourceFilmHalation.Settings = .init()
 
         func validate() throws {
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -111,6 +113,7 @@ enum OriginalSourcePhysicalImage {
             }
             try scannerOptics.validate()
             try cameraOptics.validate()
+            try filmHalation.validate()
             if !SpectralPhysics.isPositiveFilm(filmID) && !print.enabled {
                 throw Failure.invalid(
                     "负片逐像素物理模式需要启用原版放大机光学印相和相纸 H-D"
@@ -167,7 +170,8 @@ enum OriginalSourcePhysicalImage {
             width:w,height:h,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
-                (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0)
+                (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
+                (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0)
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -195,7 +199,7 @@ enum OriginalSourcePhysicalImage {
         //
         // RAW modes are disabled by default; the established v1.8.29 path
         // below remains byte-for-byte unchanged if all options are off.
-        if parameters.cameraOptics.active {
+        if parameters.cameraOptics.active || parameters.filmHalation.active {
             let autoEV=try OriginalSourceCameraOptics.measureAutoExposureEV(
                 encodedRGB:frame.rgb,width:w,height:h,
                 method:parameters.cameraOptics.metering
@@ -232,13 +236,20 @@ enum OriginalSourcePhysicalImage {
                 )
             }
             stageDoubleObserver?("cameraLensBlur",frame.rgb)
+            if parameters.filmHalation.active {
+                try OriginalSourceFilmHalation.applyInPlace(
+                    &frame.rgb,width:w,height:h,
+                    settings:parameters.filmHalation
+                )
+                stageDoubleObserver?("filmScatterHalation",frame.rgb)
+            }
         }
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
         for p in 0..<(w*h) {
             let k=p*3
             let sample=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
-            let initial=try parameters.cameraOptics.active
+            let initial=try (parameters.cameraOptics.active || parameters.filmHalation.active)
                 ? engine.sourceSpatialInputFromCameraRaw(sample)
                 : engine.sourceSpatialInput(
                     encodedRGB:sample,cameraEV:parameters.cameraEV
@@ -381,7 +392,9 @@ extension OriginalSourcePixelIO {
                 (parameters.scannerOptics.active
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur
-                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0)
+                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
+                (parameters.filmHalation.active
+                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0)
         )
         var frame=try decode(
             data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels

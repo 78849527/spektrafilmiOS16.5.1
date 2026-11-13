@@ -88,6 +88,11 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceCameraHighlightBoostRange = 0.3
     @Published var sourceCameraHighlightProtectEV = 4.0
     @Published var sourceCameraLensBlurUM = 0.0
+    @Published var sourceFilmHalationEnabled = false
+    @Published var sourceFilmScatterAmount = 1.0
+    @Published var sourceFilmScatterScale = 1.0
+    @Published var sourceFilmHalationAmount = 1.0
+    @Published var sourceFilmHalationScale = 1.0
 
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
@@ -240,11 +245,19 @@ final class PhotoEditorModel: ObservableObject {
                 filmFormatMM:35
               )
             : OriginalSourceCameraOptics.Settings()
+        let sourceHalation=OriginalSourceFilmHalation.Settings(
+            active:sourceFilmHalationEnabled,
+            scatterAmount:sourceFilmScatterAmount,
+            scatterSpatialScale:sourceFilmScatterScale,
+            halationAmount:sourceFilmHalationAmount,
+            halationSpatialScale:sourceFilmHalationScale
+        )
         let p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
             dir:spatialDIRSettings,print:print,morph:morph,
-            scannerOptics:sourceScan,cameraOptics:preCamera
+            scannerOptics:sourceScan,cameraOptics:preCamera,
+            filmHalation:sourceHalation
         )
         try p.validate()
         return p
@@ -810,7 +823,9 @@ final class PhotoEditorModel: ObservableObject {
                     (sourceScannerOpticalEnabled
                         ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
-                        ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0)
+                        ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
+                    (sourceFilmHalationEnabled
+                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0)
             )
         }
         return try SafeExportResolution.capture(
@@ -823,7 +838,9 @@ final class PhotoEditorModel: ObservableObject {
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
                     : 0) +
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
-                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0))
+                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
+                   (sourceFilmHalationEnabled
+                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )
     }
