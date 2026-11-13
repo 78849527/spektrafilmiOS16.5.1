@@ -101,6 +101,12 @@ enum SourceSpatialDIR2DParity {
         let sourceIdentity=cube(9),correctedIdentity=cube(17)
         var numeric=Metrics(),production=Metrics()
         var sourceInputBridge=Metrics(),floatBitmapBridge=Metrics()
+        let stageNames=[
+            "raw","initial","inhibitors","diffused",
+            "log","densityPreGrain","printed"
+        ]
+        var stageStatistics=[String:Metrics]()
+        for name in stageNames {stageStatistics[name]=Metrics()}
         var total=0
         var report=[String]()
         for (n,c) in cases.enumerated() {
@@ -165,12 +171,40 @@ enum SourceSpatialDIR2DParity {
             opts.tailWeight=c.tailWeight
             opts.referencePixelSizeUM=c.pixelUM
             opts.sourceConvolutionEnabled=true
+            var stageImages=[String:[Double]]()
             guard opts.valid,stage.valid,
                   let actual=try SpatialDIR.apply(
-                    to:image(c.input,width:c.width,height:c.height),
-                    stage:stage,settings:opts,grain:nil
+                    to:prepared,
+                    stage:stage,settings:opts,grain:nil,
+                    stageObserver:{ name,image in
+                        stageImages[name]=read(
+                            image,width:c.width,height:c.height
+                        )
+                    }
                   ) else {
                 throw Failure.invalid("原版二维 DIR 生产 CIImage 管线返回空输出")
+            }
+            let references:[String:[Double]]=[
+                "raw":c.input,
+                "initial":c.input,
+                "inhibitors":c.sourceInhibitors,
+                "diffused":c.sourceDiffused,
+                "log":c.sourceNormalizedDisplay,
+                "densityPreGrain":c.sourceNormalizedDisplay,
+                "printed":c.sourceNormalizedDisplay
+            ]
+            for key in stageNames {
+                guard let observed=stageImages[key],
+                      let reference=references[key],
+                      observed.count==count,reference.count==count else {
+                    throw Failure.invalid("原版 DIR 中间阶段缺失：" + key)
+                }
+                for i in 0..<count {
+                    try stageStatistics[key]!.test(
+                        source:reference[i],actual:observed[i],
+                        label:"\(c.film) stage \(key) #\(n) px:\(i/3) ch:\(i%3)"
+                    )
+                }
             }
             let rendered=read(actual,width:c.width,height:c.height)
             for i in 0..<count {
@@ -192,6 +226,8 @@ enum SourceSpatialDIR2DParity {
             \(numeric.describe("源 Float64 FIR/YVV 扩散",channels:total))
             \(sourceInputBridge.describe("原始图像 RGBAf 输入校验",channels:total))
             \(floatBitmapBridge.describe("Float32 CIImage→FIR/YVV→CIImage 桥接",channels:total))
+            \(stageNames.map {stageStatistics[$0]!.describe("实际生产阶段 "+$0,channels:total)}
+                        .joined(separator:"\\n"))
             \(production.describe("真实 CIImage 生产 DIR→光学 LUT",channels:total))
             数值门限 0.002；不包含空间 DIR 后整幅照片的原版相纸随机颗粒，
             不包含原版 Numba 线程 RNG 和相机传感器 RAW。真实照片仍需实机验证。
