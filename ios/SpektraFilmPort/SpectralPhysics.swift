@@ -214,6 +214,27 @@ struct SpectralPhysics {
             if logE >= last {
                 return max(0, sample(255 * 3 + channel) - minDensity)
             }
+            // Source fast_interp.py (Numba) does NOT assume uniformly
+            // spaced bins: upper_bound side='right' on the ORIGINAL
+            // binary64 exposure axis, then multiply by 1/dx before
+            // mixing y0 + t*(y1-y0). Preserve repeated-node semantics.
+            if let axis=sourceLogExposureF64 {
+                var lo=0
+                var hi=256
+                while lo<hi {
+                    let mid=(lo+hi)/2
+                    if logE < axis[mid] { hi=mid }
+                    else { lo=mid+1 }
+                }
+                let lower=lo-1
+                let dx=axis[lo]-axis[lower]
+                let invDx=dx == 0 ? 0.0 : 1.0/dx
+                let t=(logE-axis[lower])*invDx
+                let y0=sample(lower*3+channel)
+                let y1=sample(lo*3+channel)
+                return max(0,y0+t*(y1-y0)-minDensity)
+            }
+            // Unchanged v1.8.24 mobile fast Float32-uniform-LUT pathway.
             let u = (logE - first) / (last - first) * 255
             let index = min(254, max(0, Int(floor(u))))
             let weight = min(1, max(0, u - Double(index)))
