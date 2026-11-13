@@ -649,5 +649,14 @@ struct SpectralValidation {
                 isDirectory:true
             )
         )
+        // v1.8.26 independent upstream Python scanner linear lens Gaussian
+        // and Unsharp before display CCTF: eight true source whole images.
+        try SourceScannerOpticsValidation.evaluate(
+            directory:URL(
+                fileURLWithPath:
+                    "ios/verification/generated-scanner-optics-v1.8.26",
+                isDirectory:true
+            )
+        )
     }
 }
