@@ -995,7 +995,8 @@ struct SpectralPhysics {
     /// After film development (and stochastic optical-density grain, if
     /// enabled), apply the original substrate-specific printing/scanning
     /// pipeline. A reversal film bypasses printing.
-    func scanFilmDensity(_ filmDensity: [Double], paperEV: Double) -> [Double] {
+    func scanFilmDensity(_ filmDensity: [Double], paperEV: Double,
+                         sourceLinearOutput: Bool = false) -> [Double] {
         let resultDensity: [Double]
         let substrate: Profile
         if isPositive {
@@ -1036,6 +1037,10 @@ struct SpectralPhysics {
             let compressed = defaultCAM16Gamut
                 ? OriginalCAM16Gamut.compress(linear)
                 : OriginalScannerMath.compressACESRGC(linear)
+            // Original ScanningStage applies lens blur/unsharp to this
+            // LINEAR RGB, and encodes CCTF only after the full-frame filter.
+            // All existing call sites preserve their exact old encoding.
+            if sourceLinearOutput { return compressed }
             return compressed.map {
                 OriginalScannerMath.encodeSRGB(Self.clamp($0))
             }
@@ -1145,6 +1150,25 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("原版相纸 H-D 或光谱扫描输出非有限")
         }
         return output
+    }
+
+    /// True original linear RGB before scanner lens Gaussian and unsharp.
+    /// Requires source optical scan, not the mobile scanner fallback.
+    func sourceSpatialScanLinear(
+        filmDensity:[Double],paperEV:Double
+    ) throws -> [Double] {
+        guard useOriginalScanner && !defaultCAM16Gamut else {
+            throw PhysicsError.invalid(
+                "原版扫描镜头 FIR/YVV 仅支持当前源 ACES 线性 RGB"
+            )
+        }
+        let linear=scanFilmDensity(
+            filmDensity,paperEV:paperEV,sourceLinearOutput:true
+        )
+        guard linear.count==3,linear.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("源扫描模糊前的真实线性 RGB 无效")
+        }
+        return linear
     }
 
     /// Stage-level numerical probe for a source positive-film scan.
