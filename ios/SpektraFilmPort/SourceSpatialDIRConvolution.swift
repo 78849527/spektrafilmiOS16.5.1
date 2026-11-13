@@ -446,8 +446,13 @@ extension SourceSpatialDIRConvolution {
             observer("initial",try writeRGB(initialObserved,rect:rect,w:w,h:h))
             observer("inhibitors",try writeRGB(inhibitors,rect:rect,w:w,h:h))
         }
-        let pixelUM=settings.referencePixelSizeUM ??
-            (36_000.0/max(1,source.extent.width,source.extent.height))
+        // Cast CoreGraphics CGFloat explicitly: Swift must not infer
+        // optional CGFloat/Double cross-arithmetic for source microns.
+        let longSide:Double=max(
+            1.0,Double(source.extent.width),Double(source.extent.height)
+        )
+        let defaultPixelUM:Double=36_000.0/longSide
+        let pixelUM:Double=settings.referencePixelSizeUM ?? defaultPixelUM
         let coreSigma=SpatialDIR.gaussianSigmaUM *
             settings.diffusionRadiusScale/pixelUM
         let tailSigma=SpatialDIR.exponentialTailUM *
