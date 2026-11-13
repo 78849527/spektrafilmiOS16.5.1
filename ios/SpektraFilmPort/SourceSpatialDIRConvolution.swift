@@ -244,13 +244,11 @@ enum SourceSpatialDIRConvolution {
             rgba[pixel*4+3]=1
         }
         let bytes=rgba.withUnsafeBytes { Data($0) }
-        guard let result=CIImage(
+        let result=CIImage(
             bitmapData:bytes,bytesPerRow:w*4*MemoryLayout<Float>.size,
             size:CGSize(width:w,height:h),
             format:.RGBAf,colorSpace:nil
-        ) as CIImage? else {
-            throw Failure.invalid("原版 DIR 扩散 Float32 Core Image 写入失败")
-        }
+        )
         return result.transformed(
             by:CGAffineTransform(translationX:rect.minX,y:rect.minY)
         )
