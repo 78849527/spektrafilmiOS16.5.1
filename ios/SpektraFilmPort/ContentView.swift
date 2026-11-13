@@ -551,7 +551,8 @@ final class PhotoEditorModel: ObservableObject {
                     let result=try SourceSpatialDIR2DParity.evaluate()
                     if result.cases==3 && result.channels==1287 &&
                        result.numericOutside==0 &&
-                       result.productionOutside==0 {
+                       result.productionOutside==0 &&
+                       result.directOutside==0 {
                         checks.append(
                             "附录【原版二维空间 DIR FIR/YVV｜本机通过，不计入 8/8 认证】\n" +
                             result.text
