@@ -271,7 +271,11 @@ enum OriginalSourceCameraOptics {
         settings:Settings
     ) throws -> [Double] {
         try settings.validate()
-        guard raw.count==width*height*3,width>0,height>0,
+        // Validate multiplication BEFORE computing count. Oversized or
+        // malformed dimensions must raise an error, not trap the app.
+        guard width > 0, height > 0,
+              width <= Int.max / height / 3,
+              raw.count == width * height * 3,
               raw.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("原版镜头模糊需要完整 Double RGB 光子帧")
         }
