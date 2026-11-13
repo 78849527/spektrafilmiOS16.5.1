@@ -11,6 +11,7 @@ struct SpectralValidation {
         // original binary64; fast Float32 material bytes remain unchanged.
         try SourceFloat64ProfileValidation.evaluate()
         try SourceHDInterpolationValidation.evaluate()
+        try OriginalSourceCameraBatchValidation.evaluate()
         let all = GeneratedSpectralData.profiles
         let films = SpectralPhysics.supportedFilmIDs
         let media = SpectralPhysics.supportedPaperIDs
