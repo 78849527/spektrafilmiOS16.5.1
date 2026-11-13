@@ -75,7 +75,7 @@ struct SpatialDIRValidation {
             0.0, 0.0, 0.10
         ]
         func stage(positive: Bool) -> SpatialDIRStage {
-            SpatialDIRStage(
+            var result = SpatialDIRStage(
                 rawLogCube: identitySource,
                 initialDensityCube: identitySource,
                 correctedDensityCube: identityCorrected,
@@ -87,6 +87,10 @@ struct SpatialDIRValidation {
                 donorReceiverMatrix: diagonal,
                 positive: positive
             )
+            result.float64OpticalNodes = .identity(
+                sourceSize: 9, correctedSize: 17
+            )
+            return result
         }
 
         let image = CIImage(color: CIColor(
