@@ -469,7 +469,7 @@ jobs:
           assert "directFloat32=Metrics(),directFloat16=Metrics()" in parity
           assert "softwareInputBridge=Metrics()" in parity
           assert "softwareRenderer:true" in parity
-          assert "GPU 与 Float16 数值吻合" in parity
+          assert "默认 CI 与 Float16 数值吻合" in parity
           assert "Float16(Float(c.input[i]))" in parity
           assert "SourceSpatialDIR2DParity.evaluate()" in model
           assert "result.channels==1287" in model
@@ -838,7 +838,7 @@ jobs:
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
               --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.17 - CI precision boundary probe" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.17 Build42. Adds iPhone GPU CoreImage vs software CoreImage vs direct Float32 and Float16 source input probes for 3 upstream Python 2D DIR images / 1287 channels. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Whole-image Float64, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
+               --notes "EXPERIMENTAL UNSIGNED v1.8.17 Build42. Adds iPhone default CoreImage vs software-renderer-requested CoreImage (option may be ignored) vs direct Float32 and Float16 source input probes for 3 upstream Python 2D DIR images / 1287 channels. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Whole-image Float64, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
