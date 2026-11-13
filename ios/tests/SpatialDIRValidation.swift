@@ -30,15 +30,19 @@ struct SpatialDIRValidation {
     }
 
     static func sample(_ image: CIImage) -> [Double]? {
-        let context = CIContext()
-        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        // Production source FIR/YVV and source NumPy references operate
+        // on linear, unencoded film log/density values. Do not apply an
+        // sRGB display transfer function when reading a numerical probe.
+        let context = CIContext(options: [
+            .workingColorSpace: NSNull(), .outputColorSpace: NSNull()
+        ])
         var floatRGBA = [Float](repeating: 0, count: 4)
         floatRGBA.withUnsafeMutableBytes { buffer in
             context.render(
                 image, toBitmap: buffer.baseAddress!,
                 rowBytes: 4*MemoryLayout<Float>.size,
                 bounds: CGRect(x: 12, y: 12, width: 1, height: 1),
-                format: .RGBAf, colorSpace: space
+                format: .RGBAf, colorSpace: nil
             )
         }
         return floatRGBA.prefix(3).map { Double($0) }
