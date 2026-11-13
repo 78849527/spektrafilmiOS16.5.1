@@ -725,6 +725,44 @@ struct FloatingEditorWorkspace: View {
                                 model.queueSpectralPreview()
                             }
                         if model.sourcePhysicalDirectEnabled {
+                            resetToggle("原版摄影曝光前处理（Double｜三模块）",
+                                        value:$model.sourceCameraPreFilmEnabled,
+                                        enabled:model.hasPhoto && !model.busy,
+                                        resetTo:false)
+                                .onChange(of:model.sourceCameraPreFilmEnabled) { _ in
+                                    model.queueSpectralPreview()
+                                }
+                            if model.sourceCameraPreFilmEnabled {
+                                Picker("原版自动测光", selection:$model.sourceCameraMeteringMethod) {
+                                    ForEach(OriginalSourceCameraOptics.Metering.allCases,
+                                            id:\.self) { method in
+                                        Text(method.displayName).tag(method)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .onChange(of:model.sourceCameraMeteringMethod) { _ in
+                                    model.queueSpectralPreview()
+                                }
+                                morphSlider("曝光前高光恢复 EV",
+                                            value:$model.sourceCameraHighlightBoostEV,
+                                            range:0...4,resetTo:0)
+                                morphSlider("高光恢复范围",
+                                            value:$model.sourceCameraHighlightBoostRange,
+                                            range:0...1,resetTo:0.3)
+                                morphSlider("高光保护 EV",
+                                            value:$model.sourceCameraHighlightProtectEV,
+                                            range:0...8,resetTo:4)
+                                morphSlider("原版摄影镜头模糊 μm",
+                                            value:$model.sourceCameraLensBlurUM,
+                                            range:0...80,resetTo:0)
+                                Text("原版顺序：sRGB 测光→RGB 曝光补偿→Hanatos 光谱→" +
+                                     "摄影 EV→全图原版高光 Boost→镜头 FIR/YVV→" +
+                                     "胶片 H-D / DIR；高光与镜头计算均为整幅 Double。" +
+                                     "关闭时保持 v1.8.29 源精确路径不变；" +
+                                     "不包含尚未移植的摄影扩散/光晕/UV-IR。")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                             resetToggle("原版扫描镜头 / Unsharp（Double）",
                                         value:$model.sourceScannerOpticalEnabled,
                                         enabled:model.hasPhoto && !model.busy,
