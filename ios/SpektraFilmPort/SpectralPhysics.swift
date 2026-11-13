@@ -1119,6 +1119,49 @@ struct SpectralPhysics {
         let initialDensity: [Double]
     }
 
+    /// Original FilmingStage._rgb_to_film_raw, after the optional
+    /// full-frame RGB autoexposure, BEFORE exposure EV/boost/lens blur.
+    /// Unlike the LUT path, source RGB may legitimately exceed one after
+    /// auto exposure. No implicit clipping or mobile colour fallback.
+    func sourceCameraRaw(
+        encodedRGB:[Double],cameraEV:Double
+    ) throws -> [Double] {
+        guard encodedRGB.count==3,
+              encodedRGB.allSatisfy({ $0.isFinite && $0>=0 }),
+              cameraEV.isFinite && abs(cameraEV)<=4 else {
+            throw PhysicsError.invalid("原版自动测光后的相机 RGB 或曝光无效")
+        }
+        let linear=encodedRGB.map { Self.decodeSRGB($0) }
+        let raw=hanatos.raw(linearRGB:linear)
+        let mult=pow(2.0,cameraEV)
+        let irradiance=raw.map { $0*mult }
+        guard irradiance.count==3,
+              irradiance.allSatisfy({ $0.isFinite && $0>=0 }) else {
+            throw PhysicsError.invalid("原版相机 Hanatos 光子输出非有限")
+        }
+        return irradiance
+    }
+
+    /// Raw-stage input after global Python boost and source lens Gaussian,
+    /// converting photons to log10 and applying the source film H-D.
+    func sourceSpatialInputFromCameraRaw(
+        _ raw:[Double]
+    ) throws -> SourceSpatialInput {
+        guard raw.count==3 && raw.allSatisfy({ $0.isFinite && $0>=0 }) else {
+            throw PhysicsError.invalid("原版相机镜头后曝光数据无效")
+        }
+        let logRaw=raw.map { log10(max($0,0)+1e-10) }
+        let initial=(0..<3).map {
+            film.curve(logRaw[$0],channel:$0)
+        }
+        guard (logRaw+initial).allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版镜头后 H-D 出现 Inf/NaN")
+        }
+        return SourceSpatialInput(
+            rawLog:logRaw,initialDensity:initial
+        )
+    }
+
     func sourceSpatialInput(
         encodedRGB: [Double], cameraEV: Double
     ) throws -> SourceSpatialInput {
