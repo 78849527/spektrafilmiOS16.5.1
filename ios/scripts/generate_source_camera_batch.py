@@ -10,6 +10,7 @@ little-endian binary64; metadata/source SHA remains in the generator.
 """
 from __future__ import annotations
 import base64
+import hashlib
 from pathlib import Path
 import importlib.util
 import sys
@@ -129,7 +130,20 @@ for w,h,um,mm,b64 in lens_records:
     lines.append("        .init(width:%d,height:%d,microns:%r,formatMM:%r,output:\"%s\")," %(
         w,h,um,mm,b64
     ))
-lines.extend(["    ]","}"])
+# Record the real upstream byte identity, including the filter dependency.
+# Re-generated fixtures after an upstream change are not automatically
+# considered certified: source hashes remain visible in native tests/reports.
+lines.extend(["    ]", "    static let sourceSHA256: [String: String] = ["])
+for label, path in (
+    ("autoexposure", src / "utils/autoexposure.py"),
+    ("highlight_boost", src / "utils/numba_boost_hightlights.py"),
+    ("camera_diffusion", src / "model/diffusion.py"),
+    ("source_gaussian", src / "utils/fast_gaussian_filter.py"),
+):
+    lines.append('        "%s": "%s",' % (
+        label, hashlib.sha256(path.read_bytes()).hexdigest()
+    ))
+lines.extend(["    ]", "}"])
 out.write_text("\n".join(lines)+"\n",encoding="utf-8")
 print("PASS: source camera reference:",len(meter_records)*len(methods),
       "Python meter vectors,",
