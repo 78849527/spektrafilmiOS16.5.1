@@ -11,15 +11,55 @@ little-endian binary64; metadata/source SHA remains in the generator.
 from __future__ import annotations
 import base64
 from pathlib import Path
+import importlib.util
 import sys
+import types
 import numpy as np
 from skimage.transform import rescale
 
 root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(root / "src"))
-from spektrafilm.utils.autoexposure import measure_autoexposure_ev
-from spektrafilm.utils.numba_boost_hightlights import boost_highlights
-from spektrafilm.model.diffusion import apply_gaussian_blur_um
+src = root / "src/spektrafilm"
+
+# Upstream package __init__ eagerly loads optional exiv2/RAW bindings.
+# Import the ORIGINAL source function files directly, exactly as the
+# existing source DIR parity generators do. No reimplemented Python math.
+for name, path in (
+    ("spektrafilm", src),
+    ("spektrafilm.utils", src / "utils"),
+    ("spektrafilm.model", src / "model"),
+):
+    mod = types.ModuleType(name)
+    mod.__path__ = [str(path)]
+    sys.modules[name] = mod
+
+def load_original(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+load_original(
+    "spektrafilm.utils.fast_gaussian_filter",
+    src / "utils/fast_gaussian_filter.py",
+)
+load_original(
+    "spektrafilm.utils.numba_boost_hightlights",
+    src / "utils/numba_boost_hightlights.py",
+)
+meter = load_original(
+    "spektrafilm.utils.autoexposure",
+    src / "utils/autoexposure.py",
+)
+diffusion = load_original(
+    "spektrafilm.model.diffusion",
+    src / "model/diffusion.py",
+)
+measure_autoexposure_ev = meter.measure_autoexposure_ev
+boost_highlights = sys.modules[
+    "spektrafilm.utils.numba_boost_hightlights"
+].boost_highlights
+apply_gaussian_blur_um = diffusion.apply_gaussian_blur_um
 
 out = root / "ios/SpektraFilmPort/GeneratedSourceCameraReference.swift"
 
