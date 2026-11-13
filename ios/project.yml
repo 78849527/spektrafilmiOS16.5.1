@@ -7,13 +7,19 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.27"
-    CURRENT_PROJECT_VERSION: "52"
+    MARKETING_VERSION: "1.8.28"
+    CURRENT_PROJECT_VERSION: "53"
+packages:
+  NextLevel:
+    url: https://github.com/NextLevel/NextLevel
+    exactVersion: 0.19.1
 targets:
   SpektraFilmPort:
     type: application
     platform: iOS
     deploymentTarget: "16.5"
+    dependencies:
+      - package: NextLevel
     sources:
       - path: SpektraFilmPort
         excludes:
@@ -29,6 +35,7 @@ targets:
       properties:
         CFBundleIdentifier: com.twogou.spektrafilmport
         CFBundleDisplayName: SpektraFilm Port
+        NSCameraUsageDescription: 允许拍照并将照片直接交给 SpektraFilm 原版冲印处理。
         NSPhotoLibraryAddUsageDescription: 允许将渲染好的高清照片保存到系统相册。
         CFBundlePackageType: APPL
         LSRequiresIPhoneOS: true
