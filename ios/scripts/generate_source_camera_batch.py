@@ -81,12 +81,12 @@ for w,h,ev in meter_records:
     ))
 lines.extend(["    ]","    static let boost:[BoostCase] = ["])
 for w,h,ev,spread,protect,b64 in boost_records:
-    lines.append("        .init(width:%d,height:%d,ev:%r,span:%r,protect:%r,output:%r)," %(
+    lines.append("        .init(width:%d,height:%d,ev:%r,span:%r,protect:%r,output:\"%s\")," %(
         w,h,ev,spread,protect,b64
     ))
 lines.extend(["    ]","    static let lens:[LensCase] = ["])
 for w,h,um,mm,b64 in lens_records:
-    lines.append("        .init(width:%d,height:%d,microns:%r,formatMM:%r,output:%r)," %(
+    lines.append("        .init(width:%d,height:%d,microns:%r,formatMM:%r,output:\"%s\")," %(
         w,h,um,mm,b64
     ))
 lines.extend(["    ]","}"])
