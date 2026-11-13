@@ -77,7 +77,11 @@ jobs:
           python3 ios/scripts/generate_hanatos.py
           python3 ios/scripts/generate_dir.py
           python3 ios/scripts/generate_dir_spatial.py
-          python3 ios/scripts/generate_source_spatial_dir_2d.py
+          # Original Numba 2D FIR/YVV caches are tied to the temporary
+          # shim-imported source module. Do NOT poison subsequent source
+          # grain generators that import the original module differently.
+          # Use a per-run temporary Numba cache, not a fake source kernel.
+          NUMBA_CACHE_DIR="$(mktemp -d)" python3 ios/scripts/generate_source_spatial_dir_2d.py
           python3 ios/scripts/generate_sublayer_grain.py
           python3 ios/scripts/generate_original_metal_grain.py
           python3 ios/scripts/generate_original_source_rng.py
