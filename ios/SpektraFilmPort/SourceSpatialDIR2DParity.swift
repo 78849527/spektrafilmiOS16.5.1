@@ -248,7 +248,7 @@ enum SourceSpatialDIR2DParity {
                     label:"\(c.film) CI bridge #\(n) pixel:\(i/3) ch:\(i%3)"
                 )
             }
-            let stage=SpatialDIRStage(
+            var stage=SpatialDIRStage(
                 rawLogCube:sourceIdentity,
                 initialDensityCube:sourceIdentity,
                 correctedDensityCube:correctedIdentity,
@@ -259,6 +259,9 @@ enum SourceSpatialDIR2DParity {
                 logExposureSpans:[2,2,2],
                 donorReceiverMatrix:c.matrix,
                 positive:c.positive
+            )
+            stage.float64OpticalNodes = .identity(
+                sourceSize: 9, correctedSize: 17
             )
             var opts=SpatialDIRSettings(enabled:true)
             opts.diffusionRadiusScale=c.radiusScale
