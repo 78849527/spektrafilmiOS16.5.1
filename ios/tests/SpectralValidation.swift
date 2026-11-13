@@ -7,6 +7,9 @@ import Foundation
 @main
 struct SpectralValidation {
     static func main() throws {
+        // v1.8.25: independently certify every source input bit is still
+        // original binary64; fast Float32 material bytes remain unchanged.
+        try SourceFloat64ProfileValidation.evaluate()
         let all = GeneratedSpectralData.profiles
         let films = SpectralPhysics.supportedFilmIDs
         let media = SpectralPhysics.supportedPaperIDs
