@@ -637,5 +637,14 @@ struct SpectralValidation {
                      "SOURCE H2025 CAMERA->PRINT: >0.002 exact-mode stage")
         precondition(cameraEvidence.preciseOutputExceed==0,
                      "SOURCE H2025 CAMERA->PRINT: >0.002 exact-mode RGB")
+        // v1.8.22: the TRUE nonlinear 2D optical image is computed from
+        // original Hanatos/H-D/physical paper/scan per input pixel.
+        // The independent real Python source stages are generated in CI.
+        try SourcePhysicalImageParity.evaluate(
+            fixtures:URL(
+                fileURLWithPath:"ios/verification/generated-physical-v1.8.22",
+                isDirectory:true
+            )
+        )
     }
 }
