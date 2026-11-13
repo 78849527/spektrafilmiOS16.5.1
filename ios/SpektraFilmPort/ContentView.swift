@@ -71,6 +71,13 @@ final class PhotoEditorModel: ObservableObject {
     // Separate opt-in v1.8.22 REAL nonlinear image optics. Never default to
     // it or replace the user-validated v1.8.21 direct-DIR route.
     @Published var sourcePhysicalDirectEnabled = false
+    // Independent opt-in deterministic original Python ScanningStage:
+    // post-ACES LINEAR Gaussian lens blur and unsharp, before display CCTF.
+    // Existing scannerFinishingEnabled includes unported stochastic glare.
+    @Published var sourceScannerOpticalEnabled = false
+    @Published var sourceScannerLensBlurSigma = 0.0
+    @Published var sourceScannerUnsharpSigma = 1.0
+    @Published var sourceScannerUnsharpAmount = 0.7
 
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
@@ -206,10 +213,18 @@ final class PhotoEditorModel: ObservableObject {
                 developerExhaustion:printDeveloperExhaustion
               )
             : OriginalPrintMorph.Settings()
+        let sourceScan=sourceScannerOpticalEnabled
+            ? OriginalSourceScannerOptics.Settings(
+                lensBlurSigma:sourceScannerLensBlurSigma,
+                unsharpSigma:sourceScannerUnsharpSigma,
+                unsharpAmount:sourceScannerUnsharpAmount
+            )
+            : OriginalSourceScannerOptics.Settings()
         let p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
-            dir:spatialDIRSettings,print:print,morph:morph
+            dir:spatialDIRSettings,print:print,morph:morph,
+            scannerOptics:sourceScan
         )
         try p.validate()
         return p
@@ -735,7 +750,10 @@ final class PhotoEditorModel: ObservableObject {
             // input conditionally. Validate the REAL device/process budget
             // before showing a misleading "ready to export" sheet.
             try OriginalSourcePhysicalImage.validateMemoryBudget(
-                width:Int(bounds.width),height:Int(bounds.height)
+                width:Int(bounds.width),height:Int(bounds.height),
+                additionalBytesPerPixel:sourceScannerOpticalEnabled
+                    ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
+                    : 0
             )
         }
         return try SafeExportResolution.capture(
@@ -743,7 +761,10 @@ final class PhotoEditorModel: ObservableObject {
             mode: resolution,
             estimatedBytesPerPixel:
                 sourcePixelIOEnabled && sourcePhysicalDirectEnabled
-                ? OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel
+                ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
+                   (sourceScannerOpticalEnabled
+                    ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
+                    : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )
     }
