@@ -392,7 +392,7 @@ enum OriginalMetalGrain {
         }
         let float32Proof=try float32BoundaryDiagnostic()
         return "Metal 硬件自检通过 · \(device.name) · " +
-            "纹理透传 PASS · reflect 误差 \(String(format: "%.7f", err))" + "\\n" + float32Proof
+            "纹理透传 PASS · reflect 误差 \(String(format: "%.7f", err))" + "\n" + float32Proof
     }
 
     struct PoissonDiagnosticParameters {
