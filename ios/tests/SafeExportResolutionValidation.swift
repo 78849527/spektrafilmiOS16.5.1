@@ -61,6 +61,27 @@ struct SafeExportResolutionValidation {
         precondition(economy.dimensions.pixels <= 3_000_000)
         precondition(adaptive.dimensions.pixels > economy.dimensions.pixels)
 
+        // New true source physics no longer uses general CoreImage's 104
+        // bytes/pixel budget; the 120B/px Double full-image pipeline is
+        // stated in the pre-export user confirmation as an ESTIMATE.
+        let originalPlan=try SafeExportResolution.plan(
+            width:3888,height:2592,physicalMemory:4_500_000_000,
+            processAvailableMemory:3_140_000_000,mode:.original
+        )
+        let physicsPlan=try SafeExportResolution.plan(
+            width:3888,height:2592,physicalMemory:4_500_000_000,
+            processAvailableMemory:3_140_000_000,mode:.original,
+            estimatedBytesPerPixel:120
+        )
+        precondition(originalPlan.estimatedPeakBytes ==
+                     UInt64(3888*2592)*104)
+        precondition(physicsPlan.estimatedPeakBytes ==
+                     UInt64(3888*2592)*120)
+        precondition(physicsPlan.dimensions.width==3888 &&
+                     physicsPlan.dimensions.height==2592)
+        precondition(!physicsPlan.dimensions.reduced &&
+                     physicsPlan.summary.contains("1209 MB"))
+
         // Process headroom can reduce the cap BELOW the physical budget.
         let pressured = try SafeExportResolution.plan(
             width:6000,height:4000,physicalMemory:6_000_000_000,
