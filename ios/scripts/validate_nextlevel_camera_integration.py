@@ -18,16 +18,31 @@ required = {
     "camera permission": "NSCameraUsageDescription:" in project,
     "no microphone permission": "NSMicrophoneUsageDescription:" not in project,
     "photo-only mode": "engine.captureMode = .photo" in camera,
-    "not falsely claiming RAW": "engine.photoConfiguration.isRawCaptureEnabled = false" in camera,
+    "RAW explicit opt-in": "engine.photoConfiguration.isRawCaptureEnabled = false" in camera and "engine.photoConfiguration.isRawCaptureEnabled = captureExpectedRAW" in camera,
     "JPEG capture": "engine.photoConfiguration.codec = .jpeg" in camera,
     "camera authorization": "AVCaptureDevice.requestAccess(for: .video)" in camera,
-    "NextLevel original JPEG": "NextLevelPhotoJPEGKey" in camera and "photo.fileDataRepresentation()" in camera,
+    "camera source bytes": "NextLevelPhotoFileDataKey" in camera and "photo.fileDataRepresentation()" in camera,
     "real NextLevel preview": "NextLevel.shared.previewLayer" in camera,
     "camera toolbar button": 'toolButton("camera.fill"' in ui,
     "full-screen camera": ".fullScreenCover(isPresented: $cameraPresented)" in model,
-    "shared photo importer": "try loadPhoto(data)" in model and "func loadCapturedPhoto(_ data: Data)" in model,
+    "shared photo importer": "try loadPhoto(capture.processed)" in model and "func loadCapturedPhoto(_ capture: NextLevelCapturedPhoto)" in model,
     "no preview snapshot": "UIImageJPEGRepresentation" not in camera,
+    "RAW and processed pairing": "photo.isRawPhoto" in camera and "captureExpectedRAW && pendingRAW == nil" in camera,
+    "RAW fail closed": "拒绝仅使用 JPEG" in camera and "未自动回退 JPEG" in camera,
+    "durable DNG original": "raw.write(to: output, options: .atomic)" in model,
+    "separate DNG share": "onShareRaw" in ui and "activeSheet = .share(url)" in model,
+    "manual exposure/focus/WB/zoom/EV": all(k in camera for k in ("proSetManualExposure", "proSetWhiteBalance", "proSetManualFocus", "proSetZoom", "proSetExposureBias")),
+    "hardware capability menus": "CaptureFormat.allCases" in camera and "CaptureLens.allCases" in camera,
+    "DNG in Files": "UIFileSharingEnabled: true" in project,
 }
+nextlevel_source = (root / "Vendor/NextLevel/Sources/NextLevel.swift").read_text()
+pro = (root / "Vendor/NextLevel/Sources/NextLevelProfessional.swift").read_text()
+required.update({
+    "native DNG settings": "rawPixelFormatType: rawType, processedFormat: formatDictionary" in nextlevel_source,
+    "RAW capability guard": "availableRawPhotoPixelFormatTypes.first" in nextlevel_source,
+    "manual AVFoundation exposure": "setExposureModeCustom(" in pro,
+    "photo-only no mic": "engine.automaticallyConfiguresApplicationAudioSession = false" in camera,
+})
 for label, success in required.items():
     if not success:
         raise SystemExit("FAIL: " + label)
