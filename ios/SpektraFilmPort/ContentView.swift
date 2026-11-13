@@ -710,6 +710,25 @@ final class PhotoEditorModel: ObservableObject {
         guard let src = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
+        if sourcePixelIOEnabled {
+            // Before opening the confirmation sheet, validate the ORIGINAL
+            // ImageIO dimensions and selected source algorithm budget.
+            // Do not show a 16MP normal-export memory estimate when the
+            // separately selected physical mode can process only 2MP.
+            guard resolution == .original else {
+                throw ImageProcessingError.invalid(
+                    "原版像素直连实验版仅支持原尺寸高清输出，不允许隐式缩图"
+                )
+            }
+            let (data, _) = try validateSourcePixelIO()
+            if sourcePhysicalDirectEnabled {
+                _ = try sourcePhysicalParameters()
+            }
+            try OriginalSourcePixelIO.preflightExport(
+                data, maximumAllowedPixels: sourcePhysicalDirectEnabled
+                    ? OriginalSourcePhysicalImage.maximumPixels : 16_000_000
+            )
+        }
         let bounds = src.extent.integral
         return try SafeExportResolution.capture(
             width: Int(bounds.width), height: Int(bounds.height),
