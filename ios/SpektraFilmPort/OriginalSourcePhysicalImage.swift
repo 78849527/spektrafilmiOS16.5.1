@@ -44,8 +44,7 @@ enum OriginalSourcePhysicalImage {
                 "禁止自动缩图或切换快速算法。"
             )
         }
-        let peak = UInt64(width)*UInt64(height)*
-            estimatedPeakBytesPerPixel
+        let peak = UInt64(width) * UInt64(height) * estimatedPeakBytesPerPixel
         let physical = physicalMemory ?? ProcessInfo.processInfo.physicalMemory
         let allowed = min(maximumSourceMemoryBudget,physical/3)
         let headroom:UInt64?
