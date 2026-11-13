@@ -117,7 +117,8 @@ enum OriginalSourcePhysicalImage {
                 printMorph: morph,
                 printOptics: print,
                 cameraExposureEV: cameraEV,
-                hanatosPrecision: .originalFloat64
+                hanatosPrecision: .originalFloat64,
+                sourceMeasuredFloat64: true
             )
         }
     }
