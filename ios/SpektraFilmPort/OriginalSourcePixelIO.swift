@@ -317,7 +317,12 @@ enum OriginalSourcePixelIO {
         guard CGImageDestinationFinalize(dest) else {
             throw Failure.invalid("原版像素验证：PNG 编码失败")
         }
-        let observed=try decode(Data(contentsOf:url))
+        let originalFile=try Data(contentsOf:url)
+        // The same ImageIO metadata probe used by the export-confirmation
+        // gate must correctly read an actually encoded original image.
+        try preflightExport(originalFile,maximumAllowedPixels:16_000_000)
+        try preflightExport(originalFile,maximumAllowedPixels:2_000_000)
+        let observed=try decode(originalFile)
         guard observed.width==w,observed.height==h else {
             throw Failure.invalid("原版像素验证：PNG 行列尺寸改变")
         }
