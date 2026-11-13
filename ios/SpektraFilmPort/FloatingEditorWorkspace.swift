@@ -693,8 +693,21 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
                 Text(model.spatialDIRSourceConvolutionEnabled
-                     ? "原版 reflect FIR／YVV IIR，双精度扩散；图像边界为 Float32"
+                     ? "原版 reflect FIR／YVV IIR，双精度扩散；默认 CI 图像边界存在 Float16 量化"
                      : "移动快速 Core Image Gaussian；非原版精确边界")
+                if model.spatialDIRSourceConvolutionEnabled {
+                    resetToggle("8-bit 原版像素直连（实验）",
+                                value:$model.sourcePixelIOEnabled,
+                                enabled:model.hasPhoto && !model.busy,
+                                resetTo:false)
+                        .onChange(of:model.sourcePixelIOEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    Text("仅不透明 8-bit 照片：ImageIO→Double DIR→原尺寸 JPEG；" +
+                         "不支持颗粒、光晕、散射和扫描后处理；不静默降级。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 strengthControl("抑制剂扩散范围",
