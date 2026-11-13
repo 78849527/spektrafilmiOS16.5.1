@@ -695,6 +695,8 @@ struct FloatingEditorWorkspace: View {
                 Text(model.spatialDIRSourceConvolutionEnabled
                      ? "原版 reflect FIR／YVV IIR，双精度扩散；默认 CI 图像边界存在 Float16 量化"
                      : "移动快速 Core Image Gaussian；非原版精确边界")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
                 if model.spatialDIRSourceConvolutionEnabled {
                     resetToggle("8-bit 原版像素直连（实验）",
                                 value:$model.sourcePixelIOEnabled,
@@ -708,8 +710,6 @@ struct FloatingEditorWorkspace: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
                 strengthControl("抑制剂扩散范围",
                                 value: $model.spatialDIRRadiusScale,
                                 range: 0.25...3.0, suffix: "×", resetTo: 1.0)
