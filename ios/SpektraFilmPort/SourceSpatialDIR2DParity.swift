@@ -343,7 +343,7 @@ enum SourceSpatialDIR2DParity {
             \(cases.count) 组不同正负片、曝光空间变化、FIR/YVV IIR
             + 3-Gaussian exponential tail，共 \(total) 个通道像素。
             \(numeric.describe("源 Float64 FIR/YVV 扩散",channels:total))
-            【v1.8.17 原版图像精度边界诊断｜不计入整图认证】
+            【v1.8.18 原版图像精度边界与 Float64 数组诊断｜不计入整图认证】
             \(directFloat32.describe("不经过 CI 的直接 Float32 量化",channels:total))
             \(directFloat16.describe("不经过 CI 的 IEEE binary16 量化（ties-to-even）",channels:total))
             \(stageNames.map {directStageStatistics[$0]!.describe(
