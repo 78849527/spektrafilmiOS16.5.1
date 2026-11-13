@@ -730,9 +730,21 @@ final class PhotoEditorModel: ObservableObject {
             )
         }
         let bounds = src.extent.integral
+        if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
+            // In-place full-image physical optics now handles 10MP-class
+            // input conditionally. Validate the REAL device/process budget
+            // before showing a misleading "ready to export" sheet.
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:Int(bounds.width),height:Int(bounds.height)
+            )
+        }
         return try SafeExportResolution.capture(
             width: Int(bounds.width), height: Int(bounds.height),
-            mode: resolution
+            mode: resolution,
+            estimatedBytesPerPixel:
+                sourcePixelIOEnabled && sourcePhysicalDirectEnabled
+                ? OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel
+                : SafeExportResolution.estimatedBytesPerPixel
         )
     }
 
