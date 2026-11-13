@@ -156,7 +156,8 @@ enum OriginalSourcePixelIO {
             grain:nil, stageObserver:nil, sourceRGBOverride:frame.rgb,
             stageDoubleObserver: { name,pixels in
                 if name == "printed" { printed = pixels }
-            }
+            },
+            suppressFinalCIImage:true
         )
         guard let pixels = printed, pixels.count == frame.width*frame.height*3,
               pixels.allSatisfy({ $0.isFinite }) else {
