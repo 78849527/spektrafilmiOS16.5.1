@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 #if os(iOS)
 import os
 #endif
