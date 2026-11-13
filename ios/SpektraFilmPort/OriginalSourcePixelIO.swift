@@ -204,6 +204,51 @@ enum OriginalSourcePixelIO {
         return cg
     }
 
+    /// Runs in GitHub's macOS native validation executable as well as on
+    /// iPhone. One opaque lossless PNG ensures byte order and row orientation
+    /// are not silently altered by the new ImageIO/Quartz transport.
+    static func validate8BitRoundTrip() throws -> String {
+        let w=3,h=2
+        let bytes:[UInt8]=[
+            19,41,83,255,  101,143,179,255,  217,233,247,255,
+            251,71,37,255,  127,89,53,255,   11,5,239,255
+        ]
+        let frame=Frame(
+            width:w,height:h,
+            rgb:(0..<(w*h)).flatMap { pixel in
+                (0..<3).map { Double(bytes[pixel*4+$0])/255.0 }
+            }
+        )
+        let cg=try displayImage(frame)
+        let url=FileManager.default.temporaryDirectory
+            .appendingPathComponent("spektrafilm-source-rgba8-" + UUID().uuidString)
+            .appendingPathExtension("png")
+        defer { try? FileManager.default.removeItem(at:url) }
+        guard let dest=CGImageDestinationCreateWithURL(
+            url as CFURL,UTType.png.identifier as CFString,1,nil
+        ) else {
+            throw Failure.invalid("原版像素验证：无法创建 PNG 测试图")
+        }
+        CGImageDestinationAddImage(dest,cg,nil)
+        guard CGImageDestinationFinalize(dest) else {
+            throw Failure.invalid("原版像素验证：PNG 编码失败")
+        }
+        let observed=try decode(Data(contentsOf:url))
+        guard observed.width==w,observed.height==h else {
+            throw Failure.invalid("原版像素验证：PNG 行列尺寸改变")
+        }
+        for k in frame.rgb.indices {
+            if abs(observed.rgb[k]-frame.rgb[k])>1e-12 {
+                throw Failure.invalid(
+                    "原版像素验证：RGBA8 无损往返改变方向/通道。" +
+                    "index=\(k),source=\(frame.rgb[k]),decoded=\(observed.rgb[k])"
+                )
+            }
+        }
+        return "PASS: 原版输入/输出 ImageIO 3×2 RGBA8 六像素无损往返；" +
+            "不经过 Core Image。8-bit 输入认证仅限该夹具。"
+    }
+
     static func preview(_ data:Data,stage:SpatialDIRStage,
                         settings:SpatialDIRSettings) throws -> UIImage {
         let frame=try decode(data,previewMaxSide:1500)
