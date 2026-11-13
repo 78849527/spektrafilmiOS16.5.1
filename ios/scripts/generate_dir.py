@@ -13,6 +13,7 @@ like original debug.lut_mode. This does not claim the full spatial DIR effect.
 """
 from __future__ import annotations
 import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -91,6 +92,7 @@ def main() -> None:
         "    struct Record {",
         "        let correctedCurves: String",
         "        let sourceCorrectedCurvesF64: String",
+        "        let sourceCorrectedSHA256: String",
         "        let donorReceiverMatrix: [Double]",
         "        let sourceDensityMax: [Double]",
         "    }",
@@ -111,9 +113,12 @@ def main() -> None:
         corrected = prepare_curves(le, normalized, M, positive)
         # Full 9 coefficients source-donor/receiver order; original NumPy
         # einsum 'ijk,km->ijm' has donor in row, target in column.
+        double_curve=encode(corrected,"f8")
+        curve_hash=hashlib.sha256(base64.b64decode(double_curve)).hexdigest()
         lines.append(f"        {quote(stock)}: Record("
                      f"correctedCurves: {quote(encode(corrected))}, "
-                     f"sourceCorrectedCurvesF64: {quote(encode(corrected, 'f8'))}, "
+                     f"sourceCorrectedCurvesF64: {quote(double_curve)}, "
+                     f"sourceCorrectedSHA256: {quote(curve_hash)}, "
                      f"donorReceiverMatrix: ["
                      + ",".join(format(x, ".16g") for x in M.flat)
                      + "], sourceDensityMax: ["
