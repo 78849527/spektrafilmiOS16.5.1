@@ -3,7 +3,9 @@ import CoreGraphics
 import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// Experimental, explicitly selected 8-bit sRGB photo ingress -> original
 /// source Double spatial DIR -> direct 8-bit JPEG/UIImage output. This path
@@ -249,12 +251,14 @@ enum OriginalSourcePixelIO {
             "不经过 Core Image。8-bit 输入认证仅限该夹具。"
     }
 
+    #if canImport(UIKit)
     static func preview(_ data:Data,stage:SpatialDIRStage,
                         settings:SpatialDIRSettings) throws -> UIImage {
         let frame=try decode(data,previewMaxSide:1500)
         let developed=try develop(frame,stage:stage,settings:settings)
         return UIImage(cgImage:try displayImage(developed))
     }
+    #endif
 
     static func exportJPEG(_ data:Data,stage:SpatialDIRStage,
                            settings:SpatialDIRSettings) throws -> URL {
