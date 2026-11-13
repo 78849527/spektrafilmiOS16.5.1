@@ -145,6 +145,7 @@ def main() -> None:
         "        let sourceLogExposureF64: String",
         "        let sourceDensityCurvesF64: String",
         "        let sourceDensityCurvesLayersF64: String",
+        "        let sourceFloat64SHA256: String",
         "        let support: String",
         "        let stage: String",
         "        let polarity: String",
@@ -180,6 +181,10 @@ def main() -> None:
             )
             for field, count in FIELDS
         }
+        source_payload = b"".join(
+            base64.b64decode(source_double[field])
+            for field, _ in FIELDS if source_double[field]
+        )
         fields = [
             ("logSensitivity", encoded["log_sensitivity"]),
             ("channelDensity", encoded["channel_density"]),
@@ -196,6 +201,7 @@ def main() -> None:
             ("sourceLogExposureF64", source_double["log_exposure"]),
             ("sourceDensityCurvesF64", source_double["density_curves"]),
             ("sourceDensityCurvesLayersF64", source_double["density_curves_layers"]),
+            ("sourceFloat64SHA256", hashlib.sha256(source_payload).hexdigest()),
             ("support", info["support"]),
             ("stage", info["stage"]),
             ("polarity", info["type"]),
