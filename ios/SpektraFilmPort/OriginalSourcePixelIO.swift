@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import CoreFoundation
 import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
@@ -41,7 +42,7 @@ enum OriginalSourcePixelIO {
     private static func requireExplicitSRGB(_ image: CGImage) throws {
         guard let colorSpace = image.colorSpace,
               colorSpace.model == .rgb,
-              CGColorSpaceEqualToColorSpace(colorSpace, srgb) else {
+              CFEqual(colorSpace, srgb) else {
             throw Failure.invalid(
                 "原版像素直连只接受明确标记的 sRGB 8-bit RGB；" +
                 "P3、灰度或未标记色彩空间禁止隐式转换"
