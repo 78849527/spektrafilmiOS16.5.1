@@ -579,12 +579,12 @@ struct SpectralValidation {
         ).reduce(0.0) { $0 + abs($1.0 - $1.1) }
         precondition(nonlinearity > 0.001,
                      "Test fixture must contain nonlinear real stock printing")
+        let nodeCount = preciseNodes.raw.count + preciseNodes.initial.count +
+            preciseNodes.corrected.count + preciseNodes.printed.count
         print("PASS: original nonlinear stock/paper four source LUTs retain " +
-              "\(preciseNodes.raw.count + preciseNodes.initial.count + " +
-              "preciseNodes.corrected.count + preciseNodes.printed.count) " +
-              "Float64 node channels, \(quantizedNodes) changed by packed " +
-              "Float32, maximum quantization=\(maxQuantization). " +
-              "Source DIR now consumes original Double nodes without fallback.")
+              "\(nodeCount) Double node values, \(quantizedNodes) changed " +
+              "by Float32 packing, maximum quantization=\(maxQuantization). " +
+              "Source DIR consumes Double nodes without fallback.")
 
         // Quantify actual source Python to Swift OUTPUT RGB deviation for
         // direct reversal scans; this stage is deliberately not a
