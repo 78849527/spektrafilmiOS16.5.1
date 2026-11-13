@@ -234,7 +234,7 @@ enum OriginalSourceCameraOptics {
               protectEV.isFinite,protectEV>=0,
               midgray.isFinite,midgray>=0,
               !raw.isEmpty,
-              raw.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+              raw.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("源高光 Boost 输入或参数非法")
         }
         if boostEV == 0 { return }
