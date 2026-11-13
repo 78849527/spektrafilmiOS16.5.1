@@ -150,6 +150,47 @@ struct SpatialDIRValidation {
                      "SOURCE 2D DIR CIImage: >0.002 production deviation")
         precondition(evidence.directOutside==0,
                      "SOURCE 2D DIR Float64 arrays: >0.002 production deviation")
+        // Regression reported on actual iPhone: 3888x2592 = 10,077,696
+        // pixels. The original 16MP ImageIO→Double DIR route succeeds.
+        // The separate physical chain must refuse its 2MP budget with
+        // a truthful warning BEFORE launching the full-res decode/exports.
+        try OriginalSourcePixelIO.validatePixelDimensions(
+            width:3888,height:2592,maximumAllowedPixels:16_000_000
+        )
+        try OriginalSourcePixelIO.validatePixelDimensions(
+            width:4000,height:4000,maximumAllowedPixels:16_000_000
+        )
+        try OriginalSourcePixelIO.validatePixelDimensions(
+            width:1600,height:1250,maximumAllowedPixels:2_000_000
+        )
+        var physicalDenied = false
+        do {
+            try OriginalSourcePixelIO.validatePixelDimensions(
+                width:3888,height:2592,maximumAllowedPixels:2_000_000
+            )
+        } catch OriginalSourcePixelIO.Failure.invalid(let reason) {
+            physicalDenied = reason.contains("200 万像素") &&
+                reason.contains("3888 × 2592") &&
+                reason.contains("逐像素全光学") &&
+                !reason.contains("最多 1600 万像素") &&
+                reason.contains("不会擅自缩图")
+        }
+        precondition(physicalDenied,
+                     "The 10MP original must be rejected as 2MP physical, " +
+                     "not misreported as exceeding 16MP")
+        var fullLimitDenied = false
+        do {
+            try OriginalSourcePixelIO.validatePixelDimensions(
+                width:4001,height:4000,maximumAllowedPixels:16_000_000
+            )
+        } catch OriginalSourcePixelIO.Failure.invalid(let reason) {
+            fullLimitDenied=reason.contains("1600 万像素")
+        }
+        precondition(fullLimitDenied,
+                     "Direct source 16MP memory limit must remain intact")
+        print("PASS: reported 3888x2592 source accepted in 16MP mode, " +
+              "rejected in 2MP physical mode with accurate limit; " +
+              "16MP limit unchanged and no automatic resize.")
         print(try OriginalSourcePixelIO.validate8BitRoundTrip())
         print(try OriginalSourcePixelIO.validateColorProfileGate())
         // v1.8.20: real upstream Python multi-size whole-frame data, not
