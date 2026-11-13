@@ -397,7 +397,11 @@ extension SourceSpatialDIRConvolution {
         // Source pixel override is for Python diagnostic fixtures only.
         // The application still obtains CIImage pixels via readRGB().
         sourceRGBOverride:[Double]?=nil,
-        stageDoubleObserver:((String,[Double])->Void)?=nil
+        stageDoubleObserver:((String,[Double])->Void)?=nil,
+        // Direct ImageIO/JPEG experiment: prevent even a lazy final
+        // CIImage RGB allocation when the upstream pixels are supplied
+        // directly and the Double printed buffer has been observed.
+        suppressFinalCIImage:Bool=false
     ) throws -> CIImage {
         let rect=source.extent.integral
         let w=Int(rect.width),h=Int(rect.height)
@@ -512,6 +516,17 @@ extension SourceSpatialDIRConvolution {
             printed[k]=color.0;printed[k+1]=color.1;printed[k+2]=color.2
         }
         try observe("printed",printed)
+        if suppressFinalCIImage {
+            guard sourceRGBOverride != nil,stageDoubleObserver != nil,
+                  stageObserver == nil,grain == nil else {
+                throw Failure.invalid(
+                    "禁止在未取得 Double 印相数组时省略 CIImage 输出"
+                )
+            }
+            // Caller consumes the Double printed pixels from the observer.
+            // Return ONLY the original geometry. It is never rendered.
+            return source
+        }
         return try writeRGB(printed,rect:rect,w:w,h:h)
     }
 }
