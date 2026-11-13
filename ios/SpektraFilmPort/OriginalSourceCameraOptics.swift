@@ -109,15 +109,21 @@ enum OriginalSourceCameraOptics {
         if method == .disabled { return 0 }
         let preview = smallPreview(encodedRGB,width:width,height:height)
         let w = preview.width, h = preview.height
-        // colour.RGB_COLOURSPACES['sRGB'].matrix_RGB_to_XYZ[1,:],
-        // in source colour.RGB_to_XYZ(...apply_cctf_decoding=True).
+        // Values obtained by invoking ORIGINAL colour.RGB_to_XYZ on
+        // source sRGB unit vectors with CCTF decoding, not by manually
+        // copying a common sRGB matrix from a different implementation.
+        let sourceY=GeneratedSourceCameraReference.sourceLuminanceWeights
+        guard sourceY.count==3,
+              sourceY.allSatisfy({ $0.isFinite && $0>0 }) else {
+            throw Failure.invalid("原版 colour-science sRGB 亮度矩阵参考缺失")
+        }
         var yValues = [Double](repeating:0,count:w*h)
         for p in 0..<(w*h) {
             let i=p*3
             yValues[p] =
-                0.21263900587151027 * decodeSRGB(preview.rgb[i]) +
-                0.7151686787677559 * decodeSRGB(preview.rgb[i+1]) +
-                0.07219231536073371 * decodeSRGB(preview.rgb[i+2])
+                sourceY[0] * decodeSRGB(preview.rgb[i]) +
+                sourceY[1] * decodeSRGB(preview.rgb[i+1]) +
+                sourceY[2] * decodeSRGB(preview.rgb[i+2])
         }
         let ySum=yValues.reduce(0,+)
         let count=Double(yValues.count)

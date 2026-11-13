@@ -16,6 +16,7 @@ import importlib.util
 import sys
 import types
 import numpy as np
+import colour
 from skimage.transform import rescale
 
 root = Path(__file__).resolve().parents[2]
@@ -141,10 +142,21 @@ for w,h,um,mm in [
     px=mm*1000/max(w,h)
     expected=apply_gaussian_blur_um(raw,um,px)
     lens_records.append((w,h,um,mm,encode(expected)))
+# The original colour-science implementation owns its actual sRGB
+# RGB_to_XYZ Y-row. Never substitute matrix constants from a different
+# library/release; the 17x13 original Python regression is stricter than
+# such small yet measurable differences.
+source_luminance_weights=colour.RGB_to_XYZ(
+    np.eye(3,dtype=np.float64),"sRGB",apply_cctf_decoding=True
+)[:,1]
+assert source_luminance_weights.shape==(3,)
+assert np.all(np.isfinite(source_luminance_weights))
+assert np.all(source_luminance_weights>0)
 lines=[
     "import Foundation",
     "// GENERATED from actual original Python functions; do not hand-edit.",
     "enum GeneratedSourceCameraReference {",
+    "    static let sourceLuminanceWeights:[Double] = [%s]" % ",".join(repr(float(y)) for y in source_luminance_weights),
     "    struct MeterCase {let width:Int;let height:Int;let ev:[Double]}",
     "    struct EdgeMeterCase {let width:Int;let height:Int;let level:Double;let ev:[Double]}",
     "    struct BoostCase {let width:Int;let height:Int;let ev:Double;let span:Double;let protect:Double;let output:String}",
@@ -185,6 +197,7 @@ for label, path in (
     ))
 lines.extend(["    ]", "}"])
 out.write_text("\n".join(lines)+"\n",encoding="utf-8")
+print("PASS: source camera true colour-science luminance weights:",source_luminance_weights.tolist())
 print("PASS: source camera reference:",(len(meter_records)+len(meter_edge_records))*len(methods),
       "Python meter vectors,",
       len(boost_records),"Numba highlight full fields,",

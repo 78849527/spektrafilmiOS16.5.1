@@ -71,6 +71,13 @@ enum OriginalSourceCameraBatchValidation {
             throw Failure.invalid("原版摄影参考缺少原始 Python 文件 SHA-256")
         }
         print("PASS: upstream camera stage and Gaussian dependency SHA-256 recorded")
+        let yWeights=GeneratedSourceCameraReference.sourceLuminanceWeights
+        guard yWeights.count==3,
+              yWeights.allSatisfy({ $0.isFinite && $0>0 }),
+              abs(yWeights.reduce(0,+)-1.0)<1e-9 else {
+            throw Failure.invalid("原版 sRGB colour-science 亮度矩阵参考无效")
+        }
+        print("PASS: source colour-science luminance Y weights \(yWeights)")
         let methodNames=[
             "average","median","center_weighted","partial",
             "matrix","multi_zone","highlight_weighted"
