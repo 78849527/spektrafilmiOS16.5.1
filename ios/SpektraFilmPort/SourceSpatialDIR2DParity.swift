@@ -74,10 +74,15 @@ enum SourceSpatialDIR2DParity {
         )
     }
     private static func read(
-        _ source:CIImage,width:Int,height:Int
+        _ source:CIImage,width:Int,height:Int,
+        softwareRenderer:Bool=false
     ) -> [Double] {
+        // Measure the iOS Core Image working-buffer boundary on device.
+        // RGBAf destination does NOT guarantee Float32 intermediates:
+        // the default iOS CI working format is RGBAh (Float16).
         let context=CIContext(options:[
-            .workingColorSpace:NSNull(),.outputColorSpace:NSNull()
+            .workingColorSpace:NSNull(),.outputColorSpace:NSNull(),
+            .useSoftwareRenderer:softwareRenderer
         ])
         var data=[Float](repeating:0,count:width*height*4)
         data.withUnsafeMutableBytes { ptr in
@@ -101,6 +106,13 @@ enum SourceSpatialDIR2DParity {
         let sourceIdentity=cube(9),correctedIdentity=cube(17)
         var numeric=Metrics(),production=Metrics()
         var sourceInputBridge=Metrics(),floatBitmapBridge=Metrics()
+        // v1.8.17 isolates source Float32 rounding, Float16 rounding,
+        // default GPU Core Image, and software Core Image independently.
+        // These are observational metrics, not evidence of full-image
+        // Float64 equivalence, and MUST NOT relax the parity threshold.
+        var directFloat32=Metrics(),directFloat16=Metrics()
+        var softwareInputBridge=Metrics()
+        var halfSignatureCount=0,affectedInputCount=0
         let stageNames=[
             "raw","initial","inhibitors","diffused",
             "log","densityPreGrain","printed"
@@ -135,11 +147,31 @@ enum SourceSpatialDIR2DParity {
             // bridge separately; never obscure a true production error.
             let prepared=image(c.input,width:c.width,height:c.height)
             let roundTrip=read(prepared,width:c.width,height:c.height)
+            let softwareRoundTrip=read(
+                prepared,width:c.width,height:c.height,softwareRenderer:true
+            )
             for i in 0..<count {
-                try sourceInputBridge.test(
-                    source:c.input[i],actual:roundTrip[i],
-                    label:"\(c.film) input #\(n) pixel:\(i/3) ch:\(i%3)"
+                let label="\(c.film) input #\(n) pixel:\(i/3) ch:\(i%3)"
+                let f32=Double(Float(c.input[i]))
+                let f16=Double(Float16(Float(c.input[i])))
+                try directFloat32.test(
+                    source:c.input[i],actual:f32,label:label
                 )
+                try directFloat16.test(
+                    source:c.input[i],actual:f16,label:label
+                )
+                try sourceInputBridge.test(
+                    source:c.input[i],actual:roundTrip[i],label:label
+                )
+                try softwareInputBridge.test(
+                    source:c.input[i],actual:softwareRoundTrip[i],label:label
+                )
+                if abs(roundTrip[i]-f16) < 1.0e-7 {
+                    halfSignatureCount+=1
+                }
+                if abs(roundTrip[i]-f32) > 1.0e-7 {
+                    affectedInputCount+=1
+                }
             }
             let bridgeOutput=try SourceSpatialDIRConvolution.diffuseCI(
                 image(c.sourceInhibitors,width:c.width,height:c.height),
@@ -224,7 +256,14 @@ enum SourceSpatialDIR2DParity {
             \(cases.count) 组不同正负片、曝光空间变化、FIR/YVV IIR
             + 3-Gaussian exponential tail，共 \(total) 个通道像素。
             \(numeric.describe("源 Float64 FIR/YVV 扩散",channels:total))
-            \(sourceInputBridge.describe("原始图像 RGBAf 输入校验",channels:total))
+            【v1.8.17 原版图像精度边界诊断｜不计入整图认证】
+            \(directFloat32.describe("不经过 CI 的直接 Float32 量化",channels:total))
+            \(directFloat16.describe("不经过 CI 的直接 Float16 量化",channels:total))
+            \(sourceInputBridge.describe("GPU CIImage RGBAf 输入校验",channels:total))
+            \(softwareInputBridge.describe("软件 CIImage RGBAf 输入校验",channels:total))
+            GPU 与 Float16 数值吻合：\(halfSignatureCount)/\(total)；
+            GPU 偏离直接 Float32 超过 1e-7：\(affectedInputCount)/\(total)。
+            两种渲染器均只用于测量，不据此切换生产算法。
             \(floatBitmapBridge.describe("Float32 CIImage→FIR/YVV→CIImage 桥接",channels:total))
             \(stageNames.map {stageStatistics[$0]!.describe("实际生产阶段 "+$0,channels:total)}
                         .joined(separator:"\\n"))
