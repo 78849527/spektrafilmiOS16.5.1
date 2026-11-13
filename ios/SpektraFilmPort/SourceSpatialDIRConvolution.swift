@@ -393,7 +393,11 @@ extension SourceSpatialDIRConvolution {
     static func applyExactImagePath(
         to source:CIImage,stage:SpatialDIRStage,
         settings:SpatialDIRSettings,grain:DensityGrainSettings?,
-        stageObserver:((String,CIImage)->Void)?
+        stageObserver:((String,CIImage)->Void)?,
+        // Source pixel override is for Python diagnostic fixtures only.
+        // The application still obtains CIImage pixels via readRGB().
+        sourceRGBOverride:[Double]?=nil,
+        stageDoubleObserver:((String,[Double])->Void)?=nil
     ) throws -> CIImage {
         let rect=source.extent.integral
         let w=Int(rect.width),h=Int(rect.height)
@@ -412,18 +416,34 @@ extension SourceSpatialDIRConvolution {
         let printCube=try SourceCube(
             stage.printCube,dimension:stage.sourceCubeSize
         )
-        let sourceRGB=try readRGB(source,rect:rect,w:w,h:h)
+        let sourceRGB:[Double]
+        if let direct=sourceRGBOverride {
+            guard direct.count==w*h*3,
+                  direct.allSatisfy({ $0.isFinite }) else {
+                throw Failure.invalid("原版 DIR Float64 直连输入无效")
+            }
+            sourceRGB=direct
+        } else {
+            sourceRGB=try readRGB(source,rect:rect,w:w,h:h)
+        }
+        func observe(_ stageName:String,_ pixels:[Double]) throws {
+            stageDoubleObserver?(stageName,pixels)
+            if let stageObserver {
+                stageObserver(stageName,try writeRGB(pixels,rect:rect,w:w,h:h))
+            }
+        }
         let count=w*h*3
         var raw=[Double](repeating:0,count:count)
         var inhibitors=[Double](repeating:0,count:count)
-        var initialObserved=stageObserver == nil ? [] : [Double](repeating:0,count:count)
+        var initialObserved=(stageObserver == nil && stageDoubleObserver == nil)
+            ? [] : [Double](repeating:0,count:count)
         for p in 0..<(w*h) {
             let k=p*3
             let r=sourceRGB[k],g=sourceRGB[k+1],b=sourceRGB[k+2]
             let exposure=rawCube.rgb(r,g,b)
             raw[k]=exposure.0;raw[k+1]=exposure.1;raw[k+2]=exposure.2
             let initial=initialCube.rgb(r,g,b)
-            if stageObserver != nil {
+            if stageObserver != nil || stageDoubleObserver != nil {
                 initialObserved[k]=initial.0
                 initialObserved[k+1]=initial.1
                 initialObserved[k+2]=initial.2
@@ -441,11 +461,9 @@ extension SourceSpatialDIRConvolution {
                 inhibitors[k+receiver]=inhibition
             }
         }
-        if let observer=stageObserver {
-            observer("raw",try writeRGB(raw,rect:rect,w:w,h:h))
-            observer("initial",try writeRGB(initialObserved,rect:rect,w:w,h:h))
-            observer("inhibitors",try writeRGB(inhibitors,rect:rect,w:w,h:h))
-        }
+        try observe("raw",raw)
+        try observe("initial",initialObserved)
+        try observe("inhibitors",inhibitors)
         // Cast CoreGraphics CGFloat explicitly: Swift must not infer
         // optional CGFloat/Double cross-arithmetic for source microns.
         let longSide:Double=max(
@@ -462,17 +480,13 @@ extension SourceSpatialDIRConvolution {
             coreSigma:coreSigma,tailSigma:tailSigma,
             tailWeight:settings.tailWeight
         )
-        if let observer=stageObserver {
-            observer("diffused",try writeRGB(diffused,rect:rect,w:w,h:h))
-        }
+        try observe("diffused",diffused)
         var correctedLog=[Double](repeating:0,count:count)
         for k in 0..<count {
             let span=stage.logExposureSpans[k%3]
             correctedLog[k]=max(0,min(1,raw[k]-diffused[k]/span))
         }
-        if let observer=stageObserver {
-            observer("log",try writeRGB(correctedLog,rect:rect,w:w,h:h))
-        }
+        try observe("log",correctedLog)
         var density=[Double](repeating:0,count:count)
         for p in 0..<(w*h) {
             let k=p*3
@@ -481,9 +495,7 @@ extension SourceSpatialDIRConvolution {
             )
             density[k]=d.0;density[k+1]=d.1;density[k+2]=d.2
         }
-        if let observer=stageObserver {
-            observer("densityPreGrain",try writeRGB(density,rect:rect,w:w,h:h))
-        }
+        try observe("densityPreGrain",density)
         if let grain,grain.amount>0 {
             let densityImage=try writeRGB(density,rect:rect,w:w,h:h)
             guard let result=try DensityGrain.perturbDensityImage(
@@ -499,8 +511,7 @@ extension SourceSpatialDIRConvolution {
             let color=printCube.rgb(density[k],density[k+1],density[k+2])
             printed[k]=color.0;printed[k+1]=color.1;printed[k+2]=color.2
         }
-        let image=try writeRGB(printed,rect:rect,w:w,h:h)
-        stageObserver?("printed",image)
-        return image
+        try observe("printed",printed)
+        return try writeRGB(printed,rect:rect,w:w,h:h)
     }
 }
