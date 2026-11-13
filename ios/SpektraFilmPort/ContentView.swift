@@ -68,6 +68,9 @@ final class PhotoEditorModel: ObservableObject {
     // v1.8.19 experimental: photo 8-bit ImageIO -> direct Double DIR
     // -> direct JPEG. Not a certified all-modules accuracy mode.
     @Published var sourcePixelIOEnabled = false
+    // Separate opt-in v1.8.22 REAL nonlinear image optics. Never default to
+    // it or replace the user-validated v1.8.21 direct-DIR route.
+    @Published var sourcePhysicalDirectEnabled = false
 
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
@@ -163,6 +166,53 @@ final class PhotoEditorModel: ObservableObject {
             )
         }
         return (data,stage)
+    }
+
+    /// Source-real optical settings are read once on the main actor,
+    /// then passed by immutable value into the detached whole-image render.
+    /// Original-only mode does not silently use unsupported colour/scatter.
+    private func sourcePhysicalParameters()
+        throws -> OriginalSourcePhysicalImage.Parameters {
+        guard sourcePixelIOEnabled, sourcePhysicalDirectEnabled,
+              hanatosOriginalPrecisionEnabled,
+              originalScannerEnabled,
+              !scannerBlackWhiteEnabled,
+              !scannerCAM16Enabled,
+              !exposureReferenceEnabled else {
+            throw ImageProcessingError.invalid(
+                "逐像素原版物理模式需要 Hanatos Float64、原版扫描 ACES；" +
+                "关闭尚未验证的 CAM16/黑白参考/曝光参考，禁止自动降级"
+            )
+        }
+        let filmID=UserDefaults.standard.string(forKey:"compactFilmStock")
+            ?? "kodak_portra_400"
+        let paperID=UserDefaults.standard.string(forKey:"compactPaperStock")
+            ?? "kodak_portra_endura"
+        let print=OriginalPrintOptics.Settings(
+            enabled:originalPrintOpticsEnabled,
+            normalizePrintExposure:normalizePrintExposure,
+            printExposureCompensation:printExposureCompensation,
+            cyanShift:printCyanShift,
+            magentaShift:printMagentaShift,
+            yellowShift:printYellowShift,
+            preflashExposure:preflashEnabled ? preflashExposure : 0,
+            preflashMagentaShift:preflashMagentaShift,
+            preflashYellowShift:preflashYellowShift
+        )
+        let morph=printMorphEnabled
+            ? OriginalPrintMorph.Settings(
+                gamma:printGamma,fast:printFastGamma,
+                slow:printSlowGamma,
+                developerExhaustion:printDeveloperExhaustion
+              )
+            : OriginalPrintMorph.Settings()
+        let p=OriginalSourcePhysicalImage.Parameters(
+            filmID:filmID,paperID:paperID,
+            cameraEV:filmExposureEV,paperEV:printExposureEV,
+            dir:spatialDIRSettings,print:print,morph:morph
+        )
+        try p.validate()
+        return p
     }
 
     func selectFromPhotos(_ selection: PhotosPickerItem?) {
@@ -382,16 +432,29 @@ final class PhotoEditorModel: ObservableObject {
             processedPreview=nil
             let (data,stage)=try validateSourcePixelIO()
             let settings=spatialDIRSettings
-            status="原版 8-bit 像素直连：ImageIO→Double DIR→无 CI 预览计算中…"
+            let physical=sourcePhysicalDirectEnabled
+                ? try sourcePhysicalParameters() : nil
+            status=physical == nil
+                ? "原版 8-bit 像素直连：ImageIO→Double DIR→无 CI 预览计算中…"
+                : "逐像素原版光学：Hanatos→H-D→FIR/YVV→相纸→ACES 预览中…"
             Task.detached(priority:.userInitiated) {
                 do {
-                    let image=try OriginalSourcePixelIO.preview(
-                        data,stage:stage,settings:settings
-                    )
+                    let image:UIImage
+                    if let physical {
+                        image=try OriginalSourcePixelIO.previewPhysical(
+                            data,parameters:physical
+                        )
+                    } else {
+                        image=try OriginalSourcePixelIO.preview(
+                            data,stage:stage,settings:settings
+                        )
+                    }
                     await MainActor.run {
                         guard revision==self.originalMetalPreviewVersion else {return}
                         self.processedPreview=image
-                        self.status="原版 8-bit 像素直连预览成功 · " + self.photoDimensions
+                        self.status=(physical == nil
+                            ? "原版 8-bit 像素直连预览成功 · "
+                            : "逐像素原版光学预览成功 · ") + self.photoDimensions
                     }
                 } catch {
                     await MainActor.run {
@@ -677,12 +740,21 @@ final class PhotoEditorModel: ObservableObject {
                 )
             }
             let settings=spatialDIRSettings
+            let physical=sourcePhysicalDirectEnabled
+                ? try sourcePhysicalParameters() : nil
             let url=try await Task.detached(priority:.userInitiated) {
-                try OriginalSourcePixelIO.exportJPEG(
+                if let physical {
+                    return try OriginalSourcePixelIO.exportPhysicalJPEG(
+                        data,parameters:physical
+                    )
+                }
+                return try OriginalSourcePixelIO.exportJPEG(
                     data,stage:stage,settings:settings
                 )
             }.value
-            status="原版像素直连：原尺寸 JPEG 已输出（8-bit，不含 CI 中间量化）"
+            status=physical == nil
+                ? "原版像素直连：原尺寸 JPEG 已输出（8-bit，不含 CI 中间量化）"
+                : "逐像素原版光学：原尺寸 JPEG 已输出，未使用颜色 LUT"
             return url
         }
         // Keep full-resolution Core Image evaluation off the SwiftUI main
