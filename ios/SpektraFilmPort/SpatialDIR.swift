@@ -119,8 +119,22 @@ enum SpatialDIR {
                       stageObserver: ((String, CIImage) -> Void)? = nil
     ) throws -> CIImage? {
         guard settings.enabled, settings.valid, stage.valid,
-              !source.extent.isEmpty,
-              let tailKernel, let subtractionKernel else { return nil }
+              !source.extent.isEmpty else { return nil }
+        if settings.sourceConvolutionEnabled {
+            // Native source-precision mode: Float32 image/cube boundary,
+            // Double trilinear 3D LUT and upstream FIR/YVV on the actual
+            // 2D frame. No cascading CIColorCube quantization, no silent
+            // fallback to the mobile Core Image approximation.
+            return try SourceSpatialDIRConvolution.applyExactImagePath(
+                to:source,stage:stage,settings:settings,grain:grain,
+                stageObserver:stageObserver
+            )
+        }
+        guard let tailKernel, let subtractionKernel else {
+            throw SourceSpatialDIRConvolution.Failure.invalid(
+                "显式移动快速 DIR 选项缺少 Core Image 内核"
+            )
+        }
 
         let rawCube = CIFilter.colorCube()
         rawCube.inputImage = source
@@ -177,34 +191,24 @@ enum SpatialDIR {
         let pixelUM = settings.referencePixelSizeUM ?? (36_000.0 / imageLongSide)
         let coreSigma = gaussianSigmaUM*settings.diffusionRadiusScale/pixelUM
         let tailSigma = exponentialTailUM*settings.diffusionRadiusScale/pixelUM
-        let diffused: CIImage
-        if settings.sourceConvolutionEnabled {
-            // The EXACT source fast_gaussian_filter auto-dispatch (FIR<3,
-            // YVV>=3) and 3-Gaussian exponential tail. No CI Gaussian
-            // substitution, radius clipping or implicit approximation.
-            diffused=try SourceSpatialDIRConvolution.diffuseCI(
-                inhibitors,coreSigma:coreSigma,tailSigma:tailSigma,
-                tailWeight:settings.tailWeight
+        // Explicit mobile fast mode ONLY. Source mode returned earlier.
+        let core = gaussian(inhibitors,sigma:coreSigma)
+        let tail0 = gaussian(
+            inhibitors,sigma:tailSigma*exponentialMixture[0].ratio
+        )
+        let tail1 = gaussian(
+            inhibitors,sigma:tailSigma*exponentialMixture[1].ratio
+        )
+        let tail2 = gaussian(
+            inhibitors,sigma:tailSigma*exponentialMixture[2].ratio
+        )
+        guard let diffused=tailKernel.apply(
+            extent:source.extent,
+            arguments:[core,tail0,tail1,tail2,Float(settings.tailWeight)]
+        ) else {
+            throw SourceSpatialDIRConvolution.Failure.invalid(
+                "移动快速 Core Image DIR 扩散内核生成失败"
             )
-        } else {
-            // Explicit mobile approximation, only when the user chooses it.
-            let core = gaussian(inhibitors, sigma: coreSigma)
-            let tail0 = gaussian(inhibitors,
-                                 sigma: tailSigma*exponentialMixture[0].ratio)
-            let tail1 = gaussian(inhibitors,
-                                 sigma: tailSigma*exponentialMixture[1].ratio)
-            let tail2 = gaussian(inhibitors,
-                                 sigma: tailSigma*exponentialMixture[2].ratio)
-            guard let approximate = tailKernel.apply(
-                extent: source.extent,
-                arguments: [core, tail0, tail1, tail2,
-                            Float(settings.tailWeight)]
-            ) else {
-                throw SourceSpatialDIRConvolution.Failure.invalid(
-                    "移动版 Core Image DIR 扩散内核生成失败"
-                )
-            }
-            diffused=approximate
         }
 
         stageObserver?("diffused",diffused)
