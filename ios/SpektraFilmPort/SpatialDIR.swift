@@ -8,9 +8,10 @@ import CoreImage.CIFilterBuiltins
 /// initial H-D -> density/silver -> donor/receiver matrix -> spatial diffusion
 /// -> subtract inhibitor from log10 exposure -> pre-DIR corrected H-D curve
 /// -> density grain -> spectral paper printing -> scanning.
-/// Core Image Gaussian and the source Gaussian-mixture exponential tail are
-/// mobile approximations of upstream fast_* convolution boundary conditions;
-/// LUT interpolation is separately approximate.
+/// Source-accurate FIR/YVV Float64 convolution is the default when spatial
+/// DIR is enabled. CIImage Float32 intermediate buffers and cube LUT
+/// interpolation remain separately approximate. A source-convolution error
+/// throws rather than silently reverting to a CI Gaussian.
 struct SpatialDIRStage {
     let rawLogCube: Data
     let initialDensityCube: Data
@@ -37,11 +38,19 @@ struct SpatialDIRSettings {
     var enabled = false
     var diffusionRadiusScale = 1.0
     var tailWeight = 0.06
+    /// Enabled by default in the opt-in spatial DIR stage. The previous CI
+    /// Gaussian approximation is opt-in only, never an implicit fallback.
+    var sourceConvolutionEnabled = true
+    /// Fixed microns-per-pixel only for the 2D Python/Swift test fixture.
+    /// Production ALWAYS uses 36,000 μm divided by actual image long side.
+    var referencePixelSizeUM: Double? = nil
 
     var valid: Bool {
         diffusionRadiusScale.isFinite &&
         (0.25...3.0).contains(diffusionRadiusScale) &&
-        tailWeight.isFinite && (0...0.25).contains(tailWeight)
+        tailWeight.isFinite && (0...0.25).contains(tailWeight) &&
+        (referencePixelSizeUM == nil ||
+         (referencePixelSizeUM!.isFinite && referencePixelSizeUM! > 0))
     }
 }
 
@@ -160,21 +169,38 @@ enum SpatialDIR {
         else { return nil }
 
         let imageLongSide = max(1, source.extent.width, source.extent.height)
-        let pixelUM = 36_000.0 / imageLongSide
+        let pixelUM = settings.referencePixelSizeUM ?? (36_000.0 / imageLongSide)
         let coreSigma = gaussianSigmaUM*settings.diffusionRadiusScale/pixelUM
         let tailSigma = exponentialTailUM*settings.diffusionRadiusScale/pixelUM
-        let core = gaussian(inhibitors, sigma: coreSigma)
-        let tail0 = gaussian(inhibitors,
-                             sigma: tailSigma*exponentialMixture[0].ratio)
-        let tail1 = gaussian(inhibitors,
-                             sigma: tailSigma*exponentialMixture[1].ratio)
-        let tail2 = gaussian(inhibitors,
-                             sigma: tailSigma*exponentialMixture[2].ratio)
-        guard let diffused = tailKernel.apply(
-            extent: source.extent,
-            arguments: [core, tail0, tail1, tail2,
-                        Float(settings.tailWeight)]
-        ) else { return nil }
+        let diffused: CIImage
+        if settings.sourceConvolutionEnabled {
+            // The EXACT source fast_gaussian_filter auto-dispatch (FIR<3,
+            // YVV>=3) and 3-Gaussian exponential tail. No CI Gaussian
+            // substitution, radius clipping or implicit approximation.
+            diffused=try SourceSpatialDIRConvolution.diffuseCI(
+                inhibitors,coreSigma:coreSigma,tailSigma:tailSigma,
+                tailWeight:settings.tailWeight
+            )
+        } else {
+            // Explicit mobile approximation, only when the user chooses it.
+            let core = gaussian(inhibitors, sigma: coreSigma)
+            let tail0 = gaussian(inhibitors,
+                                 sigma: tailSigma*exponentialMixture[0].ratio)
+            let tail1 = gaussian(inhibitors,
+                                 sigma: tailSigma*exponentialMixture[1].ratio)
+            let tail2 = gaussian(inhibitors,
+                                 sigma: tailSigma*exponentialMixture[2].ratio)
+            guard let approximate = tailKernel.apply(
+                extent: source.extent,
+                arguments: [core, tail0, tail1, tail2,
+                            Float(settings.tailWeight)]
+            ) else {
+                throw SourceSpatialDIRConvolution.Failure.invalid(
+                    "移动版 Core Image DIR 扩散内核生成失败"
+                )
+            }
+            diffused=approximate
+        }
 
         // Exposure subtraction before pre-DIR corrected paper H-D/scan.
         guard let logCorrected = subtractionKernel.apply(
