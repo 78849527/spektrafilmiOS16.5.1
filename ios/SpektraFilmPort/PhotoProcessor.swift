@@ -48,15 +48,23 @@ enum PhotoProcessor {
         let sourceMetal = grain?.originalMetalEnabled == true
         var spatialOutput: CIImage?
         if dirSettings.enabled {
-            if let dirStage {
-                spatialOutput = try SpatialDIR.apply(
-                    to: optical, stage: dirStage,
-                    settings: dirSettings, grain: grain
+            // Source DIR is a requested processing stage. An unavailable
+            // source stage or failed filter must NEVER silently replace
+            // it with the regular nonspatial RGB colour cube.
+            guard let dirStage else {
+                throw ImageProcessingError.invalid(
+                    "原版 DIR 已启用但缺少真实胶片曝光/密度阶段，禁止跳过"
                 )
             }
-            if sourceMetal && spatialOutput == nil {
+            spatialOutput = try SpatialDIR.apply(
+                to: optical,stage:dirStage,
+                settings:dirSettings,grain:grain
+            )
+            guard spatialOutput != nil else {
                 throw ImageProcessingError.invalid(
-                    "原版 Metal 颗粒：DIR 中间光学密度不可用，禁止退回快速模式"
+                    sourceMetal
+                    ? "原版 Metal 颗粒：DIR 中间光学密度不可用，禁止退回快速模式"
+                    : "原版空间 DIR 内核未生成结果，禁止退回普通 LUT"
                 )
             }
         }
