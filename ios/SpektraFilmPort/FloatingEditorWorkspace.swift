@@ -14,6 +14,7 @@ struct FloatingEditorWorkspace: View {
 
     let onOpenPhotoFile: () -> Void
     let onOpenCamera: () -> Void
+    let onShareRaw: () -> Void
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
     let onExport: (ExportResolutionMode) -> Void
@@ -217,8 +218,12 @@ struct FloatingEditorWorkspace: View {
 
     private var topToolbar: some View {
         HStack(spacing: 7) {
-            toolButton("camera.fill", name: "NextLevel 相机拍照后直接冲印", action: onOpenCamera)
+            toolButton("camera.fill", name: "NextLevel 专业拍照并直接冲印", action: onOpenCamera)
                 .disabled(model.busy)
+            if model.capturedRAWURL != nil {
+                toolButton("doc", name: "分享拍摄的原始 DNG 文件", action: onShareRaw)
+                    .disabled(model.busy)
+            }
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 Image(systemName: "photo")
             }
