@@ -25,7 +25,7 @@ struct SpatialDIRStage {
     let donorReceiverMatrix: [Double]  // flattened donor row, receiver column
     let positive: Bool
 
-    /// Four true Double source optical-cube node buffers. The exact DIR
+    /// Four Double-calculated optical-cube node buffers. The exact DIR
     /// renderer must NEVER silently use the old Float32 LUT payload.
     /// Mobile CoreImage fast mode continues to use the packed Float32 cubes.
     struct Float64OpticalNodes {
@@ -78,8 +78,8 @@ struct SpatialDIRStage {
         densityRanges.count == 3 && densityMaximum.count == 3 &&
         logExposureSpans.count == 3 && donorReceiverMatrix.count == 9 &&
         densityRanges.allSatisfy { $0.isFinite && $0 > 0 } &&
-        logExposureSpans.allSatisfy { $0.isFinite && $0 > 0 }
-        && (float64OpticalNodes?.valid(
+        logExposureSpans.allSatisfy({ $0.isFinite && $0 > 0 }) &&
+        (float64OpticalNodes?.valid(
             sourceSize: sourceCubeSize, correctedSize: correctedCubeSize
         ) ?? true)
     }
