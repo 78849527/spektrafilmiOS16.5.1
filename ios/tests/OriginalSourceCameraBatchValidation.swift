@@ -43,7 +43,7 @@ enum OriginalSourceCameraBatchValidation {
               actual.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid(label + " RGB 数据长度或有限性错误")
         }
-        let maxError=zip(actual,expected).map { abs($0-$1) }.max() ?? .infinity
+        let maxError=zip(actual,expected).map { pair in abs(pair.0-pair.1) }.max() ?? .infinity
         guard maxError<tolerance else {
             throw Failure.invalid(
                 label + " Python→Swift Float64 差异 " +
