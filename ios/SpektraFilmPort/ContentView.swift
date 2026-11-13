@@ -394,8 +394,7 @@ final class PhotoEditorModel: ObservableObject {
                     await MainActor.run {
                         guard revision==self.originalMetalPreviewVersion else {return}
                         self.processedPreview=nil
-                        self.status="原版 8-bit 像素直连失败（禁止回退）："+
-                            error.localizedDescription
+                        self.status = "原版 8-bit 像素直连失败（禁止回退）：" + error.localizedDescription
                     }
                 }
             }
