@@ -42,6 +42,16 @@ jobs:
           assert "Reject source Metal certification" in src
           print("PASS: both shell Release if/else/fi closures and original certification guard")
           PY
+      - name: Parse changed Swift production and test sources before slow Python generation
+        run: |
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/SpatialDIR.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
+            ios/tests/SpatialDIRValidation.swift \
+            ios/tests/SourceFullFrameParity.swift \
+            ios/tests/SpectralValidation.swift
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Compile native Core Image spatial optics tests
