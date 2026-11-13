@@ -397,29 +397,46 @@ struct SpectralPhysics {
             sourcePaperHDCurve = nil
         }
 
-        let basis = try Self.readOriginalFloat32(
-            GeneratedOriginalOptics.mallettBasis, count: 81 * 3
+        let basis = try Self.readOriginalOptics(
+            fast:GeneratedOriginalOptics.mallettBasis,
+            source:GeneratedOriginalOptics.sourceF64_mallettBasis,
+            count:81*3, original:sourceMeasuredFloat64
         )
-        let d55 = try Self.readOriginalFloat32(GeneratedOriginalOptics.d55, count: 81)
-        let viewingIlluminant = viewed.viewingIlluminant == "K75P"
-            ? GeneratedOriginalOptics.k75p : GeneratedOriginalOptics.d50
-        let viewing = try Self.readOriginalFloat32(viewingIlluminant, count: 81)
+        let d55 = try Self.readOriginalOptics(
+            fast:GeneratedOriginalOptics.d55,
+            source:GeneratedOriginalOptics.sourceF64_d55,
+            count:81, original:sourceMeasuredFloat64
+        )
         let stock = viewed.viewingIlluminant == "K75P" ? "K75P" : "D50"
+        let viewing = try Self.readOriginalOptics(
+            fast:stock == "K75P" ?
+                GeneratedOriginalOptics.k75p : GeneratedOriginalOptics.d50,
+            source:stock == "K75P" ?
+                GeneratedOriginalOptics.sourceF64_k75p :
+                GeneratedOriginalOptics.sourceF64_d50,
+            count:81,original:sourceMeasuredFloat64
+        )
         viewingStock = stock
         viewingNormalization = GeneratedScannerReference.xyzYNormalization[stock] ?? 1
-        let cie = try Self.readOriginalFloat32(
-            GeneratedOriginalOptics.cie1931, count: 81 * 3
+        let cie = try Self.readOriginalOptics(
+            fast:GeneratedOriginalOptics.cie1931,
+            source:GeneratedOriginalOptics.sourceF64_cie1931,
+            count:81*3,original:sourceMeasuredFloat64
         )
         // Original print balance database selects filter CC values per
         // film + printing-stock pair; do not reuse one neutral spectrum.
         let printKey = filmID + "|" + paperID
-        let sourceIlluminant =
-            GeneratedOriginalOptics.printIlluminantByPair[printKey] ??
-            GeneratedOriginalOptics.enlargerNeutral
+        let sourceIlluminant = sourceMeasuredFloat64
+            ? (GeneratedOriginalOptics.sourceF64PrintIlluminantByPair[printKey]
+               ?? GeneratedOriginalOptics.sourceF64_enlargerNeutral)
+            : (GeneratedOriginalOptics.printIlluminantByPair[printKey]
+               ?? GeneratedOriginalOptics.enlargerNeutral)
         let opticalLighting: OriginalPrintOptics.Prepared?
         if useOriginalPrintOptics {
-            let unfiltered = try Self.readOriginalFloat32(
-                GeneratedOriginalOptics.enlargerSource, count: 81
+            let unfiltered = try Self.readOriginalOptics(
+                fast:GeneratedOriginalOptics.enlargerSource,
+                source:GeneratedOriginalOptics.sourceF64_enlargerSource,
+                count:81,original:sourceMeasuredFloat64
             )
             let mediaSensitivities = (0..<81).map { index in
                 (0..<3).map { originalPaper.sensitivity(index, $0) }
@@ -438,7 +455,9 @@ struct SpectralPhysics {
         }
         opticalPreflashRaw = opticalLighting?.preflashRaw ?? [0, 0, 0]
         let enlarger = try opticalLighting?.printIlluminant ??
-            Self.readOriginalFloat32(sourceIlluminant, count: 81)
+            (sourceMeasuredFloat64
+                ? Self.readOriginalFloat64(sourceIlluminant,count:81)
+                : Self.readOriginalFloat32(sourceIlluminant,count:81))
         var matrix = Array(repeating: Array(repeating: 0.0, count: 3), count: 3)
         var pWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
         var xyzWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
@@ -1508,6 +1527,36 @@ struct SpectralPhysics {
 
     /// Unaligned-safe little-endian Float32 decode, shared by the original
     /// reference spectra compiled into GeneratedOriginalOptics.swift.
+    /// Fast optics still decode the original packed Float32 constants.
+    /// The exact optical mode switches every wavelength to source binary64.
+    private static func readOriginalOptics(
+        fast:String,source:String,count:Int,original:Bool
+    ) throws -> [Double] {
+        if original {
+            return try readOriginalFloat64(source,count:count)
+        }
+        return try readOriginalFloat32(fast,count:count)
+    }
+
+    private static func readOriginalFloat64(
+        _ encoded:String,count:Int
+    ) throws -> [Double] {
+        guard let data=Data(base64Encoded:encoded),
+              data.count == count*MemoryLayout<Double>.size else {
+            throw PhysicsError.invalid(
+                "原版光谱 Float64 常量缺失，禁止回退 Float32"
+            )
+        }
+        return data.withUnsafeBytes { raw in
+            (0..<count).map { i in
+                let word=raw.loadUnaligned(
+                    fromByteOffset:i*8,as:UInt64.self
+                )
+                return Double(bitPattern:UInt64(littleEndian:word))
+            }
+        }
+    }
+
     private static func readOriginalFloat32(_ encoded: String,
                                             count: Int) throws -> [Double] {
         guard let bytes = Data(base64Encoded: encoded),
