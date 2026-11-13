@@ -54,6 +54,23 @@ enum OriginalSourceCameraBatchValidation {
         return maxError
     }
     static func evaluate() throws {
+        // Reference fixtures must identify the exact original Python
+        // implementation and FIR/YVV dependency, not just visual samples.
+        let sourceHashes = GeneratedSourceCameraReference.sourceSHA256
+        let expectedSourceFiles: Set<String> = [
+            "autoexposure", "highlight_boost",
+            "camera_diffusion", "source_gaussian"
+        ]
+        guard Set(sourceHashes.keys) == expectedSourceFiles,
+              sourceHashes.values.allSatisfy({ hash in
+                  hash.count == 64 &&
+                  hash.utf8.allSatisfy({
+                      ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+                  })
+              }) else {
+            throw Failure.invalid("原版摄影参考缺少原始 Python 文件 SHA-256")
+        }
+        print("PASS: upstream camera stage and Gaussian dependency SHA-256 recorded")
         let methodNames=[
             "average","median","center_weighted","partial",
             "matrix","multi_zone","highlight_weighted"
