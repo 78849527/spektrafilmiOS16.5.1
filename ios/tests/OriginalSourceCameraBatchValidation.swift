@@ -96,6 +96,31 @@ enum OriginalSourceCameraBatchValidation {
                 )
             }
         }
+        // Source Python's black-frame +/-Infinity recovery is not an
+        // arbitrary clamped EV. Compare each original method explicitly.
+        // A 257x301 zero frame also validates upstream nearest preview.
+        for rec in GeneratedSourceCameraReference.meterEdge {
+            let input=[Double](repeating:rec.level,
+                               count:rec.width*rec.height*3)
+            guard rec.ev.count==methodNames.count else {
+                throw Failure.invalid("Python 黑白场原版测光方法不完整")
+            }
+            for i in methodNames.indices {
+                guard let method=OriginalSourceCameraOptics.Metering(
+                    rawValue:methodNames[i]
+                ) else {
+                    throw Failure.invalid("原版测光方法未知 " + methodNames[i])
+                }
+                let actual=try OriginalSourceCameraOptics.measureAutoExposureEV(
+                    encodedRGB:input,width:rec.width,height:rec.height,
+                    method:method
+                )
+                try compare([actual],[rec.ev[i]],label:
+                    "Python edge \(rec.width)×\(rec.height) level=\(rec.level) \(methodNames[i])",
+                    tolerance:2e-8
+                )
+            }
+        }
         for rec in GeneratedSourceCameraReference.boost {
             var values=raw(rec.width,rec.height)
             let expected=try decode(rec.output,count:values.count)

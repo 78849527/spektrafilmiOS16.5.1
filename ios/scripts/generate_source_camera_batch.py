@@ -90,9 +90,21 @@ for w,h in [(17,13), (257,301)]:
         image,color_space="sRGB",apply_cctf_decoding=True,method=m
     )) for m in methods]
     meter_records.append((w,h,ev))
+# Black/white edge cases are produced by the real upstream exposure meter.
+# In the black frame, upstream -log2(0) yields Inf, then explicitly resets
+# to 0 EV. White must remain finite and all seven original modes agree.
+meter_edge_records=[]
+for w,h,level in [(9,7,0.0),(9,7,1.0),(257,301,0.0)]:
+    image=np.full((h,w,3),level,dtype=np.float64)
+    if max(w,h)>256:
+        image=rescale(image,256/max(w,h),channel_axis=2,order=0)
+    ev=[float(measure_autoexposure_ev(
+        image,color_space="sRGB",apply_cctf_decoding=True,method=m
+    )) for m in methods]
+    meter_edge_records.append((w,h,level,ev))
 boost_records=[]
 for w,h,ev,spread,protect in [
-    (17,13,2.2,0.3,0.8),(17,13,0.8,0.85,1.1)
+    (17,13,2.2,0.3,0.8),(17,13,0.8,0.85,1.1),(17,13,0.0,0.3,0.8)
 ]:
     raw=photon(w,h)
     expected=boost_highlights(
@@ -101,7 +113,8 @@ for w,h,ev,spread,protect in [
     boost_records.append((w,h,ev,spread,protect,encode(expected)))
 lens_records=[]
 for w,h,um,mm in [
-    (31,29,45.0,1.0),(31,29,150.0,1.0)
+    (31,29,45.0,1.0),(31,29,150.0,1.0),
+    (31,29,0.0,1.0),(30,27,100.0,1.0)
 ]:
     raw=photon(w,h)
     px=mm*1000/max(w,h)
@@ -112,6 +125,7 @@ lines=[
     "// GENERATED from actual original Python functions; do not hand-edit.",
     "enum GeneratedSourceCameraReference {",
     "    struct MeterCase {let width:Int;let height:Int;let ev:[Double]}",
+    "    struct EdgeMeterCase {let width:Int;let height:Int;let level:Double;let ev:[Double]}",
     "    struct BoostCase {let width:Int;let height:Int;let ev:Double;let span:Double;let protect:Double;let output:String}",
     "    struct LensCase {let width:Int;let height:Int;let microns:Double;let formatMM:Double;let output:String}",
     "    static let meter:[MeterCase] = [",
@@ -119,6 +133,11 @@ lines=[
 for w,h,ev in meter_records:
     lines.append("        .init(width:%d,height:%d,ev:[%s])," % (
         w,h,",".join(repr(float(x)) for x in ev)
+    ))
+lines.extend(["    ]","    static let meterEdge:[EdgeMeterCase] = ["])
+for w,h,level,ev in meter_edge_records:
+    lines.append("        .init(width:%d,height:%d,level:%r,ev:[%s])," % (
+        w,h,level,",".join(repr(float(x)) for x in ev)
     ))
 lines.extend(["    ]","    static let boost:[BoostCase] = ["])
 for w,h,ev,spread,protect,b64 in boost_records:
@@ -145,7 +164,7 @@ for label, path in (
     ))
 lines.extend(["    ]", "}"])
 out.write_text("\n".join(lines)+"\n",encoding="utf-8")
-print("PASS: source camera reference:",len(meter_records)*len(methods),
+print("PASS: source camera reference:",(len(meter_records)+len(meter_edge_records))*len(methods),
       "Python meter vectors,",
       len(boost_records),"Numba highlight full fields,",
       len(lens_records),"source FIR/YVV full-image lenses",out)
