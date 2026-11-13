@@ -377,6 +377,9 @@ final class PhotoEditorModel: ObservableObject {
         originalMetalPreviewVersion &+= 1
         let revision = originalMetalPreviewVersion
         if sourcePixelIOEnabled {
+            // A refused precision request must never leave an earlier,
+            // potentially half-quantized preview looking like its result.
+            processedPreview=nil
             let (data,stage)=try validateSourcePixelIO()
             let settings=spatialDIRSettings
             status="原版 8-bit 像素直连：ImageIO→Double DIR→无 CI 预览计算中…"
