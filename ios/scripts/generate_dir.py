@@ -73,8 +73,9 @@ def compute(log_rgb, le, normalized, corrected, M, positive):
     return np.array([np.interp(corrected_log_rgb[c], le, corrected[:, c])
                      for c in range(3)])
 
-def encode(data):
-    x = np.asarray(data, dtype="<f4")
+def encode(data, precision="f4"):
+    dtype = "<f8" if precision == "f8" else "<f4"
+    x = np.asarray(data, dtype=dtype)
     if not np.isfinite(x).all(): raise ValueError("Nonfinite DIR data")
     return base64.b64encode(x.tobytes()).decode("ascii")
 
@@ -89,6 +90,7 @@ def main() -> None:
         "enum GeneratedDIRData {",
         "    struct Record {",
         "        let correctedCurves: String",
+        "        let sourceCorrectedCurvesF64: String",
         "        let donorReceiverMatrix: [Double]",
         "        let sourceDensityMax: [Double]",
         "    }",
@@ -111,6 +113,7 @@ def main() -> None:
         # einsum 'ijk,km->ijm' has donor in row, target in column.
         lines.append(f"        {quote(stock)}: Record("
                      f"correctedCurves: {quote(encode(corrected))}, "
+                     f"sourceCorrectedCurvesF64: {quote(encode(corrected, 'f8'))}, "
                      f"donorReceiverMatrix: ["
                      + ",".join(format(x, ".16g") for x in M.flat)
                      + "], sourceDensityMax: ["
@@ -134,6 +137,8 @@ def main() -> None:
     lines.append("}")
     DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"PASS: pre-DIR corrected curves and donor/receiver matrices for {count} films")
+    print("PASS: original Python pre-DIR corrected Float64 curve values " +
+          "preserved separately from unchanged Float32 mobile DIR data")
     print(f"PASS: {len(refs)} original Python DIR reference samples, including reversals")
     print(f"Generated DIR Swift arrays: {DEST.stat().st_size} bytes")
 
