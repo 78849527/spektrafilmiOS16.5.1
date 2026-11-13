@@ -526,6 +526,66 @@ struct SpectralValidation {
             preconditionFailure("Unknown materials must reject")
         } catch is SpectralPhysics.PhysicsError {}
         print("PASS: 28 original source materials, native spectral film/print routing and invalid-selection rejection.")
+        // v1.8.21: true nonlinear measured-film/paper source LUT nodes
+        // must remain Double in the real production SpatialDIRStage.
+        // This tests REAL Hanatos/film-H-D/spectral-print nodes, not the
+        // existing identity-cube DIR physics fixture. The Python source
+        // 13-stage optical vectors remain independently gated below.
+        let optical = OriginalPrintOptics.Settings(enabled: true)
+        let nonlinearStage = try SpectralPhysics.makeSpatialDIRStageData(
+            filmID: "kodak_portra_400",
+            paperID: "kodak_portra_endura",
+            exposureEV: 0, paperEV: 0,
+            size: 9, correctedSize: 17,
+            sourceScanner: true, printOptics: optical,
+            hanatosPrecision: .originalFloat64
+        )
+        precondition(nonlinearStage.valid,
+                     "Real stock spectral stage must validate")
+        guard let preciseNodes = nonlinearStage.float64OpticalNodes else {
+            fatalError("Nonlinear source Float64 LUT nodes missing in production")
+        }
+        let packedNodes: [(Data, [Double], String)] = [
+            (nonlinearStage.rawLogCube, preciseNodes.raw, "camera log"),
+            (nonlinearStage.initialDensityCube, preciseNodes.initial, "initial H-D"),
+            (nonlinearStage.correctedDensityCube, preciseNodes.corrected, "corrected H-D"),
+            (nonlinearStage.printCube, preciseNodes.printed, "paper/spectral scan")
+        ]
+        var quantizedNodes=0
+        var maxQuantization=0.0
+        for (data, truth, label) in packedNodes {
+            let bytes=[UInt8](data)
+            precondition(bytes.count == truth.count * 4, label + ": node sizes")
+            for i in truth.indices {
+                let at=i*4
+                let bits = UInt32(bytes[at]) |
+                    UInt32(bytes[at+1]) << 8 |
+                    UInt32(bytes[at+2]) << 16 |
+                    UInt32(bytes[at+3]) << 24
+                let old = Double(Float(bitPattern: bits))
+                let delta=abs(old-truth[i])
+                precondition(delta.isFinite && delta <= 0.000001,
+                             label + ": packed Float32 and Double represent different algorithms")
+                maxQuantization=max(maxQuantization,delta)
+                if delta>0 { quantizedNodes+=1 }
+            }
+        }
+        precondition(quantizedNodes > 0,
+                     "Source nonlinear LUT test did not expose Float32 rounding")
+        let samplePrint=preciseNodes.printed
+        let nonlinearity = zip(
+            Array(samplePrint[0..<3]),
+            Array(samplePrint[(samplePrint.count-4)..<(samplePrint.count-1)])
+        ).reduce(0.0) { $0 + abs($1.0 - $1.1) }
+        precondition(nonlinearity > 0.001,
+                     "Test fixture must contain nonlinear real stock printing")
+        print("PASS: original nonlinear stock/paper four source LUTs retain " +
+              "\(preciseNodes.raw.count + preciseNodes.initial.count + " +
+              "preciseNodes.corrected.count + preciseNodes.printed.count) " +
+              "Float64 node channels, \(quantizedNodes) changed by packed " +
+              "Float32, maximum quantization=\(maxQuantization). " +
+              "Source DIR now consumes original Double nodes without fallback.")
+
         // Quantify actual source Python to Swift OUTPUT RGB deviation for
         // direct reversal scans; this stage is deliberately not a
         // whole-film/printing/grain certification.
