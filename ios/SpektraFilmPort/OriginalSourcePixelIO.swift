@@ -25,7 +25,7 @@ enum OriginalSourcePixelIO {
     struct Frame {
         let width: Int
         let height: Int
-        let rgb: [Double]
+        var rgb: [Double]
     }
 
     private static let srgb: CGColorSpace = {
