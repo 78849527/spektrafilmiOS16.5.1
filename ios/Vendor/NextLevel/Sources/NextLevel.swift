@@ -259,6 +259,9 @@ public class NextLevel: NSObject {
     /// Configuration for photos
     public var photoConfiguration: NextLevelPhotoConfiguration
 
+    /// Reports an unavailable requested RAW format without switching to JPEG.
+    public var photoCaptureFailureHandler: ((String) -> Void)?
+
     /// Configuration property for augmented reality
     public var arConfiguration: NextLevelARConfiguration? {
         get {
