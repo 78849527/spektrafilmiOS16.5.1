@@ -392,6 +392,42 @@ final class PhotoEditorModel: ObservableObject {
             }
             return
         }
+        // v1.8.16: the exact source FIR/YVV is whole-image, Double
+        // and may require multiple full-frame sweeps; ALWAYS do it off the
+        // UI thread. Respect revision protection when sliders move.
+        if spatialDIRSettings.enabled,
+           spatialDIRSettings.sourceConvolutionEnabled {
+            let currentLUT=lut
+            let currentStrength=strength
+            let currentSpatial=spatialSettings
+            let currentGrain=grainSettings
+            let currentScanner=scannerFinishSettings
+            let currentDIR=spatialDIRStage
+            let currentSettings=spatialDIRSettings
+            status="正在后台执行原版 DIR FIR/YVV 空间扩散（非 CI 近似）…"
+            Task.detached(priority:.userInitiated) {
+                do {
+                    let preview=try PhotoProcessor.preview(
+                        source,lut:currentLUT,strength:currentStrength,
+                        spatial:currentSpatial,grain:currentGrain,
+                        scanner:currentScanner,dirStage:currentDIR,
+                        dirSettings:currentSettings
+                    )
+                    await MainActor.run {
+                        guard revision==self.originalMetalPreviewVersion else {return}
+                        self.processedPreview=preview
+                        self.status="原版空间 DIR FIR/YVV 预览完成 · "+self.photoDimensions
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard revision==self.originalMetalPreviewVersion else {return}
+                        self.status="原版空间 DIR 失败（没有降级 CI 近似）：" +
+                            error.localizedDescription
+                    }
+                }
+            }
+            return
+        }
         processedPreview = try PhotoProcessor.preview(
             source, lut: lut, strength: strength, spatial: spatialSettings,
             grain: grainSettings, scanner: scannerFinishSettings,
