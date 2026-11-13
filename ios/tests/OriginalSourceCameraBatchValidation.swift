@@ -108,6 +108,29 @@ enum OriginalSourceCameraBatchValidation {
             )
         }
 
+        // A malformed full-frame geometry must fail explicitly. It must
+        // never overflow Int arithmetic or crash before source validation.
+        do {
+            _ = try OriginalSourceCameraOptics.applyLensBlur(
+                [0.0, 0.0, 0.0],
+                width: Int.max, height: 2,
+                settings: .init(lensBlurUM: 15.0)
+            )
+            throw Failure.invalid("Oversized lens frame unexpectedly accepted")
+        } catch OriginalSourceCameraOptics.Failure.invalid {
+            print("PASS: overflowing camera lens frame rejected without trap")
+        }
+        do {
+            _ = try OriginalSourceCameraOptics.applyLensBlur(
+                [0.0, 0.0, 0.0],
+                width: -2, height: 1,
+                settings: .init(lensBlurUM: 15.0)
+            )
+            throw Failure.invalid("Negative camera lens frame unexpectedly accepted")
+        } catch OriginalSourceCameraOptics.Failure.invalid {
+            print("PASS: negative camera lens dimensions rejected")
+        }
+
         // Established source sourceSpatialInput path must remain identical
         // to the new unboosted raw-photon path. This guards against
         // accidentally moving exposure compensation after H-D.
