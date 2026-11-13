@@ -191,6 +191,46 @@ struct SpatialDIRValidation {
         print("PASS: reported 3888x2592 source accepted in 16MP mode, " +
               "rejected in 2MP physical mode with accurate limit; " +
               "16MP limit unchanged and no automatic resize.")
+        // v1.8.24: low-memory exact FIR/YVV full-dimension processor
+        // versus the independently validated v1.8.20 full-allocated
+        // production source. Source pixels, reflect edges, horizontal and
+        // vertical recursive initial states must remain identical.
+        var sourceFilterChecks=0
+        var sourceMaximumDelta=0.0
+        let dimensions:[(Int,Int)]=[(23,17),(31,7),(2,1),(1,13)]
+        let filterCases:[(Double,Double,Double)]=[
+            (0,0,0),(0.35,1.2,0.12),(2.999,2.7,0.06),
+            (3.0,13.0,0.11),(9.75,24.0,0.06),(2.0,10.0,0.0)
+        ]
+        for (w,h) in dimensions {
+            let data=(0..<(w*h*3)).map { n in
+                sin(Double(n)*0.2197)*0.2 + cos(Double(n)*0.003)*0.14
+            }
+            for (core,tail,weight) in filterCases {
+                let old=try SourceSpatialDIRConvolution.diffuse(
+                    data,width:w,height:h,
+                    coreSigma:core,tailSigma:tail,tailWeight:weight
+                )
+                let optimized=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
+                    data,width:w,height:h,
+                    coreSigma:core,tailSigma:tail,tailWeight:weight
+                )
+                precondition(old.count==optimized.count)
+                for k in old.indices {
+                    let delta=abs(old[k]-optimized[k])
+                    sourceMaximumDelta=max(sourceMaximumDelta,delta)
+                    precondition(delta<=5e-13 && delta.isFinite,
+                                 "Original FIR/YVV low-memory source changed " +
+                                 "\(w)x\(h), core=\(core) tail=\(tail) " +
+                                 "channel=\(k%3) pixel=\(k/3) " +
+                                 "difference=\(delta)")
+                    sourceFilterChecks+=1
+                }
+            }
+        }
+        print("PASS: 24 exact full-dimension FIR/YVV low-memory " +
+              "convolution cases, \(sourceFilterChecks) channel pixels, " +
+              "max=\(sourceMaximumDelta), no tile edge compromise.")
         print(try OriginalSourcePixelIO.validate8BitRoundTrip())
         print(try OriginalSourcePixelIO.validateColorProfileGate())
         // v1.8.20: real upstream Python multi-size whole-frame data, not
