@@ -268,12 +268,25 @@ enum OriginalPrintMorph {
         }
     }
 
+    /// Existing fast/UI callers keep their Float32 exposure-axis behavior.
     static func prepareSource(
         stock: String, logExposure: [Float], settings: Settings,
         positive: Bool = false
     ) -> SourceCurve? {
+        prepareSource(
+            stock:stock,logExposure:logExposure.map(Double.init),
+            settings:settings,positive:positive
+        )
+    }
+
+    /// True source mode uses original JSON Float64 exposure nodes in the
+    /// s023 CDF sampling, not binary32-rounded exposure abscissae.
+    static func prepareSource(
+        stock: String, logExposure: [Double], settings: Settings,
+        positive: Bool = false
+    ) -> SourceCurve? {
         guard settings.valid, logExposure.count == 256 else { return nil }
-        let xs = logExposure.map(Double.init)
+        let xs = logExposure
         guard xs.allSatisfy({ $0.isFinite }),
               zip(xs,xs.dropFirst()).allSatisfy({ $0.0 < $0.1 }) else {
             return nil
