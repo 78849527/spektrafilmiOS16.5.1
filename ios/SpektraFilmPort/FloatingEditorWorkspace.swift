@@ -716,6 +716,32 @@ struct FloatingEditorWorkspace: View {
                             .onChange(of:model.sourcePhysicalDirectEnabled) { _ in
                                 model.queueSpectralPreview()
                             }
+                        if model.sourcePhysicalDirectEnabled {
+                            resetToggle("原版扫描镜头 / Unsharp（Double）",
+                                        value:$model.sourceScannerOpticalEnabled,
+                                        enabled:model.hasPhoto && !model.busy,
+                                        resetTo:false)
+                                .onChange(of:model.sourceScannerOpticalEnabled) { _ in
+                                    model.queueSpectralPreview()
+                                }
+                            if model.sourceScannerOpticalEnabled {
+                                morphSlider("源扫描镜头模糊 σ / px",
+                                            value:$model.sourceScannerLensBlurSigma,
+                                            range:0...8,resetTo:0)
+                                morphSlider("源扫描 Unsharp σ / px",
+                                            value:$model.sourceScannerUnsharpSigma,
+                                            range:0...8,resetTo:1)
+                                morphSlider("源扫描 Unsharp 强度",
+                                            value:$model.sourceScannerUnsharpAmount,
+                                            range:0...2,resetTo:0.7)
+                                Text("原版顺序：相纸光谱→XYZ/ACES 线性 RGB→" +
+                                     "原版 reflect FIR/YVV 镜头模糊→Unsharp→" +
+                                     "sRGB 编码。禁用随机眩光；导出增加真实内存预算。" +
+                                     "不经过 Core Image Gaussian 或移动 LUT。")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                         Text("实算 Hanatos→胶片 H-D→空间 DIR FIR/YVV→" +
                              "相纸 H-D→光谱扫描；不经过颜色 3D LUT。" +
                              "实验上限提高到 1200 万像素；实际是否允许导出，" +
