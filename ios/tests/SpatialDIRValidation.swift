@@ -127,5 +127,8 @@ struct SpatialDIRValidation {
                      "SOURCE 2D DIR FIR/YVV: >0.002 Swift numeric deviation")
         precondition(evidence.productionOutside==0,
                      "SOURCE 2D DIR CIImage: >0.002 production deviation")
+        precondition(evidence.directOutside==0,
+                     "SOURCE 2D DIR Float64 arrays: >0.002 production deviation")
+        print(try OriginalSourcePixelIO.validate8BitRoundTrip())
     }
 }
