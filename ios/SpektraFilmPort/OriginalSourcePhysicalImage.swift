@@ -30,10 +30,14 @@ enum OriginalSourcePhysicalImage {
     /// 3888x2592 (10.08MP) only when measured available memory permits.
     static let maximumPixels = 12_000_000
     static let estimatedPeakBytesPerPixel: UInt64 = 120
+    // Full-size scanner finish requires an additional 3-channel Double
+    // filtered result and two 1-channel Double Gaussian workspaces.
+    static let scannerFinishExtraBytesPerPixel: UInt64 = 40
     static let maximumSourceMemoryBudget: UInt64 = 1_500_000_000
 
     static func validateMemoryBudget(
         width:Int,height:Int,
+        additionalBytesPerPixel:UInt64=0,
         physicalMemory:UInt64?=nil,
         processAvailableMemory:UInt64?=nil
     ) throws {
@@ -44,7 +48,8 @@ enum OriginalSourcePhysicalImage {
                 "禁止自动缩图或切换快速算法。"
             )
         }
-        let peak = UInt64(width) * UInt64(height) * estimatedPeakBytesPerPixel
+        let bytesPerPixel=estimatedPeakBytesPerPixel+additionalBytesPerPixel
+        let peak = UInt64(width) * UInt64(height) * bytesPerPixel
         let physical = physicalMemory ?? ProcessInfo.processInfo.physicalMemory
         let allowed = min(maximumSourceMemoryBudget,physical/3)
         let headroom:UInt64?
@@ -87,6 +92,9 @@ enum OriginalSourcePhysicalImage {
         let dir: SpatialDIRSettings
         let print: OriginalPrintOptics.Settings
         let morph: OriginalPrintMorph.Settings
+        // Separate opt-in deterministic Python source scan finishing.
+        // Defaults preserve all user-validated v1.8.25 RGB and memory paths.
+        var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
 
         func validate() throws {
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -99,6 +107,7 @@ enum OriginalSourcePhysicalImage {
                     "原版逐像素物理模式需要有效胶片/相纸、源 DIR 和原版光学参数"
                 )
             }
+            try scannerOptics.validate()
             if !SpectralPhysics.isPositiveFilm(filmID) && !print.enabled {
                 throw Failure.invalid(
                     "负片逐像素物理模式需要启用原版放大机光学印相和相纸 H-D"
@@ -151,7 +160,11 @@ enum OriginalSourcePhysicalImage {
     ) throws {
         try parameters.validate()
         let w=frame.width,h=frame.height
-        try validateMemoryBudget(width:w,height:h)
+        try validateMemoryBudget(
+            width:w,height:h,
+            additionalBytesPerPixel:parameters.scannerOptics.active
+                ? scannerFinishExtraBytesPerPixel : 0
+        )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
         else {
@@ -230,9 +243,13 @@ enum OriginalSourcePhysicalImage {
             let density=try engine.sourceSpatialDevelopCorrectedLog(
                 corrected
             )
-            let rgb=try engine.sourceSpatialScan(
-                filmDensity:density,paperEV:parameters.paperEV
-            )
+            let rgb=try parameters.scannerOptics.active
+                ? engine.sourceSpatialScanLinear(
+                    filmDensity:density,paperEV:parameters.paperEV
+                  )
+                : engine.sourceSpatialScan(
+                    filmDensity:density,paperEV:parameters.paperEV
+                  )
             for c in 0..<3 {
                 correctedObserved?[k+c]=corrected[c]
                 densityObserved?[k+c]=density[c]
@@ -244,6 +261,19 @@ enum OriginalSourcePhysicalImage {
         }
         if let densityObserved {
             stageDoubleObserver?("density",densityObserved)
+        }
+        if parameters.scannerOptics.active {
+            // Exact upstream ScanningStage order: ACES linear RGB ->
+            // source lens blur -> source unsharp -> CCTF. Do not blur
+            // encoded sRGB; do not introduce scanner stochastic glare.
+            try OriginalSourceScannerOptics.applyInPlace(
+                &frame.rgb,width:w,height:h,
+                settings:parameters.scannerOptics,
+                stageDoubleObserver:stageDoubleObserver
+            )
+            for k in frame.rgb.indices {
+                frame.rgb[k]=OriginalScannerMath.encodeSRGB(frame.rgb[k])
+            }
         }
         stageDoubleObserver?("printed",frame.rgb)
         guard frame.rgb.allSatisfy({ $0.isFinite }) else {
@@ -294,7 +324,10 @@ extension OriginalSourcePixelIO {
             throw Failure.invalid("原版全光学导出前无法确认原图尺寸")
         }
         try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width:w.intValue,height:h.intValue
+            width:w.intValue,height:h.intValue,
+            additionalBytesPerPixel:parameters.scannerOptics.active
+                ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
+                : 0
         )
         var frame=try decode(
             data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
