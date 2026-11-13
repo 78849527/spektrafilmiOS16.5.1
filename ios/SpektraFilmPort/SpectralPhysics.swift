@@ -583,6 +583,7 @@ struct SpectralPhysics {
     struct DensityStageData {
         let inputCube: Data
         let printCube: Data
+        let printFloat64Nodes: [Double]  // original Double results before CI packing
         let ranges: [Double]       // normalize 3 film optical-density channels
         let size: Int
         let sublayerCubes: [Data]    // each 3D cube: source total D -> one real sublayer
@@ -617,11 +618,13 @@ struct SpectralPhysics {
         let step = 1.0 / Double(size-1)
         var input = [Float]()
         var printMap = [Float]()
+        var printMapDouble = [Double]()
         var sublayerMaps = [[Float]](
             repeating: [], count: 3
         )
         input.reserveCapacity(size*size*size*4)
         printMap.reserveCapacity(size*size*size*4)
+        printMapDouble.reserveCapacity(size*size*size*4)
         for sub in 0..<3 {
             sublayerMaps[sub].reserveCapacity(size*size*size*4)
         }
@@ -659,6 +662,7 @@ struct SpectralPhysics {
                         }
                     }
                     let finalRGB = engine.scanFilmDensity(filmDensity, paperEV: paperEV)
+                    printMapDouble.append(contentsOf: finalRGB + [1.0])
                     printMap.append(Float(finalRGB[0]))
                     printMap.append(Float(finalRGB[1]))
                     printMap.append(Float(finalRGB[2]))
@@ -680,7 +684,9 @@ struct SpectralPhysics {
             }
         }
         return DensityStageData(
-            inputCube: cubeA, printCube: cubeB, ranges: ranges, size: size,
+            inputCube: cubeA, printCube: cubeB,
+            printFloat64Nodes: printMapDouble,
+            ranges: ranges, size: size,
             sublayerCubes: layerCubes,
             sublayerRawMaxima: layerMaxima
         )
@@ -730,8 +736,12 @@ struct SpectralPhysics {
         let step = 1.0 / Double(size - 1)
         var rawMap = [Float]()
         var initialMap = [Float]()
+        var rawMapDouble = [Double]()
+        var initialMapDouble = [Double]()
         rawMap.reserveCapacity(size*size*size*4)
         initialMap.reserveCapacity(size*size*size*4)
+        rawMapDouble.reserveCapacity(size*size*size*4)
+        initialMapDouble.reserveCapacity(size*size*size*4)
 
         for b in 0..<size {
             for g in 0..<size {
@@ -745,14 +755,18 @@ struct SpectralPhysics {
                     )
                     for channel in 0..<3 {
                         let logE=sourceLog[channel]
-                        rawMap.append(Float(clamp((logE-logMin)/span)))
+                        let rawValue = clamp((logE-logMin)/span)
+                        rawMapDouble.append(rawValue)
+                        rawMap.append(Float(rawValue))
                         let initial = stock.curve(logE, channel: channel)
-                        initialMap.append(Float(
-                            clamp(initial/pair.ranges[channel])
-                        ))
+                        let initialValue = clamp(initial/pair.ranges[channel])
+                        initialMapDouble.append(initialValue)
+                        initialMap.append(Float(initialValue))
                     }
                     rawMap.append(1)
                     initialMap.append(1)
+                    rawMapDouble.append(1)
+                    initialMapDouble.append(1)
                 }
             }
         }
@@ -761,7 +775,9 @@ struct SpectralPhysics {
         // *original* computed pre-DIR H-D characteristic (not an RGB curve).
         let correctedStep = 1.0 / Double(correctedSize-1)
         var developed = [Float]()
+        var developedDouble = [Double]()
         developed.reserveCapacity(correctedSize*correctedSize*correctedSize*4)
+        developedDouble.reserveCapacity(correctedSize*correctedSize*correctedSize*4)
         for b in 0..<correctedSize {
             for g in 0..<correctedSize {
                 for r in 0..<correctedSize {
@@ -775,11 +791,12 @@ struct SpectralPhysics {
                         let opticalD = stock.curve(
                             logE, channel: channel, correctedBeforeDIR: true
                         )
-                        developed.append(Float(
-                            clamp(opticalD/pair.ranges[channel])
-                        ))
+                        let value = clamp(opticalD/pair.ranges[channel])
+                        developedDouble.append(value)
+                        developed.append(Float(value))
                     }
                     developed.append(1)
+                    developedDouble.append(1)
                 }
             }
         }
@@ -789,7 +806,7 @@ struct SpectralPhysics {
                      count: pointer.count * MemoryLayout<Float>.size)
             }
         }
-        return SpatialDIRStage(
+        var stage = SpatialDIRStage(
             rawLogCube: cube(rawMap),
             initialDensityCube: cube(initialMap),
             correctedDensityCube: cube(developed),
@@ -802,6 +819,14 @@ struct SpectralPhysics {
             donorReceiverMatrix: stock.dirMatrix,
             positive: stock.polarity == "positive"
         )
+        stage.float64OpticalNodes = .init(
+            raw: rawMapDouble, initial: initialMapDouble,
+            corrected: developedDouble, printed: pair.printFloat64Nodes
+        )
+        guard stage.valid else {
+            throw PhysicsError.invalid("原版 Float64 光学 LUT 生成失败／出现非有限数")
+        }
+        return stage
     }
 
     /// Diagnostics: inspect the actual negative/reversal developed
