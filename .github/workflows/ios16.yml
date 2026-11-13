@@ -459,6 +459,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedHanatosData.swift \
             ios/SpektraFilmPort/GeneratedHanatosPreciseData.swift \
             ios/SpektraFilmPort/GeneratedDIRData.swift \
+            ios/SpektraFilmPort/GeneratedSourceHDInterpolationReference.swift \
             ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift \
             ios/tests/SourceFloat64ProfileValidation.swift \
             ios/tests/SourceHDInterpolationValidation.swift \
