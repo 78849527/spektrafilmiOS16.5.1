@@ -533,7 +533,10 @@ jobs:
           assert "sourceRGBOverride:[Double]?=nil" in dirSource
           assert "stageDoubleObserver" in dirSource
           pixelIO=Path("ios/SpektraFilmPort/OriginalSourcePixelIO.swift").read_text()
-          assert "static func decode(_ data: Data" in pixelIO
+          assert "static func decode(" in pixelIO
+          assert "maximumAllowedPixels: Int = 16_000_000" in pixelIO
+          assert "maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels" in physical
+
           assert "static func validate8BitRoundTrip()" in pixelIO
           assert "suppressFinalCIImage:true" in pixelIO
           assert "originalPhotoData = data" in model
