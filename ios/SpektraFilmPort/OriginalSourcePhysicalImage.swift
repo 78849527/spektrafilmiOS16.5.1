@@ -33,6 +33,7 @@ enum OriginalSourcePhysicalImage {
     // Full-size scanner finish requires an additional 3-channel Double
     // filtered result and two 1-channel Double Gaussian workspaces.
     static let scannerFinishExtraBytesPerPixel: UInt64 = 40
+    static let cameraLensExtraBytesPerPixel: UInt64 = 40
     static let maximumSourceMemoryBudget: UInt64 = 1_500_000_000
 
     static func validateMemoryBudget(
@@ -95,6 +96,7 @@ enum OriginalSourcePhysicalImage {
         // Separate opt-in deterministic Python source scan finishing.
         // Defaults preserve all user-validated v1.8.25 RGB and memory paths.
         var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
+        var cameraOptics: OriginalSourceCameraOptics.Settings = .init()
 
         func validate() throws {
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -108,6 +110,7 @@ enum OriginalSourcePhysicalImage {
                 )
             }
             try scannerOptics.validate()
+            try cameraOptics.validate()
             if !SpectralPhysics.isPositiveFilm(filmID) && !print.enabled {
                 throw Failure.invalid(
                     "负片逐像素物理模式需要启用原版放大机光学印相和相纸 H-D"
@@ -162,8 +165,9 @@ enum OriginalSourcePhysicalImage {
         let w=frame.width,h=frame.height
         try validateMemoryBudget(
             width:w,height:h,
-            additionalBytesPerPixel:parameters.scannerOptics.active
-                ? scannerFinishExtraBytesPerPixel : 0
+            additionalBytesPerPixel:
+                (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
+                (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0)
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -181,16 +185,64 @@ enum OriginalSourcePhysicalImage {
         var initialObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
 
-        // Compute initial photon response, H-D and donor/receiver inhibitor
-        // from the original sample BEFORE overwriting that sample with
-        // its raw log exposure. This is safe for opaque source RGB pixels:
-        // no neighboring pixel is used by the source camera/H-D stages.
+        // Original Python chronological camera stage:
+        // 1. full-frame decoded RGB -> source exposure-metering preview,
+        // 2. global RGB auto-exposure before Hanatos spectral conversion,
+        // 3. film exposure compensation in linear RAW photon units,
+        // 4. global image-maximum highlight boost (Numba scalar formula),
+        // 5. source full-dimension reflect FIR/YVV camera lens Gaussian,
+        // 6. log10 photon exposure -> H-D -> DIR.
+        //
+        // RAW modes are disabled by default; the established v1.8.29 path
+        // below remains byte-for-byte unchanged if all options are off.
+        if parameters.cameraOptics.active {
+            let autoEV=try OriginalSourceCameraOptics.measureAutoExposureEV(
+                encodedRGB:frame.rgb,width:w,height:h,
+                method:parameters.cameraOptics.metering
+            )
+            stageDoubleObserver?("cameraAutoExposureEV",[autoEV])
+            let autoScale=pow(2.0,autoEV)
+            guard autoScale.isFinite && autoScale>0 else {
+                throw Failure.invalid("原版源测光 RGB 倍率溢出")
+            }
+            for p in 0..<(w*h) {
+                let k=p*3
+                let rgb=[
+                    frame.rgb[k]*autoScale,
+                    frame.rgb[k+1]*autoScale,
+                    frame.rgb[k+2]*autoScale
+                ]
+                let photons=try engine.sourceCameraRaw(
+                    encodedRGB:rgb,cameraEV:parameters.cameraEV
+                )
+                for c in 0..<3 { frame.rgb[k+c]=photons[c] }
+            }
+            stageDoubleObserver?("cameraRaw",frame.rgb)
+            try OriginalSourceCameraOptics.boostHighlightsInPlace(
+                &frame.rgb,
+                boostEV:parameters.cameraOptics.boostEV,
+                boostRange:parameters.cameraOptics.boostRange,
+                protectEV:parameters.cameraOptics.protectEV
+            )
+            stageDoubleObserver?("cameraBoost",frame.rgb)
+            if parameters.cameraOptics.needsWholeImageBlur {
+                frame.rgb=try OriginalSourceCameraOptics.applyLensBlur(
+                    frame.rgb,width:w,height:h,
+                    settings:parameters.cameraOptics
+                )
+            }
+            stageDoubleObserver?("cameraLensBlur",frame.rgb)
+        }
+        // Compute initial H-D and donor/receiver inhibitors from either the
+        // original unchanged legacy source or optional source-RAW pipeline.
         for p in 0..<(w*h) {
             let k=p*3
             let sample=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
-            let initial=try engine.sourceSpatialInput(
-                encodedRGB:sample,cameraEV:parameters.cameraEV
-            )
+            let initial=try parameters.cameraOptics.active
+                ? engine.sourceSpatialInputFromCameraRaw(sample)
+                : engine.sourceSpatialInput(
+                    encodedRGB:sample,cameraEV:parameters.cameraEV
+                )
             for receiver in 0..<3 {
                 var total=0.0
                 for donor in 0..<3 {
@@ -325,9 +377,11 @@ extension OriginalSourcePixelIO {
         }
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:w.intValue,height:h.intValue,
-            additionalBytesPerPixel:parameters.scannerOptics.active
-                ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
-                : 0
+            additionalBytesPerPixel:
+                (parameters.scannerOptics.active
+                    ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                (parameters.cameraOptics.needsWholeImageBlur
+                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0)
         )
         var frame=try decode(
             data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
