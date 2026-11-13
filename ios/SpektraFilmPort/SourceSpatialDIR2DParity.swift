@@ -259,11 +259,11 @@ enum SourceSpatialDIR2DParity {
             【v1.8.17 原版图像精度边界诊断｜不计入整图认证】
             \(directFloat32.describe("不经过 CI 的直接 Float32 量化",channels:total))
             \(directFloat16.describe("不经过 CI 的直接 Float16 量化",channels:total))
-            \(sourceInputBridge.describe("GPU CIImage RGBAf 输入校验",channels:total))
-            \(softwareInputBridge.describe("软件 CIImage RGBAf 输入校验",channels:total))
-            GPU 与 Float16 数值吻合：\(halfSignatureCount)/\(total)；
-            GPU 偏离直接 Float32 超过 1e-7：\(affectedInputCount)/\(total)。
-            两种渲染器均只用于测量，不据此切换生产算法。
+            \(sourceInputBridge.describe("默认 CIImage RGBAf 输入校验（通常为 GPU）",channels:total))
+            \(softwareInputBridge.describe("请求软件渲染 CIImage RGBAf 输入校验",channels:total))
+            默认 CI 与 Float16 数值吻合：\(halfSignatureCount)/\(total)；
+            默认 CI 偏离直接 Float32 超过 1e-7：\(affectedInputCount)/\(total)。
+            两个 CIContext 均只用于测量，不据此切换生产算法。\n            提示：softwareRenderer 依赖平台支持，iOS 可能忽略此请求；\n            本结果不得直接认定使用了 CPU 渲染器。
             \(floatBitmapBridge.describe("Float32 CIImage→FIR/YVV→CIImage 桥接",channels:total))
             \(stageNames.map {stageStatistics[$0]!.describe("实际生产阶段 "+$0,channels:total)}
                         .joined(separator:"\\n"))
