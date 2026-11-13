@@ -13,6 +13,7 @@ struct FloatingEditorWorkspace: View {
     @Binding var selectedPaperID: String
 
     let onOpenPhotoFile: () -> Void
+    let onOpenCamera: () -> Void
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
     let onExport: (ExportResolutionMode) -> Void
@@ -216,6 +217,8 @@ struct FloatingEditorWorkspace: View {
 
     private var topToolbar: some View {
         HStack(spacing: 7) {
+            toolButton("camera.fill", name: "NextLevel 相机拍照后直接冲印", action: onOpenCamera)
+                .disabled(model.busy)
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 Image(systemName: "photo")
             }
