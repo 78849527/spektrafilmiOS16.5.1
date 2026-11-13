@@ -102,7 +102,8 @@ def main():
                 float(np.float32(v)) != float(v) for v in x
             )
             total+=count
-            if src=="density_curves_layers": layerstocks+=1
+            if src=="density_curves_layers" and doc["info"]["stage"]=="filming":
+                layerstocks+=1
         assert extract(line,"sourceFloat64SHA256")==hashlib.sha256(
             double_payload
         ).hexdigest(),stock
