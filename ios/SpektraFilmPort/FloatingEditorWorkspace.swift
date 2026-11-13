@@ -718,8 +718,9 @@ struct FloatingEditorWorkspace: View {
                             }
                         Text("实算 Hanatos→胶片 H-D→空间 DIR FIR/YVV→" +
                              "相纸 H-D→光谱扫描；不经过颜色 3D LUT。" +
-                             "当前实验版暂定最多 200 万像素（临时内存保护，非手机硬件上限）；" +
-                             "超限明确报错不缩图；" +
+                             "实验上限提高到 1200 万像素；实际是否允许导出，" +
+                             "按这台手机当前物理内存和 App 可用余量逐次检查。" +
+                             "整图 Double FIR/YVV 与相纸显影均保留，不缩图；" +
                              "需开启原版 ACES 扫描、Hanatos Float64、" +
                              "负片原版放大机，关闭 CAM16/黑白参考。" +
                              "尚不支持随机颗粒、光晕与 RAW。")
