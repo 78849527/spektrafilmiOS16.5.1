@@ -2539,15 +2539,23 @@ extension NextLevel {
 
         if let formatDictionary = self.photoConfiguration.avcaptureDictionary() {
 
-            #if !( targetEnvironment(simulator) )
+            // SpektraFilm patch: NextLevel 0.18.0 left RAW photo capture
+            // unimplemented. Preserve the processed companion photo and
+            // request native sensor Bayer DNG in the same AVCapture request.
+            // The caller MUST preflight availableRawPhotoPixelFormatTypes,
+            // and failure must never silently become a non-RAW exposure.
+            let photoSettings: AVCapturePhotoSettings
             if self.photoConfiguration.isRawCaptureEnabled {
-//                if let _ = photoOutput.availableRawPhotoPixelFormatTypes.first {
-//                    // TODO
-//                }
+                guard let rawType = photoOutput.availableRawPhotoPixelFormatTypes.first else {
+                    self.photoCaptureFailureHandler?("本机所选镜头不支持 DNG RAW，已拒绝拍照，未回退 JPEG")
+                    return
+                }
+                photoSettings = AVCapturePhotoSettings(
+                    rawPixelFormatType: rawType, processedFormat: formatDictionary
+                )
+            } else {
+                photoSettings = AVCapturePhotoSettings(format: formatDictionary)
             }
-            #endif
-
-            let photoSettings = AVCapturePhotoSettings(format: formatDictionary)
             photoSettings.isHighResolutionPhotoEnabled = self.photoConfiguration.isHighResolutionEnabled
             photoOutput.isHighResolutionCaptureEnabled = self.photoConfiguration.isHighResolutionEnabled
 
