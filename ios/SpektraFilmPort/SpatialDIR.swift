@@ -25,12 +25,63 @@ struct SpatialDIRStage {
     let donorReceiverMatrix: [Double]  // flattened donor row, receiver column
     let positive: Bool
 
+    /// Four true Double source optical-cube node buffers. The exact DIR
+    /// renderer must NEVER silently use the old Float32 LUT payload.
+    /// Mobile CoreImage fast mode continues to use the packed Float32 cubes.
+    struct Float64OpticalNodes {
+        let raw: [Double]
+        let initial: [Double]
+        let corrected: [Double]
+        let printed: [Double]
+
+        func valid(sourceSize: Int, correctedSize: Int) -> Bool {
+            let n = sourceSize * sourceSize * sourceSize * 4
+            let m = correctedSize * correctedSize * correctedSize * 4
+            return raw.count == n && initial.count == n &&
+                corrected.count == m && printed.count == n &&
+                (raw + initial + corrected + printed)
+                    .allSatisfy { $0.isFinite }
+        }
+
+        /// Test-only identity optical baseline used by the existing
+        /// independent upstream 2D physical-DIR fixtures.
+        static func identity(sourceSize: Int, correctedSize: Int)
+            -> Float64OpticalNodes {
+            func cube(_ side: Int) -> [Double] {
+                let delta = 1.0 / Double(side - 1)
+                var samples = [Double]()
+                samples.reserveCapacity(side * side * side * 4)
+                for b in 0..<side {
+                    for g in 0..<side {
+                        for r in 0..<side {
+                            samples.append(contentsOf: [
+                                Double(r) * delta, Double(g) * delta,
+                                Double(b) * delta, 1.0
+                            ])
+                        }
+                    }
+                }
+                return samples
+            }
+            let source = cube(sourceSize)
+            return Float64OpticalNodes(
+                raw: source, initial: source,
+                corrected: cube(correctedSize), printed: source
+            )
+        }
+    }
+
+    var float64OpticalNodes: Float64OpticalNodes? = nil
+
     var valid: Bool {
         sourceCubeSize >= 9 && correctedCubeSize >= 17 &&
         densityRanges.count == 3 && densityMaximum.count == 3 &&
         logExposureSpans.count == 3 && donorReceiverMatrix.count == 9 &&
         densityRanges.allSatisfy { $0.isFinite && $0 > 0 } &&
         logExposureSpans.allSatisfy { $0.isFinite && $0 > 0 }
+        && (float64OpticalNodes?.valid(
+            sourceSize: sourceCubeSize, correctedSize: correctedCubeSize
+        ) ?? true)
     }
 }
 
