@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.16 source-scanned RGB numerical evidence
+name: iOS 16.5.1 — v1.8.17 precision-boundary Float16 vs Float32 A/B evidence
 
 on:
   push:
-    branches: ['ios16.5.1/source-2d-spatial-dir-v1.8.16']
+    branches: ['ios16.5.1/precision-boundary-v1.8.17']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.16-source-2d-spatial-dir.md'
+      - 'docs/v1.8.17-precision-boundary.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-source-spatial-dir-v1.8.16-release
+  group: ios1651-precision-boundary-v1.8.17-release
   cancel-in-progress: true
 
 jobs:
@@ -461,8 +461,16 @@ jobs:
           assert "OriginalFilmDIRPrintParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalFilmDIRPrintParity.evaluate()" in model
           assert "OriginalCameraFilmPrintParity.evaluate()" in model
-          # v1.8.16 executes exact upstream source FIR/YVV spatial
+          # v1.8.17 executes exact upstream source FIR/YVV spatial
           # diffusion and the real CoreImage production path, not grep-only.
+          # On-device source precision: quantify iOS CI RGBAh input
+          # boundary separately from the source FIR/YVV Double kernel.
+          parity=Path("ios/SpektraFilmPort/SourceSpatialDIR2DParity.swift").read_text()
+          assert "directFloat32=Metrics(),directFloat16=Metrics()" in parity
+          assert "softwareInputBridge=Metrics()" in parity
+          assert "softwareRenderer:true" in parity
+          assert "GPU 与 Float16 数值吻合" in parity
+          assert "Float16(Float(c.input[i]))" in parity
           assert "SourceSpatialDIR2DParity.evaluate()" in model
           assert "result.channels==1287" in model
           assert "result.numericOutside==0" in model
@@ -798,27 +806,27 @@ jobs:
           test ! -e "$APP/Resources/profiles/index.json"
           /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '41'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8.16 unsigned IPA
+      - name: Package v1.8.17 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.16-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.16 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.17-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.17 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.16-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.16-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.17-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.17-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-2d-spatial-dir-v1.8.16' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/precision-boundary-v1.8.17' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.16-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.16-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.16-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-2d-spatial-dir-v1.8.16" --jq '.object.sha')
+          TAG=ios1651-v1.8.17-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.17-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.17-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/precision-boundary-v1.8.17" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -829,20 +837,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.16 - SOURCE ORIGINAL 2D SPATIAL DIR FIR YVV" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.16 Build41. Source Python original spatial DIR FIR<3/YVV>=3 plus original three-Gaussian exponential tail, reflect boundary, true 2D positive/negative inhibition and CoreImage production path compared on 3 reference 13x11 fields (1287 channels). Source branch is default when spatial DIR enabled, fast CI approximation is explicitly selectable. Previous user A15 v1.8.15 8/8 + 13-stage Hanatos evidence retained, new 2D source needs device confirmation. Other scopes NOT certified: full-size whole-image Float64/RAW and source Numba stochastic grain RNG. Unsigned experimental IPA needs signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.17 - CI precision boundary probe" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.17 Build42. Adds iPhone GPU CoreImage vs software CoreImage vs direct Float32 and Float16 source input probes for 3 upstream Python 2D DIR images / 1287 channels. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Whole-image Float64, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.16 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-2d-spatial-dir-v1.8.16' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.17 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/precision-boundary-v1.8.17' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.16-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.16-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.17-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.17-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-2d-spatial-dir-v1.8.16" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/precision-boundary-v1.8.17" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -852,12 +860,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.16 — original 2D spatial DIR FIR/YVV source parity" \
-               --notes "v1.8.16 source spatial DIR FIR/YVV 2D image diffusion and original Python 1287-channel exact stage parity. Full image source RNG, camera RAW and real device certification outstanding."
+              --title "SpektraFilm iOS 16.5.1 v1.8.17 — precision boundary investigation" \
+               --notes "v1.8.17 source spatial DIR FIR/YVV 2D image diffusion and original Python 1287-channel exact stage parity. Full image source RNG, camera RAW and real device certification outstanding."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.16 certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.17 certified release."
           exit 1
