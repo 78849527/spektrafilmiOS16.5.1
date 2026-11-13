@@ -344,7 +344,7 @@ private final class NextLevelCameraController: NSObject,
         guard !active else { return }
         active = true
         availableLenses = Set(CaptureLens.allCases.filter { lens in
-            AVCaptureDevice.default(lens.deviceType, for: .video,
+            AVCaptureDevice.default(lens.deviceType.avfoundationType, for: .video,
                                     position: lens.position) != nil
         })
         switch AVCaptureDevice.authorizationStatus(for: .video) {
