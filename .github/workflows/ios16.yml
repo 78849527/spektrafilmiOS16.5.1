@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.20 original Python full-frame spatial DIR parity
+name: iOS 16.5.1 — v1.8.21 source Double nonlinear optical LUT nodes
 
 on:
   push:
-    branches: ['ios16.5.1/source-fullframe-parity-v1.8.20']
+    branches: ['ios16.5.1/source-double-optical-lut-v1.8.21']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.20-source-fullframe-parity.md'
+      - 'docs/v1.8.21-source-double-optical-lut.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-source-fullframe-v1.8.20-release
+  group: ios1651-source-double-optics-v1.8.21-release
   cancel-in-progress: true
 
 jobs:
@@ -467,7 +467,7 @@ jobs:
           assert "OriginalFilmDIRPrintParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalFilmDIRPrintParity.evaluate()" in model
           assert "OriginalCameraFilmPrintParity.evaluate()" in model
-          # v1.8.20 executes exact upstream source FIR/YVV spatial
+          # v1.8.21 executes exact upstream source FIR/YVV spatial
           # diffusion and the real CoreImage production path, not grep-only.
           # On-device source precision: quantify iOS CI RGBAh input
           # boundary separately from the source FIR/YVV Double kernel.
@@ -479,11 +479,26 @@ jobs:
           assert "float16Reference(c.input[i])" in parity
           assert "let bits=Float(value).bitPattern" in parity
           assert "if rem > tie" in parity
-          # v1.8.20: test source Double arrays before the iOS
+          # v1.8.21: test source Double arrays before the iOS
           # Core Image half-float boundary; Metal bit-pattern proof occurs
           # only in real-device hardwareDiagnostic and never certifies the
           # complete image algorithm.
           dirSource=Path("ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift").read_text()
+          assert "sourceRGBOverride:[Double]?=nil" in dirSource
+          assert "stageDoubleObserver" in dirSource
+          # v1.8.21: source mode must consume actual Double-calculated
+          # nonlinear Hanatos/H-D/paper/scan optical nodes. CI/mobile retains
+          # its separate Float32 cubes, never selected as a fallback.
+          physics=Path("ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
+          stageDefinition=Path("ios/SpektraFilmPort/SpatialDIR.swift").read_text()
+          assert "printMapDouble.append(contentsOf: finalRGB + [1.0])" in physics
+          assert "stage.float64OpticalNodes = .init(" in physics
+          assert "var float64OpticalNodes: Float64OpticalNodes? = nil" in stageDefinition
+          assert "guard let nodes=stage.float64OpticalNodes" in dirSource
+          assert "exactSamples:nodes.printed" in dirSource
+          assert "exactSamples:nodes.corrected" in dirSource
+          assert "missing.float64OpticalNodes = nil" in Path("ios/tests/SpatialDIRValidation.swift").read_text()
+          assert "let nonlinearStage = try SpectralPhysics.makeSpatialDIRStageData(" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "sourceRGBOverride:[Double]?=nil" in dirSource
           assert "stageDoubleObserver" in dirSource
           pixelIO=Path("ios/SpektraFilmPort/OriginalSourcePixelIO.swift").read_text()
@@ -834,31 +849,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.20'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.21'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '45'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '46'
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
-      - name: Package v1.8.20 unsigned IPA
+      - name: Package v1.8.21 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.20-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.20 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.21-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.21 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.20-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.20-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.21-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.21-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-fullframe-parity-v1.8.20' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-double-optical-lut-v1.8.21' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.20-metal-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.20-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.20-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-fullframe-parity-v1.8.20" --jq '.object.sha')
+          TAG=ios1651-v1.8.21-metal-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.21-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.21-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-double-optical-lut-v1.8.21" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -869,20 +884,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.20 - Python source whole-frame DIR parity tests" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.20 Build45. Opt-in real photo 8bit ImageIO-to-Double DIR-to-JPEG without CI image pixel buffers, with additional upstream Python multi-size whole-frame 8-stage spatial-DIR parity regression and 3x2 RGBA8 lossless row/channel regression; original A15 Metal Float32 evidence retained. Other nonported effects fail explicitly. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Full camera-film-print Float64 RGB, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.21 - source Double nonlinear optical LUT production" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.21 Build46. Opt-in real photo 8bit ImageIO-to-Double DIR-to-JPEG without CI image pixel buffers, with four retained Double optical lattice stages (real Hanatos / initial and pre-DIR H-D / nonlinear paper scanner), tested against old Float32 packing and independent original Python optical samples; upstream Python multi-size spatial DIR and 8bit ImageIO regression retained. Original A15 Metal Float32 evidence retained. Other nonported effects fail explicitly. Retains v1.8.16 FIR/YVV Double physical computation and previously reported A15 8/8 hardware results. Core Image precision may still be quantized. Full camera-film-print Float64 RGB, RAW, and Numba thread RNG NOT certified. Unsigned IPA needs signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.20 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-fullframe-parity-v1.8.20' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.21 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-double-optical-lut-v1.8.21' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.20-metal
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.20-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.21-metal
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.21-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-fullframe-parity-v1.8.20" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-double-optical-lut-v1.8.21" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -892,12 +907,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.20 — staged full-frame Python source vs ImageIO Double DIR" \
-               --notes "v1.8.20 adds three nonuniform Python original spatial-DIR whole-frame stage regression cases to direct 8-bit ImageIO -> Float64 DIR; no change to fast mode. It is stage-scoped and not full camera-film-print RGB parity. Requires A15 actual photo verification. Full image source RNG, camera RAW and real device certification outstanding."
+              --title "SpektraFilm iOS 16.5.1 v1.8.21 — nonlinear source double optical LUT + spatial DIR" \
+               --notes "v1.8.21 retains Double-calculated nonlinear camera/film H-D/paper scanner 3D LUT source nodes with strict no-Float32 fallback in original spatial DIR mode; mobile CI path unchanged. Existing upstream 3-frame DIR and 13-stage Python optical checks remain. Still NOT full camera-film-print Float64 whole-image parity. Requires A15 actual photo verification. Full image source RNG, camera RAW and real device certification outstanding."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.20 fully certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.21 fully certified release."
           exit 1
