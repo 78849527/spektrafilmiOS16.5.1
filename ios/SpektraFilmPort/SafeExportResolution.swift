@@ -92,10 +92,14 @@ enum SafeExportResolution {
         width: Int, height: Int,
         physicalMemory: UInt64,
         processAvailableMemory: UInt64?,
-        mode: ExportResolutionMode
+        mode: ExportResolutionMode,
+        estimatedBytesPerPixel: UInt64 =
+            SafeExportResolution.estimatedBytesPerPixel
     ) throws -> Plan {
         guard width > 0, height > 0, width <= 50_000,
-              height <= 50_000, physicalMemory > 0 else {
+              height <= 50_000, physicalMemory > 0,
+              estimatedBytesPerPixel >= 1 && estimatedBytesPerPixel <= 1024
+        else {
             throw Failure.invalid("输出分辨率：原图尺寸或设备内存数据无效")
         }
         let sourcePixels = UInt64(width) * UInt64(height)
@@ -159,13 +163,15 @@ enum SafeExportResolution {
 
     /// Capture system headroom before the export UI confirms a concrete size.
     static func capture(
-        width: Int, height: Int, mode: ExportResolutionMode
+        width: Int, height: Int, mode: ExportResolutionMode,
+        estimatedBytesPerPixel: UInt64 =
+            SafeExportResolution.estimatedBytesPerPixel
     ) throws -> Plan {
         try plan(
             width:width, height:height,
             physicalMemory:ProcessInfo.processInfo.physicalMemory,
             processAvailableMemory:currentProcessHeadroom(),
-            mode:mode
+            mode:mode,estimatedBytesPerPixel:estimatedBytesPerPixel
         )
     }
 
