@@ -109,7 +109,7 @@ enum SourceSpatialDIRConvolution {
         let q2=q*q, q3=q2*q
         let b0=1.57825+2.44413*q+1.4281*q2+0.422205*q3
         let b1=2.44413*q+2.85619*q2+1.26661*q3
-        let b2=-(1.4281*q2+1.26661*q3)
+        let b2 = -(1.4281*q2+1.26661*q3)
         let b3=0.422205*q3
         let B=1.0-(b1+b2+b3)/b0
         return (B,b1/b0,b2/b0,b3/b0)
