@@ -19,6 +19,8 @@ enum SourceSpatialDIR2DParity {
         let channels:Int
         let numericOutside:Int
         let productionOutside:Int
+        let directOutside:Int
+        let directMax:Double
         let numericMAE:Double
         let numericMax:Double
         let productionMAE:Double
@@ -174,7 +176,11 @@ enum SourceSpatialDIR2DParity {
             "log","densityPreGrain","printed"
         ]
         var stageStatistics=[String:Metrics]()
-        for name in stageNames {stageStatistics[name]=Metrics()}
+        var directStageStatistics=[String:Metrics]()
+        for name in stageNames {
+            stageStatistics[name]=Metrics()
+            directStageStatistics[name]=Metrics()
+        }
         var total=0
         var report=[String]()
         for (n,c) in cases.enumerated() {
@@ -281,6 +287,31 @@ enum SourceSpatialDIR2DParity {
                 "densityPreGrain":c.sourceNormalizedDisplay,
                 "printed":c.sourceNormalizedDisplay
             ]
+            // Same production physics and LUT nodes but with direct
+            // Double input and captured Double stages BEFORE CIImage.
+            // Only this diagnostic uses the pixel override. The regular
+            // application input and output still cross the CI boundary.
+            var preciseStages=[String:[Double]]()
+            _ = try SourceSpatialDIRConvolution.applyExactImagePath(
+                to:prepared,stage:stage,settings:opts,grain:nil,
+                stageObserver:nil,sourceRGBOverride:c.input,
+                stageDoubleObserver:{ name,values in
+                    preciseStages[name]=values
+                }
+            )
+            for key in stageNames {
+                guard let precise=preciseStages[key],
+                      let reference=references[key],
+                      precise.count==count,reference.count==count else {
+                    throw Failure.invalid("DIR Float64 数组入口阶段缺失：" + key)
+                }
+                for i in 0..<count {
+                    try directStageStatistics[key]!.test(
+                        source:reference[i],actual:precise[i],
+                        label:"\(c.film) direct \(key) #\(n) px:\(i/3) ch:\(i%3)"
+                    )
+                }
+            }
             for key in stageNames {
                 guard let observed=stageImages[key],
                       let reference=references[key],
@@ -315,6 +346,9 @@ enum SourceSpatialDIR2DParity {
             【v1.8.17 原版图像精度边界诊断｜不计入整图认证】
             \(directFloat32.describe("不经过 CI 的直接 Float32 量化",channels:total))
             \(directFloat16.describe("不经过 CI 的 IEEE binary16 量化（ties-to-even）",channels:total))
+            \(stageNames.map {directStageStatistics[$0]!.describe(
+                "Float64 原版数组输入→计算阶段 "+$0,channels:total)}
+                .joined(separator:"\n"))
             \(sourceInputBridge.describe("默认 CIImage RGBAf 输入校验（通常为 GPU）",channels:total))
             \(softwareInputBridge.describe("请求软件渲染 CIImage RGBAf 输入校验",channels:total))
             默认 CI 与 Float16 数值吻合：\(halfSignatureCount)/\(total)；
@@ -332,6 +366,12 @@ enum SourceSpatialDIR2DParity {
             cases:cases.count,channels:total,
             numericOutside:numeric.outside,
             productionOutside:production.outside,
+            directOutside:stageNames.reduce(0) {
+                $0+(directStageStatistics[$1]?.outside ?? 0)
+            },
+            directMax:stageNames.map {
+                directStageStatistics[$0]!.max
+            }.max() ?? 0,
             numericMAE:numeric.sum/Double(total),numericMax:numeric.max,
             productionMAE:production.sum/Double(total),
             productionMax:production.max,text:text
