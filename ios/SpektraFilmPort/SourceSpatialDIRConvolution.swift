@@ -267,37 +267,29 @@ enum SourceSpatialDIRConvolution {
 extension SourceSpatialDIRConvolution {
     private struct SourceCube {
         let dimension:Int
-        let samples:[Float]
+        let samples:[Double]
 
-        init(_ data:Data,dimension:Int) throws {
-            guard dimension>=2,dimension<=256,
-                  data.count==dimension*dimension*dimension*16 else {
-                throw Failure.invalid("源 DIR 色彩 LUT 维度或 Float32 RGBA 长度无效")
+        init(_ data:Data,dimension:Int,exactSamples:[Double]) throws {
+            guard dimension >= 2 && dimension <= 256,
+                  data.count == dimension*dimension*dimension*16,
+                  exactSamples.count == dimension*dimension*dimension*4,
+                  exactSamples.allSatisfy({ $0.isFinite }) else {
+                throw Failure.invalid(
+                    "原版 DIR Float64 光学 LUT 缺失／长度不匹配；" +
+                    "严禁自动使用 Float32 光学节点"
+                )
             }
             self.dimension=dimension
-            let bytes=[UInt8](data)
-            var result=[Float](repeating:0,count:bytes.count/4)
-            for i in result.indices {
-                let o=i*4
-                let bits=UInt32(bytes[o]) |
-                    UInt32(bytes[o+1])<<8 |
-                    UInt32(bytes[o+2])<<16 |
-                    UInt32(bytes[o+3])<<24
-                result[i]=Float(bitPattern:bits)
-            }
-            guard result.allSatisfy({ $0.isFinite }) else {
-                throw Failure.invalid("源 DIR 光学 LUT 含 NaN/Inf")
-            }
-            samples=result
+            self.samples=exactSamples
         }
 
         @inline(__always)
         private func at(_ r:Int,_ g:Int,_ b:Int,_ ch:Int)->Double {
-            Double(samples[((b*dimension+g)*dimension+r)*4+ch])
+            samples[((b*dimension+g)*dimension+r)*4+ch]
         }
 
         /// Source cube arrangement: r-fastest, g-middle, b-slowest.
-        /// Trilinear interpolates exact stored Float32 source nodes with
+        /// Trilinear interpolates original calculated Float64 optical nodes with
         /// Double weights, with no LUT 8-bit hardware texture quantization.
         @inline(__always)
         func rgb(_ r:Double,_ g:Double,_ b:Double)->(Double,Double,Double) {
@@ -386,7 +378,7 @@ extension SourceSpatialDIRConvolution {
     }
 
     /// Entire *production* source spatial DIR stage as a real 2D operation.
-    /// No CIColorCube is used in this original-accuracy mode. Film RAW,
+    /// No CIColorCube or Float32 optical LUT node is used in this original-accuracy mode. Film RAW,
     /// initial H-D, spatial silver inhibition, corrected film density and
     /// print LUT follow exactly the same physical data as the fast renderer.
     /// Grain remains the separately chosen stochastic density stage.
@@ -410,15 +402,29 @@ extension SourceSpatialDIRConvolution {
               w<=32_000_000/h,stage.valid,settings.valid else {
             throw Failure.invalid("原版 DIR 不支持非像素对齐/超尺寸图像")
         }
-        let rawCube=try SourceCube(stage.rawLogCube,dimension:stage.sourceCubeSize)
+        guard let nodes=stage.float64OpticalNodes,
+              nodes.valid(sourceSize: stage.sourceCubeSize,
+                          correctedSize: stage.correctedCubeSize) else {
+            throw Failure.invalid(
+                "原版精确 FIR/YVV 已启用，但真实 Float64 光学 LUT 未就绪。" +
+                "禁止静默使用旧版 Float32 LUT"
+            )
+        }
+        let rawCube=try SourceCube(
+            stage.rawLogCube,dimension:stage.sourceCubeSize,
+            exactSamples:nodes.raw
+        )
         let initialCube=try SourceCube(
-            stage.initialDensityCube,dimension:stage.sourceCubeSize
+            stage.initialDensityCube,dimension:stage.sourceCubeSize,
+            exactSamples:nodes.initial
         )
         let correctedCube=try SourceCube(
-            stage.correctedDensityCube,dimension:stage.correctedCubeSize
+            stage.correctedDensityCube,dimension:stage.correctedCubeSize,
+            exactSamples:nodes.corrected
         )
         let printCube=try SourceCube(
-            stage.printCube,dimension:stage.sourceCubeSize
+            stage.printCube,dimension:stage.sourceCubeSize,
+            exactSamples:nodes.printed
         )
         let sourceRGB:[Double]
         if let direct=sourceRGBOverride {
