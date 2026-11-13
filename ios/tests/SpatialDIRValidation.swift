@@ -112,6 +112,16 @@ struct SpatialDIRValidation {
             settings: off, grain: nil
         )
         precondition(offResult == nil)
-        print("PASS: CoreImage DIR Gaussian + exponential-tail stage renders physical intermediate densities, both negative and reversal.")
+        print("PASS: source FIR/YVV spatial DIR stage renders physical intermediate densities, both negative and reversal.")
+        // Execute direct source 2D Python convolution references and the
+        // exact same CoreImage spatial branch used by production photos.
+        let evidence=try SourceSpatialDIR2DParity.evaluate()
+        print(evidence.text)
+        precondition(evidence.cases==3 && evidence.channels==1287,
+                     "Expected 3 actual 13x11 upstream source images")
+        precondition(evidence.numericOutside==0,
+                     "SOURCE 2D DIR FIR/YVV: >0.002 Swift numeric deviation")
+        precondition(evidence.productionOutside==0,
+                     "SOURCE 2D DIR CIImage: >0.002 production deviation")
     }
 }
