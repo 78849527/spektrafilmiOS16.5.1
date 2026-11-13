@@ -1136,7 +1136,7 @@ struct SpectralPhysics {
         let mult=pow(2.0,cameraEV)
         let irradiance=raw.map { $0*mult }
         guard irradiance.count==3,
-              irradiance.allSatisfy({ $0.isFinite && $0>=0 }) else {
+              irradiance.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相机 Hanatos 光子输出非有限")
         }
         return irradiance
@@ -1147,7 +1147,7 @@ struct SpectralPhysics {
     func sourceSpatialInputFromCameraRaw(
         _ raw:[Double]
     ) throws -> SourceSpatialInput {
-        guard raw.count==3 && raw.allSatisfy({ $0.isFinite && $0>=0 }) else {
+        guard raw.count==3 && raw.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相机镜头后曝光数据无效")
         }
         let logRaw=raw.map { log10(max($0,0)+1e-10) }
