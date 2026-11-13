@@ -5,9 +5,9 @@ Uses colour-science's Mallett 2019 sRGB basis, the stock reference D55,
 CIE 1931 2° CMFs, D50 viewing illuminant, original 3400K Schott KG3
 enlarger, and Spektrafilm's default CMY (0/65/55) dichroic filtration.
 
-The iOS binary receives compact Float32 lookup arrays as compiled Swift
-constants. No Python, large JSON bundle, or runtime colour dependency is
-introduced on iOS 16.5.1. Original preprocessing uses float64.
+The iOS binary retains the legacy compact Float32 lookup arrays for the
+mobile fast path AND independent original Float64 lookup arrays for the
+opt-in high-precision photon/paper/scanner mode. No Python runtime is needed.
 """
 from __future__ import annotations
 
@@ -29,11 +29,13 @@ WL = np.arange(380, 781, 5, dtype=np.float64)
 SHAPE = colour.SpectralShape(380, 780, 5)
 
 
-def encoded(values) -> str:
-    value = np.asarray(values, dtype=np.float32).ravel()
+def encoded(values, source_float64: bool = False) -> str:
+    dtype = np.float64 if source_float64 else np.float32
+    value = np.asarray(values, dtype=dtype).ravel()
     if not np.isfinite(value).all():
         raise ValueError("Reference source contains nonfinite spectral values")
-    return base64.b64encode(value.astype("<f4").tobytes()).decode("ascii")
+    pack = "<f8" if source_float64 else "<f4"
+    return base64.b64encode(value.astype(pack).tobytes()).decode("ascii")
 
 
 def illuminant(name: str) -> np.ndarray:
@@ -164,14 +166,22 @@ def main() -> None:
         "// optical reference functions; do not edit, not an iOS resource bundle.",
         "// Original source: spektrafilm.utils.spectral_upsampling / illuminants",
         "// and spektrafilm.model.color_filters; measured KG3 filter source.",
-        "// Float64 reference rounded to packed Float32 for iOS 16.5.1.",
+        "// Mobile Float32 and independent true original Float64 spectra.",
         "enum GeneratedOriginalOptics {",
     ]
     for key, array in names.items():
         lines.append(f'    static let {key} = "{encoded(array)}"')
+        lines.append(f'    static let sourceF64_{key} = '
+                     f'"{encoded(array, source_float64=True)}"')
     lines.append("    static let printIlluminantByPair: [String: String] = [")
     for key, values in print_illuminants.items():
         lines.append(f"        {json.dumps(key)}: {json.dumps(encoded(values))},")
+    lines.append("    ]")
+    lines.append("    static let sourceF64PrintIlluminantByPair: [String: String] = [")
+    for key, values in print_illuminants.items():
+        lines.append(
+            f"        {json.dumps(key)}: {json.dumps(encoded(values, source_float64=True))},"
+        )
     lines.append("    ]")
     lines.append("    static let neutralCMYByPair: [String: [Double]] = [")
     for key, values in neutral_cc_by_pair.items():
@@ -192,6 +202,8 @@ def main() -> None:
     DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("PASS: Mallett2019 basis, D55/D50, CIE1931, KG3, default CMY filter")
     print("PASS: 128 original film×print neutral CMY database filter spectra")
+    print("PASS: independent Float64 CIE/illuminants/basis/KG3/128 pair spectra " +
+          "preserved alongside unchanged mobile Float32")
     print(f"PASS: {len(validation)} Python reference Mallett response samples")
     print(f"Generated: {DEST.stat().st_size} bytes")
     print(f"colour-science version: {colour.__version__}")
