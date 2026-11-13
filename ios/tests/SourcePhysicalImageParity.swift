@@ -226,7 +226,7 @@ enum SourcePhysicalImageParity {
         // Explicit memory guard: cannot silently scale the image, nor
         // downgrade to a Float32 optical 3D LUT when original is requested.
         let tooLarge=OriginalSourcePixelIO.Frame(
-            width:2048,height:1024,rgb:[]
+            width:4096,height:4096,rgb:[]
         )
         var rejected=false
         do {
@@ -243,14 +243,56 @@ enum SourcePhysicalImageParity {
                 tooLarge,parameters:p
             )
         } catch OriginalSourcePhysicalImage.Failure.invalid(let message) {
-            rejected=message.contains("200 万像素")
+            rejected=message.contains("1200 万像素")
         }
         guard rejected else {
             throw Failure.invalid("Oversize physical image failed to reject")
         }
+        // iPhone 13-class 10MP photo: admission is now based on TRUE
+        // current physical/process budget, not the old fixed 2MP cap.
+        try OriginalSourcePhysicalImage.validateMemoryBudget(
+            width:3888,height:2592,
+            physicalMemory:4_500_000_000,
+            processAvailableMemory:3_140_000_000
+        )
+        try OriginalSourcePixelIO.validatePixelDimensions(
+            width:3888,height:2592,maximumAllowedPixels:
+                OriginalSourcePhysicalImage.maximumPixels
+        )
+        var budgetDenied=false
+        do {
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:3888,height:2592,
+                physicalMemory:3_000_000_000,
+                processAvailableMemory:500_000_000
+            )
+        } catch OriginalSourcePhysicalImage.Failure.invalid(let reason) {
+            budgetDenied=reason.contains("内存预算不足") &&
+                reason.contains("不会擅自缩图")
+        }
+        guard budgetDenied else {
+            throw Failure.invalid(
+                "Physical full-res output did not reject insufficient memory"
+            )
+        }
+        var over12MPDenied=false
+        do {
+            try OriginalSourcePixelIO.validatePixelDimensions(
+                width:4000,height:3200,
+                maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+            )
+        } catch OriginalSourcePixelIO.Failure.invalid(let reason) {
+            over12MPDenied=reason.contains("1200 万像素") &&
+                reason.contains("逐像素全光学")
+        }
+        guard over12MPDenied else {
+            throw Failure.invalid("Physical 12MP dimension guard was lost")
+        }
         print("PASS: original Python nonlinear full image → Swift " +
               "Hanatos/H-D/spatial DIR/s023 paper/scan: " +
               "\(total) RGB channels across seven stages for 3 frames." +
-              " 2MP strict memory limit. NOT grain/RAW/CAM16/whole-device certification.")
+              " Original 10MP-class input conditionally admitted under " +
+              "verified simulated memory headroom; 12MP upper guard, " +
+              "no fallback under low memory. NOT physical iPhone-certified.")
     }
 }
