@@ -44,6 +44,62 @@ enum SourceSpatialDIR2DParity {
                    "超限=\(outside)/\(channels), 最差项：\(worst)"
         }
     }
+    /// IEEE-754 binary16 round-to-nearest ties-to-even reference.
+    /// Intel macOS native Swift test compilers do not expose Float16(_:)
+    /// consistently. Work directly on the Float32 bit pattern instead;
+    /// this is a diagnostic only and does not modify production pixels.
+    private static func float16Reference(_ value:Double) -> Double {
+        let bits=Float(value).bitPattern
+        let sign=(bits >> 16) & 0x8000
+        let exponent=Int((bits >> 23) & 0xff)
+        let fraction=bits & 0x7fffff
+        var half=sign
+        if exponent == 255 {
+            half |= 0x7c00 | (fraction == 0 ? 0 : 0x0200)
+        } else if exponent >= 143 {
+            half |= 0x7c00
+        } else if exponent >= 113 {
+            var e=exponent-112
+            var mantissa=fraction >> 13
+            let remainder=fraction & 0x1fff
+            if remainder > 0x1000 ||
+                (remainder == 0x1000 && (mantissa & 1) != 0) {
+                mantissa += 1
+            }
+            if mantissa == 1024 { e += 1; mantissa=0 }
+            half |= (UInt32(e) << 10) | mantissa
+        } else if exponent >= 102 {
+            let mantissa:UInt32=0x800000 | fraction
+            let shift=126-exponent
+            var rounded=mantissa >> shift
+            let rem=mantissa & ((UInt32(1) << shift)-1)
+            let tie=UInt32(1) << (shift-1)
+            if rem > tie || (rem == tie && (rounded & 1) != 0) {
+                rounded += 1
+            }
+            half |= rounded
+        }
+        let halfExponent=(half >> 10) & 0x1f
+        let halfFraction=half & 0x3ff
+        let sign32=(half & 0x8000) << 16
+        if halfExponent == 0 {
+            if halfFraction == 0 {
+                return Double(Float(bitPattern:sign32))
+            }
+            let magnitude=Float(halfFraction) / 16_777_216.0
+            return Double(sign32 == 0 ? magnitude : -magnitude)
+        }
+        let resultBits:UInt32
+        if halfExponent == 31 {
+            resultBits=sign32 | 0x7f800000 |
+                (halfFraction == 0 ? 0 : halfFraction << 13)
+        } else {
+            resultBits=sign32 | ((halfExponent+112) << 23) |
+                (halfFraction << 13)
+        }
+        return Double(Float(bitPattern:resultBits))
+    }
+
     private static func cube(_ n:Int) -> Data {
         var floats=[Float]()
         floats.reserveCapacity(n*n*n*4)
@@ -153,7 +209,7 @@ enum SourceSpatialDIR2DParity {
             for i in 0..<count {
                 let label="\(c.film) input #\(n) pixel:\(i/3) ch:\(i%3)"
                 let f32=Double(Float(c.input[i]))
-                let f16=Double(Float16(Float(c.input[i])))
+                let f16=float16Reference(c.input[i])
                 try directFloat32.test(
                     source:c.input[i],actual:f32,label:label
                 )
@@ -258,7 +314,7 @@ enum SourceSpatialDIR2DParity {
             \(numeric.describe("源 Float64 FIR/YVV 扩散",channels:total))
             【v1.8.17 原版图像精度边界诊断｜不计入整图认证】
             \(directFloat32.describe("不经过 CI 的直接 Float32 量化",channels:total))
-            \(directFloat16.describe("不经过 CI 的直接 Float16 量化",channels:total))
+            \(directFloat16.describe("不经过 CI 的 IEEE binary16 量化（ties-to-even）",channels:total))
             \(sourceInputBridge.describe("默认 CIImage RGBAf 输入校验（通常为 GPU）",channels:total))
             \(softwareInputBridge.describe("请求软件渲染 CIImage RGBAf 输入校验",channels:total))
             默认 CI 与 Float16 数值吻合：\(halfSignatureCount)/\(total)；
