@@ -157,15 +157,15 @@ enum SourcePhysicalImageParity {
                     "ImageIO source orientation mismatch " + fixture.name
                 )
             }
-            var print=OriginalPrintOptics.Settings(enabled:true)
-            print.normalizePrintExposure=false
-            print.printExposureCompensation=false
-            print.cyanShift=fixture.shift[0]
-            print.magentaShift=fixture.shift[1]
-            print.yellowShift=fixture.shift[2]
-            print.preflashExposure=fixture.flash
-            print.preflashMagentaShift=fixture.flashM
-            print.preflashYellowShift=fixture.flashY
+            var optical=OriginalPrintOptics.Settings(enabled:true)
+            optical.normalizePrintExposure=false
+            optical.printExposureCompensation=false
+            optical.cyanShift=fixture.shift[0]
+            optical.magentaShift=fixture.shift[1]
+            optical.yellowShift=fixture.shift[2]
+            optical.preflashExposure=fixture.flash
+            optical.preflashMagentaShift=fixture.flashM
+            optical.preflashYellowShift=fixture.flashY
             var morph=OriginalPrintMorph.Settings()
             switch fixture.morph {
             case "neutral": break
@@ -181,7 +181,7 @@ enum SourcePhysicalImageParity {
             let params=OriginalSourcePhysicalImage.Parameters(
                 filmID:fixture.film,paperID:fixture.paper,
                 cameraEV:fixture.cameraEV,paperEV:fixture.paperEV,
-                dir:dir,print:print,morph:morph
+                dir:dir,print:optical,morph:morph
             )
             var traces=[String:[Double]]()
             let actual=try OriginalSourcePhysicalImage.develop(
