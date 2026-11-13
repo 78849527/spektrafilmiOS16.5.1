@@ -179,3 +179,38 @@ enum OriginalSourcePhysicalImage {
         )
     }
 }
+
+#if canImport(UIKit)
+import UIKit
+#endif
+
+extension OriginalSourcePixelIO {
+    // Keep source-physical utilities separate so existing original DIR-only
+    // ImageIO and source kernel tests compile without SpectralPhysics.
+    #if canImport(UIKit)
+    static func previewPhysical(
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
+    ) throws -> UIImage {
+        let frame=try decode(
+            data,previewMaxSide:640,
+            maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        )
+        let developed=try OriginalSourcePhysicalImage.develop(
+            frame,parameters:parameters
+        )
+        return UIImage(cgImage:try displayImage(developed))
+    }
+    #endif
+
+    static func exportPhysicalJPEG(
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
+    ) throws -> URL {
+        let frame=try decode(
+            data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        )
+        let developed=try OriginalSourcePhysicalImage.develop(
+            frame,parameters:parameters
+        )
+        return try createJPEG(developed)
+    }
+}
