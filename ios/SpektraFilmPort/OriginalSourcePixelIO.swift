@@ -60,7 +60,8 @@ enum OriginalSourcePixelIO {
         guard width > 0, height > 0, maximumAllowedPixels > 0 else {
             throw Failure.invalid("原版像素直连：原始照片尺寸或模式上限无效")
         }
-        let mode = maximumAllowedPixels <= 2_000_000
+        let isFullOptical = maximumAllowedPixels != 16_000_000
+        let mode = isFullOptical
             ? "逐像素全光学（实验）" : "8-bit 原版像素直连"
         let original = String(
             format: "%.2f", Double(width) * Double(height) / 10_000.0
@@ -73,7 +74,7 @@ enum OriginalSourcePixelIO {
             throw Failure.invalid(
                 "\(mode)：当前照片 \(width) × \(height)（约 \(original) 万像素）；" +
                 "此模式最多 \(allowed) 万像素，单边不超过 8192。" +
-                (maximumAllowedPixels <= 2_000_000
+                (isFullOptical
                     ? "关闭「逐像素全光学（实验）」后，可使用已验证的" +
                       "「8-bit 原版像素直连」原尺寸导出。"
                     : "请选择尺寸在支持范围内的原图。") +
