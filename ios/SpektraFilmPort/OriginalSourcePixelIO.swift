@@ -331,36 +331,7 @@ enum OriginalSourcePixelIO {
     }
     #endif
 
-    // Opt-in full nonlinear physical image chain, separate from the
-    // already user-validated original 8-bit DIR-only route.
-    #if canImport(UIKit)
-    static func previewPhysical(
-        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
-    ) throws -> UIImage {
-        let frame = try decode(
-            data,previewMaxSide:640,
-            maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
-        )
-        let result = try OriginalSourcePhysicalImage.develop(
-            frame,parameters:parameters
-        )
-        return UIImage(cgImage:try displayImage(result))
-    }
-    #endif
-
-    static func exportPhysicalJPEG(
-        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
-    ) throws -> URL {
-        let frame = try decode(
-            data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
-        )
-        let printed = try OriginalSourcePhysicalImage.develop(
-            frame,parameters:parameters
-        )
-        return try createJPEG(printed)
-    }
-
-    private static func createJPEG(_ frame:Frame) throws -> URL {
+    static func createJPEG(_ frame:Frame) throws -> URL {
         let cg=try displayImage(frame)
         let url=FileManager.default.temporaryDirectory
             .appendingPathComponent("SpektraFilmPort-source-io-" + UUID().uuidString)
