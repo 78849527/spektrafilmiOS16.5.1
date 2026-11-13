@@ -128,14 +128,29 @@ struct SpectralPhysics {
             }
             // spektrafilm.model.develop.develop() subtracts the full channel
             // minimum (not just densityCurves[0]) before interpolating.
-            let measuredCurves = densityCurves
-            let sourceCurves = sourceDensityCurvesF64
-            minimumDensity = (0..<3).map { ch in
-                (0..<256).map { i in
-                    sourceCurves?[i * 3 + ch] ??
-                        Double(measuredCurves[i * 3 + ch])
-                }.min() ?? 0.0
+            // Use explicit scalar loops: the Swift 5.9 type checker cannot
+            // reliably infer nested Optional<Double> / Float / map.min()
+            // over the 256-node source optical density curves. These loops
+            // preserve the same per-channel minima in source Float64.
+            var materialMinima = [Double](repeating: 0, count: 3)
+            for channel in 0..<3 {
+                var channelMin = Double.infinity
+                for node in 0..<256 {
+                    let index = node * 3 + channel
+                    let measured: Double
+                    if let exact = sourceDensityCurvesF64 {
+                        measured = exact[index]
+                    } else {
+                        measured = Double(densityCurves[index])
+                    }
+                    if measured < channelMin { channelMin = measured }
+                }
+                guard channelMin.isFinite else {
+                    throw PhysicsError.invalid("原版 H-D 密度最小值无效：" + id)
+                }
+                materialMinima[channel] = channelMin
             }
+            minimumDensity = materialMinima
         }
 
         /// Explicit little-endian decode avoids unaligned Float pointers on
