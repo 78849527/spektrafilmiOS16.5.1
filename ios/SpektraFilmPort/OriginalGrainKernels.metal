@@ -309,6 +309,19 @@ kernel void originalFilmWriteCore(
                       uint2(args.originX+tid.x,args.originY+tid.y));
 }
 
+// v1.8.18: IEEE binary32 data-boundary proof on the real Metal device.
+// This identity kernel reads/writes EVERY channel of an rgba32Float texture;
+// it does not invoke Core Image, gamma transforms, LUTs, or half precision.
+// Bitwise parity on iPhone establishes a usable native precision transport,
+// NOT the accuracy of the complete film/print renderer.
+kernel void originalFilmFloat32Identity(
+    texture2d<float,access::read> input [[texture(0)]],
+    texture2d<float,access::write> output [[texture(1)]],
+    uint2 tid [[thread_position_in_grid]]) {
+    if (tid.x >= input.get_width() || tid.y >= input.get_height()) { return; }
+    output.write(input.read(tid), tid);
+}
+
 // Native test-only probe to verify texture binding and Swift/Metal ABI.
 // Not invoked by the production rendering pipeline.
 kernel void originalFilmDebugProbe(
