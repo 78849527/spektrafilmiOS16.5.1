@@ -50,6 +50,62 @@ enum OriginalSourcePixelIO {
         }
     }
 
+    /// v1.8.23: Cheap original-file size preflight. Check source ImageIO
+    /// metadata BEFORE creating a full-res CGImage, and use the SAME limits
+    /// in the export confirmation and in actual full-resolution decoding.
+    /// No implicit resizing, algorithm switching or memory-budget override.
+    static func validatePixelDimensions(
+        width: Int, height: Int, maximumAllowedPixels: Int
+    ) throws {
+        guard width > 0, height > 0, maximumAllowedPixels > 0 else {
+            throw Failure.invalid("原版像素直连：原始照片尺寸或模式上限无效")
+        }
+        let mode = maximumAllowedPixels <= 2_000_000
+            ? "逐像素全光学（实验）" : "8-bit 原版像素直连"
+        let original = String(
+            format: "%.2f", Double(width) * Double(height) / 10_000.0
+        )
+        let allowed = String(
+            format: "%.0f", Double(maximumAllowedPixels) / 10_000.0
+        )
+        guard width <= 8192, height <= 8192,
+              width <= maximumAllowedPixels / height else {
+            throw Failure.invalid(
+                "\(mode)：当前照片 \(width) × \(height)（约 \(original) 万像素）；" +
+                "此模式最多 \(allowed) 万像素，单边不超过 8192。" +
+                (maximumAllowedPixels <= 2_000_000
+                    ? "关闭「逐像素全光学（实验）」后，可使用已验证的" +
+                      "「8-bit 原版像素直连」原尺寸导出。"
+                    : "请选择尺寸在支持范围内的原图。") +
+                "不会擅自缩图或切换算法。"
+            )
+        }
+    }
+
+    /// Metadata only; does not create the expensive source CGImage.
+    static func preflightExport(
+        _ data: Data, maximumAllowedPixels: Int = 16_000_000
+    ) throws {
+        guard let imageSource = CGImageSourceCreateWithData(
+            data as CFData,
+            [kCGImageSourceShouldCache: false] as CFDictionary
+        ),
+              let properties = CGImageSourceCopyPropertiesAtIndex(
+                imageSource, 0, nil
+              ) as NSDictionary?,
+              let w = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let h = properties[kCGImagePropertyPixelHeight] as? NSNumber
+        else {
+            throw Failure.invalid(
+                "原版像素直连：ImageIO 无法读取原始照片尺寸，禁止凭预览估算导出"
+            )
+        }
+        try validatePixelDimensions(
+            width: w.intValue, height: h.intValue,
+            maximumAllowedPixels: maximumAllowedPixels
+        )
+    }
+
     /// Source imaging, not fabricated Float64 input: decode an actual
     /// 8-bit file using ImageIO/Quartz in 8-bit RGBA, then promote each
     /// encoded sRGB channel to Double. Avoids Core Image's tested RGBAh
@@ -58,6 +114,14 @@ enum OriginalSourcePixelIO {
         _ data: Data, previewMaxSide: Int? = nil,
         maximumAllowedPixels: Int = 16_000_000
     ) throws -> Frame {
+        // Full-res requests must be rejected from metadata, before
+        // allocating the decoded CGImage. Thumbnail preview is explicitly
+        // allowed to use reduced geometry, but never changes export size.
+        if previewMaxSide == nil {
+            try preflightExport(
+                data, maximumAllowedPixels: maximumAllowedPixels
+            )
+        }
         guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               let original = CGImageSourceCreateImageAtIndex(
                 imageSource, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
@@ -97,12 +161,10 @@ enum OriginalSourcePixelIO {
             image = original
         }
         let w = image.width, h = image.height
-        guard w > 0, h > 0, w <= 8192, h <= 8192,
-              w <= maximumAllowedPixels / h else {
-            throw Failure.invalid(
-                "原版像素直连超出当前内存安全范围（最大 1600 万像素）；禁止偷偷缩图"
-            )
-        }
+        try validatePixelDimensions(
+            width: w, height: h,
+            maximumAllowedPixels: maximumAllowedPixels
+        )
 
         var bytes = [UInt8](repeating: 0, count: w*h*4)
         let succeeded = bytes.withUnsafeMutableBytes { buffer -> Bool in
