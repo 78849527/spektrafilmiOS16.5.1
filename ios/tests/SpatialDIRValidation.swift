@@ -130,5 +130,6 @@ struct SpatialDIRValidation {
         precondition(evidence.directOutside==0,
                      "SOURCE 2D DIR Float64 arrays: >0.002 production deviation")
         print(try OriginalSourcePixelIO.validate8BitRoundTrip())
+        print(try OriginalSourcePixelIO.validateColorProfileGate())
     }
 }

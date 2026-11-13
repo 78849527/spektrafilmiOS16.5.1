@@ -38,6 +38,17 @@ enum OriginalSourcePixelIO {
         return number?.intValue ?? 1
     }
 
+    private static func requireExplicitSRGB(_ image: CGImage) throws {
+        guard let colorSpace = image.colorSpace,
+              colorSpace.model == .rgb,
+              CGColorSpaceEqualToColorSpace(colorSpace, srgb) else {
+            throw Failure.invalid(
+                "原版像素直连只接受明确标记的 sRGB 8-bit RGB；" +
+                "P3、灰度或未标记色彩空间禁止隐式转换"
+            )
+        }
+    }
+
     /// Source imaging, not fabricated Float64 input: decode an actual
     /// 8-bit file using ImageIO/Quartz in 8-bit RGBA, then promote each
     /// encoded sRGB channel to Double. Avoids Core Image's tested RGBAh
@@ -54,6 +65,11 @@ enum OriginalSourcePixelIO {
                 "原版像素直连只接受 8-bit JPEG/HEIC/PNG；高位深、RAW 不得降级到 8-bit"
             )
         }
+        // Pixel-preserving mode must not quietly turn a Display P3, gray,
+        // untagged, or other ICC profile into sRGB via CGContext.draw.
+        // Such a conversion changes the algorithm's input values even
+        // when every decoded channel is stored as Double afterward.
+        try requireExplicitSRGB(original)
         let exif = orientation(imageSource)
         guard (1...8).contains(exif) else {
             throw Failure.invalid("原版像素直连：EXIF 方向无效")
@@ -249,6 +265,57 @@ enum OriginalSourcePixelIO {
         }
         return "PASS: 原版输入/输出 ImageIO 3×2 RGBA8 六像素无损往返；" +
             "不经过 Core Image。8-bit 输入认证仅限该夹具。"
+    }
+
+    /// A genuine Display P3 PNG must fail rather than be colour-converted
+    /// into a seemingly 'exact' source RGB array. This proves file ingress,
+    /// not just an isolated helper predicate.
+    static func validateColorProfileGate() throws -> String {
+        guard let p3 = CGColorSpace(name: CGColorSpace.displayP3) else {
+            throw Failure.invalid("色彩空间验证：无法创建 Display P3 profile")
+        }
+        let rgba: [UInt8] = [40, 110, 220, 255]
+        let raw = Data(rgba) as CFData
+        guard let provider = CGDataProvider(data: raw),
+              let image = CGImage(
+                width: 1, height: 1, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: 4, space: p3,
+                bitmapInfo: CGBitmapInfo(
+                    rawValue: CGImageAlphaInfo.noneSkipLast.rawValue |
+                        CGBitmapInfo.byteOrder32Big.rawValue
+                ),
+                provider: provider, decode: nil, shouldInterpolate: false,
+                intent: .defaultIntent
+              ) else {
+            throw Failure.invalid("色彩空间验证：无法构造 P3 测试图片")
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spektrafilm-source-p3-" + UUID().uuidString)
+            .appendingPathExtension("png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let destination = CGImageDestinationCreateWithURL(
+            url as CFURL, UTType.png.identifier as CFString, 1, nil
+        ) else {
+            throw Failure.invalid("色彩空间验证：无法编码 P3 PNG")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw Failure.invalid("色彩空间验证：写入 P3 PNG 失败")
+        }
+        do {
+            _ = try decode(Data(contentsOf: url))
+        } catch Failure.invalid(let message) {
+            guard message.contains("sRGB") else {
+                throw Failure.invalid(
+                    "色彩空间验证：P3 输入被错误原因拒绝：" + message
+                )
+            }
+            return "PASS: Display P3 8-bit PNG 明确拒绝；" +
+                "精确模式不会隐式转换为 sRGB。"
+        }
+        throw Failure.invalid(
+            "色彩空间验证失败：Display P3 PNG 被当作精确 sRGB 输入"
+        )
     }
 
     #if canImport(UIKit)
