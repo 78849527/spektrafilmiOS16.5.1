@@ -169,6 +169,104 @@ enum OriginalMetalGrain {
         )
     }
 
+    /// v1.8.18: test an actual iPhone Metal shader with source Float32
+    /// pixels, BEFORE introducing any CIImage. Half-precision Core Image
+    /// interop was measured separately on 1,287 upstream DIR channels.
+    /// A pass establishes bit-preserving GPU Float32 transport only.
+    static func float32BoundaryDiagnostic() throws -> String {
+        guard let device=MTLCreateSystemDefaultDevice(),
+              let queue=device.makeCommandQueue() else {
+            throw Failure.invalid("原版 Float32 边界：Metal 设备不可用")
+        }
+        let library:MTLLibrary
+        do {
+            library=try device.makeDefaultLibrary(bundle:.main)
+        } catch {
+            throw Failure.invalid("原版 Float32 边界：Metal 库缺失：" +
+                                  error.localizedDescription)
+        }
+        guard let kernel=library.makeFunction(name:"originalFilmFloat32Identity")
+        else {
+            throw Failure.invalid("原版 Float32 边界：缺少直通 shader")
+        }
+        let pipeline=try device.makeComputePipelineState(function:kernel)
+        let width=7,height=3
+        let descriptor=MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat:.rgba32Float,width:width,height:height,
+            mipmapped:false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead,.shaderWrite]
+        guard let input=device.makeTexture(descriptor:descriptor),
+              let output=device.makeTexture(descriptor:descriptor) else {
+            throw Failure.invalid("原版 Float32 边界：无法创建 rgba32Float 纹理")
+        }
+        // Values include the measured A15 Float16 mismatch and source RGB,
+        // negative optical inputs, fine gradients and HDR density values.
+        let sourceSamples:[Double]=[
+            0.5383333333333333,0.5316666666666667,
+            0.6521075409510532,0.6748881902555738,
+            0.3639440958801252,0.8270770426900451,
+            0.0000327417,0.3333333333333333,
+            0.001953155,0.999971,1.000122,
+            -0.7657427760812949,3.507948959803666,
+            2.7068396842422735,8.838671846699366
+        ]
+        var pixels=[Float](repeating:1,count:width*height*4)
+        var maxInputRound=0.0
+        for p in 0..<(width*height) {
+            for c in 0..<3 {
+                let v=sourceSamples[(p*3+c)%sourceSamples.count]
+                let quantized=Float(v)
+                pixels[p*4+c]=quantized
+                maxInputRound=max(maxInputRound,abs(Double(quantized)-v))
+            }
+        }
+        pixels.withUnsafeBytes { bytes in
+            input.replace(region:MTLRegionMake2D(0,0,width,height),
+                          mipmapLevel:0,withBytes:bytes.baseAddress!,
+                          bytesPerRow:width*MemoryLayout<Float>.size*4)
+        }
+        guard let command=queue.makeCommandBuffer(),
+              let encoder=command.makeComputeCommandEncoder() else {
+            throw Failure.invalid("原版 Float32 边界：无法创建 compute 指令")
+        }
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(input,index:0)
+        encoder.setTexture(output,index:1)
+        encoder.dispatchThreadgroups(
+            MTLSize(width:(width+7)/8,height:(height+7)/8,depth:1),
+            threadsPerThreadgroup:MTLSize(width:8,height:8,depth:1)
+        )
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        guard command.status == .completed else {
+            throw Failure.invalid("原版 Float32 边界：GPU 执行失败：" +
+                (command.error?.localizedDescription ?? "unknown"))
+        }
+        var result=[Float](repeating:0,count:pixels.count)
+        result.withUnsafeMutableBytes { bytes in
+            output.getBytes(bytes.baseAddress!,
+                            bytesPerRow:width*MemoryLayout<Float>.size*4,
+                            from:MTLRegionMake2D(0,0,width,height),
+                            mipmapLevel:0)
+        }
+        for i in pixels.indices {
+            guard pixels[i].bitPattern == result[i].bitPattern else {
+                throw Failure.invalid(
+                    "原版 Float32 边界：Metal bitwise 不一致，" +
+                    "index=\(i) source=\(pixels[i]) GPU=\(result[i])"
+                )
+            }
+        }
+        return "原生 Metal rgba32Float（无 Core Image）· " +
+            "\(width*height*3) 个 RGB 通道、\(width*height) 个 alpha PASS，" +
+            "GPU UInt32 位模式完全一致；Double→Float32 最大输入量化=" +
+            String(format:"%.9g",maxInputRound) +
+            "。仅认证纹理数据传输，不代表整图原版算法。"
+    }
+
     /// Run this on a REAL iPhone from the floating editor. GitHub's
     /// Intel VM accepted Metal command buffers but returned all zeros even
     /// for a constant-value passthrough shader. This separates unavailable
@@ -292,8 +390,9 @@ enum OriginalMetalGrain {
                 "误差=\(err)"
             )
         }
+        let float32Proof=try float32BoundaryDiagnostic()
         return "Metal 硬件自检通过 · \(device.name) · " +
-            "纹理透传 PASS · reflect 误差 \(String(format: "%.7f", err))"
+            "纹理透传 PASS · reflect 误差 \(String(format: "%.7f", err))" + "\\n" + float32Proof
     }
 
     struct PoissonDiagnosticParameters {
