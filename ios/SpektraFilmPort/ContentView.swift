@@ -14,6 +14,8 @@ final class PhotoEditorModel: ObservableObject {
     @Published var hardwareDiagnosticReport: String? = nil
     @Published var busy = false
     @Published var photoDimensions = ""
+    /// Original Bayer DNG file from the most recent RAW+JPEG capture.
+    @Published var capturedRAWURL: URL?
     @Published var filmExposureEV = 0.0
     @Published var printExposureEV = 0.0
     @Published var hanatosOriginalPrecisionEnabled = true
@@ -247,13 +249,37 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    /// Camera hands the original JPEG bytes to the SAME importer as Photos.
-    func loadCapturedPhoto(_ data: Data) {
+    /// Keep RAW bytes separately in Documents. The original optical stage
+    /// only accepts processed JPEG/HEIC input, never pretends to develop DNG.
+    func loadCapturedPhoto(_ capture: NextLevelCapturedPhoto) {
         do {
-            try loadPhoto(data)
-            status = "拍摄成功 · 已使用当前胶片和相纸进行冲印"
+            var rawFile: URL?
+            if let raw = capture.rawDNG {
+                guard !raw.isEmpty else {
+                    throw ImageProcessingError.invalid("DNG 数据为空；拒绝保存假 RAW")
+                }
+                guard let docs = FileManager.default.urls(
+                    for: .documentDirectory, in: .userDomainMask
+                ).first else {
+                    throw ImageProcessingError.invalid("无法找到安全的 RAW 存储目录")
+                }
+                let folder = docs.appendingPathComponent("SpektraFilm RAW", isDirectory: true)
+                try FileManager.default.createDirectory(
+                    at: folder, withIntermediateDirectories: true
+                )
+                let output = folder.appendingPathComponent(
+                    "SF-RAW-" + UUID().uuidString + ".dng"
+                )
+                try raw.write(to: output, options: .atomic)
+                rawFile = output
+            }
+            try loadPhoto(capture.processed)
+            capturedRAWURL = rawFile
+            status = rawFile == nil
+                ? "\(capture.format) 拍摄完成，已进入当前胶片／相纸冲印"
+                : "DNG 原片已保留在「文件」/ SpektraFilm RAW，JPEG 伴随片进入冲印；尚非 RAW 显影"
         } catch {
-            status = "相机照片导入失败：" + error.localizedDescription
+            status = "相机照片处理失败：" + error.localizedDescription
         }
     }
 
@@ -272,6 +298,7 @@ final class PhotoEditorModel: ObservableObject {
         let decoded = try PhotoProcessor.decode(data)
         source = decoded
         originalPhotoData = data
+        capturedRAWURL = nil
         photoDimensions = "\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
         originalPreview = try PhotoProcessor.preview(decoded, lut: nil, strength: 0)
         try refresh()
@@ -896,6 +923,11 @@ struct ContentView: View {
                     guard !model.busy else { return }
                     cameraPresented = true
                 },
+                onShareRaw: {
+                    if let url = model.capturedRAWURL {
+                        activeSheet = .share(url)
+                    }
+                },
                 onOpenLUT: {
                     model.status = "请选择 .cube 文件"
                     activeSheet = .lut
@@ -924,9 +956,9 @@ struct ContentView: View {
             .fullScreenCover(isPresented: $cameraPresented) {
                 NextLevelCameraScreen(
                     onCancel: { cameraPresented = false },
-                    onCapture: { bytes in
+                    onCapture: { photo in
                         cameraPresented = false
-                        model.loadCapturedPhoto(bytes)
+                        model.loadCapturedPhoto(photo)
                     }
                 )
             }
