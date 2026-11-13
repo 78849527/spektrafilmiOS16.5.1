@@ -125,6 +125,33 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
           test ! -d ios/SpektraFilmPort/Resources
+      - name: Early compile actual 2D spatial DIR source parity
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/SpatialDIR.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/DensityGrain.swift \
+            ios/SpektraFilmPort/OriginalSublayerGrain.swift \
+            ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            ios/SpektraFilmPort/OriginalMetalIIR.swift \
+            ios/SpektraFilmPort/GeneratedSourceIIRReference.swift \
+            ios/SpektraFilmPort/GeneratedDIRData.swift \
+            ios/SpektraFilmPort/GeneratedDIRSpatialReference.swift \
+            ios/SpektraFilmPort/SourceSpatialDIR2DParity.swift \
+            ios/SpektraFilmPort/GeneratedSourceSpatialDIR2D.swift \
+            ios/tests/SpatialDIRValidation.swift \
+            -o /tmp/SpektrafilmSpatialDIRValidation
+      - name: Early verify exact 2D spatial DIR original production source pixels
+        run: NSUnbufferedIO=YES /tmp/SpektrafilmSpatialDIRValidation
       - name: Validate original NaN-to-zero-light spectral scanner reference
         run: python3 ios/scripts/validate_source_scanner_mask.py
       - name: Compile exact SciPy Poisson / Binomial MT stream regression
