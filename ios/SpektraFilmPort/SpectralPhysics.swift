@@ -907,6 +907,101 @@ struct SpectralPhysics {
         }
     }
 
+    // v1.8.22: new source-ordered WHOLE-IMAGE engine. These real optical
+    // functions are called at EACH pixel; no 3D colour cube exists between
+    // Hanatos, measured H-D and paper/scanner spectra. This fixes the
+    // nonlinear interpolation gap left in the v1.8.21 optical LUT nodes.
+    // The underlying measured profile remains Float32-packed and its
+    // quantization is still explicitly NOT original source Float64.
+    struct SourceSpatialFilmParams {
+        let matrix: [Double]
+        let densityMaximum: [Double]
+        let positive: Bool
+    }
+
+    func sourceSpatialFilmParameters() throws -> SourceSpatialFilmParams {
+        guard useOriginalScanner && !useReferenceBlackWhite &&
+              !defaultCAM16Gamut,
+              (isPositive || (useOriginalPrintOptics && sourcePaperHDCurve != nil)),
+              film.dirCorrectedCurves.count == 768,
+              film.dirMatrix.count == 9,
+              film.densityMaximum.count == 3 else {
+            throw PhysicsError.invalid(
+                "逐像素原版光学需要 Hanatos Float64、原版 DIR、" +
+                "原版 ACES 扫描及负片的原版印相 H-D；" +
+                "黑白参考和 CAM16 仍需独立认证，禁止降级"
+            )
+        }
+        return SourceSpatialFilmParams(
+            matrix: film.dirMatrix,
+            densityMaximum: film.densityMaximum,
+            positive: isPositive
+        )
+    }
+
+    struct SourceSpatialInput {
+        let rawLog: [Double]
+        let initialDensity: [Double]
+    }
+
+    func sourceSpatialInput(
+        encodedRGB: [Double], cameraEV: Double
+    ) throws -> SourceSpatialInput {
+        guard encodedRGB.count == 3,
+              encodedRGB.allSatisfy({ $0.isFinite && (0...1).contains($0) }),
+              cameraEV.isFinite && abs(cameraEV) <= 4 else {
+            throw PhysicsError.invalid("源逐像素 Hanatos 输入或曝光无效")
+        }
+        let linear = encodedRGB.map { Self.decodeSRGB($0) }
+        let raw = hanatos.raw(linearRGB: linear)
+        guard raw.count == 3 && raw.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("源 Hanatos 响应非有限")
+        }
+        let logE = Self.filmLogExposure(raw: raw, exposureEV: cameraEV)
+        let initial = (0..<3).map {
+            film.curve(logE[$0],channel:$0)
+        }
+        guard (logE+initial).allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("源胶片 H-D 输入或输出非有限")
+        }
+        return SourceSpatialInput(rawLog:logE,initialDensity:initial)
+    }
+
+    func sourceSpatialDevelopCorrectedLog(
+        _ logRaw: [Double]
+    ) throws -> [Double] {
+        guard logRaw.count == 3,
+              logRaw.allSatisfy({ $0.isFinite }),
+              film.dirCorrectedCurves.count == 768 else {
+            throw PhysicsError.invalid("原版校正前 H-D 曲线或 DIR 曝光缺失")
+        }
+        let density = (0..<3).map {
+            film.curve(
+                logRaw[$0],channel:$0,correctedBeforeDIR:true
+            )
+        }
+        guard density.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版校正前 H-D 产生非有限密度")
+        }
+        return density
+    }
+
+    func sourceSpatialScan(
+        filmDensity: [Double], paperEV: Double
+    ) throws -> [Double] {
+        guard filmDensity.count == 3,
+              filmDensity.allSatisfy({ $0.isFinite }),
+              paperEV.isFinite && abs(paperEV) <= 4 else {
+            throw PhysicsError.invalid("原版相纸及扫描输入密度无效")
+        }
+        let output = scanFilmDensity(filmDensity,paperEV:paperEV)
+        guard output.count == 3,
+              output.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版相纸 H-D 或光谱扫描输出非有限")
+        }
+        return output
+    }
+
     /// Stage-level numerical probe for a source positive-film scan.
     /// This runs the same native functions as scanFilmDensity and does not
     /// change the production image-rendering path or enable approximation.
