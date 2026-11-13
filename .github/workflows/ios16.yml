@@ -477,7 +477,12 @@ jobs:
           assert "0.1633, 0.5360" in shader
           dirc=Path("ios/SpektraFilmPort/SpatialDIR.swift").read_text()
           assert "sourceConvolutionEnabled = true" in dirc
-          assert "SourceSpatialDIRConvolution.diffuseCI(" in dirc
+          # Production now uses the native Float64 whole-image route.
+          # Keep the CI bridge check on the actual 2D parity test, not
+          # on the previous production approximation entrypoint.
+          assert "if settings.sourceConvolutionEnabled {" in dirc
+          assert "return try SourceSpatialDIRConvolution.applyExactImagePath(" in dirc
+          assert "SourceSpatialDIRConvolution.diffuseCI(" in Path("ios/SpektraFilmPort/SourceSpatialDIR2DParity.swift").read_text()
           assert "else {" in dirc
           assert "spatialDIRSourceConvolutionEnabled = true" in model
           assert "DIR 原版 FIR/YVV" in Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
