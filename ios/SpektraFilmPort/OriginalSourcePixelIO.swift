@@ -54,7 +54,10 @@ enum OriginalSourcePixelIO {
     /// 8-bit file using ImageIO/Quartz in 8-bit RGBA, then promote each
     /// encoded sRGB channel to Double. Avoids Core Image's tested RGBAh
     /// working buffer. 16-bit/HDR/RAW files are rejected for this path.
-    static func decode(_ data: Data, previewMaxSide: Int? = nil) throws -> Frame {
+    static func decode(
+        _ data: Data, previewMaxSide: Int? = nil,
+        maximumAllowedPixels: Int = 16_000_000
+    ) throws -> Frame {
         guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               let original = CGImageSourceCreateImageAtIndex(
                 imageSource, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
@@ -95,7 +98,7 @@ enum OriginalSourcePixelIO {
         }
         let w = image.width, h = image.height
         guard w > 0, h > 0, w <= 8192, h <= 8192,
-              w <= 16_000_000 / h else {
+              w <= maximumAllowedPixels / h else {
             throw Failure.invalid(
                 "原版像素直连超出当前内存安全范围（最大 1600 万像素）；禁止偷偷缩图"
             )
@@ -328,11 +331,37 @@ enum OriginalSourcePixelIO {
     }
     #endif
 
-    static func exportJPEG(_ data:Data,stage:SpatialDIRStage,
-                           settings:SpatialDIRSettings) throws -> URL {
-        let frame=try decode(data)
-        let developed=try develop(frame,stage:stage,settings:settings)
-        let cg=try displayImage(developed)
+    // Opt-in full nonlinear physical image chain, separate from the
+    // already user-validated original 8-bit DIR-only route.
+    #if canImport(UIKit)
+    static func previewPhysical(
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
+    ) throws -> UIImage {
+        let frame = try decode(
+            data,previewMaxSide:640,
+            maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        )
+        let result = try OriginalSourcePhysicalImage.develop(
+            frame,parameters:parameters
+        )
+        return UIImage(cgImage:try displayImage(result))
+    }
+    #endif
+
+    static func exportPhysicalJPEG(
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
+    ) throws -> URL {
+        let frame = try decode(
+            data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        )
+        let printed = try OriginalSourcePhysicalImage.develop(
+            frame,parameters:parameters
+        )
+        return try createJPEG(printed)
+    }
+
+    private static func createJPEG(_ frame:Frame) throws -> URL {
+        let cg=try displayImage(frame)
         let url=FileManager.default.temporaryDirectory
             .appendingPathComponent("SpektraFilmPort-source-io-" + UUID().uuidString)
             .appendingPathExtension("jpg")
@@ -350,5 +379,12 @@ enum OriginalSourcePixelIO {
             throw Failure.invalid("原版像素直连：高清 JPEG 写入失败")
         }
         return url
+    }
+
+    static func exportJPEG(_ data:Data,stage:SpatialDIRStage,
+                           settings:SpatialDIRSettings) throws -> URL {
+        let frame=try decode(data)
+        let developed=try develop(frame,stage:stage,settings:settings)
+        return try createJPEG(developed)
     }
 }
