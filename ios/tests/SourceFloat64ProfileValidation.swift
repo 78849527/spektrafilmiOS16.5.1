@@ -125,7 +125,8 @@ enum SourceFloat64ProfileValidation {
                     }
                     preciseSamples+=1
                 }
-                if field.name=="densityCurvesLayers" {
+                if field.name=="densityCurvesLayers" &&
+                   record.stage=="filming" {
                     completeSublayers+=1
                 }
             }
