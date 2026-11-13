@@ -131,5 +131,11 @@ struct SpatialDIRValidation {
                      "SOURCE 2D DIR Float64 arrays: >0.002 production deviation")
         print(try OriginalSourcePixelIO.validate8BitRoundTrip())
         print(try OriginalSourcePixelIO.validateColorProfileGate())
+        // v1.8.20: real upstream Python multi-size whole-frame data, not
+        // the previous 13x11 samples or a fabricated Swift self-reference.
+        try SourceFullFrameParity.evaluate(fixtures: URL(
+            fileURLWithPath: "ios/verification/generated-fullframe-v1.8.20",
+            isDirectory: true
+        ))
     }
 }
