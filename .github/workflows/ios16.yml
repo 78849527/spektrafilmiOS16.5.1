@@ -430,6 +430,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedSourceCameraFilmPrintReference.swift \
             ios/SpektraFilmPort/SpatialDIR.swift \
             ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerOptics.swift \
             ios/SpektraFilmPort/DensityGrain.swift \
             ios/SpektraFilmPort/OriginalSublayerGrain.swift \
             ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
