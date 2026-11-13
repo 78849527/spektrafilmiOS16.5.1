@@ -100,6 +100,7 @@ enum SourceSpatialDIR2DParity {
         }
         let sourceIdentity=cube(9),correctedIdentity=cube(17)
         var numeric=Metrics(),production=Metrics()
+        var sourceInputBridge=Metrics(),floatBitmapBridge=Metrics()
         var total=0
         var report=[String]()
         for (n,c) in cases.enumerated() {
@@ -122,6 +123,29 @@ enum SourceSpatialDIR2DParity {
                 try numeric.test(
                     source:c.sourceDiffused[i],actual:cpu[i],
                     label:"\(c.film) #\(n) pixel:\(i/3) ch:\(i%3)"
+                )
+            }
+            // Diagnose the EXACT image ingestion and Float32 CIImage
+            // bridge separately; never obscure a true production error.
+            let prepared=image(c.input,width:c.width,height:c.height)
+            let roundTrip=read(prepared,width:c.width,height:c.height)
+            for i in 0..<count {
+                try sourceInputBridge.test(
+                    source:c.input[i],actual:roundTrip[i],
+                    label:"\(c.film) input #\(n) pixel:\(i/3) ch:\(i%3)"
+                )
+            }
+            let bridgeOutput=try SourceSpatialDIRConvolution.diffuseCI(
+                image(c.sourceInhibitors,width:c.width,height:c.height),
+                coreSigma:20*c.radiusScale/c.pixelUM,
+                tailSigma:200*c.radiusScale/c.pixelUM,
+                tailWeight:c.tailWeight
+            )
+            let bridgeValues=read(bridgeOutput,width:c.width,height:c.height)
+            for i in 0..<count {
+                try floatBitmapBridge.test(
+                    source:c.sourceDiffused[i],actual:bridgeValues[i],
+                    label:"\(c.film) CI bridge #\(n) pixel:\(i/3) ch:\(i%3)"
                 )
             }
             let stage=SpatialDIRStage(
@@ -166,6 +190,8 @@ enum SourceSpatialDIR2DParity {
             \(cases.count) 组不同正负片、曝光空间变化、FIR/YVV IIR
             + 3-Gaussian exponential tail，共 \(total) 个通道像素。
             \(numeric.describe("源 Float64 FIR/YVV 扩散",channels:total))
+            \(sourceInputBridge.describe("原始图像 RGBAf 输入校验",channels:total))
+            \(floatBitmapBridge.describe("Float32 CIImage→FIR/YVV→CIImage 桥接",channels:total))
             \(production.describe("真实 CIImage 生产 DIR→光学 LUT",channels:total))
             数值门限 0.002；不包含空间 DIR 后整幅照片的原版相纸随机颗粒，
             不包含原版 Numba 线程 RNG 和相机传感器 RAW。真实照片仍需实机验证。
