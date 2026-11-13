@@ -80,6 +80,14 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceScannerLensBlurSigma = 0.0
     @Published var sourceScannerUnsharpSigma = 1.0
     @Published var sourceScannerUnsharpAmount = 0.7
+    // v1.8.30: three linked original Python camera stages. All are
+    // explicitly opt-in and operate on actual source Double camera photons.
+    @Published var sourceCameraPreFilmEnabled = false
+    @Published var sourceCameraMeteringMethod: OriginalSourceCameraOptics.Metering = .centerWeighted
+    @Published var sourceCameraHighlightBoostEV = 0.0
+    @Published var sourceCameraHighlightBoostRange = 0.3
+    @Published var sourceCameraHighlightProtectEV = 4.0
+    @Published var sourceCameraLensBlurUM = 0.0
 
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
@@ -222,11 +230,21 @@ final class PhotoEditorModel: ObservableObject {
                 unsharpAmount:sourceScannerUnsharpAmount
             )
             : OriginalSourceScannerOptics.Settings()
+        let preCamera=sourceCameraPreFilmEnabled
+            ? OriginalSourceCameraOptics.Settings(
+                metering:sourceCameraMeteringMethod,
+                boostEV:sourceCameraHighlightBoostEV,
+                boostRange:sourceCameraHighlightBoostRange,
+                protectEV:sourceCameraHighlightProtectEV,
+                lensBlurUM:sourceCameraLensBlurUM,
+                filmFormatMM:35
+              )
+            : OriginalSourceCameraOptics.Settings()
         let p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
             dir:spatialDIRSettings,print:print,morph:morph,
-            scannerOptics:sourceScan
+            scannerOptics:sourceScan,cameraOptics:preCamera
         )
         try p.validate()
         return p
@@ -788,9 +806,11 @@ final class PhotoEditorModel: ObservableObject {
             // before showing a misleading "ready to export" sheet.
             try OriginalSourcePhysicalImage.validateMemoryBudget(
                 width:Int(bounds.width),height:Int(bounds.height),
-                additionalBytesPerPixel:sourceScannerOpticalEnabled
-                    ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
-                    : 0
+                additionalBytesPerPixel:
+                    (sourceScannerOpticalEnabled
+                        ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
+                        ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0)
             )
         }
         return try SafeExportResolution.capture(
@@ -801,7 +821,9 @@ final class PhotoEditorModel: ObservableObject {
                 ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
                    (sourceScannerOpticalEnabled
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
-                    : 0))
+                    : 0) +
+                   (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
+                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )
     }
