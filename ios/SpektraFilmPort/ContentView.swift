@@ -95,6 +95,12 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceScannerLensBlurSigma = 0.0
     @Published var sourceScannerUnsharpSigma = 1.0
     @Published var sourceScannerUnsharpAmount = 0.7
+    // Explicit opt-in experimental ORIGINAL XYZ glare, not unseeded
+    // source multiworker equivalence. Fixed one-worker diagnostic seed.
+    @Published var sourceScannerGlareEnabled = false
+    @Published var sourceScannerGlarePercent = 0.03
+    @Published var sourceScannerGlareRoughness = 0.7
+    @Published var sourceScannerGlareBlur = 0.5
     // v1.8.30: three linked original Python camera stages. All are
     // explicitly opt-in and operate on actual source Double camera photons.
     @Published var sourceCameraPreFilmEnabled = false
@@ -354,7 +360,15 @@ final class PhotoEditorModel: ObservableObject {
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
             dir:spatialDIRSettings,print:print,morph:morph,
-            scannerOptics:sourceScan,cameraOptics:preCamera,
+            scannerOptics:sourceScan,
+            scannerGlare:OriginalSourceScannerGlare.Settings(
+                active:sourceScannerGlareEnabled,
+                percent:sourceScannerGlarePercent,
+                roughness:sourceScannerGlareRoughness,
+                blur:sourceScannerGlareBlur
+            ),
+            scannerGlareSeed:sourceScannerGlareEnabled ? 8888 : nil,
+            cameraOptics:preCamera,
             filmHalation:sourceHalation,
             cameraRawMethod:sourceCameraRawMethod,
             cameraBandpass:sourceBandpass,
@@ -953,6 +967,8 @@ final class PhotoEditorModel: ObservableObject {
                 additionalBytesPerPixel:
                     (sourceScannerOpticalEnabled
                         ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                    (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
+                        ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                         ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                     (sourcePhysicalHalationRequested
@@ -967,6 +983,9 @@ final class PhotoEditorModel: ObservableObject {
                 ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
                    (sourceScannerOpticalEnabled
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
+                    : 0) +
+                   (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
+                    ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel
                     : 0) +
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
