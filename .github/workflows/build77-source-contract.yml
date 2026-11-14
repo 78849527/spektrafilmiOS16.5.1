@@ -40,6 +40,7 @@ on:
       - "ios/tests/Build78FloatTIFFValidation.swift"
       - "ios/SpektraFilmPort/Build79RAWSignature.swift"
       - "ios/SpektraFilmPort/Build79RAWStorage.swift"
+      - "ios/SpektraFilmPort/Build79NativeRAWBackend.swift"
       - "ios/tests/Build79RAWSignatureValidation.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
@@ -78,6 +79,7 @@ jobs:
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
             ios/SpektraFilmPort/Build78HighBitDepthIngress.swift \
             ios/SpektraFilmPort/Build78FloatTIFFIngress.swift \
+            ios/SpektraFilmPort/Build79NativeRAWBackend.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/Build78FloatTIFFValidation.swift \
@@ -361,6 +363,7 @@ jobs:
             ios/SpektraFilmPort/Build78FloatTIFFIngress.swift \
             ios/SpektraFilmPort/Build79RAWSignature.swift \
             ios/SpektraFilmPort/Build79RAWStorage.swift \
+            ios/SpektraFilmPort/Build79NativeRAWBackend.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
@@ -454,10 +457,10 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.52
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 77
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.54
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 79
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
-          echo "Build77 unsigned test app 1.8.52(77) compiled; upstream scientific parity NOT certified"
+          echo "Build79 unsigned test app 1.8.54(79) compiled; upstream scientific parity NOT certified"
       - name: Package ONE actual-device-evidence IPA only on Build78 diagnostic branch
         if: github.ref == 'refs/heads/port/build78-input-06-08'
         run: |
