@@ -7,7 +7,7 @@ import Foundation
 /// can quietly turn a RAW file into an unrelated embedded JPEG preview.
 enum Build79RAWSignature {
     enum Kind:String,CaseIterable {
-        case dng,raf,cr3,nef
+        case dng,raf,cr3,nef,cr2,arw
     }
 
     enum Failure:LocalizedError {
@@ -74,6 +74,43 @@ enum Build79RAWSignature {
         return tags
     }
 
+
+    /// Read a TIFF ASCII Make tag; 1–4 bytes are stored inline, longer
+    /// strings use an offset. Do not interpret a header offset as text.
+    private static func cameraMake(
+        _ header:Data,
+        _ entry:(tag:Int,type:Int,count:Int,value:Int,little:Bool)
+    ) -> String? {
+        guard entry.type==2, entry.count>=4,entry.count<=256 else {
+            return nil
+        }
+        let bytes:[UInt8]
+        if entry.count<=4 {
+            if entry.little {
+                bytes=(0..<entry.count).map {
+                    UInt8(truncatingIfNeeded: entry.value >> (8*$0))
+                }
+            } else {
+                bytes=(0..<entry.count).map {
+                    UInt8(truncatingIfNeeded:
+                        entry.value >> (8*(3-$0)))
+                }
+            }
+        } else {
+            guard entry.value>=0,
+                  entry.value<=header.count-entry.count else {
+                return nil
+            }
+            bytes=Array(
+                header[entry.value..<(entry.value+entry.count)]
+            )
+        }
+        guard let ascii=String(bytes:bytes,encoding:.ascii) else {
+            return nil
+        }
+        return ascii.uppercased()
+    }
+
     /// The scanner cannot certify compressed RAF, X-Trans demosaicing or
     /// Nikon NEF proprietary compression. It only identifies containers
     /// and preserves original file bytes for a later actual decoder.
@@ -100,23 +137,52 @@ enum Build79RAWSignature {
                         "CR3 缺少 Canon crx ISO-BMFF RAW 品牌，不能取代为容器预览")
         case .dng:
             let tags=try tiffIFD(header)
-            try require(tags.contains {
+            // DNGVersion (0xC612) is a four-byte, INLINE TIFF BYTE value.
+            // A zero-filled field is not a genuine DNG header. Both TIFF
+            // byte orders are supported, without interpreting TIFF data
+            // as an embedded thumbnail.
+            guard let version=tags.first(where:{
                 $0.tag==50706 && $0.type==1 && $0.count==4
-            }, "DNG TIFF 原始数据缺少 DNGVersion 标记；不是已验证 DNG")
-        case .nef:
-            let tags=try tiffIFD(header)
-            guard let maker=tags.first(where:{$0.tag==0x010f}) else {
-                throw Failure.invalid("NEF 无 Nikon TIFF Make 元数据，拒绝猜测")
+            }) else {
+                throw Failure.invalid(
+                    "DNG TIFF 缺少有效 DNGVersion BYTE[4] 标记"
+                )
             }
-            try require(maker.type==2 && maker.count>5 &&
-                        maker.count<256 && maker.value<=header.count-maker.count,
-                        "NEF Nikon Make 字符串越界或无效")
-            let begin=maker.value,end=begin+maker.count
-            let brand=String(
-                bytes:Array(header[begin..<end]),encoding:.ascii
-            )?.uppercased() ?? ""
-            try require(brand.contains("NIKON"),
-                        "NEF TIFF Maker 不是 Nikon，拒绝按 NEF 解码")
+            let major=version.little
+                ? (version.value & 0xff)
+                : ((version.value >> 24) & 0xff)
+            try require(major==1,
+                "DNGVersion 不是已验证的 1.x 文件；拒绝伪造或未知版本")
+        case .cr2:
+            // Canon CR2: TIFF header, "CR" bytes at offsets 8–9,
+            // raw format version 2.0 at 10–11 and IFD3 pointer at 12.
+            // This identifies the container, not Lossless JPEG RAW.
+            let little:Bool
+            switch Array(header.prefix(4)) {
+            case [0x49,0x49,0x2a,0x00]: little=true
+            case [0x4d,0x4d,0x00,0x2a]: little=false
+            default: throw Failure.invalid("CR2 TIFF 文件头非法")
+            }
+            guard header.count>=16,
+                  header[8]==0x43,header[9]==0x52,
+                  header[10]==2,header[11]==0,
+                  let ifd0=u32(header,4,little),ifd0>=16,
+                  let rawIFD=u32(header,12,little),rawIFD>=16 else {
+                throw Failure.invalid(
+                    "CR2 缺少 Canon CR 2.0 文件标记或有效 IFD 指针"
+                )
+            }
+        case .nef,.arw:
+            let tags=try tiffIFD(header)
+            guard let maker=tags.first(where:{$0.tag==0x010f}),
+                  let brand=cameraMake(header,maker) else {
+                throw Failure.invalid(
+                    "NEF/ARW TIFF Make 元数据丢失或越界，拒绝猜测"
+                )
+            }
+            let expected=kind == .nef ? "NIKON" : "SONY"
+            try require(brand.contains(expected),
+                "\(kind.rawValue.uppercased()) TIFF Make 不是 \(expected)，拒绝误识别")
         }
         return kind
     }
