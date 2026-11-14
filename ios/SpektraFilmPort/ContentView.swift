@@ -471,6 +471,28 @@ final class PhotoEditorModel: ObservableObject {
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
+            // Build79/09: identify real camera RAW *before* CIImage or
+            // ImageIO can silently select the embedded JPEG preview.
+            // This preserves original sensor container bytes and marks
+            // development as unavailable until a certified RAW backend.
+            if let kind=try Build79RAWSignature.probeFile(url) {
+                let saved=try Build79RAWStorage.preserve(
+                    url,kind:kind
+                )
+                invalidateSimulation()
+                source=nil
+                originalPhotoData=nil
+                originalPreview=nil
+                processedPreview=nil
+                photoDimensions="RAW ."+kind.rawValue.uppercased()
+                    + "（尚未显影）"
+                capturedRAWURL=saved.url
+                status="已无损导入 ."+kind.rawValue.uppercased()
+                    + " 原片，SHA256="+saved.sha256.prefix(12)
+                    + "…，已保存至「文件」/ SpektraFilm RAW Imports。"
+                    + "尚未执行 RAW 去马赛克；禁止使用内嵌 JPEG 代替。"
+                return
+            }
             try loadPhoto(Data(contentsOf: url))
         } catch {
             status = "文件导入失败：" + error.localizedDescription
