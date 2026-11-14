@@ -147,6 +147,15 @@ struct SpectralValidation {
             precondition(abs(engineRaw[channel]-target.raw[channel])<=tolerance,
                          "Production source ProPhoto Hanatos camera mismatch")
         }
+        let directLog=try realEngine.sourceSpatialInput(
+            encodedRGB:target.input,cameraEV:0
+        )
+        precondition(directLog.rawLog.count==3)
+        for channel in 0..<3 {
+            let expectedLog=log10(max(target.raw[channel],0)+1e-10)
+            precondition(abs(directLog.rawLog[channel]-expectedLog) <= 2e-10,
+                         "ProPhoto source image H-D exposure uses wrong RGB matrix")
+        }
         var rejectedUnsupported=false
         do {
             _ = try SpectralPhysics(
