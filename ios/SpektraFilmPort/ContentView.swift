@@ -834,6 +834,21 @@ final class PhotoEditorModel: ObservableObject {
                 } catch {
                     checks.append("附录【v1.8.46 生产扫描 XYZ 眩光｜失败／未认证】\n" + error.localizedDescription)
                 }
+                // v1.8.49: actual iPhone production 3x3 source grain
+                // into spectral optical paper/scanner. Independently
+                // tracked as an appendix, NOT a ninth 8/8 Metal certificate.
+                do {
+                    let production = try OriginalSourceGrainProductionDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build74 真机源三亚层颗粒→原版相纸 RGB 生产链｜同链路自检通过】\n"
+                        + production
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build74 真机源三亚层颗粒→原版相纸 RGB 生产链｜失败／未认证】\n"
+                        + error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
