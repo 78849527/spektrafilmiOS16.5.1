@@ -52,6 +52,7 @@ final class PhotoEditorModel: ObservableObject {
     @Published var originalPrintOpticsEnabled = false
     // Source TH-KG3 default; optional TH-KG3-L measured Canon lens.
     @Published var printIlluminant: OriginalPrintOptics.Illuminant = .thKG3
+    @Published var neutralPrintFiltersFromDatabase = true
     // Original Python EnlargerParams.diffusion_filter, opt-in.
     // Applied to full-frame paper photons before fitted paper H-D.
     @Published var printSourceDiffusionEnabled = false
@@ -286,6 +287,7 @@ final class PhotoEditorModel: ObservableObject {
         let print=OriginalPrintOptics.Settings(
             enabled:originalPrintOpticsEnabled,
             illuminant:printIlluminant,
+            neutralPrintFiltersFromDatabase:neutralPrintFiltersFromDatabase,
             normalizePrintExposure:normalizePrintExposure,
             printExposureCompensation:printExposureCompensation,
             cyanShift:printCyanShift,
@@ -554,6 +556,7 @@ final class PhotoEditorModel: ObservableObject {
         let printOptics = OriginalPrintOptics.Settings(
             enabled: originalPrintOpticsEnabled,
             illuminant: printIlluminant,
+            neutralPrintFiltersFromDatabase:neutralPrintFiltersFromDatabase,
             normalizePrintExposure: normalizePrintExposure,
             printExposureCompensation: printExposureCompensation,
             cyanShift: printCyanShift,
