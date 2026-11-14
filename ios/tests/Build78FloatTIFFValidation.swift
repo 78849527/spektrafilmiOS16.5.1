@@ -124,9 +124,9 @@ enum Build78FloatTIFFValidation {
                     + "integer or incorrectly tagged ImageIO conversion")
             }
             print("PASS Build78 Float16 TIFF fail-closed: ImageIO "
-                  + "returned bpc=\\(actual.bitsPerComponent), "
-                  + "float=\\(actual.bitmapInfo.contains(.floatComponents)), "
-                  + "tagged extended sRGB=\\(tagged)")
+                  + "returned bpc=\(actual.bitsPerComponent), "
+                  + "float=\(actual.bitmapInfo.contains(.floatComponents)), "
+                  + "tagged extended sRGB=\(tagged)")
             return
         }
         let frame=try OriginalSourcePixelIO.decode(file)
@@ -140,7 +140,7 @@ enum Build78FloatTIFFValidation {
                 guard got.bitPattern==expected.bitPattern else {
                     throw Failure.invalid(
                         "Float16 TIFF lost exact sample at "
-                        + "\\(pixel),\\(c): \\(expected) != \\(got)")
+                        + "\(pixel),\(c): \(expected) != \(got)")
                 }
             }
         }
