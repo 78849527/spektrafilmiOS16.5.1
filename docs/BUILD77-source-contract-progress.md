@@ -326,3 +326,47 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
   output and performance paths are unchanged.
 - All further iPhoneOS builds here remain **CI-only with no IPA**,
   unless later actual device verification becomes the blocker.
+
+## Build77/03 actual source stock halation production binding
+
+- Root cause: the source-physical `OriginalSourceFilmHalation.Settings`
+  used one schema-level `[0.05, 0.015, 0.0]` strength and
+  `[65, 65, 65]` sigma regardless of selected filming stock.
+  Original Python `digest_params → _apply_film_specifics →
+  _apply_halation_preset` reads each film's **use** and
+  **antihalation** tags. Thus original Vision3 cine film,
+  still negative/positive, and weak/no-antihalation materials can
+  have different underlying scatter/halation parameters.
+- Added `ios/scripts/generate_build77_stock_halation.py`: source
+  `params_builder._HALATION_PRESETS` and source
+  `params_schema.HalationParams` default values are read from their
+  **actual Python AST literal expressions**, combined with the
+  original 20 filming + 8 printing JSON profile identities. The
+  script generates `GeneratedBuild77StockHalationSource.swift`
+  before each Build77 iPhoneOS compilation. Do not hand-edit generated
+  values or replace missing records with universal film defaults.
+- Added `Build77StockHalation.swift`, a typed source-stock
+  lookup with mandatory metadata, triplet count and finite checks,
+  and explicit error on unsupported stock.
+- **Actual app production connection:** In
+  `ContentView.sourcePhysicalParameters()`, the stock-derived
+  halation strength triplet and original first-bounce sigma triplet
+  are bound into `OriginalSourcePhysicalImage.Parameters.filmHalation`
+  after the existing user-facing scatter/halation toggle and amount
+  controls. Controls remain user-adjustable multipliers. Only
+  explicitly selected source-physical processing uses this mapping;
+  the previously tested fast/mobile path is untouched.
+- Independent test `Build77StockHalationParity.swift` compiles
+  the real production Swift reader and generated material table.
+  It checks **160** base-mode Python
+  `init_params → digest_params` results (20 films × 8 papers), all
+  six Float64 scalar bits, source `use/antihalation`, all stock
+  records, and unknown-film fail-closed behavior.
+  The original 360-case digest job remains separate.
+- Scientific certification boundary: **stock-specific preset values
+  only**. The independent test does not prove that full 2D halation,
+  scatter FFT/FIR, default-on semantics, large-image memory, Numba
+  RNG, P3/ProPhoto, or all 7 iPhone taps have passed. Build77 remains
+  OPEN, no automatic IPA/Release. In the master 47-item plan this
+  closes one production parameter-binding *subcomponent*, not
+  whole item 03 or any other batch.
