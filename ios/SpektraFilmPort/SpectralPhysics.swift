@@ -1223,6 +1223,38 @@ struct SpectralPhysics {
         let positive: Bool
     }
 
+    /// Upstream grain.py layer inversion uses the SAME measured 256×3×3
+    /// Float64 original film curves as the H-D development engine.
+    /// Distinct from the old approximate 3D colour-cube grain inputs.
+    func sourceSpatialGrainLayers() throws -> OriginalSourcePhysicalGrain.MeasuredLayers {
+        let maxima=film.sublayerMaxima
+        guard useOriginalScanner,sourceMeasuredFloat64,
+              film.sourceDensityCurvesLayersF64 != nil,
+              film.sourceDensityCurvesF64 != nil,
+              film.sourceLogExposureF64 != nil,
+              maxima.count==9,
+              maxima.allSatisfy({$0.isFinite && $0>0}) else {
+            throw PhysicsError.invalid(
+                "原版三亚层颗粒需要完整 Float64 原始实测密度曲线，禁止使用 Float32 LUT"
+            )
+        }
+        let profile=film
+        return OriginalSourcePhysicalGrain.MeasuredLayers(
+            maxima:maxima,
+            sublayers:{ density in
+                guard density.count==3,
+                      density.allSatisfy({$0.isFinite}) else {
+                    throw PhysicsError.invalid("原版三亚层 CMY 输入错误")
+                }
+                return (0..<3).flatMap { sl in
+                    (0..<3).map { ch in
+                        profile.layerDensity(total:density[ch],channel:ch,sublayer:sl)
+                    }
+                }
+            }
+        )
+    }
+
     func sourceSpatialFilmParameters() throws -> SourceSpatialFilmParams {
         guard useOriginalScanner && !useReferenceBlackWhite &&
               !defaultCAM16Gamut,
