@@ -113,6 +113,21 @@ enum Build79RAWSignatureValidation {
                 "Original RAW import changed bytes/length/hash"
             )
         }
+        // A real Apple CIRAWFilter cannot be used on a merely JPEG input.
+        // Verify the native probe refuses it BEFORE opening the decoder,
+        // rather than returning a CIImage from embedded/ordinary JPEG.
+        let jpeg=FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString+".jpg")
+        try fake.write(to:jpeg,options:.atomic)
+        defer { try? FileManager.default.removeItem(at:jpeg) }
+        var jpegRejected=false
+        do { _=try Build79NativeRAWBackend.probe(jpeg) }
+        catch { jpegRejected=true }
+        guard jpegRejected else {
+            throw Failure.invalid(
+                "Apple RAW backend probe must reject ordinary JPEG"
+            )
+        }
         print(
             "PASS Build79 4 RAW source signatures "
             + "(RAF/CR3/DNG/NEF), 5 disguised/invalid header rejections, "
