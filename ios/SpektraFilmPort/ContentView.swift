@@ -355,7 +355,12 @@ final class PhotoEditorModel: ObservableObject {
                 "请选择原版 Mallett 2019 或关闭滤镜，不允许静默忽略"
             )
         }
-        let sourceHalation=OriginalSourceFilmHalation.routedSettings(
+        // Build77/03: source-physical mode must use the Python original
+        // per-film antihalation/use metadata and source halation presets.
+        // The familiar UI scatter/halation amount sliders remain multipliers;
+        // the underlying physical baseline is now stock-specific.
+        let stockHalation=try Build77StockHalation.originalPreset(filmID:filmID)
+        var sourceHalation=OriginalSourceFilmHalation.routedSettings(
             combinedEnabled:sourceFilmHalationEnabled,
             scatterToggle:scatterEnabled,
             halationToggle:halationEnabled,
@@ -365,6 +370,8 @@ final class PhotoEditorModel: ObservableObject {
             sourceHalationAmount:sourceFilmHalationAmount,
             sourceHalationScale:sourceFilmHalationScale
         )
+        sourceHalation.halationFirstSigmaUM=stockHalation.sigmaUM
+        sourceHalation.halationStrength=stockHalation.strength
         let p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
