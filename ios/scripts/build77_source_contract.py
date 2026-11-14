@@ -254,6 +254,25 @@ def emit_taps(args: argparse.Namespace) -> None:
     require(image.dtype.kind in "fiu", "Input must be numeric")
     params = init_params(film_profile=args.film, print_profile=args.paper)
     params.io.scan_film = args.scan_film
+    if args.oneshot_controlled:
+        # This is a CONTROLLED source mode for all-at-once device comparison,
+        # not original DEFAULT mode. All functions below are original Python.
+        from dataclasses import replace
+        params.io.input_color_space = "sRGB"
+        params.io.input_cctf_decoding = True
+        params.io.crop = False
+        params.io.upscale_factor = 1.0
+        params.io.output_gamut_compress = replace(
+            params.io.output_gamut_compress, algorithm="aces_rgc")
+        params.camera.auto_exposure = False
+        params.film_render.grain.active = False
+        params.film_render.halation.active = False
+        params.film_render.glare.active = False
+        params.print_render.glare.active = False
+        params.scanner.unsharp_mask = (0.0, 0.0)
+        params.enlarger.normalize_print_exposure = False
+        params.enlarger.print_exposure_compensation = False
+        params.settings.use_fast_stats = False
     if args.print_diffusion:
         require(not args.scan_film,
                 "Paper diffusion cannot be tested on a direct film scan")
@@ -287,7 +306,19 @@ def emit_taps(args: argparse.Namespace) -> None:
             capture(node.writes[0], time.perf_counter() - tick)
     manifest = {
         "source_sha": UPSTREAM_SHA,
-        "mode": "PYTHON_SOURCE_DEFAULT_RNG_NO_FIXED_SEED",
+        "mode": ("PYTHON_SOURCE_CONTROLLED_BUILD77_ONESHOT"
+                 if args.oneshot_controlled
+                 else "PYTHON_SOURCE_DEFAULT_RNG_NO_FIXED_SEED"),
+        "controlled_switches": {
+            "input_color_space": "sRGB",
+            "input_cctf_decoding": True,
+            "camera_auto_exposure": False,
+            "film_grain": False,
+            "film_halation": False,
+            "scanner_glare": False,
+            "scan_unsharp_mask": [0, 0],
+            "output_gamut_algorithm": "aces_rgc",
+        } if args.oneshot_controlled else None,
         "scan_film": args.scan_film,
         "print_diffusion": args.print_diffusion,
         "film": args.film, "print": args.paper,
@@ -414,6 +445,9 @@ def main() -> int:
     e.add_argument("--film", default="kodak_portra_400")
     e.add_argument("--paper", default="kodak_portra_endura")
     e.add_argument("--scan-film", action="store_true")
+    e.add_argument("--oneshot-controlled", action="store_true",
+                   help="Run exact original Python stages with explicit on-device "
+                        "controlled settings; this is NOT default RNG/gamut parity")
     e.add_argument("--print-diffusion", action="store_true",
                    help="Run the original optical paper PSF, not an iOS simulation")
     c = sub.add_parser("compare-taps")
