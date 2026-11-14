@@ -30,7 +30,7 @@ enum Build77OneShotEvidence {
     }
 
     static func captureAll(deviceModel:String,systemVersion:String) throws -> URL {
-        guard Build77ReferenceInput.bits.count==
+        guard Build77ReferenceInput.bits.count ==
                 Build77ReferenceInput.width*Build77ReferenceInput.height*3
         else {
             throw Failure.invalid("Build77 原版测试输入数据损坏")
