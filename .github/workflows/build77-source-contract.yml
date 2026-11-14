@@ -1,0 +1,47 @@
+name: Build77 upstream source contract (01-05)
+
+on:
+  push:
+    branches:
+      - port/build77-source-contract-01-05
+    paths:
+      - "ios/scripts/build77_source_contract.py"
+      - "src/spektrafilm/**"
+      - "pyproject.toml"
+      - ".github/workflows/build77-source-contract.yml"
+  pull_request:
+    paths:
+      - "ios/scripts/build77_source_contract.py"
+      - "src/spektrafilm/**"
+      - "pyproject.toml"
+      - ".github/workflows/build77-source-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-contract:
+    name: Python source / 28 profiles / topology / schema
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+      - name: Python 3.13 (upstream requires ~=3.13)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Compile and self-test the independent harness
+        run: |
+          python -m py_compile ios/scripts/build77_source_contract.py
+          python ios/scripts/build77_source_contract.py self-test
+      - name: Verify pinned upstream blobs and emit JSON evidence
+        run: |
+          python ios/scripts/build77_source_contract.py verify --report build77-evidence/source-contract.json
+      - name: Retain report (source contract only, not iOS parity)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-source-contract
+          path: build77-evidence/source-contract.json
+          if-no-files-found: warn
