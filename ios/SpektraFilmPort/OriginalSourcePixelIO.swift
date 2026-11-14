@@ -149,8 +149,21 @@ enum OriginalSourcePixelIO {
                 "Build78 ImageIO 解码位深低于原文件位深；禁止静默转成 8-bit"
             )
         }
-        if original.bitsPerComponent == 16 {
+        if original.bitsPerComponent == 16,
+           !original.bitmapInfo.contains(.floatComponents) {
             return try Build78HighBitDepthIngress.decode(
+                source:imageSource,image:original,
+                previewMaxSide:previewMaxSide,resizedTo:resizedTo,
+                maximumAllowedPixels:maximumAllowedPixels
+            )
+        }
+        // Build78/07: TIFF IEEE754 32-bit floating source values go
+        // directly to Float64 without gamut/clipping/8-bit coercion.
+        // This is an explicitly tagged sRGB file-pixel path only:
+        // Python default ProPhoto, RAW and 16-bit float remain separate.
+        if original.bitsPerComponent == 32,
+           original.bitmapInfo.contains(.floatComponents) {
+            return try Build78FloatTIFFIngress.decode(
                 source:imageSource,image:original,
                 previewMaxSide:previewMaxSide,resizedTo:resizedTo,
                 maximumAllowedPixels:maximumAllowedPixels
