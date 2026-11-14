@@ -35,6 +35,8 @@ on:
       - "ios/tests/SpectralValidation.swift"
       - "ios/SpektraFilmPort/Build77ReferenceInput.swift"
       - "ios/SpektraFilmPort/Build78HighBitDepthIngress.swift"
+      - "ios/SpektraFilmPort/Build78FloatTIFFIngress.swift"
+      - "ios/tests/Build78FloatTIFFValidation.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
       - "ios/tests/SpectralValidation.swift"
