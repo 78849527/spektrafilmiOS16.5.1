@@ -15,9 +15,13 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+import ast
+import hashlib
 import numpy as np
 import colour
+import scipy
 from scipy.special import erf
+from opt_einsum import contract
 
 ROOT = Path(__file__).resolve().parents[2]
 SHAPE=colour.SpectralShape(380,780,5)
@@ -57,13 +61,62 @@ def run_native() -> None:
             assert np.array_equal(observed,np.ones(81))
     print("PASS: source Swift UV/IR passband 4×81 samples <5e-15 vs scipy.special.erf")
 
-def validate_source_mallett() -> None:
-    from spektrafilm.model.illuminants import standard_illuminant
-    from spektrafilm.model.color_filters import compute_band_pass_filter
-    from spektrafilm.utils.spectral_upsampling import (
-        MALLETT2019_BASIS,rgb_to_raw_mallett2019,
+# Import ONLY the precise unmodified original Python source functions.
+# The upstream __init__ eagerly imports optional exiv2 / OpenImageIO;
+# these are unrelated to spectral math and missing from macOS CI.
+# Extract the ORIGINAL function AST nodes, not reimplemented equations.
+SOURCE_BLOBS = {
+    "model/illuminants.py": "5feacaec729f371eea48ea5e69da3291bcf7123e",
+    "model/color_filters.py": "73849be82f7e32e21cd9bf3e116ba244a931188b",
+    "utils/spectral_upsampling.py": "bb75f8a00d00eb02ba571c6cfdbec88a8c0194cb",
+}
+
+def source_original_function(relative: str, function: str, env: dict):
+    path = ROOT / "src/spektrafilm" / relative
+    payload = path.read_bytes()
+    actual=hashlib.sha1(
+        b"blob " + str(len(payload)).encode() + b"\x00" + payload
+    ).hexdigest()
+    expected=SOURCE_BLOBS[relative]
+    assert actual == expected,(
+        "Original source Git blob changed, review and rebaseline consciously",
+        relative,actual,expected
     )
-    basis=np.asarray(MALLETT2019_BASIS[:],dtype=np.float64)
+    tree=ast.parse(payload,filename=str(path))
+    functions=[node for node in tree.body
+               if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef))
+               and node.name==function]
+    assert len(functions)==1,(relative,function)
+    compiled=compile(ast.Module(body=functions,type_ignores=[]),str(path),"exec")
+    exec(compiled,env)
+    return env[function]
+
+def validate_source_mallett() -> None:
+    shape=colour.SpectralShape(380,780,5)
+    original_globals={
+        "np":np, "colour":colour, "scipy":scipy,
+        "contract":contract, "SPECTRAL_SHAPE":shape,
+    }
+    standard_illuminant=source_original_function(
+        "model/illuminants.py","standard_illuminant",original_globals
+    )
+    source_original_function(
+        "model/color_filters.py","sigmoid_erf",original_globals
+    )
+    compute_band_pass_filter=source_original_function(
+        "model/color_filters.py","compute_band_pass_filter",original_globals
+    )
+    original_globals["MALLETT2019_BASIS"]=(
+        colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019.copy()
+        .align(shape)
+    )
+    rgb_to_raw_mallett2019=source_original_function(
+        "utils/spectral_upsampling.py","rgb_to_raw_mallett2019",
+        original_globals
+    )
+    basis=np.asarray(
+        original_globals["MALLETT2019_BASIS"][:],dtype=np.float64
+    )
     assert basis.shape==(81,3)
     paths=sorted((ROOT/"src/spektrafilm/data/profiles").glob("*.json"))
     films=[]
