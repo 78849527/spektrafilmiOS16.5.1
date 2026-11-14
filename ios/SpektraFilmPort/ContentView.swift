@@ -808,6 +808,15 @@ final class PhotoEditorModel: ObservableObject {
                 } catch {
                     checks.append("附录【v1.8.45 原版扫描器眩光｜未通过／未认证】\n" + error.localizedDescription)
                 }
+                // v1.8.46: actual source full-physical image production
+                // sequence, with controlled scanner XYZ glare, is probed
+                // on-device separately from 8/8 and the 1-worker formula.
+                do {
+                    let realFrame = try OriginalSourceScannerGlareProductionDiagnostic.evaluate()
+                    checks.append("附录【v1.8.46 生产扫描 XYZ 眩光｜实机受控图像分段对照】\n" + realFrame)
+                } catch {
+                    checks.append("附录【v1.8.46 生产扫描 XYZ 眩光｜失败／未认证】\n" + error.localizedDescription)
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
