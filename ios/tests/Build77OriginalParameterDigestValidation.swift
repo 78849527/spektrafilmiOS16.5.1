@@ -13,8 +13,8 @@ struct Build77OriginalParameterDigestValidation {
         let inputURL = URL(fileURLWithPath: CommandLine.arguments[1])
         let outputURL = URL(fileURLWithPath: CommandLine.arguments[2])
         let raw = try Data(contentsOf: inputURL)
-        guard let envelope = try Build77ExactJSONValue.decodeObject(from: raw) as [String: Any]?,
-              let cases = envelope["cases"] as? [[String: Any]],
+        let envelope = try Build77ExactJSONValue.decodeObject(from: raw)
+        guard let cases = envelope["cases"] as? [[String: Any]],
               let neutral = envelope["neutral_database"] as? [String: Any],
               cases.count == 360 else {
             throw Build77OriginalParameterDigest.DigestError.invalid(
