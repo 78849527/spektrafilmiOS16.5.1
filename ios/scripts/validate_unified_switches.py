@@ -79,7 +79,7 @@ assert "confirmedSimpleLock(title)" in second
 assert "confirmedFeatureLock(feature)" in feature
 
 third_calls = re.findall(r'\bresetToggle\("([^"]+)"', src)
-assert len(third_calls) == 9, f"Expected 9 nested switches, found {third_calls}"
+assert len(third_calls) == 10, f"Expected 10 nested switches, found {third_calls}"
 assert len(set(third_calls)) == len(third_calls)
 for token in (
     'resetToggle("黑白场校准"',
@@ -87,13 +87,14 @@ for token in (
     'resetToggle("原版摄影曝光前处理（Double｜三模块）"',
     'resetToggle("原版乳剂散射＋背反射同时开启（Double）"',
     'resetToggle("原版扫描镜头 / Unsharp（Double）"',
+    'resetToggle("源扫描 XYZ 眩光（单线程实验）"',
     'resetToggle("相机 UV 光谱截止"',
     'resetToggle("相机 IR 光谱截止"',
     'resetToggle("实测三乳剂亚层"',
     'resetToggle("原版 Metal 显影链"',
 ):
     assert token in src, f"Original third-level feature lost: {token}"
-assert src.count("resetToggle(") == 10
+assert src.count("resetToggle(") == 11
 
 # Keep the iOS16.5.1 crash-mitigation and the original report UI.
 for token in (
@@ -113,3 +114,13 @@ print("PASS: source-mode, feature-row and independent second-row switches use th
 print("PASS: 42×32 nested tap regions, single-tap action, label double-tap default, disabled gates and accessibility")
 print("PASS: v1.8.43 diagnostic, iOS16.5.1 type-erased adjustment navigation and legacy switches retained")
 print("NOT CERTIFIED: actual iPhone touch hit-testing or screenshot geometry")
+
+# The new source-scanner control is a separate, type-erased subview;
+# no native Toggle should slip into the third level.
+assert 'private var sourceScannerGlareSettings: AnyView' in src
+assert 'sourceScannerGlareSettings' in src
+assert 'model.sourcePixelIOEnabled &&' in src
+assert 'model.sourcePhysicalDirectEnabled && !isReversal' in src
+assert 'model.sourceScannerGlareEnabled' in src
+assert '受控单线程' in src or '单线程实验' in src
+print("PASS: v1.8.46 source XYZ glare uses shared 28x16 third-level switch and a separate iOS16-safe AnyView")

@@ -95,6 +95,12 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceScannerLensBlurSigma = 0.0
     @Published var sourceScannerUnsharpSigma = 1.0
     @Published var sourceScannerUnsharpAmount = 0.7
+    // Explicit opt-in experimental ORIGINAL XYZ glare, not unseeded
+    // source multiworker equivalence. Fixed one-worker diagnostic seed.
+    @Published var sourceScannerGlareEnabled = false
+    @Published var sourceScannerGlarePercent = 0.03
+    @Published var sourceScannerGlareRoughness = 0.7
+    @Published var sourceScannerGlareBlur = 0.5
     // v1.8.30: three linked original Python camera stages. All are
     // explicitly opt-in and operate on actual source Double camera photons.
     @Published var sourceCameraPreFilmEnabled = false
@@ -354,7 +360,15 @@ final class PhotoEditorModel: ObservableObject {
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
             dir:spatialDIRSettings,print:print,morph:morph,
-            scannerOptics:sourceScan,cameraOptics:preCamera,
+            scannerOptics:sourceScan,
+            scannerGlare:OriginalSourceScannerGlare.Settings(
+                active:sourceScannerGlareEnabled,
+                percent:sourceScannerGlarePercent,
+                roughness:sourceScannerGlareRoughness,
+                blur:sourceScannerGlareBlur
+            ),
+            scannerGlareSeed:sourceScannerGlareEnabled ? 8888 : nil,
+            cameraOptics:preCamera,
             filmHalation:sourceHalation,
             cameraRawMethod:sourceCameraRawMethod,
             cameraBandpass:sourceBandpass,
@@ -794,6 +808,15 @@ final class PhotoEditorModel: ObservableObject {
                 } catch {
                     checks.append("附录【v1.8.45 原版扫描器眩光｜未通过／未认证】\n" + error.localizedDescription)
                 }
+                // v1.8.46: actual source full-physical image production
+                // sequence, with controlled scanner XYZ glare, is probed
+                // on-device separately from 8/8 and the 1-worker formula.
+                do {
+                    let realFrame = try OriginalSourceScannerGlareProductionDiagnostic.evaluate()
+                    checks.append("附录【v1.8.46 生产扫描 XYZ 眩光｜实机受控图像分段对照】\n" + realFrame)
+                } catch {
+                    checks.append("附录【v1.8.46 生产扫描 XYZ 眩光｜失败／未认证】\n" + error.localizedDescription)
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
@@ -953,6 +976,8 @@ final class PhotoEditorModel: ObservableObject {
                 additionalBytesPerPixel:
                     (sourceScannerOpticalEnabled
                         ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                    (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
+                        ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                         ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                     (sourcePhysicalHalationRequested
@@ -967,6 +992,9 @@ final class PhotoEditorModel: ObservableObject {
                 ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
                    (sourceScannerOpticalEnabled
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
+                    : 0) +
+                   (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
+                    ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel
                     : 0) +
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +

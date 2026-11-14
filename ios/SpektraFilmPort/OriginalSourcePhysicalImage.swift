@@ -33,6 +33,10 @@ enum OriginalSourcePhysicalImage {
     // Full-size scanner finish requires an additional 3-channel Double
     // filtered result and two 1-channel Double Gaussian workspaces.
     static let scannerFinishExtraBytesPerPixel: UInt64 = 40
+    // Controlled source glare currently retains a 3-channel Double
+    // source field, full-frame filtered output and two 1-channel works.
+    // Conservative peak budget; no automatic smaller-image fallback.
+    static let scannerGlareExtraBytesPerPixel: UInt64 = 96
     static let cameraLensExtraBytesPerPixel: UInt64 = 40
     static let filmHalationExtraBytesPerPixel: UInt64 = 120
     static let printDiffusionExtraBytesPerPixel: UInt64 = 40
@@ -98,6 +102,10 @@ enum OriginalSourcePhysicalImage {
         // Separate opt-in deterministic Python source scan finishing.
         // Defaults preserve all user-validated v1.8.25 RGB and memory paths.
         var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
+        // OFF unless user explicitly chooses controlled *single-worker*
+        // glare. This is NOT unseeded original prange equivalence.
+        var scannerGlare: OriginalSourceScannerGlare.Settings = .init(active:false)
+        var scannerGlareSeed: UInt32? = nil
         var cameraOptics: OriginalSourceCameraOptics.Settings = .init()
         var filmHalation: OriginalSourceFilmHalation.Settings = .init()
         // Upstream SettingsParams.rgb_to_raw_method plus camera UV/IR
@@ -120,6 +128,16 @@ enum OriginalSourcePhysicalImage {
                 )
             }
             try scannerOptics.validate()
+            try scannerGlare.validate()
+            if scannerGlare.active && scannerGlare.percent > 0 {
+                guard scannerGlareSeed != nil,
+                      !SpectralPhysics.isPositiveFilm(filmID) else {
+                    throw Failure.invalid(
+                        "源扫描随机眩光只允许负片相纸扫描，" +
+                        "必须明确提供受控单线程种子；禁止随机哈希降级"
+                    )
+                }
+            }
             try cameraOptics.validate()
             try filmHalation.validate()
             try cameraBandpass.validate()
@@ -195,10 +213,13 @@ enum OriginalSourcePhysicalImage {
         let activePrintDiffusion=parameters.printDiffusion.active &&
             parameters.printDiffusion.strength>0 &&
             parameters.printDiffusion.spatialScale>0
+        let controlledScannerGlare=parameters.scannerGlare.active &&
+            parameters.scannerGlare.percent>0
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
+                (controlledScannerGlare ? scannerGlareExtraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
                 (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0)
@@ -360,6 +381,12 @@ enum OriginalSourcePhysicalImage {
                 rgb=try engine.sourceSpatialPrintPhoton(
                     filmDensity:density,paperEV:parameters.paperEV
                 )
+            } else if controlledScannerGlare {
+                // Store actual developed PAPER XYZ in the reusable Double
+                // frame, not sRGB or post-gamut RGB.
+                rgb=try engine.sourceSpatialScanXYZ(
+                    filmDensity:density,paperEV:parameters.paperEV
+                )
             } else {
                 rgb=try parameters.scannerOptics.active
                     ? engine.sourceSpatialScanLinear(
@@ -395,20 +422,46 @@ enum OriginalSourcePhysicalImage {
                 let k=p*3
                 let output=try engine.sourceSpatialScanPrintedPhoton(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
-                    sourceLinearOutput:parameters.scannerOptics.active
+                    sourceLinearOutput:parameters.scannerOptics.active,
+                    sourceXYZOutput:controlledScannerGlare
                 )
                 for c in 0..<3 { frame.rgb[k+c]=output[c] }
             }
         }
+        if controlledScannerGlare {
+            // Python scanning.py exact sequence for negative prints:
+            // printed density -> XYZ [B/W adjustment is forbidden here]
+            // -> source 2D random glare with normalized scanner lamp XYZ
+            // -> per-pixel XYZ→linear sRGB→ACES gamut compression
+            // -> optional scanner lens blur/unsharp -> sRGB CCTF.
+            // One explicit seeded Numba worker, NOT unseeded prange parity.
+            frame.rgb=try OriginalSourceScannerGlare.addToXYZ(
+                frame.rgb,
+                illuminantXYZ:engine.sourceSpatialScannerIlluminantXYZ(),
+                width:w,height:h,
+                settings:parameters.scannerGlare,
+                controlledSeed:parameters.scannerGlareSeed
+            )
+            stageDoubleObserver?("scannerGlareXYZ",frame.rgb)
+            for p in 0..<(w*h) {
+                let k=p*3
+                let linear=try engine.sourceSpatialXYZToLinearRGB(
+                    [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+                )
+                for ch in 0..<3 { frame.rgb[k+ch]=linear[ch] }
+            }
+            stageDoubleObserver?("scannerGlareLinearRGB",frame.rgb)
+        }
         if parameters.scannerOptics.active {
-            // Exact upstream ScanningStage order: ACES linear RGB ->
-            // source lens blur -> source unsharp -> CCTF. Do not blur
-            // encoded sRGB; do not introduce scanner stochastic glare.
+            // Source ScanningStage applies lens FIR/YVV and Unsharp only
+            // AFTER the true XYZ→gamut RGB conversion.
             try OriginalSourceScannerOptics.applyInPlace(
                 &frame.rgb,width:w,height:h,
                 settings:parameters.scannerOptics,
                 stageDoubleObserver:stageDoubleObserver
             )
+        }
+        if parameters.scannerOptics.active || controlledScannerGlare {
             for k in frame.rgb.indices {
                 frame.rgb[k]=OriginalScannerMath.encodeSRGB(frame.rgb[k])
             }
