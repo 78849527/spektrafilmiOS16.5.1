@@ -47,7 +47,7 @@ struct SourceScannerGlareValidation {
             for i in 0..<pixels {
                 let err = abs(seeded[i] - expected[i])
                 let injectErr = abs(injected[i] - expected[i])
-                maxAmountError = max(maxAmountError, err, injectErr)
+                maxAmountError = max(maxAmountError, max(err, injectErr))
                 // Direct original Float64 filter/Numba exp, not
                 // distributional similarity or a visual threshold.
                 guard err <= 1e-11 * (1 + abs(expected[i])),
