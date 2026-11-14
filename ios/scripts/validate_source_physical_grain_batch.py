@@ -15,8 +15,8 @@ source=(root/"src/spektrafilm/model/grain.py").read_text()
 test=(root/"ios/tests/SourcePhysicalImageParity.swift").read_text()
 generator=(root/"ios/scripts/generate_source_physical_grain.py").read_text()
 version=(root/"ios/project.yml").read_text()
-assert 'MARKETING_VERSION: "1.8.50"' in version
-assert 'CURRENT_PROJECT_VERSION: "75"' in version
+assert 'MARKETING_VERSION: "1.8.51"' in version
+assert 'CURRENT_PROJECT_VERSION: "76"' in version
 assert 'iOS: "16.5"' in version
 for token in (
     'def apply_grain_to_density_layers(',
@@ -49,7 +49,10 @@ for token in (
     'film.sourceDensityCurvesLayersF64 != nil',
     'film.sourceDensityCurvesF64 != nil',
     'film.sourceLogExposureF64 != nil',
-    'sourceOriginal:true',
+    'sublayersInto:{ density,output in',
+    'var high=256',
+    'if desired<axis[mid] {high=mid}',
+    'let reciprocal=delta == 0 ? 0.0 : 1.0/delta',
 ):
     assert token in engine, token
 for token in (
@@ -105,11 +108,11 @@ assert '"grainPrinted","printed"' in test
 assert 'fixture.numba_micro_enabled' in test
 spectral=(root/"ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
 assert 'sourceOriginal: Bool = false' in spectral
-assert 'sourceOriginal:true' in spectral
+assert 'sublayersInto:{ density,output in' in spectral
 assert 'let reciprocal=delta == 0 ? 0.0 : 1.0/delta' in spectral
 assert 'var low=0' in spectral and 'var high=256' in spectral
-assert 'if desired < domain(mid) { high=mid }' in spectral
-assert 'let previous=idx-1' in spectral
+assert 'if desired<axis[mid] {high=mid}' in spectral
+assert 'first=low-1' in spectral
 assert 'var hi = 255' in spectral  # mobile/fast left intact
 assert 'return sourceOriginal ? sample : max(0,sample)' in spectral
 assert '("grainSublayers","sourceGrainSublayers",9,1e-8,1e-10)' in test
@@ -126,6 +129,21 @@ assert grain.count('var probabilities=')==1
 assert grain.count('var rates=')==1
 assert grain.count('var saturations=')==1
 assert grain.count('var cloud=')==1
+# Original source grain computes one right-biased Float64 index per
+# channel, not nine repeated non-monotonic profile binary searches.
+assert 'var inputCMY=[Double](repeating:0,count:3)' in grain
+assert 'var layerScratch=[Double](repeating:0,count:9)' in grain
+assert 'try sublayersInto(inputCMY,&layerScratch)' in grain
+assert 'result[li]=y0+t*(y1-y0)' in spectral
+assert 'var high=256' in spectral
+safe=(root/"ios/SpektraFilmPort/SafeExportResolution.swift").read_text()
+ui=(root/"ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+scanner=(root/"ios/SpektraFilmPort/OriginalSourceScannerOptics.swift").read_text()
+assert 'static let safeMaximumPixels: UInt64 = 12_000_000' in safe
+assert 'static let economyMaximumPixels: UInt64 = 7_200_000' in safe
+assert '最高 1200 万像素' in ui and '最高 720 万像素' in ui
+assert 'width<=13_000_000/height' in scanner
+
 assert 'generate_source_physical_grain.py' in (root/".github/workflows/ios16-source-grain-batch-v1.8.48.yml").read_text()
 assert 'BLOBS={' in generator and 'model/grain.py' in generator
 assert 'grain.apply_grain_to_density_layers(' in generator
