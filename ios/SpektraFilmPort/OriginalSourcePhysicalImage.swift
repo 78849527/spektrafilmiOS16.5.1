@@ -115,6 +115,10 @@ enum OriginalSourcePhysicalImage {
         // Upstream SettingsParams.rgb_to_raw_method plus camera UV/IR
         // spectral bandpass; all stages remain per-pixel Double.
         var cameraRawMethod: SpectralPhysics.CameraRawMethod = .hanatos2025
+        // The app's current strict 8-bit ingress is explicitly sRGB.
+        // ProPhoto linear is a separate *numerical engine* source branch
+        // until real ICC/raw ingress has passed independent verification.
+        var cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB
         var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
         // Original PrintingStage.expose: optical paper photon domain,
         // after enlarger/preflash/EV and before paper H-D.
@@ -146,6 +150,13 @@ enum OriginalSourcePhysicalImage {
             try cameraOptics.validate()
             try filmHalation.validate()
             try cameraBandpass.validate()
+            if cameraInputColorSpace == .proPhotoLinear &&
+                cameraRawMethod != .hanatos2025 {
+                throw Failure.invalid(
+                    "原版 ProPhoto 仅在完整 Hanatos 光谱输入路径已实现，"
+                    + "不支持当前 Mallett 组合"
+                )
+            }
             try printDiffusion.validate()
             if printDiffusion.active && printDiffusion.strength>0 &&
                 printDiffusion.spatialScale>0 &&
@@ -182,6 +193,7 @@ enum OriginalSourcePhysicalImage {
                 hanatosPrecision: .originalFloat64,
                 sourceMeasuredFloat64: true,
                 cameraRawMethod: cameraRawMethod,
+                cameraInputColorSpace:cameraInputColorSpace,
                 cameraBandpass: cameraBandpass
             )
         }
