@@ -547,6 +547,7 @@ extension SourceSpatialDIRConvolution {
         )
     }
 
+    #if !SOURCE_GRAIN_STANDALONE
     /// Entire *production* source spatial DIR stage as a real 2D operation.
     /// No CIColorCube or Float32 optical LUT node is used in this original-accuracy mode. Film RAW,
     /// initial H-D, spatial silver inhibition, corrected film density and
@@ -705,4 +706,5 @@ extension SourceSpatialDIRConvolution {
         }
         return try writeRGB(printed,rect:rect,w:w,h:h)
     }
+    #endif
 }
