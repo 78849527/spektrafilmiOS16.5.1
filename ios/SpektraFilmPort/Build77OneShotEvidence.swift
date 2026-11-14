@@ -147,6 +147,7 @@ enum Build77OneShotEvidence {
             "input_provenance":"NumPy PCG64 default_rng(771), .15 + .55 * rng.random((6,4,3))",
             "input_shape":[6,4,3],
             "input_type":"Float64_IEEE754_exact_bits",
+            "app_source_commit":Bundle.main.object(forInfoDictionaryKey:"Build77SourceCommit") as? String ?? "unknown",
             "app_build":Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
             "app_version":Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
             "device_model":deviceModel,
