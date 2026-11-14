@@ -879,7 +879,11 @@ jobs:
           assert 'SpatialDIR.apply(' in source
           assert 'DensityGrain.perturbDensityImage' in stage
           assert 'sourceDIRSubtract' in stage
-          assert '原版 DIR 空间显影' in ui
+          # UI v1.8.34 moves DIR to compact row 1 while preserving
+          # its original @Published binding and the nested source DIR path.
+          assert 'compactSwitch("DIR", value: $model.spatialDIREnabled' in ui
+          assert 'if model.spatialDIREnabled {' in ui
+          assert 'private var dirSettings: some View' in ui
           print("PASS: opt-in source spatial DIR before paper and grain on preview/export")
           PY
       - name: Guard source sublayer opt-in and physical density ordering
@@ -954,7 +958,13 @@ jobs:
           assert "ScrollView" in ui and "hardwareDiagnosticReport ?? model.status" in ui
           assert "UIPasteboard.general.string" in ui
           assert ".presentationDetents([.medium, .large])" in ui
-          assert ".allowsHitTesting(false)" not in ui.split(".overlay(alignment: .topLeading)",1)[1].split(".sheet",1)[0]
+          # v1.8.33+ moves the report from a topLeading overlay into the
+          # fixed top status row; verify the row remains an active Button.
+          layout = ui.split("    var body: some View {", 1)[1].split("    private func previewImage(", 1)[0]
+          assert 'statusReportPresented = true' in layout
+          assert 'statusChip' in layout
+          report = layout.split('statusReportPresented = true', 1)[1].split('.accessibilityLabel', 1)[0]
+          assert '.allowsHitTesting(false)' not in report
           assert "原版 Metal 检测 8/8 项通过" in model
           assert "原版 Metal 检测未通过" in model
           assert "6/8 【通过】SciPy" in model
