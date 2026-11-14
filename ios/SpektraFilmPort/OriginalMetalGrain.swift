@@ -79,7 +79,8 @@ enum OriginalMetalGrain {
     /// Public so numeric tests can compare each coefficient directly
     /// against upstream NumPy. Unit: optical-density Gaussian sigma pixels.
     static func physicalCoefficients(
-        maxima rawMaxima: [Double], pixelUM: Double
+        maxima rawMaxima: [Double], pixelUM: Double,
+        microBlurUM: Double = 0.2, microStructureNM: Double = 30.0
     ) throws -> PhysicalCoefficients {
         guard rawMaxima.count == 9, pixelUM.isFinite,
               pixelUM > 0,
@@ -116,7 +117,8 @@ enum OriginalMetalGrain {
         // Source grain.py and Numba fast_stats.py deterministic physical
         // terms now share the independently validated original formula.
         let sourceMicro = try OriginalSourceMicrostructure.physical(
-            pixelUM: pixelUM
+            pixelUM: pixelUM, microBlurUM: microBlurUM,
+            microStructureNM: microStructureNM
         )
         let microSigma = sourceMicro.microStd
         let microBlur = sourceMicro.blur
@@ -866,6 +868,8 @@ enum OriginalMetalGrain {
         totalRanges: [Double], cubeDimension: Int,
         pixelUM: Double, amount: Double, seed: Double,
         sourceSciPySampling: Bool = false,
+        microBlurUM: Double = 0.2,
+        microStructureNM: Double = 30.0,
         libraryURL: URL? = nil
     ) throws -> CIImage {
         guard sublayerCubes.count == 3, rawLayerMaxima.count == 9,
@@ -888,7 +892,9 @@ enum OriginalMetalGrain {
             throw Failure.invalid("原版 Metal 颗粒：缺少完整的三层胶片 LUT")
         }
         let physical = try physicalCoefficients(
-            maxima: rawLayerMaxima, pixelUM: pixelUM
+            maxima: rawLayerMaxima, pixelUM: pixelUM,
+            microBlurUM: microBlurUM,
+            microStructureNM: microStructureNM
         )
         try requireSupportedOriginalFilters(physical)
         // A completed command buffer can still return invalid GPU output
