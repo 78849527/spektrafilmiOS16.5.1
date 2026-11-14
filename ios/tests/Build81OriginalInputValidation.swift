@@ -89,6 +89,18 @@ enum Build81OriginalInputValidation {
                     )
                 }
             }
+            let bridged=try OriginalSourcePixelIO.cropOriginal81(
+                .init(width:w,height:h,rgb:try readBits(inputHex)),
+                centerX:cx,centerY:cy,sizeX:sx,sizeY:sy
+            )
+            guard bridged.width==actual.width,bridged.height==actual.height,
+                  bridged.rgb.elementsEqual(actual.rgb,by:{
+                      $0.bitPattern==$1.bitPattern
+                  }) else {
+                throw Failure.invalid(
+                    "Build81 actual OriginalSourcePixelIO crop bridge changed bits"
+                )
+            }
             croppedPixels+=actual.rgb.count
         }
 
@@ -115,6 +127,18 @@ enum Build81OriginalInputValidation {
                   output.rgb.count==expected.count else {
                 throw Failure.invalid(
                     "Build81 Python preview geometry mismatch #\(caseID)")
+            }
+            let production=try OriginalSourcePixelIO.previewOriginal81(
+                .init(width:w,height:h,rgb:input.rgb),maxSide:maxSide
+            )
+            guard production.width==output.width,
+                  production.height==output.height,
+                  production.rgb.elementsEqual(output.rgb,by:{
+                      $0.bitPattern==$1.bitPattern
+                  }) else {
+                throw Failure.invalid(
+                    "Build81 actual OriginalSourcePixelIO preview bridge changed bits"
+                )
             }
             for k in output.rgb.indices {
                 let ref=expected[k].doubleValue
