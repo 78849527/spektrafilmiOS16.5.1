@@ -548,18 +548,18 @@ final class PhotoEditorModel: ObservableObject {
                 let first=proof.measuredRGBA.prefix(4).map {
                     String(format:"%.6f",Double($0))
                 }.joined(separator:",")
-                status="Build80 Apple RAW ."+proof.format.rawValue.uppercased()
-                    +"：真实 4×4 RGBA Float32 渲染通过。"
-                    +"样本 RGBA="+first
-                    +"；线性 sRGB；Apple 色温="
-                    +String(format:"%.0f",Double(proof.actualTemperature))
-                    +"K、Tint 偏移="
-                    +String(format:"%.1f",Double(proof.actualTintOffset))
-                    +"；曝光="
-                    +String(format:"%.2f",Double(proof.actualExposureEV))
-                    +" EV；Apple 镜头校正="
-                    +(proof.appleLensCorrectionEnabled ? "开" : "关")
-                    +"。不代表 Python rawpy/ACES/Lensfun 数值等价。"
+                let kelvin=String(format:"%.0f",Double(proof.actualTemperature))
+                let tint=String(format:"%.1f",Double(proof.actualTintOffset))
+                let exposure=String(format:"%.2f",Double(proof.actualExposureEV))
+                let lens=proof.appleLensCorrectionEnabled ? "开" : "关"
+                status=[
+                    "Build80 Apple RAW .\(proof.format.rawValue.uppercased())",
+                    "：真实 4×4 RGBA Float32 渲染通过。",
+                    "样本 RGBA=\(first)；线性 sRGB。",
+                    "Apple 色温=\(kelvin)K、Tint 偏移=\(tint)",
+                    "；曝光=\(exposure) EV；Apple 镜头校正=\(lens)。",
+                    "不代表 Python rawpy/ACES/Lensfun 数值等价。"
+                ].joined()
             } catch {
                 status="Build80 RAW 实际解码或参数诊断失败："
                     +error.localizedDescription
