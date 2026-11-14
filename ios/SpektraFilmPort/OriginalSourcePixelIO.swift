@@ -113,11 +113,16 @@ enum OriginalSourcePixelIO {
     /// working buffer. 16-bit/HDR/RAW files are rejected for this path.
     static func decode(
         _ data: Data, previewMaxSide: Int? = nil,
-        maximumAllowedPixels: Int = 16_000_000
+        maximumAllowedPixels: Int = 16_000_000,
+        resizedTo: (width: Int, height: Int)? = nil
     ) throws -> Frame {
-        // Full-res requests must be rejected from metadata, before
-        // allocating the decoded CGImage. Thumbnail preview is explicitly
-        // allowed to use reduced geometry, but never changes export size.
+        // An export resize is ONLY requested by an explicitly confirmed
+        // safety/economy plan. Decode a bounded ImageIO thumbnail first;
+        // the final CGContext samples exactly the confirmed dimensions.
+        // Never change the original-size path or silently resample RAW/P3.
+        guard previewMaxSide == nil || resizedTo == nil else {
+            throw Failure.invalid("原版像素直连：预览尺寸与用户指定导出尺寸不可同时存在")
+        }
         if previewMaxSide == nil {
             try preflightExport(
                 data, maximumAllowedPixels: maximumAllowedPixels
@@ -125,7 +130,8 @@ enum OriginalSourcePixelIO {
         }
         guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               let original = CGImageSourceCreateImageAtIndex(
-                imageSource, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+                imageSource, 0,
+                [kCGImageSourceShouldCacheImmediately: resizedTo == nil] as CFDictionary
               ) else {
             throw Failure.invalid("原版像素直连：ImageIO 无法读取照片")
         }
@@ -143,9 +149,25 @@ enum OriginalSourcePixelIO {
         guard (1...8).contains(exif) else {
             throw Failure.invalid("原版像素直连：EXIF 方向无效")
         }
+        let swapsAxes = exif >= 5
+        let sourceW = swapsAxes ? original.height : original.width
+        let sourceH = swapsAxes ? original.width : original.height
+        if let target = resizedTo {
+            guard target.width > 0, target.height > 0,
+                  target.width <= sourceW, target.height <= sourceH,
+                  target.width <= 8192, target.height <= 8192,
+                  target.width <= 13_000_000 / target.height else {
+                throw Failure.invalid("逐像素全光学：确认的降采样尺寸无效或超出 1300 万像素")
+            }
+        }
+        let resizeW = resizedTo.map { swapsAxes ? $0.height : $0.width }
+        let resizeH = resizedTo.map { swapsAxes ? $0.width : $0.height }
+        let thumbnailSide = resizedTo.map {
+            max(resizeW!, resizeH!)
+        } ?? previewMaxSide
         let image: CGImage
-        if let maxSide = previewMaxSide, maxSide > 0,
-           max(original.width, original.height) > maxSide {
+        if let maxSide = thumbnailSide, maxSide > 0,
+           (resizedTo != nil || max(original.width, original.height) > maxSide) {
             let options = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: false,
@@ -155,16 +177,18 @@ enum OriginalSourcePixelIO {
             guard let thumb = CGImageSourceCreateThumbnailAtIndex(
                 imageSource, 0, options
             ), thumb.bitsPerComponent == 8 else {
-                throw Failure.invalid("原版像素直连：无法生成 8-bit 预览缩略图")
+                throw Failure.invalid("原版像素直连：无法生成 8-bit 导出/预览采样图")
             }
+            try requireExplicitSRGB(thumb)
             image = thumb
         } else {
             image = original
         }
-        let w = image.width, h = image.height
+        let w = resizeW ?? image.width
+        let h = resizeH ?? image.height
         try validatePixelDimensions(
             width: w, height: h,
-            maximumAllowedPixels: maximumAllowedPixels
+            maximumAllowedPixels: resizedTo == nil ? maximumAllowedPixels : 13_000_000
         )
 
         var bytes = [UInt8](repeating: 0, count: w*h*4)
@@ -176,7 +200,9 @@ enum OriginalSourcePixelIO {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
                     CGBitmapInfo.byteOrder32Big.rawValue
             ) else { return false }
-            context.interpolationQuality = .none
+            // Resize is explicit; the original-size and preview pixels
+            // retain the previous unfiltered transport path.
+            context.interpolationQuality = resizedTo == nil ? .none : .high
             context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
             return true
         }
@@ -184,7 +210,6 @@ enum OriginalSourcePixelIO {
             throw Failure.invalid("原版像素直连：sRGB RGBA8 Quartz 解码失败")
         }
 
-        let swapsAxes = exif >= 5
         let outW = swapsAxes ? h : w
         let outH = swapsAxes ? w : h
         var output = [Double](repeating: 0, count: w*h*3)
