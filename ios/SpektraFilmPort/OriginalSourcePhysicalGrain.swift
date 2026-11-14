@@ -58,7 +58,7 @@ enum OriginalSourcePhysicalGrain {
 
     /// For parent pre-decode safety budget. Additional whole-frame Double
     /// sublayer field + SciPy counts + blur scratch; do not auto-resize.
-    static let extraBytesPerPixel: UInt64 = 160
+    static let extraBytesPerPixel: UInt64 = 272
 
     /// A sampled, fully measured source 3x3 film density profile.
     /// Ordering is [sublayer][CMY] and each layer uses the original
