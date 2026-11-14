@@ -49,6 +49,12 @@ struct SourceDiffusionNumericValidation {
             print("METADATA,\(caseIndex),\(w),\(h),\(kernel.radius)")
             for (k,v) in output.enumerated() {
                 print("RESULT,\(caseIndex),\(k),\(String(format:"%.17g",v))")
+                // The source PrintingStage applies the *same* 2D PSF
+                // to pre-paper-H-D light irradiance and only then
+                // takes log10(max(raw,0)+1e-10). These cases exercise
+                // native production diffusion and original print order.
+                let printLog = log10(max(v, 0.0) + 1e-10)
+                print("PRINT,\(caseIndex),\(k),\(String(format:"%.17g",printLog))")
             }
         }
     }

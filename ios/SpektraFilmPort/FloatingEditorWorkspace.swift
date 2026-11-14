@@ -53,6 +53,7 @@ struct FloatingEditorWorkspace: View {
         case halation = "光晕"
         case dir = "DIR"
         case cameraDiffusion = "摄影扩散"
+        case printDiffusion = "印相扩散"
         case grain = "颗粒"
     }
 
@@ -891,6 +892,12 @@ struct FloatingEditorWorkspace: View {
                                        model.sourceCameraPreFilmEnabled) {
                     model.queueSpectralPreview()
                 }
+                featureToggle("印相扩散", feature: .printDiffusion,
+                              value: $model.printSourceDiffusionEnabled,
+                              allowed: fullPhysicalMode && !isReversal &&
+                                       model.originalPrintOpticsEnabled) {
+                    model.queueSpectralPreview()
+                }
                 featureToggle("颗粒", feature: .grain,
                               value: $model.grainEnabled) {
                     if model.grainEnabled { model.queueSpectralPreview() }
@@ -1122,6 +1129,12 @@ struct FloatingEditorWorkspace: View {
             return model.sourceCameraDiffusionEnabled &&
                    fullPhysicalMode && model.sourceCameraPreFilmEnabled
                 ? AnyView(sourceCameraDiffusionSettings)
+                : AnyView(EmptyView())
+        case .printDiffusion:
+            return model.printSourceDiffusionEnabled &&
+                   fullPhysicalMode && !isReversal &&
+                   model.originalPrintOpticsEnabled
+                ? AnyView(sourcePrintDiffusionSettings)
                 : AnyView(EmptyView())
         case .grain:
             return model.grainEnabled
@@ -1449,6 +1462,68 @@ struct FloatingEditorWorkspace: View {
     /// Dedicated erased source-physical camera diffusion editor.
     /// All original parameters are adjustable; no CI bloom surrogate.
     /// Parent controls require explicit source camera and full physical mode.
+    /// Strict source-only enlarger diffusion editor, not an RGB
+    /// postprocessing bloom. AnyView prevents recurrence of iOS 16.5.1
+    /// generic metadata stack overflow seen in v1.8.36.
+    private var sourcePrintDiffusionSettings: AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:6) {
+                Text("原版印相扩散｜相纸曝光光子域 Double")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Picker("印相扩散滤镜族",selection:$model.printSourceDiffusionFamily) {
+                    Text("Glimmerglass")
+                        .tag(OriginalSourceDiffusion.Family.glimmerglass)
+                    Text("Black Pro-Mist")
+                        .tag(OriginalSourceDiffusion.Family.blackProMist)
+                    Text("Pro-Mist")
+                        .tag(OriginalSourceDiffusion.Family.proMist)
+                    Text("CineBloom")
+                        .tag(OriginalSourceDiffusion.Family.cinebloom)
+                }
+                .pickerStyle(.menu)
+                .onChange(of:model.printSourceDiffusionFamily) { _ in
+                    model.queueSpectralPreview()
+                }
+                morphSlider("印相扩散强度",
+                            value:$model.printSourceDiffusionStrength,
+                            range:0...2,resetTo:0.5)
+                morphSlider("印相扩散空间倍率",
+                            value:$model.printSourceDiffusionSpatialScale,
+                            range:0...3,resetTo:1)
+                morphSlider("印相外圈色晕暖度",
+                            value:$model.printSourceDiffusionWarmth,
+                            range:-1.5...1.5,resetTo:0)
+                Text("六个 PSF 权重/尺寸倍率均使用 Python 原版默认 1。")
+                    .font(.caption2).foregroundColor(.secondary)
+                morphSlider("中心权重",
+                            value:$model.printSourceDiffusionCoreIntensity,
+                            range:0...4,resetTo:1)
+                morphSlider("中心尺寸",
+                            value:$model.printSourceDiffusionCoreSize,
+                            range:0.1...4,resetTo:1)
+                morphSlider("晕光权重",
+                            value:$model.printSourceDiffusionHaloIntensity,
+                            range:0...4,resetTo:1)
+                morphSlider("晕光尺寸",
+                            value:$model.printSourceDiffusionHaloSize,
+                            range:0.1...4,resetTo:1)
+                morphSlider("Bloom 权重",
+                            value:$model.printSourceDiffusionBloomIntensity,
+                            range:0...4,resetTo:1)
+                morphSlider("Bloom 尺寸",
+                            value:$model.printSourceDiffusionBloomSize,
+                            range:0.1...4,resetTo:1)
+                Text("源顺序：负片密度→相纸原版光谱 RAW + 预闪光/" +
+                     "放大机曝光→整图 Double 反射边界 FFT PSF →" +
+                     "log10 相纸曝光→拟合 H-D→原版 XYZ/ACES 扫描。" +
+                     "不足内存时报错，不允许改用扫描后 Core Image 柔焦。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            .padding(.vertical,4)
+        )
+    }
+
     private var sourceCameraDiffusionSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {

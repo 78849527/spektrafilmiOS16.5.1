@@ -124,6 +124,10 @@ def main():
         elif row[0]=="RESULT":
             assert len(entry["results"])==int(row[2])
             entry["results"].append(float(row[3]))
+        elif row[0]=="PRINT":
+            recorded=entry.setdefault("printLog",[])
+            assert len(recorded)==int(row[2])
+            recorded.append(float(row[3]))
         else:
             raise AssertionError("Unexpected Swift output "+line)
     assert set(parsed)==set(range(4))
@@ -150,6 +154,23 @@ def main():
         assert observed.shape==expected.shape,(k,len(observed),len(expected))
         error=np.max(np.abs(observed-expected))
         assert np.isfinite(observed).all() and error<1e-12,(k,error)
+        # Original PrintingStage applies its diffusion on paper raw
+        # irradiance BEFORE logarithmic exposure and paper H-D.
+        # Check the production Swift FFT result, followed by the
+        # original log10(max(photon,0)+1e-10) boundary. It is NOT a
+        # post-scan gamma blur and never alters the sensor domain.
+        expected_print_log=np.log10(np.fmax(
+            expected,0.0
+        )+1e-10)
+        observed_print_log=np.asarray(
+            got["printLog"],dtype=np.float64
+        )
+        assert observed_print_log.shape==expected.shape
+        print_error=np.max(np.abs(
+            observed_print_log-expected_print_log
+        ))
+        assert np.isfinite(observed_print_log).all(),k
+        assert print_error<5e-12,(k,print_error)
         maximum=max(maximum,float(error))
         print(f"PASS: {settings.filter_family}: {w}x{h}, r={radius}, "
               f"max absolute Double FFT error {error:.3g}")

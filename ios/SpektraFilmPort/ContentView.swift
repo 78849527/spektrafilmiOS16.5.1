@@ -52,6 +52,19 @@ final class PhotoEditorModel: ObservableObject {
     @Published var originalPrintOpticsEnabled = false
     // Source TH-KG3 default; optional TH-KG3-L measured Canon lens.
     @Published var printIlluminant: OriginalPrintOptics.Illuminant = .thKG3
+    // Original Python EnlargerParams.diffusion_filter, opt-in.
+    // Applied to full-frame paper photons before fitted paper H-D.
+    @Published var printSourceDiffusionEnabled = false
+    @Published var printSourceDiffusionFamily: OriginalSourceDiffusion.Family = .blackProMist
+    @Published var printSourceDiffusionStrength = 0.5
+    @Published var printSourceDiffusionSpatialScale = 1.0
+    @Published var printSourceDiffusionWarmth = 0.0
+    @Published var printSourceDiffusionCoreIntensity = 1.0
+    @Published var printSourceDiffusionCoreSize = 1.0
+    @Published var printSourceDiffusionHaloIntensity = 1.0
+    @Published var printSourceDiffusionHaloSize = 1.0
+    @Published var printSourceDiffusionBloomIntensity = 1.0
+    @Published var printSourceDiffusionBloomSize = 1.0
     @Published var normalizePrintExposure = true
     @Published var printExposureCompensation = true
     @Published var printCyanShift = 0.0
@@ -344,7 +357,20 @@ final class PhotoEditorModel: ObservableObject {
             scannerOptics:sourceScan,cameraOptics:preCamera,
             filmHalation:sourceHalation,
             cameraRawMethod:sourceCameraRawMethod,
-            cameraBandpass:sourceBandpass
+            cameraBandpass:sourceBandpass,
+            printDiffusion:OriginalSourceDiffusion.Settings(
+                active:printSourceDiffusionEnabled,
+                family:printSourceDiffusionFamily,
+                strength:printSourceDiffusionStrength,
+                spatialScale:printSourceDiffusionSpatialScale,
+                haloWarmth:printSourceDiffusionWarmth,
+                coreIntensity:printSourceDiffusionCoreIntensity,
+                coreSize:printSourceDiffusionCoreSize,
+                haloIntensity:printSourceDiffusionHaloIntensity,
+                haloSize:printSourceDiffusionHaloSize,
+                bloomIntensity:printSourceDiffusionBloomIntensity,
+                bloomSize:printSourceDiffusionBloomSize
+            )
         )
         try p.validate()
         return p

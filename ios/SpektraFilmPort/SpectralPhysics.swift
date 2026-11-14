@@ -1129,6 +1129,18 @@ struct SpectralPhysics {
             )
             substrate = paper
         }
+        return scanDevelopedSubstrateDensity(
+            resultDensity, substrate:substrate,
+            sourceLinearOutput:sourceLinearOutput
+        )
+    }
+
+    /// Source-optical print and existing film/print scanning share EXACT
+    /// same calculation, avoiding a duplicated CAM16/ACES/XYZ path.
+    private func scanDevelopedSubstrateDensity(
+        _ resultDensity:[Double],substrate:Profile,
+        sourceLinearOutput:Bool=false
+    ) -> [Double] {
         if useOriginalScanner {
             var xyz = Self.scanPhysicalXYZ(
                 densities: resultDensity, paper: substrate,
@@ -1304,6 +1316,64 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("原版校正前 H-D 产生非有限密度")
         }
         return density
+    }
+
+    /// Source PrintingStage._film_cmy_to_print_log_raw, followed by
+    /// 10**log exposure BEFORE the full-image enlarger diffusion PSF.
+    /// The per-pixel printing path still uses this same printRaw,
+    /// reference, exposure and preflash formula.
+    func sourceSpatialPrintPhoton(
+        filmDensity:[Double],paperEV:Double
+    ) throws -> [Double] {
+        guard !isPositive,useOriginalPrintOptics,
+              filmDensity.count==3,filmDensity.allSatisfy({ $0.isFinite }),
+              paperEV.isFinite,abs(paperEV)<=4,
+              sourcePaperHDCurve != nil else {
+            throw PhysicsError.invalid(
+                "原版放大机扩散只能接入负片→原版光学印相→相纸 H-D 链，禁止近似")
+        }
+        let raw=Self.printRaw(
+            filmDensities:filmDensity,film:film,
+            weights:paperWeights,clampDensity:false
+        )
+        let sourceLog=OriginalPrintOptics.paperLogExposure(
+            raw:raw,reference:printReference,
+            preflash:opticalPreflashRaw,
+            printEV:paperEV+correctedPrintExposureEV
+        )
+        let irradiance=sourceLog.map { pow(10.0,$0) }
+        guard irradiance.allSatisfy({ $0.isFinite && $0>=0 }) else {
+            throw PhysicsError.invalid("原版相纸曝光之前光谱 RAW 非有限")
+        }
+        return irradiance
+    }
+
+    /// After full-frame source print diffusion:
+    ///   paper log10 photons -> fitted source CDF H-D -> ORIGINAL
+    ///   scanner XYZ/ACES without a second reprint or LUT interpolation.
+    func sourceSpatialScanPrintedPhoton(
+        _ photon:[Double],sourceLinearOutput:Bool=false
+    ) throws -> [Double] {
+        guard !isPositive,useOriginalPrintOptics,
+              let sourcePaperHDCurve,
+              photon.count==3,
+              photon.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("原版放大机扩散后相纸光子或 H-D 无效")
+        }
+        let rawLog=photon.map { log10(max(0,$0)+1e-10) }
+        let density=(0..<3).map {
+            sourcePaperHDCurve.density(rawLog[$0],channel:$0)
+        }
+        guard density.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("原版印相扩散后相纸 H-D 非有限")
+        }
+        let output=scanDevelopedSubstrateDensity(
+            density,substrate:paper,sourceLinearOutput:sourceLinearOutput
+        )
+        guard output.count==3,output.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("原版印相扩散扫描输出非法")
+        }
+        return output
     }
 
     func sourceSpatialScan(

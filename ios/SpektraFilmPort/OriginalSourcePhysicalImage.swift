@@ -35,6 +35,7 @@ enum OriginalSourcePhysicalImage {
     static let scannerFinishExtraBytesPerPixel: UInt64 = 40
     static let cameraLensExtraBytesPerPixel: UInt64 = 40
     static let filmHalationExtraBytesPerPixel: UInt64 = 120
+    static let printDiffusionExtraBytesPerPixel: UInt64 = 40
     static let maximumSourceMemoryBudget: UInt64 = 1_500_000_000
 
     static func validateMemoryBudget(
@@ -103,6 +104,9 @@ enum OriginalSourcePhysicalImage {
         // spectral bandpass; all stages remain per-pixel Double.
         var cameraRawMethod: SpectralPhysics.CameraRawMethod = .hanatos2025
         var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
+        // Original PrintingStage.expose: optical paper photon domain,
+        // after enlarger/preflash/EV and before paper H-D.
+        var printDiffusion: OriginalSourceDiffusion.Settings = .init()
 
         func validate() throws {
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -119,6 +123,15 @@ enum OriginalSourcePhysicalImage {
             try cameraOptics.validate()
             try filmHalation.validate()
             try cameraBandpass.validate()
+            try printDiffusion.validate()
+            if printDiffusion.active && printDiffusion.strength>0 &&
+                printDiffusion.spatialScale>0 &&
+                SpectralPhysics.isPositiveFilm(filmID) {
+                throw Failure.invalid(
+                    "原版放大机扩散只能用于负片相纸印相，" +
+                    "正片绕过原版放大机，禁止静默应用在扫描后"
+                )
+            }
             guard cameraRawMethod == .mallett2019 || !cameraBandpass.active else {
                 throw Failure.invalid(
                     "Hanatos 2025 需要按 UV/IR 重新生成光谱 TC LUT；" +
@@ -179,12 +192,16 @@ enum OriginalSourcePhysicalImage {
     ) throws {
         try parameters.validate()
         let w=frame.width,h=frame.height
+        let activePrintDiffusion=parameters.printDiffusion.active &&
+            parameters.printDiffusion.strength>0 &&
+            parameters.printDiffusion.spatialScale>0
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
-                (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0)
+                (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
+                (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0)
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -335,13 +352,23 @@ enum OriginalSourcePhysicalImage {
             let density=try engine.sourceSpatialDevelopCorrectedLog(
                 corrected
             )
-            let rgb=try parameters.scannerOptics.active
-                ? engine.sourceSpatialScanLinear(
+            // PrintingStage source chronology: film CMY -> optical
+            // paper raw -> source full-frame diffuser -> log10 -> paper
+            // H-D -> original scanner. Never diffuse scanned RGB.
+            let rgb:[Double]
+            if activePrintDiffusion {
+                rgb=try engine.sourceSpatialPrintPhoton(
                     filmDensity:density,paperEV:parameters.paperEV
-                  )
-                : engine.sourceSpatialScan(
-                    filmDensity:density,paperEV:parameters.paperEV
-                  )
+                )
+            } else {
+                rgb=try parameters.scannerOptics.active
+                    ? engine.sourceSpatialScanLinear(
+                        filmDensity:density,paperEV:parameters.paperEV
+                      )
+                    : engine.sourceSpatialScan(
+                        filmDensity:density,paperEV:parameters.paperEV
+                      )
+            }
             for c in 0..<3 {
                 correctedObserved?[k+c]=corrected[c]
                 densityObserved?[k+c]=density[c]
@@ -353,6 +380,25 @@ enum OriginalSourcePhysicalImage {
         }
         if let densityObserved {
             stageDoubleObserver?("density",densityObserved)
+        }
+        if activePrintDiffusion {
+            let pixelUM=parameters.cameraOptics.filmFormatMM * 1000.0 /
+                Double(max(w,h))
+            // Raw paper photons are already multiplied by the enlarger EV.
+            // The original source applies the PSF here, before paper CDF.
+            frame.rgb=try OriginalSourceDiffusion.apply(
+                frame.rgb,width:w,height:h,pixelUM:pixelUM,
+                settings:parameters.printDiffusion
+            )
+            stageDoubleObserver?("printDiffusion",frame.rgb)
+            for p in 0..<(w*h) {
+                let k=p*3
+                let output=try engine.sourceSpatialScanPrintedPhoton(
+                    [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
+                    sourceLinearOutput:parameters.scannerOptics.active
+                )
+                for c in 0..<3 { frame.rgb[k+c]=output[c] }
+            }
         }
         if parameters.scannerOptics.active {
             // Exact upstream ScanningStage order: ACES linear RGB ->
@@ -423,7 +469,9 @@ extension OriginalSourcePixelIO {
                 (parameters.cameraOptics.needsWholeImageBlur
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active
-                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0)
+                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
+                (parameters.printDiffusion.active
+                    ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
         )
         var frame=try decode(
             data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
