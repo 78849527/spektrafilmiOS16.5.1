@@ -48,6 +48,36 @@ struct Build77StageTapeRecorderValidation {
             correctlyFailed = true
         }
         precondition(correctlyFailed, "Memory budget must fail, never truncate")
+        // The full source diagnostic tape must be truthful about
+        // negative→paper and positive direct-film-scan topology. No
+        // fabricated two print taps for the direct positive branch.
+        let normal = try Build77StageTapeRecorder(
+            width:1,height:1,maxTotalElements:60
+        )
+        for stage in ["iosInput","logRaw","density","paperLogExposure",
+                      "paperDevelopedDensity","printed","iosOutput"] {
+            normal.observe(stage,[0.25,0.5,0.75])
+        }
+        try normal.requirePhysicalSourceTopology(positiveFilm:false)
+        let direct = try Build77StageTapeRecorder(
+            width:1,height:1,maxTotalElements:60
+        )
+        for stage in ["iosInput","logRaw","density","printed","iosOutput"] {
+            direct.observe(stage,[0.25,0.5,0.75])
+        }
+        try direct.requirePhysicalSourceTopology(positiveFilm:true)
+        var rejectedMissing=false
+        do {
+            try direct.requirePhysicalSourceTopology(positiveFilm:false)
+        } catch { rejectedMissing=true }
+        precondition(rejectedMissing,
+                     "Negative optical print must have both real paper stages")
+        var rejectedFabricated=false
+        do {
+            try normal.requirePhysicalSourceTopology(positiveFilm:true)
+        } catch { rejectedFabricated=true }
+        precondition(rejectedFabricated,
+                     "Direct positive scan must reject made-up print stages")
         print("Build77 host Double NPY encoder PASS; not Python/iOS parity")
     }
 }
