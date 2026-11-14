@@ -28,7 +28,7 @@ enum Build77OneShotEvidence {
         let spatialPrint:Bool
     }
 
-    static func captureAll() throws -> URL {
+    static func captureAll(deviceModel:String,systemVersion:String) throws -> URL {
         guard Build77ReferenceInput.bits.count==
                 Build77ReferenceInput.width*Build77ReferenceInput.height*3
         else {
@@ -119,7 +119,6 @@ enum Build77OneShotEvidence {
                     test.name+"/candidate-source-tap-mapping.json"
             ])
         }
-        let device=UIDevice.current
         let manifest:[String:Any]=[
             "status":"REAL_IPHONE_STAGED_EVIDENCE_NOT_PYTHON_CERTIFIED",
             "source_sha":"3bb2c2d2801ff68b92019cf1dbcbb133d60832bc",
@@ -129,8 +128,8 @@ enum Build77OneShotEvidence {
             "input_type":"Float64_IEEE754_exact_bits",
             "app_build":Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
             "app_version":Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
-            "device_model":device.model,
-            "system_version":device.systemVersion,
+            "device_model":deviceModel,
+            "system_version":systemVersion,
             "cases":results,
             "certification_note":
                 "Captured from iPhone original Swift production, not Python "
