@@ -17,6 +17,11 @@ on:
       - "ios/tests/SourcePhysicalImageParity.swift"
       - "ios/project.yml"
       - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
+      - "ios/scripts/generate_build77_stock_halation.py"
+      - "ios/SpektraFilmPort/Build77StockHalation.swift"
+      - "ios/SpektraFilmPort/ContentView.swift"
+      - "ios/SpektraFilmPort/OriginalSourceFilmHalation.swift"
+      - "ios/tests/Build77StockHalationParity.swift"
       - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
       - "ios/SpektraFilmPort/Build77ExactJSONValue.swift"
       - "ios/tests/Build77OriginalParameterDigestValidation.swift"
@@ -224,6 +229,7 @@ jobs:
           python ios/scripts/generate_spectral_data.py
           python ios/scripts/generate_original_optics.py
           python ios/scripts/generate_hanatos.py
+          python ios/scripts/generate_build77_stock_halation.py
           python ios/scripts/generate_dir.py
           NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_hd_interpolation_reference.py
           python ios/scripts/generate_dir_spatial.py
@@ -492,3 +498,33 @@ jobs:
             build77-evidence/parameter-digest.json
             build77-evidence/swift-parameter-digest.json
           if-no-files-found: warn
+
+  native-stock-halation-digest-audit:
+    name: Original Python 20-film stock halation production binding (160 pairs)
+    needs: [python-reference-taps]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build77-python-original-taps-not-swift-certified
+          path: build77-evidence
+      - name: Derive exact 20-film stock halation from pinned source AST
+        run: |
+          python3 ios/scripts/generate_build77_stock_halation.py
+          test -s ios/SpektraFilmPort/GeneratedBuild77StockHalationSource.swift
+          grep -F 'kodak_portra_400' ios/SpektraFilmPort/GeneratedBuild77StockHalationSource.swift
+      - name: Compile actual Swift production preset reader against independent Python digest
+        run: |
+          swiftc --version
+          swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/Build77ExactJSONValue.swift \
+            ios/SpektraFilmPort/Build77StockHalation.swift \
+            ios/SpektraFilmPort/GeneratedBuild77StockHalationSource.swift \
+            ios/tests/Build77StockHalationParity.swift \
+            -o /tmp/Build77StockHalationParity
+      - name: Verify 20 filming stocks x 8 paper stocks against true source digest
+        run: |
+          /tmp/Build77StockHalationParity build77-evidence/parameter-digest.json
+          echo "PASS: stock-specific source halation baseline on actual production Swift binding, not full optical parity"
