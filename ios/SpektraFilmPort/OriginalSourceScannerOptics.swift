@@ -46,7 +46,7 @@ enum OriginalSourceScannerOptics {
     ) throws {
         try settings.validate()
         guard width>0,height>0,width<=8192,height<=8192,
-              width<=12_000_000/height,
+              width<=13_000_000/height,
               linearRGB.count==width*height*3,
               linearRGB.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("源扫描原尺寸线性 RGB 数据或像素布局无效")
