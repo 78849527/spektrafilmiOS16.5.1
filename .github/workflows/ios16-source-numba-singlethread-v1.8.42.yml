@@ -36,6 +36,10 @@ jobs:
           python -c "import numpy,numba; print('NumPy',numpy.__version__,'Numba',numba.__version__)"
       - name: Execute pinned original Numba source and generate reference
         run: python ios/scripts/generate_source_numba_singlethread.py
+      - name: Generate upstream NumPy MT and microstructure reference dependencies
+        run: |
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_source_microstructure.py
       - name: Compile actual Swift single-thread normal and source transform
         run: |
           swiftc -Onone -parse-as-library \
