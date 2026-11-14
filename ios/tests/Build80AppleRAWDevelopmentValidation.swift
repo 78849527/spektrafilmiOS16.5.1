@@ -39,19 +39,19 @@ enum Build80AppleRAWDevelopmentValidation {
                     kelvin: 5500, tintOffset: input),
                 exposureEV: 0, appleLensCorrection: false))
         }
-        for bad in [Float.nan, .infinity, -.infinity, -10.01, 10.01] {
+        for bad in [Float.nan, Float.infinity, -Float.infinity, Float(-10.01), Float(10.01)] {
             try requireReject("EV", .init(
                 whiteBalance: .asShot,
                 exposureEV: bad,
                 appleLensCorrection: false))
         }
-        for bad in [Float.nan, .infinity, 1999, 50001] {
+        for bad in [Float.nan, Float.infinity, Float(1999), Float(50001)] {
             try requireReject("temperature", .init(
                 whiteBalance: .appleTemperature(
                     kelvin: bad, tintOffset: 0),
                 exposureEV: 0, appleLensCorrection: false))
         }
-        for bad in [Float.nan, -.infinity, -150.01, 150.01] {
+        for bad in [Float.nan, -Float.infinity, Float(-150.01), Float(150.01)] {
             try requireReject("Apple tint offset", .init(
                 whiteBalance: .appleTemperature(
                     kelvin: 5500, tintOffset: bad),
