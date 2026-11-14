@@ -1210,7 +1210,34 @@ struct ContentView: View {
                 onSaveToPhotos: { resolution in
                     proposeExport(saveToPhotos: true, resolution: resolution)
                 },
-                onRefresh: { refresh() }
+                onRefresh: { refresh() },
+                onCaptureBuild77Evidence: {
+                    guard !model.busy else { return }
+                    let hardwareName=UIDevice.current.model
+                    let version=UIDevice.current.systemVersion
+                    model.busy=true
+                    model.status="正在一次性采集负片/正片/扩散三类原版阶段 Float64 证据…"
+                    Task { @MainActor in
+                        defer { model.busy=false }
+                        do {
+                            let folder=try await Task.detached(
+                                priority:.userInitiated
+                            ) {
+                                try Build77OneShotEvidence.captureAll(
+                                    deviceModel:hardwareName,
+                                    systemVersion:version
+                                )
+                            }.value
+                            model.status="真实 iPhone 阶段证据已生成。文件应用→我的 iPhone→SpektraFilm Port→" +
+                                folder.lastPathComponent + "；仍未完成 Python 数值认证。"
+                            activeSheet = .share(folder)
+                        } catch {
+                            model.status="Build77 一次性阶段采集失败："
+                                + error.localizedDescription
+                            message=error.localizedDescription
+                        }
+                    }
+                }
             )
             .toolbar(.hidden, for: .navigationBar)
             .onChange(of: selectedPhoto) { item in
