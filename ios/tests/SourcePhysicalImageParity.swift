@@ -211,6 +211,59 @@ enum SourcePhysicalImageParity {
                     traces[stage]=pixels
                 }
             )
+            // Build77/02: verify source NORMAL print branch also gives
+            // the actual Python PrintingStage log-exposure and developed
+            // CMY density, before scanning; not a post-RGB reconstruction.
+            if !SpectralPhysics.isPositiveFilm(fixture.film) {
+                guard let paperLog=traces["paperLogExposure"],
+                      let paperDensity=traces["paperDevelopedDensity"],
+                      let filmDensity=traces["density"],
+                      paperLog.count == frame.rgb.count,
+                      paperDensity.count == frame.rgb.count,
+                      filmDensity.count == frame.rgb.count else {
+                    throw Failure.invalid(
+                        "Build77 missing real normal-branch paper stages"
+                    )
+                }
+                let engine=try params.createEngine()
+                for offset in stride(from:0,to:frame.rgb.count,by:3) {
+                    var sourceLog=[Double]()
+                    var sourceDensity=[Double]()
+                    let final=try engine.sourceSpatialScan(
+                        filmDensity:Array(filmDensity[offset..<(offset+3)]),
+                        paperEV:fixture.paperEV,
+                        paperStageObserver: { log,density in
+                            sourceLog=log
+                            sourceDensity=density
+                        }
+                    )
+                    guard sourceLog.count==3,sourceDensity.count==3 else {
+                        throw Failure.invalid("Build77 source normal callback absent")
+                    }
+                    for c in 0..<3 {
+                        guard paperLog[offset+c].bitPattern==
+                                sourceLog[c].bitPattern,
+                              paperDensity[offset+c].bitPattern==
+                                sourceDensity[c].bitPattern,
+                              final[c].bitPattern==
+                                actual.rgb[offset+c].bitPattern else {
+                            throw Failure.invalid(
+                                "Build77 normal source paper tap drift at "
+                                + "pixel=\(offset/3) ch=\(c)"
+                            )
+                        }
+                    }
+                }
+                print("PASS Build77 normal original print log_e_print/"
+                      + "cmy_print storage, all \((frame.rgb.count)) "
+                      + "Double channels preserved; source-scanner RGB "
+                      + "remains bit-exact")
+            } else {
+                guard traces["paperLogExposure"] == nil,
+                      traces["paperDevelopedDensity"] == nil else {
+                    throw Failure.invalid("Direct film scan acquired false paper taps")
+                }
+            }
             for stage in stages {
                 guard let expectedSHA=fixture.sha256[stage],
                       let observed=traces[stage] else {
