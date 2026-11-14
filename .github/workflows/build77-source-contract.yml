@@ -352,6 +352,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift \
             ios/tests/SourceFloat64ProfileValidation.swift \
             ios/tests/SourceHDInterpolationValidation.swift \
+            ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Validate actual in-production optical paper stage taps
