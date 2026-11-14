@@ -78,6 +78,89 @@ struct Build77StageTapeRecorderValidation {
         } catch { rejectedFabricated=true }
         precondition(rejectedFabricated,
                      "Direct positive scan must reject made-up print stages")
+        // Candidate aliases are selected from actual source-stage names,
+        // never created by fabricating original Python .npy data.
+        let normalMap=try normal.candidateSourceTapMapping(
+            positiveFilm:false,sourceGrainApplied:false
+        )
+        precondition(normalMap.count==7)
+        precondition(normalMap["log_e_film"]=="logRaw")
+        precondition(normalMap["cmy_film"]=="density")
+        precondition(normalMap["log_e_print"]=="paperLogExposure")
+        precondition(normalMap["cmy_print"]=="paperDevelopedDensity")
+        try normal.writeCandidateSourceTapMapping(
+            to:folder.appendingPathComponent("negative"),
+            positiveFilm:false,sourceGrainApplied:false
+        )
+        let negativeManifest=try Data(contentsOf:folder
+            .appendingPathComponent("negative")
+            .appendingPathComponent("candidate-source-tap-mapping.json"))
+        let negativeJSON=try JSONSerialization.jsonObject(
+            with:negativeManifest
+        ) as? [String:Any]
+        precondition(
+            negativeJSON?["numerically_certified"] as? Bool == false,
+            "Mapped source stage shapes are NOT scientific numeric parity"
+        )
+
+        let directMap=try direct.candidateSourceTapMapping(
+            positiveFilm:true,sourceGrainApplied:false
+        )
+        precondition(directMap.count==5)
+        precondition(directMap["log_e_print"]==nil)
+        precondition(directMap["cmy_print"]==nil)
+        try direct.writeCandidateSourceTapMapping(
+            to:folder.appendingPathComponent("positive"),
+            positiveFilm:true,sourceGrainApplied:false
+        )
+
+        let grain=try Build77StageTapeRecorder(
+            width:1,height:1,maxTotalElements:60
+        )
+        for name in ["iosInput","rgbPre","logRaw","density","grainDensity",
+                     "paperLogExposure","paperDevelopedDensity",
+                     "printed","iosOutput"] {
+            grain.observe(name,[0.25,0.5,0.75])
+        }
+        let grainMap=try grain.candidateSourceTapMapping(
+            positiveFilm:false,sourceGrainApplied:true
+        )
+        precondition(grainMap["cmy_film"]=="grainDensity")
+        try grain.writeCandidateSourceTapMapping(
+            to:folder.appendingPathComponent("negativeGrain"),
+            positiveFilm:false,sourceGrainApplied:true
+        )
+        var missingGrainRejected=false
+        do {
+            _ = try normal.candidateSourceTapMapping(
+                positiveFilm:false,sourceGrainApplied:true
+            )
+        } catch { missingGrainRejected=true }
+        precondition(
+            missingGrainRejected,
+            "Source grain requested without real cmy_film must fail"
+        )
+        let badOrder=try Build77StageTapeRecorder(
+            width:1,height:1,maxTotalElements:60
+        )
+        for name in ["iosInput","rgbPre","logRaw","density",
+                     "paperLogExposure","grainDensity",
+                     "paperDevelopedDensity","printed","iosOutput"] {
+            badOrder.observe(name,[0.25,0.5,0.75])
+        }
+        var badOrderRejected=false
+        do {
+            _ = try badOrder.candidateSourceTapMapping(
+                positiveFilm:false,sourceGrainApplied:true
+            )
+        } catch { badOrderRejected=true }
+        precondition(
+            badOrderRejected,
+            "Grain post-paper stage must not be mislabeled cmy_film"
+        )
+        print("PASS Build77 candidate 7/5 Python tap manifest:"
+              + " correct grain selection, failed fabricated branch,"
+              + " invalid order rejected; NOT numerical parity")
         print("Build77 host Double NPY encoder PASS; not Python/iOS parity")
     }
 }
