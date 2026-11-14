@@ -32,14 +32,14 @@ enum OriginalSourcePixelIO {
         CGColorSpace(name: CGColorSpace.sRGB)!
     }()
 
-    private static func orientation(_ source: CGImageSource) -> Int {
+    static func orientation(_ source: CGImageSource) -> Int {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
         let number = (properties as NSDictionary?)?[kCGImagePropertyOrientation]
             as? NSNumber
         return number?.intValue ?? 1
     }
 
-    private static func requireExplicitSRGB(_ image: CGImage) throws {
+    static func requireExplicitSRGB(_ image: CGImage) throws {
         guard let colorSpace = image.colorSpace,
               colorSpace.model == .rgb,
               CFEqual(colorSpace, srgb) else {
@@ -135,9 +135,32 @@ enum OriginalSourcePixelIO {
               ) else {
             throw Failure.invalid("原版像素直连：ImageIO 无法读取照片")
         }
-        guard original.bitsPerComponent == 8 else {
+        // The source file's declared precision is checked independently
+        // from the CGImage bitmap returned by ImageIO. A 16-bit file
+        // decoded by a backend as 8-bit must FAIL, never masquerade as an
+        // accurate 8-bit source input.
+        let properties=CGImageSourceCopyPropertiesAtIndex(
+            imageSource,0,nil
+        ) as NSDictionary?
+        let declaredDepth=(properties?[kCGImagePropertyDepth] as? NSNumber)?
+            .intValue ?? original.bitsPerComponent
+        if declaredDepth > original.bitsPerComponent {
             throw Failure.invalid(
-                "原版像素直连只接受 8-bit JPEG/HEIC/PNG；高位深、RAW 不得降级到 8-bit"
+                "Build78 ImageIO 解码位深低于原文件位深；禁止静默转成 8-bit"
+            )
+        }
+        if original.bitsPerComponent == 16 {
+            return try Build78HighBitDepthIngress.decode(
+                source:imageSource,image:original,
+                previewMaxSide:previewMaxSide,resizedTo:resizedTo,
+                maximumAllowedPixels:maximumAllowedPixels
+            )
+        }
+        guard original.bitsPerComponent == 8,
+              declaredDepth <= 8 else {
+            throw Failure.invalid(
+                "原版像素直连未认证该输入位深；RAW/Float16/Float32/高动态范围"
+                + "不能未经验证直接压成 RGBA8"
             )
         }
         // Pixel-preserving mode must not quietly turn a Display P3, gray,
