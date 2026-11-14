@@ -4,11 +4,16 @@
 This is NOT a Swift self-reference: upstream SpektraFilm actual Hanatos
 functions and 2D film/coupler/spectral/print functions are executed. Source
 measured Float64 datasets are loaded untouched, not quantized to Float32.
-Fixtures exclude RAW, halation, random grain and default CAM16 (use source
-documented ACES option). The exact physical scope is explicit in manifest.
+Fixtures exclude RAW, halation and default CAM16 (use source documented
+ACES option). Build75 additionally executes pinned UNMODIFIED source grain.py
+inside each original Python image, then finishes original optical paper scan.
+Numba is explicitly seeded with a single worker: this does NOT certify
+the original unseeded parallel prange RNG or real sensor RAW.
 """
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import colour
@@ -25,10 +30,13 @@ from generate_source_negative_print_chain import settings
 from generate_original_optics import default_dichroic, kg3_filter
 from generate_print_morph import DensityCurvesModel, apply_print_curves_morph
 from generate_source_print_scanner_parity import source_scan_print
+from generate_source_physical_grain import BLOBS, gitblob, seed_numba_one_worker
 
 OUT = ROOT / "ios/verification/generated-physical-v1.8.22"
 STAGES = ("logRaw", "initial", "inhibitors", "diffused",
-          "correctedLog", "density", "printed")
+          "correctedLog", "density", "printed",
+          "grainSublayers", "grainDyeClouds", "grainMicrostructure",
+          "grainDensity", "grainPrinted")
 CASES = (
     ("kodak_neutral_fir", "kodak_portra_400", "kodak_portra_endura",
      "neutral", 19, 13, 12.0, 0.0, 0.0, 0.0, 0.0, (0., 0., 0.), 0.0),
@@ -36,6 +44,9 @@ CASES = (
      "gamma_082", 31, 17, 4.0, 0.5, -1.0, 0.02, 9.0, (-8., 12., 7.), 0.0),
     ("kodak_endura_morph", "kodak_portra_400", "kodak_portra_endura",
      "exhaustion_04", 47, 31, 9.0, -0.5, 1.0, 0.04, -12.0, (6., -9., 11.), -8.0),
+    # Active source Numba lognormal and YVV blur: 30 nm / 0.35 um > 0.05.
+    ("kodak_grain_micro_yvv", "kodak_portra_400", "kodak_portra_endura",
+     "neutral", 12, 10, 0.35, 0.0, 0.0, 0.0, 0.0, (0., 0., 0.), 0.0),
 )
 
 
@@ -58,6 +69,38 @@ def main():
     # the ACTUAL upstream functions to that module, not test approximations.
     couplers.fast_gaussian_filter = filtering.fast_gaussian_filter
     couplers.fast_exponential_filter = filtering.fast_exponential_filter
+
+    # Run the ACTUAL pinned upstream 3x3 grain.py after true original
+    # Hanatos→H-D→2D DIR. Its SciPy counts are per-layer seeded; source
+    # Numba microstructure is separately seeded with one workqueue worker.
+    assert os.environ.get("NUMBA_NUM_THREADS") == "1"
+    assert os.environ.get("NUMBA_THREADING_LAYER") == "workqueue"
+    for path, expected in BLOBS.items():
+        assert gitblob(ROOT / "src/spektrafilm" / path) == expected, (
+            "Upstream source grain algorithm changed: " + path
+        )
+    schema = sys.modules["spektrafilm.runtime.params_schema"]
+    schema.GrainParams = type("GrainParams", (), {})
+    load_original_module(
+        "spektrafilm.utils.fast_stats",
+        ROOT / "src/spektrafilm/utils/fast_stats.py",
+    )
+    source_grain = load_original_module(
+        "spektrafilm.model.grain",
+        ROOT / "src/spektrafilm/model/grain.py",
+    )
+    # Warm both source Numba branches before reseeding, so JIT compilation
+    # cannot contaminate the original single-worker random stream.
+    seed_numba_one_worker(8888)
+    source_grain.apply_grain_to_density_layers(
+        np.full((2, 2, 3, 3), .2, dtype=np.float64),
+        density_max_layers=np.full((3, 3), .5, dtype=np.float64),
+        pixel_size_um=2.0, grain_blur=0.0, grain_blur_dye_clouds_um=0.0,
+        grain_micro_structure=(0.0, 0.0), use_fast_stats=False,
+    )
+    source_grain.add_micro_structure(
+        np.full((2, 2, 3), .15, dtype=np.float64), (.2, 30.0), .35
+    )
     raw_hanatos = load_actual_source_hanatos()
 
     original_source = np.asarray(
@@ -81,6 +124,13 @@ def main():
             "src/spektrafilm/runtime/stages/scanning.py",
         ],
         "cases": [],
+        "grain": {
+            "scope": "UNMODIFIED source grain.py after Python Hanatos/H-D/2D DIR; original optical paper RGB",
+            "numba_seed": 8888,
+            "numba_workers": 1,
+            "source_blobs": BLOBS,
+            "not_certified": ["unseeded Numba prange RNG", "RAW", "full-resolution real-iPhone RGB"],
+        },
     }
 
     cache = {}
@@ -164,34 +214,81 @@ def main():
             np.nan_to_num(10**(-film_base) * flash_light, nan=0.0),
             paper_sensitivity
         )
-        # Original spectral density -> transmission. NaN at any source
-        # wavelength means ZERO transmitted light, never no dye.
-        total_density = film_base[None,None,:] + np.einsum(
-            "hwc,lc->hwl", developed, dyes
+        def source_optical_paper_scan(film_density):
+            # This is the SAME independent original Python spectral print
+            # route as the ungrained reference, not Swift/replayed RGB.
+            # Optical film density is changed BEFORE enlarger exposure.
+            total_density = film_base[None,None,:] + np.einsum(
+                "hwc,lc->hwl", film_density, dyes
+            )
+            trans = np.nan_to_num(10**(-total_density), nan=0.0)
+            print_raw = np.einsum(
+                "hwl,lc,l->hwc", trans, paper_sensitivity, light
+            )
+            print_log = np.log10(
+                np.maximum((np.maximum(print_raw + preflash, 0.0) + 1e-10)
+                           * 2**paper_ev, 0.0) + 1e-10
+            )
+            paper_density = np.stack(
+                [np.interp(print_log[:, :, c], paper_axis, paper_curves[:, c])
+                 for c in range(3)], axis=-1
+            )
+            _, _, _, encoded_output = source_scan_print(
+                paper_doc, paper_density.reshape(-1, 3)
+            )
+            return np.clip(
+                encoded_output.reshape(height, width, 3), 0.0, 1.0
+            )
+        printed = source_optical_paper_scan(developed)
+
+        # The actual Python film density curves remain in Float64. For
+        # original grain.py, measured per-layer inversion uses a normalized
+        # total H-D domain but UNMODIFIED absolute sublayer curves.
+        layer_curves = np.asarray(
+            film_data["density_curves_layers"], dtype=np.float64
         )
-        trans = np.nan_to_num(10**(-total_density), nan=0.0)
-        print_raw = np.einsum(
-            "hwl,lc,l->hwc", trans, paper_sensitivity, light
+        measured_layers = density.interp_density_cmy_layers(
+            developed, curves, layer_curves, positive_film=False
         )
-        print_log = np.log10(
-            np.maximum((np.maximum(print_raw + preflash, 0.0) + 1e-10)
-                       * 2**paper_ev, 0.0) + 1e-10
-        )
-        paper_density = np.stack(
-            [np.interp(print_log[:, :, c], paper_axis, paper_curves[:, c])
-             for c in range(3)], axis=-1
-        )
-        _, _, _, encoded_output = source_scan_print(
-            paper_doc, paper_density.reshape(-1,3)
-        )
-        printed = np.clip(
-            encoded_output.reshape(height, width, 3), 0.0, 1.0
-        )
+        maxima = np.nanmax(layer_curves, axis=0)
+        original_micro = source_grain.add_micro_structure
+        observed_grain = {}
+        def observe_micro(value, micro_structure, px_um):
+            observed_grain["grainDyeClouds"] = value.copy()
+            result = original_micro(value, micro_structure, px_um)
+            observed_grain["grainMicrostructure"] = result.copy()
+            return result
+        try:
+            source_grain.add_micro_structure = observe_micro
+            seed_numba_one_worker(8888)
+            grain_density = source_grain.apply_grain_to_density_layers(
+                measured_layers.copy(),
+                density_max_layers=maxima.copy(),
+                pixel_size_um=pixel_um,
+                particle_area_um2=.2,
+                particle_scale=(1.6, 1.6, 3.2),
+                particle_scale_layers=(2.0, 1.0, 0.5),
+                density_min=(.03, .03, .03),
+                grain_uniformity=(.97, .99, .97),
+                grain_blur=.65, grain_blur_dye_clouds_um=1.0,
+                grain_micro_structure=(.2, 30.0),
+                use_fast_stats=False,
+            )
+        finally:
+            source_grain.add_micro_structure = original_micro
+        assert set(observed_grain) == {"grainDyeClouds", "grainMicrostructure"}
+        grain_printed = source_optical_paper_scan(grain_density)
+
         stages = {
             "logRaw": log_raw, "initial": initial,
             "inhibitors": inhibitors, "diffused": diffused,
             "correctedLog": corrected_log, "density": developed,
-            "printed": printed
+            "printed": printed,
+            "grainSublayers": measured_layers,
+            "grainDyeClouds": observed_grain["grainDyeClouds"],
+            "grainMicrostructure": observed_grain["grainMicrostructure"],
+            "grainDensity": grain_density,
+            "grainPrinted": grain_printed,
         }
         hashes = {"png": hashlib.sha256(png).hexdigest()}
         for stage in STAGES:
@@ -204,17 +301,20 @@ def main():
             "cameraEV": camera_ev, "paperEV": paper_ev,
             "flash": flash, "flashM": flash_m, "flashY": flash_y,
             "shift": list(shift), "sha256": hashes,
+            "numba_micro_enabled": (.03 / pixel_um) > .05,
         })
         print(
             f"PASS original upstream physical source {name}: "
             f"{width}x{height}, original Hanatos→H-D→real spatial FIR/YVV"
-            "→source paper CDF→XYZ/ACES RGB, 7 stages", flush=True
+            "→source paper CDF→XYZ/ACES RGB + original seeded "
+            "9-layer grain→optical RGB, 12 source stages", flush=True
         )
     (OUT/"manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True)+"\n",
         encoding="utf-8"
     )
-    print("PASS: original upstream nonlinear 2D whole-image references generated")
+    print("PASS: original upstream nonlinear 2D whole-image PLUS actual seeded 3x3 grain and optical RGB references generated")
+    print("NOT CERTIFIED: default unseeded multiworker Numba, arbitrary RAW, full-resolution real-device RGB")
 
 
 if __name__ == "__main__":
