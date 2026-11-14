@@ -107,6 +107,10 @@ spectral=(root/"ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
 assert 'sourceOriginal: Bool = false' in spectral
 assert 'sourceOriginal:true' in spectral
 assert 'let reciprocal=delta == 0 ? 0.0 : 1.0/delta' in spectral
+assert 'var low=0' in spectral and 'var high=256' in spectral
+assert 'if desired < domain(mid) { high=mid }' in spectral
+assert 'let previous=idx-1' in spectral
+assert 'var hi = 255' in spectral  # mobile/fast left intact
 assert 'return sourceOriginal ? sample : max(0,sample)' in spectral
 assert '("grainSublayers","sourceGrainSublayers",9,1e-8,1e-10)' in test
 # Reuse of CPU Float64 scratch arrays changes only allocations,
