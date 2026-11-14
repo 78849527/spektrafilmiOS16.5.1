@@ -63,48 +63,48 @@ struct FloatingEditorWorkspace: View {
             let adjustWidth = max(148, min(204, available.width - wheelWidth - 24))
             ZStack {
                 Color.black
-                previewArea(size: available)
-                    .frame(width: available.width, height: available.height)
-                    .clipped()
-            }
-            .overlay(alignment: .top) {
-                topToolbar
-                    .padding(.horizontal, 8)
-                    .padding(.top, 7)
+                // Fixed top-to-bottom order; image starts right below
+                // diagnostics. The toolbar never overlays the preview.
+                VStack(spacing: 4) {
+                    if controlsVisible && model.hasPhoto {
+                        Button {
+                            statusReportPresented = true
+                        } label: {
+                            statusChip
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("查看完整状态及 Metal 数值诊断报告")
+                        .padding(.horizontal, 9)
+                        .padding(.top, 7)
+                    }
+                    GeometryReader { previewSlot in
+                        previewArea(size: previewSlot.size)
+                            .frame(width: previewSlot.size.width,
+                                   height: previewSlot.size.height,
+                                   alignment: .top)
+                            .clipped()
+                    }
+                    bottomToolbar
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 7)
+                }
+                .frame(width: available.width, height: available.height)
             }
             .overlay(alignment: .bottomLeading) {
                 if controlsVisible && model.hasPhoto {
                     wheelDock(width: wheelWidth)
-                        .offset(
-                            x: wheelOffset.width,
-                            y: wheelOffset.height
-                        )
+                        .offset(x: wheelOffset.width, y: wheelOffset.height)
                         .padding(.leading, 8)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 63)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
                 if controlsVisible && model.hasPhoto {
-                    adjustmentDock(width: adjustWidth, maxHeight: available.height * 0.43)
-                        .offset(
-                            x: adjustOffset.width,
-                            y: adjustOffset.height
-                        )
+                    adjustmentDock(width: adjustWidth,
+                                   maxHeight: available.height * 0.43)
+                        .offset(x: adjustOffset.width, y: adjustOffset.height)
                         .padding(.trailing, 8)
-                        .padding(.bottom, 10)
-                }
-            }
-            .overlay(alignment: .topLeading) {
-                if controlsVisible && model.hasPhoto {
-                    Button {
-                        statusReportPresented = true
-                    } label: {
-                        statusChip
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("查看完整状态及 Metal 数值诊断报告")
-                    .padding(.top, 61)
-                    .padding(.horizontal, 9)
+                        .padding(.bottom, 63)
                 }
             }
             .sheet(isPresented: $statusReportPresented) {
@@ -113,8 +113,7 @@ struct FloatingEditorWorkspace: View {
                     .presentationDragIndicator(.visible)
             }
             .background(Color.black.ignoresSafeArea())
-            // Avoid reentrant @State changes from derived model.hasPhoto
-            // inside AttributeGraph view updates (v1.0 startup regression).
+            // Preserve picker/dock lazy mounting for iOS 16.5.1.
         }
     }
 
@@ -124,8 +123,9 @@ struct FloatingEditorWorkspace: View {
                 Image(uiImage: picture)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: size.width, height: size.height)
-                    .scaleEffect(photoScale)
+                    .frame(width: size.width, height: size.height,
+                           alignment: .top)
+                    .scaleEffect(photoScale, anchor: .top)
             } else {
                 VStack(spacing: 11) {
                     Image(systemName: "photo.on.rectangle.angled")
@@ -216,7 +216,7 @@ struct FloatingEditorWorkspace: View {
         )
     }
 
-    private var topToolbar: some View {
+    private var bottomToolbar: some View {
         HStack(spacing: 7) {
             toolButton("camera.fill", name: "NextLevel 专业拍照并直接冲印", action: onOpenCamera)
                 .disabled(model.busy)
