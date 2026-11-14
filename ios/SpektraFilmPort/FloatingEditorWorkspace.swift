@@ -740,9 +740,10 @@ struct FloatingEditorWorkspace: View {
         .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
     }
 
-    /// Distinct one-axis material rails: swipe horizontally to browse all
-    /// films and papers; tap one card to make it active. No wheel picker,
-    /// no left/right edge attachment, no unintended selection on a swipe.
+    /// Each horizontal page swipe CHANGES the active material binding.
+    /// Unlike a scroll-only carousel, there is no second tap to select.
+    /// The parent ContentView uses selection changes to recalculate
+    /// the real source preview and persist the currently selected stock.
     private var filmSelectionContent: AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 11) {
@@ -790,55 +791,41 @@ struct FloatingEditorWorkspace: View {
                         selection.wrappedValue = defaultID
                     }
                 Spacer()
-                Text("左右滑动选择 · 双击名称复原")
+                Text("左右滑动切换 · 双击名称复原")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 12)
-            ScrollViewReader { reader in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 8) {
-                        ForEach(items) { stock in
-                            Button {
-                                selection.wrappedValue = stock.id
-                            } label: {
-                                Text(shortName(stock))
-                                    .font(.system(size: 12, weight:
-                                          selection.wrappedValue == stock.id
-                                          ? .semibold : .regular))
-                                    .lineLimit(1)
-                                    .foregroundColor(selection.wrappedValue == stock.id
-                                                     ? .accentColor : .primary)
-                                    .padding(.horizontal, 13)
-                                    .frame(height: 40)
-                                    .background(
-                                        selection.wrappedValue == stock.id
-                                        ? Color.accentColor.opacity(0.16)
-                                        : Color.primary.opacity(0.06),
-                                        in: RoundedRectangle(cornerRadius: 10)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .id(stock.id)
-                            .accessibilityLabel(
-                                title + " " + shortName(stock) +
-                                (selection.wrappedValue == stock.id
-                                 ? "，当前已选" : "，点击选择")
-                            )
-                        }
+            TabView(selection: selection) {
+                ForEach(items) { stock in
+                    HStack(spacing: 12) {
+                        Image(systemName: "chevron.left")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer(minLength: 3)
+                        Text(shortName(stock))
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .foregroundColor(.accentColor)
+                        Spacer(minLength: 3)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 12)
-                }
-                .onAppear {
-                    reader.scrollTo(selection.wrappedValue, anchor: .center)
-                }
-                .onChange(of: selection.wrappedValue) { chosen in
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        reader.scrollTo(chosen, anchor: .center)
-                    }
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Color.accentColor.opacity(0.13),
+                                in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 13)
+                    .tag(stock.id)
+                    .accessibilityLabel(title + " " + shortName(stock))
                 }
             }
-            .frame(height: 48)
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 54)
+            .accessibilityHint("向左或向右滑动切换当前材料")
         }
     }
 
