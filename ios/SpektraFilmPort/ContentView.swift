@@ -499,6 +499,35 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Build79/09: explicit user-requested TRUE Apple RAW decoder probe.
+    /// Do not use an embedded JPEG as a substitute, and don't modify the
+    /// source RGB preview or claim Python rawpy numerical equivalence.
+    func probePreservedRAWBackend() {
+        guard let url=capturedRAWURL else {
+            status="请先导入真实 RAW 原片再检测原生解码器"
+            return
+        }
+        guard !busy else { return }
+        busy=true
+        status="正在验证 Apple RAW 解码器是否实际能读取并渲染该文件…"
+        Task { @MainActor in
+            defer { busy=false }
+            do {
+                let result=try await Task.detached(priority:.userInitiated) {
+                    try Build79NativeRAWBackend.probe(url)
+                }.value
+                status="Apple RAW 实测可解码 ."
+                    + result.format.rawValue.uppercased()
+                    + "，图像 \(result.dimensions.width)×\(result.dimensions.height)"
+                    + "，1px Float32 实际渲染成功。"
+                    + "但还没有与 Python rawpy/LibRaw 数值等价，"
+                    + "未开启原版 RAW 显影。"
+            } catch {
+                status="原生 RAW 后端未通过："+error.localizedDescription
+            }
+        }
+    }
+
     private func loadPhoto(_ data: Data) throws {
         invalidateSimulation()
         let decoded = try PhotoProcessor.decode(data)
