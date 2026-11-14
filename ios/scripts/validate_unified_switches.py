@@ -102,7 +102,7 @@ for token in (
     "private var simpleSwitchRow: AnyView",
     "private var activeSettings: AnyView",
     "private var adjustmentDetailContent: AnyView",
-    "tx.disablesAnimations = true",
+    "transaction.disablesAnimations = true",
     "StableImageHoldRecognizer(isHolding: $originalHeld)",
 ):
     assert token in src, f"Core UI stability/diagnostic feature lost: {token}"
