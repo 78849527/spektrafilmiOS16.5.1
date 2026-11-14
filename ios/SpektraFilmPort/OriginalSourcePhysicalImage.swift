@@ -458,6 +458,13 @@ enum OriginalSourcePhysicalImage {
             }
         }
         if activePrintDiffusion {
+            // Debug-only full Double snapshots of REAL in-production paper
+            // exposure and H-D output. Zero extra full-frame buffers when
+            // no observer is supplied; no normal preview/export change.
+            var paperLogObserved:[Double]? = stageDoubleObserver == nil
+                ? nil : [Double](repeating:0,count:size)
+            var paperDensityObserved:[Double]? = stageDoubleObserver == nil
+                ? nil : [Double](repeating:0,count:size)
             let pixelUM=parameters.cameraOptics.filmFormatMM * 1000.0 /
                 Double(max(w,h))
             // Raw paper photons are already multiplied by the enlarger EV.
@@ -472,9 +479,22 @@ enum OriginalSourcePhysicalImage {
                 let output=try engine.sourceSpatialScanPrintedPhoton(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
                     sourceLinearOutput:parameters.scannerOptics.active,
-                    sourceXYZOutput:controlledScannerGlare
+                    sourceXYZOutput:controlledScannerGlare,
+                    paperStageObserver: stageDoubleObserver == nil
+                        ? nil : { logExposure,paperDensity in
+                            for c in 0..<3 {
+                                paperLogObserved?[k+c]=logExposure[c]
+                                paperDensityObserved?[k+c]=paperDensity[c]
+                            }
+                        }
                 )
                 for c in 0..<3 { frame.rgb[k+c]=output[c] }
+            }
+            if let paperLogObserved {
+                stageDoubleObserver?("paperLogExposure",paperLogObserved)
+            }
+            if let paperDensityObserved {
+                stageDoubleObserver?("paperDevelopedDensity",paperDensityObserved)
             }
         }
         if controlledScannerGlare {
