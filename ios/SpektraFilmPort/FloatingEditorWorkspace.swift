@@ -286,13 +286,21 @@ struct FloatingEditorWorkspace: View {
         withTransaction(transaction) {
             controlsVisible = true
             unifiedEditorExpanded = true
-            selectedEditorPage = .film
+            selectedEditorPage = .adjustment
             adjustmentRowsReady = false
             adjustmentDetailReady = false
         }
-        // The "调整" toolbar opens the shared editor, initially showing
-        // the horizontally scrolling film/paper; top "调整" opens effects.
-        // This lightweight first page avoids cold-starting all settings.
+        // Bottom "调整" opens the adjustment page directly. Preserve the
+        // iOS16-safe two-turn mounting that also runs on title switching.
+        DispatchQueue.main.async {
+            guard unifiedEditorExpanded && selectedEditorPage == .adjustment else { return }
+            adjustmentRowsReady = true
+            DispatchQueue.main.async {
+                guard unifiedEditorExpanded && selectedEditorPage == .adjustment &&
+                      adjustmentRowsReady else { return }
+                adjustmentDetailReady = true
+            }
+        }
     }
 
     private func closeUnifiedEditor() {
