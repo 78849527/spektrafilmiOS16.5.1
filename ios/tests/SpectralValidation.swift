@@ -28,6 +28,7 @@ struct SpectralValidation {
         try Build78HighBitDepthValidation.evaluate()
         try Build78FloatTIFFValidation.evaluate()
         try Build79RAWSignatureValidation.evaluate()
+        try Build80AppleRAWDevelopmentValidation.evaluate()
         try SourceFloat64ProfileValidation.evaluate()
         try SourceHDInterpolationValidation.evaluate()
         try OriginalSourceCameraBatchValidation.evaluate()
