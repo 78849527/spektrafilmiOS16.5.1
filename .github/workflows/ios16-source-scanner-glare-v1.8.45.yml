@@ -68,6 +68,7 @@ jobs:
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
             /tmp/SourceSpatialDIRConvolutionSourceBlur.swift \
             ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlareDiagnostic.swift \
             ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift \
             ios/tests/SourceScannerGlareValidation.swift \
             -o /tmp/SourceScannerGlareValidation
@@ -83,6 +84,7 @@ jobs:
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
             /tmp/SourceSpatialDIRConvolutionSourceBlur.swift \
             ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlareDiagnostic.swift \
             ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
       - name: Keep full original certification blocked
         run: |
