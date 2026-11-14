@@ -173,12 +173,24 @@ enum Build81OriginalInputValidation {
             throw Failure.invalid("Build81 gamut test vectors malformed")
         }
         let locus=try locusRaw.map {try point($0)}
+        guard let cieSHA=gamut["default_cie_locus_sha256"] as? String,
+              let cieCount=(gamut["default_cie_locus_count"] as? NSNumber)?.intValue,
+              cieCount==66,
+              cieSHA==Build81GeneratedSpectralLocus.float64SHA256,
+              Build81GeneratedSpectralLocus.points.count==66,
+              Build81GeneratedSpectralLocus.sourceBlob==
+                "9783e7fcfc2909c4acdf2da53595c5404645dde9" else {
+            throw Failure.invalid(
+                "Build81 generated true CIE 1931 default locus source/digest mismatch"
+            )
+        }
         var gamutChannels=0
         for (caseID,item) in cases.enumerated() {
             guard let rawKnee=item["knee"] as? [NSNumber],
                   rawKnee.count==3,
                   let inputRaw=item["input"] as? [[NSNumber]],
                   let expectedRaw=item["output"] as? [[NSNumber]],
+                  let cieExpectedRaw=item["default_cie_output"] as? [[NSNumber]],
                   let dRaw=item["knee_input"] as? [NSNumber],
                   let kneeRaw=item["knee_expected"] as? [NSNumber] else {
                 throw Failure.invalid("Build81 gamut case malformed")
@@ -195,6 +207,27 @@ enum Build81OriginalInputValidation {
             )
             guard result.count==ref.count else {
                 throw Failure.invalid("Build81 gamut sample count drift")
+            }
+            let defaultReference=try cieExpectedRaw.map {try point($0)}
+            let cieResult=try Build81OriginalInputGamut.compressUsingOriginalSpectralLocus(
+                xy,white:white,knee:knee
+            )
+            guard cieResult.count==defaultReference.count else {
+                throw Failure.invalid("Build81 CIE source default sample count mismatch")
+            }
+            for k in cieResult.indices {
+                for (actual,expected) in [
+                    (cieResult[k].x,defaultReference[k].x),
+                    (cieResult[k].y,defaultReference[k].y)
+                ] {
+                    guard actual.isFinite,abs(actual-expected)<=1e-9 else {
+                        throw Failure.invalid(
+                            "Build81 real CIE1931 default xy source drift "
+                            + "case \(caseID) sample \(k)"
+                        )
+                    }
+                    gamutChannels+=1
+                }
             }
             for k in result.indices {
                 for (actual,expected) in [
