@@ -8,13 +8,17 @@
 | 工作项 | Python 源（固定 blob） | Swift 原生模块 | 本批支持范围 |
 |---|---|---|---|
 | 13 裁剪 | `utils/crop_resize.py@4737b922...` | `Build81OriginalCrop.swift` | NumPy nearest-even、长边比例、中心 x/y 翻转、边界修正、Python 负切片语义及 CPU Float64 RGB 复制 |
-| 14 缩放 | `utils/preview.py@985c4099...`、scikit-image 0.25.2 | `Build81OriginalPreview.swift` | order=1、antialias Gaussian sigma=(factor−1)/2、reflect→SciPy mirror、grid_mode、Float64 插值 |
+| 14 缩放 | `utils/preview.py@985c4099...`、scikit-image 0.26.0 | `Build81OriginalPreview.swift` | order=1、antialias Gaussian sigma=(factor−1)/2、reflect→SciPy mirror、grid_mode、Float64 插值 |
 | 15 预览 | 同上 | `Build81OriginalPreview.swift` | max_side 触发条件、`int()` 向零取整、非缩放直通与零维尺寸失败 |
 | 16 输入色域压缩 | `utils/gamut_compression.py@9783e7fc...` | `Build81OriginalInputGamut.swift` | Reinhard knee、源射线与多边形相交、xy radial、active=false 直通；输入 Oklch 尚未移植，显式报错 |
 
+### 原版依赖版本核对
+
+固定上游 `pyproject.toml` 要求 `numpy~=2.4`、`scipy~=1.17`、`scikit-image~=0.26`、`colour-science~=0.4.6`。Build81 新增的预览参考使用明确的 `SciPy 1.17.0 + scikit-image 0.26.0`，不沿用此前生成旧模块 fixtures 所用的 1.16/0.25 软件栈。
+
 ### 实际验证
 
-`ios/scripts/build81_original_input_oracle.py` 强制校验上游三个 Git blob SHA，**直接提取并运行 Python 原始函数 AST**，使用 scikit-image 0.25.2 实际生成源参考：
+`ios/scripts/build81_original_input_oracle.py` 强制校验上游三个 Git blob SHA，**直接提取并运行 Python 原始函数 AST**，使用 scikit-image 0.26.0 实际生成源参考：
 
 - **11 种裁剪输入**：画面比例、右下角/左上角、肖像/横幅、短边溢出、Python bankers-round、Float64 RGB 位模式；
 - **8 种预览**：缩小、不缩小、不同尺寸比例；原版 gaussian/linear Double 像素，输出尺寸与每通道误差；
