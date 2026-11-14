@@ -633,6 +633,7 @@ struct FloatingEditorWorkspace: View {
                             .foregroundColor(.secondary)
                     }
                     Button {
+                        statusReportPresented = false
                         onCaptureBuild77Evidence()
                     } label: {
                         Label("一次采集完整负片／正片／扩散阶段证据",systemImage:"square.and.arrow.up")
