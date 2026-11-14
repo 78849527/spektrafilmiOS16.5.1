@@ -158,6 +158,16 @@ enum Build78HighBitDepthValidation {
         // production UInt16 reader, never a simulated rotated array.
         for rotation in [3,6,8] {
             let file=try encode(image,type:.tiff,orientation:rotation)
+            let diagSource=CGImageSourceCreateWithData(file as CFData,nil)
+            let diagCG=diagSource.flatMap {
+                CGImageSourceCreateImageAtIndex($0,0,nil)
+            }
+            FileHandle.standardError.write(Data(
+                "Build78 EXIF \(rotation) TIFF diagnostic: name="
+                + String(describing:diagCG?.colorSpace?.name)
+                + " bpc=\(diagCG?.bitsPerComponent ?? -1)\n"
+                .utf8
+            ))
             let frame=try OriginalSourcePixelIO.decode(file)
             let rotated=rotation==6 || rotation==8
             guard frame.width==(rotated ? 2 : 3),
