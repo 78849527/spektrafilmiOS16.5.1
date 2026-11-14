@@ -78,6 +78,37 @@ final class Build77StageTapeRecorder {
         totalElements += values.count
     }
 
+    /// Source topology invariant for diagnostic captures of the REAL
+    /// OriginalSourcePhysicalImage pipeline. This verifies that required
+    /// observed source-stage arrays exist, are ordered and retain dimensions.
+    /// It intentionally does NOT assert Python numerical equivalence.
+    func requirePhysicalSourceTopology(positiveFilm: Bool) throws {
+        if let errorMessage { throw TapeError.invalid(errorMessage) }
+        let names=samples.map { $0.name }
+        let keys=positiveFilm
+            ? ["iosInput","logRaw","density","printed","iosOutput"]
+            : ["iosInput","logRaw","density","paperLogExposure",
+               "paperDevelopedDensity","printed","iosOutput"]
+        let pixelCount=width*height*3
+        var previousIndex = -1
+        for key in keys {
+            guard let index=names.firstIndex(of:key),index>previousIndex,
+                  samples[index].values.count==pixelCount else {
+                throw TapeError.invalid(
+                    "Build77 源阶段缺失、顺序错误或 Double 尺寸错误：" + key
+                )
+            }
+            previousIndex=index
+        }
+        if positiveFilm &&
+            (names.contains("paperLogExposure") ||
+             names.contains("paperDevelopedDensity")) {
+            throw TapeError.invalid(
+                "Build77 正片直扫不包含相纸曝光／相纸密度，禁止伪造 tap"
+            )
+        }
+    }
+
     private static func npy(_ sample: Sample) throws -> Data {
         let dimensions = sample.shape.map(String.init).joined(separator: ", ")
         let tuple = sample.shape.count == 1 ? "(\(dimensions),)" : "(\(dimensions))"
@@ -170,6 +201,9 @@ extension Build77StageTapeRecorder {
             stageDoubleObserver: { name, values in recorder.observe(name, values) }
         )
         recorder.observe("iosOutput", output.rgb)
+        try recorder.requirePhysicalSourceTopology(
+            positiveFilm:SpectralPhysics.isPositiveFilm(parameters.filmID)
+        )
         try recorder.write(to: folder)
         return output
     }
