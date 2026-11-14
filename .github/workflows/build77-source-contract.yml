@@ -24,6 +24,9 @@ on:
       - "ios/SpektraFilmPort/Build77StockHalation.swift"
       - "ios/SpektraFilmPort/ContentView.swift"
       - "ios/SpektraFilmPort/OriginalSourceFilmHalation.swift"
+      - "ios/SpektraFilmPort/OriginalPrintOptics.swift"
+      - "ios/SpektraFilmPort/FloatingEditorWorkspace.swift"
+      - "ios/tests/Build77NeutralFilterParity.swift"
       - "ios/tests/Build77StockHalationParity.swift"
       - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
       - "ios/SpektraFilmPort/Build77ExactJSONValue.swift"
@@ -531,3 +534,36 @@ jobs:
         run: |
           /tmp/Build77StockHalationParity build77-evidence/parameter-digest.json
           echo "PASS: stock-specific source halation baseline on actual production Swift binding, not full optical parity"
+
+  native-neutral-filter-database-audit:
+    name: Original neutral-print database on/off in actual optical production (180 cases)
+    runs-on: ubuntu-24.04
+    needs: [python-reference-taps]
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build77-python-original-taps-not-swift-certified
+          path: build77-evidence
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Materialize actual production original spectrum and 128 stock-pair neutral rows
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6'
+          python ios/scripts/generate_original_optics.py
+          test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
+      - name: Compile actual Swift optical database resolver with independent original Python source
+        run: |
+          swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/Build77ExactJSONValue.swift \
+            ios/SpektraFilmPort/OriginalPrintOptics.swift \
+            ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
+            ios/tests/Build77NeutralFilterParity.swift \
+            -o /tmp/Build77NeutralFilterParity
+      - name: Require Float64 bitwise parity in 160 on and 20 off Python source cases
+        run: |
+          /tmp/Build77NeutralFilterParity build77-evidence/parameter-digest.json
+          echo "Scope: source filter database switching and actual pair CC only; not full image parity."
