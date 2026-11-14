@@ -27,6 +27,7 @@ struct SpectralValidation {
         // Build78/07: actual 16-bit TIFF/PNG provider -> source Float64 pixels.
         try Build78HighBitDepthValidation.evaluate()
         try Build78FloatTIFFValidation.evaluate()
+        try Build79RAWSignatureValidation.evaluate()
         try SourceFloat64ProfileValidation.evaluate()
         try SourceHDInterpolationValidation.evaluate()
         try OriginalSourceCameraBatchValidation.evaluate()
