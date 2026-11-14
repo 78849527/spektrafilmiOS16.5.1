@@ -832,8 +832,9 @@ struct FloatingEditorWorkspace: View {
     // activates it AND opens its own parameters below; tapping its
     // label again selects it without disabling. The tiny dedicated
     // switch turns it OFF and removes its parameters immediately.
-    private var featureRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+    private var featureRow: AnyView {
+        AnyView(
+            ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 5) {
                 Button { selectedFeature = .basic } label: {
                     Text("基础")
@@ -891,7 +892,8 @@ struct FloatingEditorWorkspace: View {
             }
             .padding(.horizontal, 6)
         }
-        .frame(height: 34)
+            .frame(height: 34)
+        )
     }
 
     private func featureToggle(_ title: String, feature: AdjustmentFeature,
@@ -952,8 +954,9 @@ struct FloatingEditorWorkspace: View {
     // Second row: ONLY independent on/off functions with no
     // parameter page. Advanced child switches remain inside their
     // parent's detailed page to preserve the original dependencies.
-    private var simpleSwitchRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+    private var simpleSwitchRow: AnyView {
+        AnyView(
+            ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 5) {
                 simpleToggle("64位", value: $model.hanatosOriginalPrecisionEnabled) {
                     model.queueSpectralPreview()
@@ -995,7 +998,8 @@ struct FloatingEditorWorkspace: View {
             }
             .padding(.horizontal, 6)
         }
-        .frame(height: 34)
+            .frame(height: 34)
+        )
     }
 
     private func miniatureSwitch(isOn: Bool) -> some View {
@@ -1042,54 +1046,74 @@ struct FloatingEditorWorkspace: View {
 
     // Top feature row and pure-switch second row. The parameter
     // region below exists only for an enabled selected feature.
-    private var adjustmentControls: some View {
-        VStack(spacing: 3) {
-            featureRow
-            simpleSwitchRow
-            Divider().padding(.horizontal, 8)
-            if adjustmentDetailReady {
-                ScrollView(.vertical) {
-                    activeSettings
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: .infinity)
-            } else {
+    // Incident CF7DCF7C-9351-46BA-8B3D-8A712A99DC15, iOS 16.5.1:
+    // The .ips traces 40+ recursive Swift generic metadata demangle frames
+    // to adjustmentControls.getter, followed by STACK GUARD SIGSEGV.
+    // Avoid a giant nested SwiftUI opaque type; each child is explicitly
+    // type-erased BEFORE composing it with parent views.
+    private var adjustmentControls: AnyView {
+        AnyView(
+            VStack(spacing: 3) {
+                featureRow
+                simpleSwitchRow
+                Divider().padding(.horizontal, 8)
+                adjustmentDetailContent
+            }
+        )
+    }
+
+    private var adjustmentDetailContent: AnyView {
+        guard adjustmentDetailReady else {
+            return AnyView(
                 Color.clear
                     .frame(maxHeight: .infinity)
                     .accessibilityHidden(true)
-            }
+            )
         }
+        return AnyView(
+            ScrollView(.vertical) {
+                activeSettings
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: .infinity)
+        )
     }
 
-    @ViewBuilder
-    private var activeSettings: some View {
-        if let selectedFeature {
-            switch selectedFeature {
-            case .basic:
-                exposureSettings
-            case .scanner:
-                if model.originalScannerEnabled { scannerSettings }
-            case .sharpening:
-                if model.scannerFinishingEnabled { sharpeningSettings }
-            case .enlarger:
-                if model.originalPrintOpticsEnabled && !isReversal {
-                    enlargerSettings
-                }
-            case .preflash:
-                if model.preflashEnabled && model.originalPrintOpticsEnabled && !isReversal {
-                    preflashSettings
-                }
-            case .morphology:
-                if model.printMorphEnabled && !isReversal { morphologySettings }
-            case .halation:
-                if model.halationEnabled { halationSettings }
-            case .dir:
-                if model.spatialDIREnabled { dirSettings }
-            case .grain:
-                if model.grainEnabled { grainSettings }
-            }
+    // Do NOT use @ViewBuilder with a 9-case generic ConditionalContent tree.
+    // Explicit AnyView at this dispatch boundary prevents eager metadata
+    // reconstruction of all nine complex parameter pages on drawer open.
+    private var activeSettings: AnyView {
+        guard let selectedFeature else { return AnyView(EmptyView()) }
+        switch selectedFeature {
+        case .basic:
+            return AnyView(exposureSettings)
+        case .scanner:
+            return model.originalScannerEnabled
+                ? AnyView(scannerSettings) : AnyView(EmptyView())
+        case .sharpening:
+            return model.scannerFinishingEnabled
+                ? AnyView(sharpeningSettings) : AnyView(EmptyView())
+        case .enlarger:
+            return model.originalPrintOpticsEnabled && !isReversal
+                ? AnyView(enlargerSettings) : AnyView(EmptyView())
+        case .preflash:
+            return model.preflashEnabled &&
+                   model.originalPrintOpticsEnabled && !isReversal
+                ? AnyView(preflashSettings) : AnyView(EmptyView())
+        case .morphology:
+            return model.printMorphEnabled && !isReversal
+                ? AnyView(morphologySettings) : AnyView(EmptyView())
+        case .halation:
+            return model.halationEnabled
+                ? AnyView(halationSettings) : AnyView(EmptyView())
+        case .dir:
+            return model.spatialDIREnabled
+                ? AnyView(dirSettings) : AnyView(EmptyView())
+        case .grain:
+            return model.grainEnabled
+                ? AnyView(grainSettings) : AnyView(EmptyView())
         }
     }
 
