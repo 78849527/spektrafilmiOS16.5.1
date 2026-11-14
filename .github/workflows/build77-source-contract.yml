@@ -45,3 +45,59 @@ jobs:
           name: build77-source-contract
           path: build77-evidence/source-contract.json
           if-no-files-found: warn
+
+  python-reference-taps:
+    name: Python 3.13 original seven-tap evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install original Python runtime numerical libraries
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "numpy~=2.4" "scipy~=1.17" "colour-science~=0.4.6" \
+            "scikit-image~=0.26" "opt-einsum~=3.4.0" \
+            "numba~=0.64" "pyfftw~=0.15.0" "matplotlib~=3.10" \
+            "OpenImageIO~=3.1.11" "rawpy~=0.26.1" \
+            "exiv2~=0.18.1" "lensfunpy~=1.18.0"
+          python -m pip install --no-deps -e .
+      - name: Create a fixed tiny RGB input, without seeding original runtime RNG
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from pathlib import Path
+          Path("build77-evidence").mkdir(exist_ok=True)
+          rng = np.random.default_rng(771)
+          image = 0.15 + 0.55*rng.random((6, 4, 3))
+          np.save("build77-evidence/input.npy", image, allow_pickle=False)
+          PY
+      - name: Execute the real upstream negative-to-print pipeline once
+        run: |
+          python ios/scripts/build77_source_contract.py emit-taps \
+            --input build77-evidence/input.npy \
+            --output build77-evidence/negative-print \
+            --film kodak_portra_400 --paper kodak_portra_endura
+      - name: Execute the real upstream reversal/direct-scan pipeline once
+        run: |
+          python ios/scripts/build77_source_contract.py emit-taps \
+            --input build77-evidence/input.npy \
+            --output build77-evidence/direct-scan \
+            --film fujifilm_provia_100f --paper kodak_portra_endura --scan-film
+      - name: Verify reference tape serialization and comparator
+        run: |
+          python ios/scripts/build77_source_contract.py compare-taps \
+            --reference build77-evidence/negative-print \
+            --candidate build77-evidence/negative-print --atol 0
+          python ios/scripts/build77_source_contract.py compare-taps \
+            --reference build77-evidence/direct-scan \
+            --candidate build77-evidence/direct-scan --atol 0
+      - name: Preserve original stage tape bytes and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-python-original-taps-not-swift-certified
+          path: build77-evidence/
+          if-no-files-found: warn
