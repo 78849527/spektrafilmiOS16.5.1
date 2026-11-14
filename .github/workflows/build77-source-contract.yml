@@ -370,6 +370,10 @@ jobs:
           test -s build77-evidence/build80-original-raw-tint.json
       - name: Generate pinned Python original RAW ACES CAT02/CCT white-balance oracle
         run: |
+          # The previous setup-python switches to Python 3.13; its environment
+          # does not inherit colour-science from the 3.11 fixture generator.
+          python -m pip install --disable-pip-version-check --no-deps \
+            'colour-science==0.4.6'
           python ios/scripts/build80_raw_wb_original_oracle.py \
             --output build77-evidence/build80-original-raw-whitebalance.json
           test -s build77-evidence/build80-original-raw-whitebalance.json
