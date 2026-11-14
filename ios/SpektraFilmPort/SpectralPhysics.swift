@@ -548,10 +548,11 @@ struct SpectralPhysics {
                 scanIlluminant[ch] += viewing[i] * cie[i*3+ch]
             }
         }
-        scannerIlluminantXYZ = scanIlluminant.map { $0 / scanNorm }
-        guard scannerIlluminantXYZ.allSatisfy({ $0.isFinite }) else {
+        let sourceScannerLampXYZ = scanIlluminant.map { $0 / scanNorm }
+        guard sourceScannerLampXYZ.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版扫描器光源 XYZ 包含 NaN/Inf")
         }
+        scannerIlluminantXYZ = sourceScannerLampXYZ
         // Original print balance database selects filter CC values per
         // film + printing-stock pair; do not reuse one neutral spectrum.
         let printKey = filmID + "|" + paperID
