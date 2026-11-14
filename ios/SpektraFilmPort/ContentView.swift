@@ -967,11 +967,12 @@ final class PhotoEditorModel: ObservableObject {
         if sourcePixelIOEnabled {
             // Before opening the confirmation sheet, validate the ORIGINAL
             // ImageIO dimensions and selected source algorithm budget.
-            // Do not show a 16MP normal-export memory estimate when the
-            // separately selected physical mode can process only 2MP.
-            guard resolution == .original else {
+            // Direct DIR-only still requires its unchanged original-size
+            // contract. The full-physical route separately accepts explicit
+            // safe/economy plans; all original optical stages are retained.
+            guard resolution == .original || sourcePhysicalDirectEnabled else {
                 throw ImageProcessingError.invalid(
-                    "原版像素直连实验版仅支持原尺寸高清输出，不允许隐式缩图"
+                    "8-bit 原版 DIR 像素直连仅支持原尺寸；缩图请选逐像素全光学"
                 )
             }
             let (data, _) = try validateSourcePixelIO()
@@ -979,33 +980,13 @@ final class PhotoEditorModel: ObservableObject {
                 _ = try sourcePhysicalParameters()
             }
             try OriginalSourcePixelIO.preflightExport(
-                data, maximumAllowedPixels: sourcePhysicalDirectEnabled
+                data, maximumAllowedPixels:
+                    sourcePhysicalDirectEnabled && resolution == .original
                     ? OriginalSourcePhysicalImage.maximumPixels : 16_000_000
             )
         }
         let bounds = src.extent.integral
-        if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
-            // In-place full-image physical optics now handles 10MP-class
-            // input conditionally. Validate the REAL device/process budget
-            // before showing a misleading "ready to export" sheet.
-            try OriginalSourcePhysicalImage.validateMemoryBudget(
-                width:Int(bounds.width),height:Int(bounds.height),
-                additionalBytesPerPixel:
-                    (sourceScannerOpticalEnabled
-                        ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
-                    (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
-                        ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
-                    (sourcePhysicalGrainEnabled
-                        ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
-                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
-                        ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
-                    (sourcePhysicalHalationRequested
-                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
-                    (printSourceDiffusionEnabled
-                        ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
-            )
-        }
-        return try SafeExportResolution.capture(
+        let plan = try SafeExportResolution.capture(
             width: Int(bounds.width), height: Int(bounds.height),
             mode: resolution,
             estimatedBytesPerPixel:
@@ -1028,6 +1009,28 @@ final class PhotoEditorModel: ObservableObject {
                     ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )
+        if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
+            // The entire optical chain is now bounded by the SELECTED
+            // output geometry. Original selection never silently shrinks;
+            // safe/economy never silently changes the selected stage order.
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:plan.dimensions.width,height:plan.dimensions.height,
+                additionalBytesPerPixel:
+                    (sourceScannerOpticalEnabled
+                        ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                    (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
+                        ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
+                    (sourcePhysicalGrainEnabled
+                        ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
+                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
+                        ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
+                    (sourcePhysicalHalationRequested
+                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
+                    (printSourceDiffusionEnabled
+                        ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
+            )
+        }
+        return plan
     }
 
     func exportJPEG(
@@ -1047,18 +1050,35 @@ final class PhotoEditorModel: ObservableObject {
         }
         if sourcePixelIOEnabled {
             let (data,stage)=try validateSourcePixelIO()
-            guard resolution == .original else {
+            guard sourcePhysicalDirectEnabled || resolution == .original else {
                 throw ImageProcessingError.invalid(
-                    "原版像素直连实验版仅支持原尺寸高清输出，不允许隐式缩图"
+                    "8-bit 原版 DIR 像素直连不支持缩图，禁止切换快速模式"
                 )
             }
             let settings=spatialDIRSettings
             let physical=sourcePhysicalDirectEnabled
                 ? try sourcePhysicalParameters() : nil
+            var resizedTo:(width:Int,height:Int)? = nil
+            if physical != nil {
+                // Reduced processing is an explicit UI-confirmed choice.
+                // Never recompute geometry in the detached render task.
+                guard let plan=confirmedPlan,
+                      plan.mode==resolution,
+                      plan.sourceWidth==Int(imageSource.extent.integral.width),
+                      plan.sourceHeight==Int(imageSource.extent.integral.height) else {
+                    throw ImageProcessingError.invalid(
+                        "逐像素全光学：导出确认尺寸失效，请重新选择分辨率"
+                    )
+                }
+                try SafeExportResolution.validateBeforeRender(plan)
+                if resolution != .original {
+                    resizedTo=(plan.dimensions.width,plan.dimensions.height)
+                }
+            }
             let url=try await Task.detached(priority:.userInitiated) {
                 if let physical {
                     return try OriginalSourcePixelIO.exportPhysicalJPEG(
-                        data,parameters:physical
+                        data,parameters:physical,resizedTo:resizedTo
                     )
                 }
                 return try OriginalSourcePixelIO.exportJPEG(
@@ -1067,7 +1087,7 @@ final class PhotoEditorModel: ObservableObject {
             }.value
             status=physical == nil
                 ? "原版像素直连：原尺寸 JPEG 已输出（8-bit，不含 CI 中间量化）"
-                : "逐像素原版光学：原尺寸 JPEG 已输出，未使用颜色 LUT"
+                : "逐像素原版全光学：\(resizedTo?.width ?? Int(imageSource.extent.integral.width)) × \(resizedTo?.height ?? Int(imageSource.extent.integral.height)) JPEG 已输出，原始光学算法未降级"
             return url
         }
         // Keep full-resolution Core Image evaluation off the SwiftUI main
