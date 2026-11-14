@@ -57,6 +57,14 @@ def main():
         "        let normals: [Double]",
         "        let expected: [Double]",
         "    }",
+        "    struct ParameterCase {",
+        "        let pixelUM: Double",
+        "        let microBlurUM: Double",
+        "        let microStructureNM: Double",
+        "        let microStd: Double",
+        "        let blur: Double",
+        "        let enabled: Bool",
+        "    }",
         "    static let cases: [Case] = [",
     ]
     for pixel in (9.0, 0.6, 0.4, 0.2, 0.05):
@@ -81,6 +89,28 @@ def main():
             f"            expected: {swift(values)}",
             "        ),",
         ])
+    lines.append("    ]")
+    # Non-default source settings and two independent thresholds. These
+    # are source-expression fixtures, not Numba random-stream fixtures.
+    lines.append("    static let parameterCases: [ParameterCase] = [")
+    for pixel, blur_um, strength_nm in (
+        (9.0, 0.2, 30.0),
+        (0.6, 0.2, 30.0),
+        (0.4, 0.2, 30.0),
+        (0.1, 0.0, 50.0),
+        (0.05, 0.3, 0.0),
+        (0.05, 0.001, 10.0),
+        (0.02, 1.0, 5.0),
+    ):
+        std = strength_nm * 0.001 / pixel
+        blur = blur_um / pixel
+        lines.append(
+            "        ParameterCase(pixelUM: %.17g, microBlurUM: %.17g, "
+            "microStructureNM: %.17g, microStd: %.17g, blur: %.17g, "
+            "enabled: %s),"
+            % (pixel, blur_um, strength_nm, std, blur,
+               str(std > 0.05).lower())
+        )
     lines.extend(["    ]", "}"])
     DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("PASS: source-pinned grain.py/fast_stats.py deterministic lognormal 5 cases; independent Numba RNG excluded")
