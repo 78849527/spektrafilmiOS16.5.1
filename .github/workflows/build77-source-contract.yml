@@ -342,7 +342,10 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
       - name: "Build77: native full original source spectral numerical suite"
         run: |
-          xcrun swiftc -Onone -parse-as-library \
+          xcrun swiftc -Onone -parse-as-library -D BUILD77_HOST_TAPE \
+            ios/SpektraFilmPort/Build77OneShotEvidence.swift \
+            ios/SpektraFilmPort/Build77ReferenceInput.swift \
+            ios/SpektraFilmPort/Build77StageTapeRecorder.swift \
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/SpektraFilmPort/Build78HighBitDepthIngress.swift \
