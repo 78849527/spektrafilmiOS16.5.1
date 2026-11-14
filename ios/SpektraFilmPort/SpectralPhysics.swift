@@ -306,6 +306,29 @@ struct SpectralPhysics {
                 let sample=value(255)
                 return sourceOriginal ? sample : max(0,sample)
             }
+            if sourceOriginal {
+                // Execute EXACTLY the original Numba fast_interp.py:
+                // np.searchsorted(x_axis, desired, side='right'), with
+                // [0,256) upper bound and comparison x < x_axis[mid].
+                // Measured H-D curves have local non-monotonic nodes:
+                // starting at [0,255] selects DIFFERENT 3x3 emulsion
+                // sublayer values by as much as 4e-4 in real film data.
+                var low=0
+                var high=256
+                while low<high {
+                    let mid=(low+high)/2
+                    if desired < domain(mid) { high=mid }
+                    else { low=mid+1 }
+                }
+                let idx=low
+                let previous=idx-1
+                let delta=domain(idx)-domain(previous)
+                let reciprocal=delta == 0 ? 0.0 : 1.0/delta
+                let t=(desired-domain(previous))*reciprocal
+                return value(previous)+t*(value(idx)-value(previous))
+            }
+            // Preserve original v1.8.49 mobile/fast LUT interpolation
+            // behavior unchanged; no precision/algorithm downgrade.
             var lo = 0
             var hi = 255
             while lo + 1 < hi {
@@ -314,14 +337,6 @@ struct SpectralPhysics {
                 else { hi = mid }
             }
             let delta = domain(hi) - domain(lo)
-            if sourceOriginal {
-                // Upstream Numba exact right-biased upper_bound and
-                // precomputed reciprocal: repeated x -> inv_dx=0, use
-                // LOWER interval y0, never silently substitute y1.
-                let reciprocal=delta == 0 ? 0.0 : 1.0/delta
-                let t=(desired-domain(lo))*reciprocal
-                return value(lo)+t*(value(hi)-value(lo))
-            }
             if delta <= 1e-12 { return max(0, value(hi)) }
             let t = min(1, max(0, (desired-domain(lo))/delta))
             return max(0, value(lo)+(value(hi)-value(lo))*t)
