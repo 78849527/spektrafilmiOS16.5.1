@@ -6,12 +6,15 @@ on:
       - port/build77-source-contract-01-05
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/scripts/build77_params_digest_reference.py"
       - "ios/scripts/build77_measured_manifest.py"
       - "ios/scripts/generate_spectral_data.py"
       - "ios/tests/Build77MeasuredProfileAudit.swift"
       - "ios/SpektraFilmPort/SpectralPhysics.swift"
       - "ios/project.yml"
       - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
+      - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
+      - "ios/tests/Build77OriginalParameterDigestValidation.swift"
       - "ios/tests/Build77StageTapeRecorderValidation.swift"
       - "src/spektrafilm/**"
       - "pyproject.toml"
@@ -19,12 +22,15 @@ on:
   pull_request:
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/scripts/build77_params_digest_reference.py"
       - "ios/scripts/build77_measured_manifest.py"
       - "ios/scripts/generate_spectral_data.py"
       - "ios/tests/Build77MeasuredProfileAudit.swift"
       - "ios/SpektraFilmPort/SpectralPhysics.swift"
       - "ios/project.yml"
       - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
+      - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
+      - "ios/tests/Build77OriginalParameterDigestValidation.swift"
       - "ios/tests/Build77StageTapeRecorderValidation.swift"
       - "src/spektrafilm/**"
       - "pyproject.toml"
@@ -108,6 +114,10 @@ jobs:
           python ios/scripts/build77_source_contract.py compare-taps \
             --reference build77-evidence/direct-scan \
             --candidate build77-evidence/direct-scan --atol 0
+      - name: Capture exact upstream Python RuntimePhotoParams digest (360 cases)
+        run: |
+          python ios/scripts/build77_params_digest_reference.py \
+            --output build77-evidence/parameter-digest.json
       - name: Preserve original stage tape bytes and manifest
         if: always()
         uses: actions/upload-artifact@v4
@@ -298,3 +308,76 @@ jobs:
             build77-evidence/swift-28-stock-audit.txt
           if-no-files-found: warn
 
+
+  native-parameter-digest-audit:
+    name: Python original vs native Swift source-order parameter digest 360 cases
+    runs-on: macos-15
+    needs: [python-reference-taps]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build77-python-original-taps-not-swift-certified
+          path: build77-evidence
+      - name: Verify original 360-case oracle exists
+        run: |
+          test -s build77-evidence/parameter-digest.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('build77-evidence/parameter-digest.json'))
+          assert p['status']=='ORIGINAL_PYTHON_DIGEST_REFERENCE_NOT_IOS_PRODUCTION_PARITY'
+          assert p['upstream_sha']=='3bb2c2d2801ff68b92019cf1dbcbb133d60832bc'
+          assert len(p['cases'])==360
+          print("PASS: 360 independently computed original Python parameter digest cases")
+          PY
+      - name: Compile native Swift production digest module and independent driver
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/Build77OriginalParameterDigest.swift \
+            ios/tests/Build77OriginalParameterDigestValidation.swift \
+            -o /tmp/Build77OriginalParameterDigestValidation
+      - name: Run real Swift parameter digest on all 360 original source inputs
+        run: |
+          /tmp/Build77OriginalParameterDigestValidation \
+            build77-evidence/parameter-digest.json \
+            build77-evidence/swift-parameter-digest.json
+      - name: Require every original Python field to match Swift (no ignored fields)
+        run: |
+          python3 - <<'PY'
+          import json, math
+          from pathlib import Path
+          ref=json.loads(Path('build77-evidence/parameter-digest.json').read_text())
+          val=json.loads(Path('build77-evidence/swift-parameter-digest.json').read_text())
+          assert val['status']=='SWIFT_DIGEST_SUBTREE_NOT_IOS_RENDER_PIPELINE_PARITY'
+          expected=ref['cases']; actual=val['observed']
+          assert len(expected)==len(actual)==360
+          def check(e,a,path):
+              if isinstance(e,bool):
+                  assert type(a) is bool and e is a,(path,e,a)
+              elif isinstance(e,(int,float)):
+                  assert type(a) in (int,float) and math.isfinite(a) and e==a,(path,e,a)
+              elif isinstance(e,str) or e is None:
+                  assert type(e) is type(a) and e==a,(path,e,a)
+              elif isinstance(e,list):
+                  assert type(a) is list and len(e)==len(a),(path,e,a)
+                  for i,(x,y) in enumerate(zip(e,a)): check(x,y,f'{path}[{i}]')
+              elif isinstance(e,dict):
+                  assert type(a) is dict and e.keys()==a.keys(),(path, set(e)-set(a),set(a)-set(e))
+                  for k in e:check(e[k],a[k],f'{path}.{k}')
+              else:raise AssertionError((path,type(e)))
+          for index,(e,a) in enumerate(zip(expected,actual)):
+              assert e['id']==a['id'],(index,e['id'],a['id'])
+              check(e['expected'],a['actual'],e['id'])
+          print("PASS: 360/360 original Python params_builder digests equal native Swift for EVERY scalar/list/map field")
+          print("This is digest subtree parity only, not production UI binding or rendering parity.")
+          PY
+      - name: Preserve digest oracle, exact Swift result, and audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-360-case-native-parameter-digest-parity-NOT-rendering
+          path: |
+            build77-evidence/parameter-digest.json
+            build77-evidence/swift-parameter-digest.json
+          if-no-files-found: warn
