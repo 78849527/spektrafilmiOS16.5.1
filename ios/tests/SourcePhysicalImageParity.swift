@@ -412,7 +412,7 @@ enum SourcePhysicalImageParity {
                 tooLarge,parameters:p
             )
         } catch OriginalSourcePhysicalImage.Failure.invalid(let message) {
-            rejected=message.contains("1200 万像素")
+            rejected=message.contains("1300 万像素")
         }
         guard rejected else {
             throw Failure.invalid("Oversize physical image failed to reject")
@@ -444,24 +444,59 @@ enum SourcePhysicalImageParity {
                 "Physical full-res output did not reject insufficient memory"
             )
         }
-        var over12MPDenied=false
+        // 4032x3024 is 12,192,768 pixels. The old 12MP gate blocked it
+        // before estimating memory; v1.8.49 admits its source GEOMETRY.
+        try OriginalSourcePixelIO.validatePixelDimensions(
+            width:4032,height:3024,
+            maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        )
+        try OriginalSourcePhysicalImage.validateMemoryBudget(
+            width:4032,height:3024,
+            physicalMemory:6_000_000_000,
+            processAvailableMemory:3_000_000_000
+        )
+        // Geometry acceptance is NOT a memory promise: controlled grain
+        // adds 272 bytes/pixel. Refuse a 12MP full-res render on A15.
+        var grainMemoryDenied=false
+        do {
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:4032,height:3024,
+                additionalBytesPerPixel:OriginalSourcePhysicalGrain.extraBytesPerPixel,
+                physicalMemory:4_000_000_000,
+                processAvailableMemory:1_000_000_000
+            )
+        } catch OriginalSourcePhysicalImage.Failure.invalid(let reason) {
+            grainMemoryDenied=reason.contains("内存预算不足")
+        }
+        guard grainMemoryDenied else {
+            throw Failure.invalid("Large 12.19MP grain was incorrectly promised on A15")
+        }
+        // An explicitly confirmed 1600x1200 safe/economy export keeps ALL
+        // physical density and grain stages in the same algorithm path.
+        try OriginalSourcePhysicalImage.validateMemoryBudget(
+            width:1600,height:1200,
+            additionalBytesPerPixel:OriginalSourcePhysicalGrain.extraBytesPerPixel,
+            physicalMemory:4_000_000_000,
+            processAvailableMemory:1_200_000_000
+        )
+        var over13MPDenied=false
         do {
             try OriginalSourcePixelIO.validatePixelDimensions(
-                width:4000,height:3200,
+                width:4000,height:3300,
                 maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
             )
         } catch OriginalSourcePixelIO.Failure.invalid(let reason) {
-            over12MPDenied=reason.contains("1200 万像素") &&
+            over13MPDenied=reason.contains("1300 万像素") &&
                 reason.contains("逐像素全光学")
         }
-        guard over12MPDenied else {
-            throw Failure.invalid("Physical 12MP dimension guard was lost")
+        guard over13MPDenied else {
+            throw Failure.invalid("Physical 13MP dimension guard was lost")
         }
         print("PASS: original Python nonlinear full image → Swift " +
               "Hanatos/H-D/spatial DIR/s023 paper/scan: " +
               "\(total) RGB channels across seven stages for 3 frames." +
               " Original 10MP-class input conditionally admitted under " +
-              "verified simulated memory headroom; 12MP upper guard, " +
+              "verified simulated memory headroom; 13MP upper guard, " +
               "no fallback under low memory. NOT physical iPhone-certified.")
     }
 }
