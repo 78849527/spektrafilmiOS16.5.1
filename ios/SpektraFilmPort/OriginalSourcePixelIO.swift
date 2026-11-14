@@ -162,9 +162,8 @@ enum OriginalSourcePixelIO {
         }
         let resizeW = resizedTo.map { swapsAxes ? $0.height : $0.width }
         let resizeH = resizedTo.map { swapsAxes ? $0.width : $0.height }
-        let thumbnailSide = resizedTo.map {
-            max(resizeW!, resizeH!)
-        } ?? previewMaxSide
+        let thumbnailSide: Int? = resizedTo == nil
+            ? previewMaxSide : max(resizeW!, resizeH!)
         let image: CGImage
         if let maxSide = thumbnailSide, maxSide > 0,
            (resizedTo != nil || max(original.width, original.height) > maxSide) {
@@ -349,6 +348,22 @@ enum OriginalSourcePixelIO {
         try preflightExport(originalFile,maximumAllowedPixels:16_000_000)
         try preflightExport(originalFile,maximumAllowedPixels:2_000_000)
         let observed=try decode(originalFile)
+        // v1.8.49: explicit export geometry, bounded ImageIO sampling,
+        // repeated output stability and no silent change to 8-bit input.
+        let reduced=try decode(
+            originalFile,resizedTo:(width:2,height:1)
+        )
+        let reducedAgain=try decode(
+            originalFile,resizedTo:(width:2,height:1)
+        )
+        guard reduced.width==2,reduced.height==1,
+              reduced.rgb.count==6,
+              reduced.rgb.allSatisfy({$0.isFinite && $0>=0 && $0<=1}),
+              reduced.rgb==reducedAgain.rgb else {
+            throw Failure.invalid(
+                "原版全光学用户指定尺寸导入不稳定或实际几何与确认不符"
+            )
+        }
         guard observed.width==w,observed.height==h else {
             throw Failure.invalid("原版像素验证：PNG 行列尺寸改变")
         }
@@ -407,7 +422,18 @@ enum OriginalSourcePixelIO {
                     "色彩空间验证：P3 输入被错误原因拒绝：" + message
                 )
             }
-            return "PASS: Display P3 8-bit PNG 明确拒绝；" +
+            do {
+                _ = try decode(
+                    Data(contentsOf:url),
+                    resizedTo:(width:1,height:1)
+                )
+                throw Failure.invalid("显式安全缩图错误接受 Display P3")
+            } catch Failure.invalid(let reducedReason) {
+                guard reducedReason.contains("sRGB") else { throw Failure.invalid(
+                    "安全缩图拒绝 P3 的原因不正确：" + reducedReason
+                ) }
+            }
+            return "PASS: Display P3 8-bit PNG 原尺寸及明确缩图均拒绝；" +
                 "精确模式不会隐式转换为 sRGB。"
         }
         throw Failure.invalid(
