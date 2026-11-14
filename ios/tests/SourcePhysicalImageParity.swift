@@ -367,7 +367,7 @@ enum SourcePhysicalImageParity {
                 // The previous Swift self-loop check below is retained,
                 // but it NEVER substitutes for these source comparisons.
                 let upstreamStages:[(String,String,Int,Double,Double)] = [
-                    ("grainSublayers","sourceGrainSublayers",9,0.002,0.0003),
+                    ("grainSublayers","sourceGrainSublayers",9,1e-8,1e-10),
                     ("grainDyeClouds","sourceGrainDyeClouds",3,0.002,0.0005),
                     ("grainMicrostructure","sourceGrainMicrostructure",3,0.002,0.0005),
                     ("grainDensity","grainDensity",3,0.002,0.0005),
