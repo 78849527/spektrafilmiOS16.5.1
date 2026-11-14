@@ -1416,6 +1416,7 @@ struct FloatingEditorWorkspace: View {
                             // source XYZ random glare is controlled only;
                             // never activate unseeded production prange.
                             sourceScannerGlareSettings
+                            sourcePhysicalGrainSettings
                             resetToggle("原版扫描镜头 / Unsharp（Double）",
                                         value:$model.sourceScannerOpticalEnabled,
                                         enabled:model.hasPhoto && !model.busy,
@@ -1448,13 +1449,14 @@ struct FloatingEditorWorkspace: View {
                              "整图 Double FIR/YVV 与相纸显影均保留，不缩图；" +
                              "需开启原版 ACES 扫描、Hanatos Float64、" +
                              "负片原版放大机，关闭 CAM16/黑白参考。" +
-                             "尚不支持随机颗粒和 RAW；乳剂光晕使用原版 Double。")
+                             "原版三亚层随机颗粒已提供可选受控单线程模式；" +
+                             "RAW 与无固定种子的 Numba prange 尚未认证。")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                     Text(model.sourcePhysicalDirectEnabled
                          ? "逐像素全光学支持上方原版 Double 乳剂散射／光晕。" +
-                           "随机颗粒与旧版 CI 扫描后处理仍不支持；不静默降级。"
+                           "原版三亚层受控颗粒独立可选，旧版 CI 扫描后处理不支持；不静默降级。"
                          : "仅不透明 8-bit：ImageIO→Double DIR→原尺寸 JPEG。" +
                            "普通 DIR 像素直连不支持散射／光晕／颗粒；" +
                            "原版散射需同时开启逐像素全光学。")
@@ -1488,6 +1490,48 @@ struct FloatingEditorWorkspace: View {
     /// is applied to real paper XYZ before RGB/ACES. This is a seeded
     /// one-worker experiment, not default unseeded Numba equivalence.
     /// Keep a separate erased view to avoid iOS 16.5.1 generic stacks.
+    /// Batch v1.8.48: 3 measured emulsion sublayers × CMY in ORIGINAL
+    /// film optical density before enlarger/scanner, not mobile post-RGB.
+    /// Separate AnyView keeps the iOS16 adjustment tree compact.
+    private var sourcePhysicalGrainSettings: AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:6) {
+                resetToggle("源三亚层颗粒 / 染料云（Float64 实验）",
+                            value:$model.sourcePhysicalGrainEnabled,
+                            enabled:model.hasPhoto && !model.busy &&
+                                    model.sourcePixelIOEnabled &&
+                                    model.sourcePhysicalDirectEnabled,
+                            resetTo:false)
+                    .onChange(of:model.sourcePhysicalGrainEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.sourcePhysicalGrainEnabled {
+                    morphSlider("原版末端颗粒模糊 σ / px",
+                                value:$model.sourcePhysicalGrainBlur,
+                                range:0...3,resetTo:0.65)
+                    morphSlider("原版染料云模糊（源码原样参数）",
+                                value:$model.sourcePhysicalGrainDyeCloudBlur,
+                                range:0...3,resetTo:1)
+                    morphSlider("微结构团簇模糊 μm",
+                                value:$model.sourcePhysicalGrainMicroUM,
+                                range:0...2,resetTo:0.2)
+                    morphSlider("微结构波动 nm",
+                                value:$model.sourcePhysicalGrainMicroNM,
+                                range:0...150,resetTo:30)
+                }
+                Text("原版 grain.py：实测 3×3 CMY 亚层→逐层完整图 SciPy" +
+                     " Poisson→Binomial 固定种子(ch+sl×10)→染料云 reflect" +
+                     " FIR/YVV→Numba 单线程微结构→末端 Double FIR/YVV。" +
+                     "真实胶片密度阶段接入，随后才印相或扫描。" +
+                     " microstructure 固定 seed=8888；多线程 prange" +
+                     " 未认证，旧版 Metal 近似颗粒仍为独立模式。" +
+                     "全分辨率严格检查额外内存，失败不会缩图或使用 RGB 噪声。")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        )
+    }
+
     private var sourceScannerGlareSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {

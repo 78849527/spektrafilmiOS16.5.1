@@ -101,6 +101,15 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceScannerGlarePercent = 0.03
     @Published var sourceScannerGlareRoughness = 0.7
     @Published var sourceScannerGlareBlur = 0.5
+    // Batch v1.8.48: opt-in actual three-sublayer film grain BEFORE
+    // the enlarger, not old mobile Gaussian/Metal post-density noise.
+    // SciPy count RNG seeds remain original [ch+sl*10].
+    // Numba microstructure is controlled single worker, seed=8888.
+    @Published var sourcePhysicalGrainEnabled = false
+    @Published var sourcePhysicalGrainBlur = 0.65
+    @Published var sourcePhysicalGrainDyeCloudBlur = 1.0
+    @Published var sourcePhysicalGrainMicroUM = 0.2
+    @Published var sourcePhysicalGrainMicroNM = 30.0
     // v1.8.30: three linked original Python camera stages. All are
     // explicitly opt-in and operate on actual source Double camera photons.
     @Published var sourceCameraPreFilmEnabled = false
@@ -368,6 +377,14 @@ final class PhotoEditorModel: ObservableObject {
                 blur:sourceScannerGlareBlur
             ),
             scannerGlareSeed:sourceScannerGlareEnabled ? 8888 : nil,
+            sourceGrain:OriginalSourcePhysicalGrain.Settings(
+                active:sourcePhysicalGrainEnabled,
+                grainBlur:sourcePhysicalGrainBlur,
+                dyeCloudBlurUM:sourcePhysicalGrainDyeCloudBlur,
+                microstructureUM:sourcePhysicalGrainMicroUM,
+                microstructureNM:sourcePhysicalGrainMicroNM,
+                numbaSeed:sourcePhysicalGrainEnabled ? 8888 : nil
+            ),
             cameraOptics:preCamera,
             filmHalation:sourceHalation,
             cameraRawMethod:sourceCameraRawMethod,
@@ -978,10 +995,14 @@ final class PhotoEditorModel: ObservableObject {
                         ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
                     (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
                         ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
+                    (sourcePhysicalGrainEnabled
+                        ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                         ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                     (sourcePhysicalHalationRequested
-                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0)
+                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
+                    (printSourceDiffusionEnabled
+                        ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
             )
         }
         return try SafeExportResolution.capture(
@@ -996,10 +1017,15 @@ final class PhotoEditorModel: ObservableObject {
                    (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
                     ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel
                     : 0) +
+                   (sourcePhysicalGrainEnabled
+                    ? OriginalSourcePhysicalGrain.extraBytesPerPixel
+                    : 0) +
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                    (sourcePhysicalHalationRequested
-                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0))
+                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
+                   (printSourceDiffusionEnabled
+                    ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )
     }

@@ -135,6 +135,7 @@ enum SourcePhysicalImageParity {
         }
         var total=0
         var checkedProductionGlare=false
+        var checkedProductionGrain=false
         for fixture in manifest.cases {
             guard fixture.width>0 && fixture.height>0,
                   fixture.width<=8192,fixture.height<=8192,
@@ -307,12 +308,89 @@ enum SourcePhysicalImageParity {
                     "seed reproducible, seed-missing rejection PASS"
                 )
             }
+            // v1.8.48: TRUE production H-D/DIR→9 SciPy sublayer grain
+            // → source print/scan integration on an existing Python
+            // original image fixture; no post-RGB grain is allowed.
+            if !checkedProductionGrain &&
+               !SpectralPhysics.isPositiveFilm(fixture.film) {
+                var enabled=params
+                enabled.sourceGrain.active=true
+                enabled.sourceGrain.numbaSeed=8888
+                var grainTraces=[String:[Double]]()
+                let developed=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:enabled,
+                    stageDoubleObserver:{stage,values in
+                        grainTraces[stage]=values
+                    }
+                )
+                let repeated=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:enabled
+                )
+                guard developed.rgb == repeated.rgb,
+                      developed.rgb != actual.rgb,
+                      let before=grainTraces["density"],
+                      let after=grainTraces["grainDensity"],
+                      let sourceAfter=grainTraces["sourceGrainFinalDensity"],
+                      let dye=grainTraces["sourceGrainDyeClouds"],
+                      let micro=grainTraces["sourceGrainMicrostructure"],
+                      let sub=grainTraces["sourceGrainSublayers"],
+                      before.count==fixture.width*fixture.height*3,
+                      after.count==before.count,
+                      sourceAfter==after,
+                      dye.count==before.count,
+                      micro.count==before.count,
+                      sub.count==fixture.width*fixture.height*9 else {
+                    throw Failure.invalid(
+                        "Controlled source 3x3 grain was not integrated at the film density/print boundary"
+                    )
+                }
+                // The new production buffer after grain must be passed to
+                // the SAME original full optical enlarger/paper/scanner,
+                // not an RGB postprocessing blur or a colour cube.
+                let film=try enabled.createEngine()
+                var worst=0.0
+                for p in 0..<(fixture.width*fixture.height) {
+                    let k=p*3
+                    let expected=try film.sourceSpatialScan(
+                        filmDensity:[after[k],after[k+1],after[k+2]],
+                        paperEV:fixture.paperEV
+                    )
+                    for ch in 0..<3 {
+                        let delta=abs(expected[ch]-developed.rgb[k+ch])
+                        worst=max(worst,delta)
+                        guard delta < 1e-11 else {
+                            throw Failure.invalid(
+                                "Source original grain not placed BEFORE real optical print scanner"
+                            )
+                        }
+                    }
+                }
+                var denied=enabled
+                denied.sourceGrain.numbaSeed=nil
+                do {
+                    _=try OriginalSourcePhysicalImage.develop(
+                        frame,parameters:denied
+                    )
+                    throw Failure.invalid("Source physical grain accepted implicit unseeded Numba")
+                } catch OriginalSourcePhysicalGrain.Failure.invalid {}
+                checkedProductionGrain=true
+                print(
+                    "PASS v1.8.48 ACTUAL full physical grain " +
+                    "9 SciPy layers→dye cloud→Numba controlled micro→FIR/YVV" +
+                    "→original enlarger/paper/scanner; " +
+                    "\\(after.count) CMY channels, source-order " +
+                    "optical RGB discrepancy max=\\(worst), no seed rejected"
+                )
+            }
             total+=fixture.width*fixture.height*3
             print("PASS original nonlinear whole-frame stock " +
                   fixture.film + " → " + fixture.paper)
         }
         guard checkedProductionGlare else {
             throw Failure.invalid("No negative print fixture exercised source production scanner glare")
+        }
+        guard checkedProductionGrain else {
+            throw Failure.invalid("No original negative image exercised real source 3x3 grain production")
         }
         // Explicit memory guard: cannot silently scale the image, nor
         // downgrade to a Float32 optical 3D LUT when original is requested.

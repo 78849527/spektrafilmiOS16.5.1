@@ -106,6 +106,10 @@ enum OriginalSourcePhysicalImage {
         // glare. This is NOT unseeded original prange equivalence.
         var scannerGlare: OriginalSourceScannerGlare.Settings = .init(active:false)
         var scannerGlareSeed: UInt32? = nil
+        // Original grain.py 3x3 sublayer SciPy counts + dye clouds +
+        // controlled one-worker Numba microstructure + final blur.
+        // OFF by default, separate from Gaussian/Metal fast grain.
+        var sourceGrain: OriginalSourcePhysicalGrain.Settings = .init()
         var cameraOptics: OriginalSourceCameraOptics.Settings = .init()
         var filmHalation: OriginalSourceFilmHalation.Settings = .init()
         // Upstream SettingsParams.rgb_to_raw_method plus camera UV/IR
@@ -129,6 +133,7 @@ enum OriginalSourcePhysicalImage {
             }
             try scannerOptics.validate()
             try scannerGlare.validate()
+            try sourceGrain.validate()
             if scannerGlare.active && scannerGlare.percent > 0 {
                 guard scannerGlareSeed != nil,
                       !SpectralPhysics.isPositiveFilm(filmID) else {
@@ -215,11 +220,13 @@ enum OriginalSourcePhysicalImage {
             parameters.printDiffusion.spatialScale>0
         let controlledScannerGlare=parameters.scannerGlare.active &&
             parameters.scannerGlare.percent>0
+        let controlledFilmGrain=parameters.sourceGrain.active
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
                 (controlledScannerGlare ? scannerGlareExtraBytesPerPixel : 0) +
+                (controlledFilmGrain ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
                 (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0)
@@ -377,7 +384,12 @@ enum OriginalSourcePhysicalImage {
             // paper raw -> source full-frame diffuser -> log10 -> paper
             // H-D -> original scanner. Never diffuse scanned RGB.
             let rgb:[Double]
-            if activePrintDiffusion {
+            if controlledFilmGrain {
+                // Delay print/scan until ALL 9 measured emulsion sublayers
+                // have consumed source SciPy counts + source dye clouds.
+                // This is pre-print optical-density CMY, not display RGB.
+                rgb=density
+            } else if activePrintDiffusion {
                 rgb=try engine.sourceSpatialPrintPhoton(
                     filmDensity:density,paperEV:parameters.paperEV
                 )
@@ -407,6 +419,43 @@ enum OriginalSourcePhysicalImage {
         }
         if let densityObserved {
             stageDoubleObserver?("density",densityObserved)
+        }
+        if controlledFilmGrain {
+            let pixelUM=parameters.dir.referencePixelSizeUM ??
+                (parameters.cameraOptics.filmFormatMM * 1000.0 / Double(max(w,h)))
+            frame.rgb=try OriginalSourcePhysicalGrain.apply(
+                frame.rgb,width:w,height:h,
+                pixelUM:pixelUM,
+                measured:engine.sourceSpatialGrainLayers(),
+                settings:parameters.sourceGrain,
+                stageObserver:stageDoubleObserver
+            )
+            stageDoubleObserver?("grainDensity",frame.rgb)
+            // Original develop.py: apply_grain(DIR-developed film density)
+            // THEN print_expose or direct reversal scan; never RGB overlay.
+            for p in 0..<(w*h) {
+                let k=p*3
+                let density=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+                let printed:[Double]
+                if activePrintDiffusion {
+                    printed=try engine.sourceSpatialPrintPhoton(
+                        filmDensity:density,paperEV:parameters.paperEV
+                    )
+                } else if controlledScannerGlare {
+                    printed=try engine.sourceSpatialScanXYZ(
+                        filmDensity:density,paperEV:parameters.paperEV
+                    )
+                } else {
+                    printed=try parameters.scannerOptics.active
+                        ? engine.sourceSpatialScanLinear(
+                            filmDensity:density,paperEV:parameters.paperEV
+                          )
+                        : engine.sourceSpatialScan(
+                            filmDensity:density,paperEV:parameters.paperEV
+                          )
+                }
+                for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
+            }
         }
         if activePrintDiffusion {
             let pixelUM=parameters.cameraOptics.filmFormatMM * 1000.0 /
@@ -519,6 +568,10 @@ extension OriginalSourcePixelIO {
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                (parameters.scannerGlare.active && parameters.scannerGlare.percent>0
+                    ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
+                (parameters.sourceGrain.active
+                    ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active

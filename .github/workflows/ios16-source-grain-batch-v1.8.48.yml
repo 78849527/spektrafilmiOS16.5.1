@@ -1,0 +1,75 @@
+name: v1.8.48 original 3x3 grain batch numerical verification
+
+on:
+  push:
+    branches: ['ios16.5.1/source-grain-three-stage-batch-v1.8.48']
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios16-source-grain-batch-v1.8.48.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios1651-source-grain-batch-v1.8.48-math
+  cancel-in-progress: true
+
+jobs:
+  full-source-grain:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Checkout pinned source and Swift port
+        uses: actions/checkout@v4
+      - name: Pin Xcode and compatible NumPy NumPy RandomState toolchain
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          xcrun swiftc -version
+      - name: Use original SciPy NumPy Numba versions
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original SciPy RNG and Numba dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'numba==0.61.2'
+      - name: Generate pinned upstream Python grain.py whole-image stages
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: 'workqueue'
+        run: |
+          python3 ios/scripts/generate_source_mt19937.py
+          python3 ios/scripts/generate_original_scipy_rng.py
+          python3 ios/scripts/generate_source_microstructure.py
+          python3 ios/scripts/generate_source_physical_grain.py
+          test -s ios/verification/generated-source-grain-v1.8.48/manifest.json
+          test -s ios/verification/generated-source-grain-v1.8.48/yvv_micro_active.final.f64le
+      - name: Compile 4 stage full-Double Swift source grain numerical tests
+        run: |
+          xcrun swiftc -Onone -parse-as-library -D SOURCE_GRAIN_STANDALONE \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/tests/SourcePhysicalGrainValidation.swift \
+            -o /tmp/SpektrafilmSourcePhysicalGrainValidation
+      - name: Run independent original Python 3x3 SciPy cloud micro and blur whole-frame comparisons
+        run: |
+          NSUnbufferedIO=YES /tmp/SpektrafilmSourcePhysicalGrainValidation
+      - name: Verify strict original source source-order and absent silent fallback
+        run: |
+          python3 ios/scripts/validate_source_physical_grain_batch.py
+      - name: Upload original grain stage numerical evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v1.8.48-source-grain-independent-python-numeric
+          path: ios/verification/generated-source-grain-v1.8.48/
+          if-no-files-found: warn
