@@ -54,7 +54,7 @@ struct Build77StageTapeRecorderValidation {
         let normal = try Build77StageTapeRecorder(
             width:1,height:1,maxTotalElements:60
         )
-        for stage in ["iosInput","logRaw","density","paperLogExposure",
+        for stage in ["iosInput","rgbPre","logRaw","density","paperLogExposure",
                       "paperDevelopedDensity","printed","iosOutput"] {
             normal.observe(stage,[0.25,0.5,0.75])
         }
@@ -62,7 +62,7 @@ struct Build77StageTapeRecorderValidation {
         let direct = try Build77StageTapeRecorder(
             width:1,height:1,maxTotalElements:60
         )
-        for stage in ["iosInput","logRaw","density","printed","iosOutput"] {
+        for stage in ["iosInput","rgbPre","logRaw","density","printed","iosOutput"] {
             direct.observe(stage,[0.25,0.5,0.75])
         }
         try direct.requirePhysicalSourceTopology(positiveFilm:true)
