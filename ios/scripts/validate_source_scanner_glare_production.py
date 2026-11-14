@@ -87,6 +87,13 @@ for token in (
     assert token in test, token
 assert 'result[index] = xyz[index] + glare[pixel] * illuminantXYZ[ch]' in glare
 assert 'settings.active && settings.percent > 0' not in model  # no implicit enabling
+report=(root/"ios/SpektraFilmPort/OriginalSourceScannerGlareProductionDiagnostic.swift").read_text()
+assert "OriginalSourceScannerGlareProductionDiagnostic.evaluate()" in model
+for token in ('OriginalSourcePhysicalImage.develop(', 'scannerGlareXYZ',
+              'scannerGlareLinearRGB', 'sourceSpatialXYZToLinearRGB(',
+              'actual.rgb==repeated.rgb','params.scannerGlareSeed=nil'):
+    assert token in report, token
+
 print("PASS: source paper XYZ pre-gamut production connection is ordered")
 print("PASS: 8888 explicit controlled worker, negative-only fail-closed, default OFF, 96 B/px memory headroom")
 print("PASS: real production 2D integration test is hooked to Python physical image fixture validator")
