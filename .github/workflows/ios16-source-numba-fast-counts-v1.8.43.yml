@@ -1,0 +1,57 @@
+name: SpektraFilm v1.8.43 original Numba fast Poisson Binomial source parity
+
+on:
+  push:
+    branches:
+      - 'ios16.5.1/source-numba-fast-counts-v1.8.43'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift'
+      - 'ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift'
+      - 'ios/scripts/generate_source_numba_fast_counts.py'
+      - 'ios/tests/SourceNumbaFastCountsValidation.swift'
+      - '.github/workflows/ios16-source-numba-fast-counts-v1.8.43.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-numba-fast-counts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact unmodified source and Swift candidate
+        uses: actions/checkout@v4
+      - name: Pin original Python source Git blob identity
+        run: |
+          git rev-parse HEAD
+          test "$(git hash-object src/spektrafilm/utils/fast_stats.py)" = 9e80d29ce6b9f7820ae70f5c09da15edfaa70a0d
+          test "$(git hash-object src/spektrafilm/model/grain.py)" = f2d2b23e3eab4f4a1d919f69bcb4aceb714e024d
+      - name: Set up original source Numba-compatible Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Pin NumPy/Numba toolchain
+        run: |
+          python -m pip install --disable-pip-version-check 'numpy==2.4.0' 'numba==0.64.0'
+          python -c "import numpy,numba; print('NumPy',numpy.__version__,'Numba',numba.__version__)"
+      - name: Run unmodified original source fast_stats and generate all reference counts
+        run: python ios/scripts/generate_source_numba_fast_counts.py
+      - name: Generate pre-existing original NumPy MT fixture dependency
+        run: python ios/scripts/generate_source_mt19937.py
+      - name: Compile the real Swift source-algorithm implementation
+        run: |
+          swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
+            ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift \
+            ios/tests/SourceNumbaFastCountsValidation.swift \
+            -o /tmp/SourceNumbaFastCountsValidation
+      - name: Compare individual counts, all algorithms and MT stream consumption
+        run: /tmp/SourceNumbaFastCountsValidation
+      - name: State strict scientific certification boundary
+        run: |
+          echo "Validated: original source Numba one-worker fast Poisson/Binomial, thresholds, source phase order and RNG state."
+          echo "NOT CERTIFIED: unseeded multiworker prange, on-device Metal, full-image Float64 and iPhone."
