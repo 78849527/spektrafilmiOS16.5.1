@@ -1244,7 +1244,10 @@ jobs:
           source = Path("ios/SpektraFilmPort/OriginalSublayerGrain.swift").read_text()
           ui = Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
           assert 'densityCurvesLayers' in engine
-          assert 'layerDensity(total:' in engine
+          assert 'func layerDensity(' in engine
+          assert 'sourceOriginal:true' in engine
+          assert 'var high=256' in engine  # original NumPy [0,256) search bound
+          assert 'var hi = 255' in engine  # separate original mobile quick path
           assert 'sublayerCubes: stage.sublayerCubes' in model
           assert '@Published var grainSublayersEnabled = false' in model
           assert 'measuredSublayersEnabled: grainSublayersEnabled' in model
