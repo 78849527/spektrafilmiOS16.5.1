@@ -516,16 +516,16 @@ struct FloatingEditorWorkspace: View {
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
-            // original unchanged, adaptive 50% of live memory, or <=3MP economy.
+            // original unchanged, adaptive 50% of live memory capped at 12MP, or economy 30% capped at 7.2MP.
             // Do not silently shrink after a failed original-size render.
             Menu {
                 Button("原始分辨率（不缩小）") {
                     onSaveToPhotos(.original)
                 }
-                Button("智能安全分辨率（约 50% 内存预算）") {
+                Button("智能安全分辨率（最高 1200 万像素）") {
                     onSaveToPhotos(.safe)
                 }
-                Button("省内存分辨率（最高 300 万像素）") {
+                Button("省内存分辨率（最高 720 万像素）") {
                     onSaveToPhotos(.economy)
                 }
             } label: {
@@ -539,10 +539,10 @@ struct FloatingEditorWorkspace: View {
                 Button("原始分辨率（不缩小）") {
                     onExport(.original)
                 }
-                Button("智能安全分辨率（约 50% 内存预算）") {
+                Button("智能安全分辨率（最高 1200 万像素）") {
                     onExport(.safe)
                 }
-                Button("省内存分辨率（最高 300 万像素）") {
+                Button("省内存分辨率（最高 720 万像素）") {
                     onExport(.economy)
                 }
             } label: {
