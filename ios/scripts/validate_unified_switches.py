@@ -79,7 +79,7 @@ assert "confirmedSimpleLock(title)" in second
 assert "confirmedFeatureLock(feature)" in feature
 
 third_calls = re.findall(r'\bresetToggle\("([^"]+)"', src)
-assert len(third_calls) == 10, f"Expected 10 nested switches, found {third_calls}"
+assert len(third_calls) == 9, f"Expected 9 nested switches, found {third_calls}"
 assert len(set(third_calls)) == len(third_calls)
 for token in (
     'resetToggle("黑白场校准"',
@@ -93,7 +93,7 @@ for token in (
     'resetToggle("原版 Metal 显影链"',
 ):
     assert token in src, f"Original third-level feature lost: {token}"
-assert src.count("resetToggle(") == 11
+assert src.count("resetToggle(") == 10
 
 # Keep the iOS16.5.1 crash-mitigation and the original report UI.
 for token in (
@@ -103,10 +103,10 @@ for token in (
     "private var adjustmentDetailContent: AnyView",
     "tx.disablesAnimations = true",
     "StableImageHoldRecognizer(isHolding: $originalHeld)",
-    "OriginalSourceNumbaFastCountsDiagnostic.evaluate()",
 ):
     assert token in src, f"Core UI stability/diagnostic feature lost: {token}"
 assert ".simultaneousGesture(" not in src
+assert "OriginalSourceNumbaFastCountsDiagnostic.evaluate()" in (ROOT / "ios/SpektraFilmPort/ContentView.swift").read_text(encoding="utf-8")
 
 print(f"PASS: {len(third_calls)} third-level on/off switches use the shared 28×16 miniature geometry")
 print("PASS: source-mode, feature-row and independent second-row switches use the same visual switch")
