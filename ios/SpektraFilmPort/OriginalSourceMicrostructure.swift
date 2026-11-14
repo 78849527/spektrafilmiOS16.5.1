@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Metal)
 import Metal
+#endif
 
 /// Exact deterministic source fast_lognormal_from_mean_std() transform for
 /// mean=1, s=30nm/pixelUM. Normal N(0,1) values are supplied explicitly.
@@ -91,6 +93,7 @@ enum OriginalSourceMicrostructure {
 
     /// Run the *same* float32 lognormal helper used by production Metal
     /// against source Python deterministic gaussian input reference vectors.
+#if canImport(Metal)
     static func hardwareDiagnostic() throws -> String {
         let first = try validateSourceMath()
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -166,4 +169,5 @@ enum OriginalSourceMicrostructure {
         }
         return first + "；生产同源 Metal 变换 max=\(maxError) PASS"
     }
+#endif
 }
