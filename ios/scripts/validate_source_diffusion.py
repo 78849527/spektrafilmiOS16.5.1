@@ -96,12 +96,20 @@ def main():
     source=load_original()
     with tempfile.TemporaryDirectory() as td:
         exe=Path(td)/"native-source-diffusion"
-        subprocess.run([
+        compile_result=subprocess.run([
             "xcrun","swiftc","-O",
             str(ROOT/"ios/SpektraFilmPort/OriginalSourceDiffusion.swift"),
             str(ROOT/"ios/tests/SourceDiffusionNumericValidation.swift"),
             "-o",str(exe),
-        ],check=True,capture_output=True,text=True)
+        ],check=False,capture_output=True,text=True)
+        if compile_result.returncode:
+            print("Source diffusion native compiler diagnostic:")
+            print(compile_result.stdout)
+            print(compile_result.stderr)
+            raise RuntimeError(
+                "Native swiftc compilation failed; original optical "
+                "numerical gate remains mandatory"
+            )
         proc=subprocess.run([str(exe)],check=True,
                             capture_output=True,text=True)
     parsed={}
