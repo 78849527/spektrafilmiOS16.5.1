@@ -90,12 +90,8 @@ def generate() -> dict:
         fields: dict[str, str] = {}
         source_payload = bytearray()
         for original, mobile, precise, count in SPECS:
-            if original not in data:
-                require(original == "density_curves_layers" and stage == "printing",
-                        f"Missing original measurement {stock}/{original}")
-                continue
-            require(original != "density_curves_layers" or stage == "filming",
-                    f"Unexpected nine-layer field on paper {stock}")
+            require(original in data,
+                    f"Missing original measurement {stock}/{original}")
             f32 = numeric_bytes(data[original], count, "f")
             f64 = numeric_bytes(data[original], count, "d")
             fields[mobile] = sha(f32)
