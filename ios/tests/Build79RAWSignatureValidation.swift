@@ -98,7 +98,7 @@ enum Build79RAWSignatureValidation {
             .appendingPathComponent(UUID().uuidString+".RAF")
         try raf.write(to:temp,options:.atomic)
         defer {try? FileManager.default.removeItem(at:temp)}
-        guard try Build79RAWSignature.probeFile(temp)==.raf else {
+        guard try Build79RAWSignature.probeFile(temp) == .raf else {
             throw Failure.invalid("Real file RAF identification failed")
         }
         let result=try Build79RAWStorage.preserve(temp,kind:.raf)
