@@ -1,0 +1,92 @@
+name: v1.8.45 source scanner glare Float64 seeded Numba FIR/YVV XYZ parity
+
+on:
+  push:
+    branches:
+      - 'ios16.5.1/source-scanner-glare-v1.8.45'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceScannerGlare.swift'
+      - 'ios/scripts/generate_source_scanner_glare.py'
+      - 'ios/tests/SourceScannerGlareValidation.swift'
+      - '.github/workflows/ios16-source-scanner-glare-v1.8.45.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-python-scanner-glare:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Check out pinned original Python source and Swift candidate
+        uses: actions/checkout@v4
+      - name: Select Xcode 16.4 (iOS16.5 compatible)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          git rev-parse HEAD
+          test "$(git hash-object src/spektrafilm/model/glare.py)" = e8610f13430d45be749ae31a5284eef2c2b7a362
+          test "$(git hash-object src/spektrafilm/utils/fast_stats.py)" = 9e80d29ce6b9f7820ae70f5c09da15edfaa70a0d
+          test "$(git hash-object src/spektrafilm/utils/fast_gaussian_filter.py)" = 8918c673ea0fb3f5d9ae820ca85bf6db4aba457a
+      - name: Install source Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pinned source Numba and NumPy
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'numpy==2.4.0' 'numba==0.64.0' 'scipy==1.16.3'
+          python -c "import numpy,numba; print(numpy.__version__,numba.__version__)"
+      - name: Execute unchanged glare.py + Numba fast_stats + original FIR/YVV
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: 'workqueue'
+        run: |
+          python ios/scripts/generate_source_scanner_glare.py
+          python ios/scripts/generate_source_mt19937.py
+          test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
+      - name: Isolate unchanged source FIR/YVV enum from its app-only DIR wrappers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src=Path("ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift").read_text()
+          marker="// Native source-exact DIR route:"
+          assert src.count(marker)==1
+          part=src.split(marker)[0]
+          assert "enum SourceSpatialDIRConvolution" in part
+          assert "static func diffuseMemoryBounded(" in part
+          assert part.rstrip().endswith("}")
+          Path("/tmp/SourceSpatialDIRConvolutionSourceBlur.swift").write_text(part)
+          print("PASS: compile exact original source FIR/YVV enum unmodified, omit unrelated app-only DIR wrappers")
+          PY
+      - name: Compile actual source Float64 RGB/XYZ optics and scanner module
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            /tmp/SourceSpatialDIRConvolutionSourceBlur.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlareDiagnostic.swift \
+            ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift \
+            ios/tests/SourceScannerGlareValidation.swift \
+            -o /tmp/SourceScannerGlareValidation
+      - name: Compare six original 2D source fields and XYZ stages
+        run: /tmp/SourceScannerGlareValidation
+      - name: Independent original platform targeting compile
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun swiftc -target arm64-apple-ios16.5 -sdk "$SDK" \
+            -parse-as-library -typecheck \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            /tmp/SourceSpatialDIRConvolutionSourceBlur.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlareDiagnostic.swift \
+            ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
+      - name: Keep full original certification blocked
+        run: |
+          echo "VALIDATED: pinned source glare.py Float64 lognormal, reflect FIR/YVV, XYZ spectral add with controlled seeded worker."
+          echo "NOT VALIDATED: unseeded Numba prange RNG, production scanner XYZ injection, full-frame RGB, real iPhone."

@@ -785,6 +785,15 @@ final class PhotoEditorModel: ObservableObject {
                 } catch {
                     checks.append("附录【v1.8.43 Numba 快速计数｜未通过／未认证】\n" + error.localizedDescription)
                 }
+                // v1.8.45: original Python scanner glare Float64 two-dimensional
+                // lognormal + FIR/YVV + XYZ. Appendix is controlled RNG
+                // numerical evidence, NOT full production scanner certification.
+                do {
+                    let glare = try OriginalSourceScannerGlareDiagnostic.evaluate()
+                    checks.append("附录【v1.8.45 原版扫描器眩光｜受控单线程源数值对照】\n" + glare)
+                } catch {
+                    checks.append("附录【v1.8.45 原版扫描器眩光｜未通过／未认证】\n" + error.localizedDescription)
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
