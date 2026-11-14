@@ -34,7 +34,7 @@ assert src.count("private func miniatureSwitch(isOn: Bool)") == 1
 
 feature = block("    private func featureToggle(", "    // Second row:")
 second = block("    private func simpleToggle(", "    // Top feature row")
-mode = block("    private func sourceModeControl(", "    private func openFilmDrawer(")
+mode = block("    private func sourceModeControl(", "    private func selectEditorPage(")
 third = block("    private func resetToggle(", "    private func exposureControl(")
 
 for label, body in (("first-level feature", feature), ("second-level", second),
@@ -114,6 +114,12 @@ print("PASS: source-mode, feature-row and independent second-row switches use th
 print("PASS: 42×32 nested tap regions, single-tap action, label double-tap default, disabled gates and accessibility")
 print("PASS: v1.8.43 diagnostic, iOS16.5.1 type-erased adjustment navigation and legacy switches retained")
 print("NOT CERTIFIED: actual iPhone touch hit-testing or screenshot geometry")
+assert 'private func unifiedEditorDock(width:' in src
+assert 'private func horizontalMaterialPicker(' in src
+assert 'private func edgeDrawerTab(' not in src
+assert '.pickerStyle(.wheel)' not in src
+print("PASS: ten nested switches remain unchanged after merged film/adjustment menu refactor")
+
 
 # The new source-scanner control is a separate, type-erased subview;
 # no native Toggle should slip into the third level.
