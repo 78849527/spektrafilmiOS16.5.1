@@ -565,8 +565,7 @@ struct FloatingEditorWorkspace: View {
 
             Button(action: openUnifiedEditor) {
                 VStack(spacing: 1) {
-                    Image(systemName: unifiedEditorExpanded
-                          ? "slider.horizontal.3" : "slider.horizontal.3")
+                    Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 16, weight: .medium))
                     Text("调整")
                         .font(.system(size: 10, weight: .semibold))
