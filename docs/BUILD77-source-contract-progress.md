@@ -176,3 +176,24 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
 - CI is **NO IPA** by default: bundled host numerical proofs and
   iPhoneOS arm64 compiler evidence are generated without
   publishing a new installable test build.
+
+### Build77/02 verified no-IPA CI result
+
+- [GitHub Actions #43607270400](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43607270400), tested commit `d4822c4b031a5c8395cc917fa9881b7c18392fb3`: **5/5 CI jobs PASSED**.
+- Actual full Swift source spectral numerical suite passed on macOS. Its
+  real production tests recorded **741, 1581, 4371, and 360**
+  Float64 paper channels for the four fixture images, with
+  bitwise-equal normal source scan RGB and unchanged output when
+  stage observers are absent; the 2D diffused print case independently
+  observed **741 channels** of actual photon→log/H-D→scan stages.
+- The existing independent Python→Swift full 2D source/grain/optical
+  RGB tests covering **7053 channels** also passed; Python 3.13
+  negative-print / negative-diffused-print / direct-positive source tapes,
+  28-stock native Double byte audits, native tape topology/NPY checks,
+  and strict 360-case digest comparison passed.
+- Native `arm64-apple-ios16.5` iPhoneOS Release build and bundle
+  version `1.8.52 (77)` passed. **NO IPA** was generated or
+  released by this batched CI.
+- These checks are stage/local CPU and iPhoneOS compilation evidence,
+  NOT complete canonical Python↔iOS seven-tap numerical
+  equivalence or a physical iPhone device run. Build77 01–05 is open.
