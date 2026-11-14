@@ -30,6 +30,8 @@ struct FloatingEditorWorkspace: View {
     // Last opened panel always overlays the older panel.
     @State private var frontDrawer: DrawerSide = .film
     @State private var selectedFeature: AdjustmentFeature? = .basic
+    // Confirm before changing any OTHER user-selected settings.
+    @State private var pendingSourceMode: SourceModeChange?
     @State private var comparisonEnabled = false
     @State private var statusReportPresented = false
     @State private var compareFraction = 0.5
@@ -46,6 +48,202 @@ struct FloatingEditorWorkspace: View {
         case halation = "光晕"
         case dir = "DIR"
         case grain = "颗粒"
+    }
+
+    // These hard requirements are confirmed by the current source
+    // processor validators, not inferred temporary UI restrictions.
+    private enum SourceModeChange: String, Identifiable {
+        case pixel, physical, disablePixel, disablePhysical
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .pixel: return "开启 8-bit 原版像素直连"
+            case .physical: return "开启逐像素全光学"
+            case .disablePixel: return "关闭像素直连并退出关联模式？"
+            case .disablePhysical: return "退出逐像素全光学？"
+            }
+        }
+    }
+
+    private var directPixelMode: Bool { model.sourcePixelIOEnabled }
+    private var fullPhysicalMode: Bool {
+        model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
+    }
+
+    private func confirmedFeatureLock(_ feature: AdjustmentFeature) -> String? {
+        if fullPhysicalMode {
+            switch feature {
+            case .scanner:
+                return "全光学依赖原版扫描；请先关闭逐像素全光学"
+            case .enlarger where !isReversal:
+                return "负片全光学依赖原版放大机；请先关闭逐像素全光学"
+            case .dir:
+                return "像素直连依赖 DIR；请先关闭像素直连"
+            default: break
+            }
+        }
+        if directPixelMode {
+            switch feature {
+            case .sharpening, .grain:
+                return "原版像素直连不支持旧版扫描锐化或随机颗粒"
+            case .halation where !fullPhysicalMode:
+                return "普通像素直连不支持旧版光晕；需先进入逐像素全光学"
+            case .dir:
+                return "原版像素直连依赖 DIR；请先关闭像素直连"
+            default: break
+            }
+        }
+        return nil
+    }
+
+    private func confirmedSimpleLock(_ title: String) -> String? {
+        if fullPhysicalMode {
+            switch title {
+            case "64位":
+                return "逐像素全光学要求 Hanatos Float64"
+            case "CAM16", "曝光参考":
+                return "原版全光学扫描不支持 CAM16、黑白参考及曝光参考"
+            default: break
+            }
+        }
+        if directPixelMode && !fullPhysicalMode && title == "散射" {
+            return "普通像素直连不支持散射；请先开启逐像素全光学"
+        }
+        return nil
+    }
+
+    private func requiredChanges(for mode: SourceModeChange) -> [String] {
+        var changes: [String] = []
+        if mode == .disablePixel {
+            if model.sourcePhysicalDirectEnabled {
+                changes.append("同步关闭依赖像素直连的逐像素全光学")
+            }
+            return changes
+        }
+        if mode == .disablePhysical {
+            if model.scatterEnabled {
+                changes.append("关闭普通像素直连不支持的乳剂散射")
+            }
+            if model.halationEnabled {
+                changes.append("关闭普通像素直连不支持的背反射光晕")
+            }
+            return changes
+        }
+        if abs(model.strength - 1.0) > 1e-9 {
+            changes.append("效果强度恢复为 100%")
+        }
+        if model.grainEnabled { changes.append("关闭随机密度颗粒") }
+        if model.scannerFinishingEnabled { changes.append("关闭旧版扫描锐化") }
+        if mode == .pixel {
+            if model.scatterEnabled { changes.append("关闭旧版散射") }
+            if model.halationEnabled { changes.append("关闭旧版背反射光晕") }
+        } else {
+            if !model.hanatosOriginalPrecisionEnabled { changes.append("启用 Hanatos Float64") }
+            if !model.originalScannerEnabled { changes.append("启用原版 ACES 扫描") }
+            if !isReversal && !model.originalPrintOpticsEnabled {
+                changes.append("启用原版放大机")
+            }
+            if model.scannerCAM16Enabled { changes.append("关闭 CAM16") }
+            if model.scannerBlackWhiteEnabled { changes.append("关闭黑白场校准") }
+            if model.exposureReferenceEnabled { changes.append("关闭曝光参考") }
+        }
+        return changes
+    }
+
+    private func requestSourceMode(_ mode: SourceModeChange) {
+        guard model.hasPhoto && !model.busy else { return }
+        if mode == .pixel && model.sourcePixelIOEnabled {
+            requestSourceMode(.disablePixel)
+            return
+        }
+        if mode == .physical && model.sourcePhysicalDirectEnabled {
+            requestSourceMode(.disablePhysical)
+            return
+        }
+        if mode == .disablePixel || mode == .disablePhysical {
+            if requiredChanges(for: mode).isEmpty {
+                commitSourceMode(mode)
+            } else {
+                pendingSourceMode = mode
+            }
+            return
+        }
+        // The old SourcePixelIO validator requires the original DIR
+        // source convolution and a selected film/paper LUT. These
+        // prerequisites are not silently fabricated by the UI.
+        guard model.spatialDIREnabled,
+              model.spatialDIRSourceConvolutionEnabled,
+              model.lut != nil else { return }
+        if mode == .physical && !model.sourcePixelIOEnabled { return }
+        if requiredChanges(for: mode).isEmpty {
+            commitSourceMode(mode)
+        } else {
+            pendingSourceMode = mode
+        }
+    }
+
+    private func commitSourceMode(_ mode: SourceModeChange) {
+        // Called only after confirmation of the affected settings.
+        if mode == .disablePixel {
+            model.sourcePixelIOEnabled = false
+            model.sourcePhysicalDirectEnabled = false
+            model.queueSpectralPreview()
+            return
+        }
+        if mode == .disablePhysical {
+            model.sourcePhysicalDirectEnabled = false
+            // Ordinary 8-bit direct DIR rejects these old CI effects.
+            model.scatterEnabled = false
+            model.halationEnabled = false
+            model.queueSpectralPreview()
+            return
+        }
+        model.strength = 1.0
+        model.grainEnabled = false
+        model.scannerFinishingEnabled = false
+        if mode == .pixel {
+            model.scatterEnabled = false
+            model.halationEnabled = false
+            model.sourcePixelIOEnabled = true
+            model.sourcePhysicalDirectEnabled = false
+        } else {
+            model.hanatosOriginalPrecisionEnabled = true
+            model.originalScannerEnabled = true
+            if !isReversal { model.originalPrintOpticsEnabled = true }
+            model.scannerCAM16Enabled = false
+            model.scannerBlackWhiteEnabled = false
+            model.exposureReferenceEnabled = false
+            model.sourcePixelIOEnabled = true
+            model.sourcePhysicalDirectEnabled = true
+        }
+        selectedFeature = .dir
+        model.queueSpectralPreview()
+    }
+
+    private func sourceModeControl(_ title: String,
+                                   mode: SourceModeChange) -> some View {
+        let isOn = mode == .pixel
+            ? model.sourcePixelIOEnabled : model.sourcePhysicalDirectEnabled
+        let prerequisite = model.spatialDIREnabled &&
+            model.spatialDIRSourceConvolutionEnabled &&
+            model.lut != nil && (mode == .pixel || model.sourcePixelIOEnabled)
+        return HStack(spacing: 7) {
+            Text(title)
+                .font(.caption2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                requestSourceMode(mode)
+            } label: {
+                miniatureSwitch(isOn: isOn)
+                    .frame(width: 42, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.busy || (!isOn && (!prerequisite || !model.hasPhoto)))
+            .accessibilityLabel(title + (isOn ? "，关闭" : "，开启"))
+            .accessibilityHint("若需改变其他已开启选项，会先列明并要求确认")
+        }
+        .opacity(!isOn && !prerequisite ? 0.45 : 1)
     }
 
     private func openFilmDrawer() {
@@ -165,6 +363,20 @@ struct FloatingEditorWorkspace: View {
                 statusReportSheet
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+            }
+            .alert(item: $pendingSourceMode) { mode in
+                Alert(
+                    title: Text(mode.title),
+                    message: Text(
+                        "原版算法已确认需要调整以下设置：\n" +
+                        requiredChanges(for: mode).joined(separator: "；") +
+                        "\n\n确认后才会关闭冲突项。不会自动切换近似算法。"
+                    ),
+                    primaryButton: .default(Text("确认并切换")) {
+                        commitSourceMode(mode)
+                    },
+                    secondaryButton: .cancel(Text("取消"))
+                )
             }
             .background(Color.black.ignoresSafeArea())
             // Preserve picker/dock lazy mounting for iOS 16.5.1.
@@ -650,10 +862,12 @@ struct FloatingEditorWorkspace: View {
                                value: Binding<Bool>, allowed: Bool = true,
                                changed: @escaping () -> Void) -> some View {
         let ready = model.hasPhoto && !model.busy && allowed
+        let confirmedLock = confirmedFeatureLock(feature)
         return HStack(spacing: 2) {
             Button {
                 guard ready else { return }
                 if !value.wrappedValue {
+                    guard confirmedLock == nil else { return }
                     value.wrappedValue = true
                     changed()
                 }
@@ -667,8 +881,10 @@ struct FloatingEditorWorkspace: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(title + "，开启并显示二级参数")
+            .accessibilityHint(confirmedLock ?? "点击功能名称查看二级菜单")
+            .disabled(!ready || (!value.wrappedValue && confirmedLock != nil))
             Button {
-                guard ready else { return }
+                guard ready && confirmedLock == nil else { return }
                 let next = !value.wrappedValue
                 value.wrappedValue = next
                 if next {
@@ -685,6 +901,9 @@ struct FloatingEditorWorkspace: View {
             .buttonStyle(.plain)
             .accessibilityLabel(title + (value.wrappedValue
                                         ? "，关闭并收起参数" : "，开启并展开参数"))
+            .accessibilityHint(confirmedLock ?? "原版算法可用")
+            .disabled(!ready || confirmedLock != nil)
+            .opacity(confirmedLock == nil ? 1 : 0.45)
         }
         .foregroundColor(selectedFeature == feature && value.wrappedValue
                          ? .accentColor : .primary)
@@ -758,8 +977,9 @@ struct FloatingEditorWorkspace: View {
     private func simpleToggle(_ title: String, value: Binding<Bool>,
                               allowed: Bool = true, resetTo: Bool = false,
                               changed: @escaping () -> Void) -> some View {
-        Button {
-            guard model.hasPhoto && !model.busy && allowed else { return }
+        let confirmedLock = confirmedSimpleLock(title)
+        return Button {
+            guard model.hasPhoto && !model.busy && allowed && confirmedLock == nil else { return }
             value.wrappedValue.toggle()
             changed()
         } label: {
@@ -774,13 +994,14 @@ struct FloatingEditorWorkspace: View {
         }
         .buttonStyle(.plain)
         .onTapGesture(count: 2) {
-            guard model.hasPhoto && !model.busy && allowed else { return }
+            guard model.hasPhoto && !model.busy && allowed && confirmedLock == nil else { return }
             value.wrappedValue = resetTo
             changed()
         }
-        .disabled(!model.hasPhoto || model.busy || !allowed)
+        .disabled(!model.hasPhoto || model.busy || !allowed || confirmedLock != nil)
+        .opacity(confirmedLock == nil ? 1 : 0.45)
         .accessibilityLabel(title + (value.wrappedValue ? "，已开启" : "，已关闭"))
-        .accessibilityHint("单击切换；双击恢复默认。纯开关，没有二级参数")
+        .accessibilityHint(confirmedLock ?? "单击切换；双击恢复默认")
     }
 
     // Top feature row and pure-switch second row. The parameter
@@ -888,7 +1109,7 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 resetToggle("黑白场校准", value: $model.scannerBlackWhiteEnabled,
-                            enabled: model.hasPhoto && !model.busy)
+                            enabled: model.hasPhoto && !model.busy && !fullPhysicalMode)
                     .onChange(of: model.scannerBlackWhiteEnabled) { _ in
                         model.queueSpectralPreview()
                     }
@@ -988,7 +1209,7 @@ struct FloatingEditorWorkspace: View {
             Divider()
             if model.spatialDIREnabled {
                 resetToggle("DIR 原版 FIR/YVV", value: $model.spatialDIRSourceConvolutionEnabled,
-                            enabled: model.hasPhoto && !model.busy,
+                            enabled: model.hasPhoto && !model.busy && !directPixelMode,
                             resetTo: true)
                     .onChange(of: model.spatialDIRSourceConvolutionEnabled) { _ in
                         model.queueSpectralPreview()
@@ -999,24 +1220,9 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 if model.spatialDIRSourceConvolutionEnabled {
-                    resetToggle("8-bit 原版像素直连（实验）",
-                                value:$model.sourcePixelIOEnabled,
-                                enabled:model.hasPhoto && !model.busy,
-                                resetTo:false)
-                        .onChange(of:model.sourcePixelIOEnabled) { _ in
-                            if !model.sourcePixelIOEnabled {
-                                model.sourcePhysicalDirectEnabled = false
-                            }
-                            model.queueSpectralPreview()
-                        }
+                    sourceModeControl("8-bit 原版像素直连（实验）", mode: .pixel)
                     if model.sourcePixelIOEnabled {
-                        resetToggle("逐像素全光学（实验）",
-                                    value:$model.sourcePhysicalDirectEnabled,
-                                    enabled:model.hasPhoto && !model.busy,
-                                    resetTo:false)
-                            .onChange(of:model.sourcePhysicalDirectEnabled) { _ in
-                                model.queueSpectralPreview()
-                            }
+                        sourceModeControl("逐像素全光学（实验）", mode: .physical)
                         if model.sourcePhysicalDirectEnabled {
                             resetToggle("原版摄影曝光前处理（Double｜三模块）",
                                         value:$model.sourceCameraPreFilmEnabled,
