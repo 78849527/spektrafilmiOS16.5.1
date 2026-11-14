@@ -6,12 +6,16 @@ on:
       - port/build77-source-contract-01-05
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
+      - "ios/tests/Build77StageTapeRecorderValidation.swift"
       - "src/spektrafilm/**"
       - "pyproject.toml"
       - ".github/workflows/build77-source-contract.yml"
   pull_request:
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
+      - "ios/tests/Build77StageTapeRecorderValidation.swift"
       - "src/spektrafilm/**"
       - "pyproject.toml"
       - ".github/workflows/build77-source-contract.yml"
@@ -100,4 +104,72 @@ jobs:
         with:
           name: build77-python-original-taps-not-swift-certified
           path: build77-evidence/
+          if-no-files-found: warn
+
+  ios-stage-recorder:
+    name: Actual Swift Double tape + unsigned iPhoneOS compile
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select iOS 16.5-compatible Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+      - name: Compile/run actual Swift stage recorder host test
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/Build77StageTapeRecorder.swift \
+            ios/tests/Build77StageTapeRecorderValidation.swift \
+            -o /tmp/Build77StageTapeRecorderValidation
+          mkdir -p build77-evidence/swift
+          /tmp/Build77StageTapeRecorderValidation build77-evidence/swift
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Verify Swift output with independent NumPy NPY decoder
+        run: |
+          python -m pip install --disable-pip-version-check "numpy~=2.4"
+          python - <<'PY'
+          import json
+          import numpy as np
+          from pathlib import Path
+          directory=Path("build77-evidence/swift")
+          manifest=json.loads((directory/"manifest.json").read_text())
+          assert manifest["status"] == "IOS_INTERNAL_DIAGNOSTIC_NOT_PYTHON_TAP_PARITY"
+          raw=np.load(directory/"logRaw.npy",allow_pickle=False)
+          ev=np.load(directory/"cameraAutoExposureEV.npy",allow_pickle=False)
+          assert raw.dtype == np.dtype("<f8") and raw.shape == (1,2,3)
+          assert raw[0,0,:].tolist() == [0.125,-1.0,0.25]
+          assert np.isposinf(raw[0,1,0]) and np.isnan(raw[0,1,1])
+          assert raw[0,1,2] == 4.5
+          assert ev.shape==(1,) and ev[0]==1.25
+          print("PASS: unmodified Swift Double NPY encoding and NumPy readback")
+          PY
+      - name: Generate and compile unsigned iPhoneOS 16.5.1 app (no IPA)
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate --spec project.yml
+          cd ..
+          xcodebuild -project ios/SpektraFilmPort.xcodeproj \
+            -scheme SpektraFilmPort -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Verify app architecture, deployment target and retained version
+        run: |
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -f "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.51
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 76
+          xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
+          echo "Build77 recorder compiled into unchanged Build76 identity; not released or certified"
+      - name: Preserve host-generated Swift diagnostic tape
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-ios-source-double-recorder-smoke-not-parity
+          path: build77-evidence/swift/
           if-no-files-found: warn
