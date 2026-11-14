@@ -15,8 +15,8 @@ source=(root/"src/spektrafilm/model/grain.py").read_text()
 test=(root/"ios/tests/SourcePhysicalImageParity.swift").read_text()
 generator=(root/"ios/scripts/generate_source_physical_grain.py").read_text()
 version=(root/"ios/project.yml").read_text()
-assert 'MARKETING_VERSION: "1.8.48"' in version
-assert 'CURRENT_PROJECT_VERSION: "73"' in version
+assert 'MARKETING_VERSION: "1.8.49"' in version
+assert 'CURRENT_PROJECT_VERSION: "74"' in version
 assert 'iOS: "16.5"' in version
 for token in (
     'def apply_grain_to_density_layers(',
