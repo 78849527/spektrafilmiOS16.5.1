@@ -1,12 +1,13 @@
-name: iOS 16.5.1 — v1.8.48 source four-stage 3x3 grain Build73
+name: iOS 16.5.1 — v1.8.49 13MP source physical safe export Build74
 
 on:
   push:
-    branches: ['ios16.5.1/source-grain-three-stage-batch-v1.8.48']
+    branches: ['ios16.5.1/source-physical-export-v1.8.49']
     paths:
       - 'ios/**'
       - 'docs/v1.8.47-unified-bottom-editor.md'
       - 'docs/v1.8.48-source-grain-batch.md'
+      - 'docs/v1.8.49-physical-export-13mp.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -15,7 +16,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-grain-batch-v1.8.48-release
+  group: ios1651-source-physical-export-v1.8.49-release
   cancel-in-progress: true
 
 jobs:
@@ -87,6 +88,7 @@ jobs:
         run: |
           python3 ios/scripts/validate_source_physical_grain_batch.py
           test -s docs/v1.8.48-source-grain-batch.md
+          test -s docs/v1.8.49-physical-export-13mp.md
       - name: Verify diagnostic strip, top-aligned preview and bottom menu
         run: |
           python3 - <<'PY'
@@ -963,7 +965,13 @@ jobs:
           assert "SourceFloat64ProfileValidation.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "static func diffuseMemoryBounded(" in dirSource
           assert "var rgb: [Double]" in Path("ios/SpektraFilmPort/OriginalSourcePixelIO.swift").read_text()
-          assert "static let maximumPixels = 12_000_000" in physical
+          assert "static let maximumPixels = 13_000_000" in physical
+          assert "resizedTo: (width:Int,height:Int)? = nil" in physical
+          assert "resizedTo: (width: Int, height: Int)? = nil" in Path("ios/SpektraFilmPort/OriginalSourcePixelIO.swift").read_text()
+          assert "try SafeExportResolution.validateBeforeRender(plan)" in model
+          assert "width:4032,height:3024" in Path("ios/tests/SourcePhysicalImageParity.swift").read_text()
+          assert "grainMemoryDenied" in Path("ios/tests/SourcePhysicalImageParity.swift").read_text()
+          assert "reduced.rgb==reducedAgain.rgb" in Path("ios/SpektraFilmPort/OriginalSourcePixelIO.swift").read_text()
           assert "estimatedPeakBytesPerPixel: UInt64 = 120" in physical
           assert "developInPlace(" in physical
           assert "inhibitors.removeAll(keepingCapacity:false)" in physical
@@ -1413,35 +1421,35 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.48'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.49'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '73'
-          echo "PASS: device bundle 1.8.48 Build73, iOS16.5 minimum and original metal library"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '74'
+          echo "PASS: device bundle 1.8.49 Build74, iOS16.5 minimum and original metal library"
 
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
           /usr/libexec/PlistBuddy -c "Print NSCameraUsageDescription" "$APP/Info.plist" | grep -q '拍照'
           /usr/libexec/PlistBuddy -c "Print UIFileSharingEnabled" "$APP/Info.plist" | grep -qx 'true'
-      - name: Package v1.8.48 unsigned IPA
+      - name: Package v1.8.49 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.48-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.48 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.49-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.49 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.48-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.48-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.49-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.49-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-grain-three-stage-batch-v1.8.48' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-physical-export-v1.8.49' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.48-source-grain-batch-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.48-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.48-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-grain-three-stage-batch-v1.8.48" --jq '.object.sha')
+          TAG=ios1651-v1.8.49-source-physical-export-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.49-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.49-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-physical-export-v1.8.49" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -1452,20 +1460,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.48 Build73 - original source 3x3 grain batch" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.48 Build73, iOS16.5.1. FOUR source film optical-density production stages BEFORE true enlarger/paper/scanner: measured 3x3 sublayer SciPy Poisson→Binomial seeded full-plane count stream, source dye-cloud reflect FIR/YVV, controlled explicitly seeded single-worker Numba lognormal microstructure, and final original Double FIR/YVV grain blur. Original unmodified Python grain.py on three 2D source frames provides 4050 Float64 stage channels, maximum absolute error 4.3298697960381105e-15. Default OFF; distinct from the mobile fast Metal Gaussian grain. Inherits v1.8.47 combined bottom 胶卷/调整 menu and horizontal film/paper swipe select. No independent Python vs iPhone full-size RGB/RAW/JPEG certification, no unseeded multiworker Numba prange RNG or full native GPU certification. Strict certified release gate remains enforced. IPA is an experimental unsigned test package that requires signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.49 Build74 - original source 3x3 grain batch" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.49 Build74, iOS16.5.1. Adds 13MP physical metadata limit, explicit user-selected ImageIO bounded sRGB resize in intelligent/economy full physical original optical exports, 4032x3024 acceptance and strict memory/grain rejection; no silent downsampling, no fast algorithm fallback. Inherits FOUR source film optical-density production stages BEFORE true enlarger/paper/scanner: measured 3x3 sublayer SciPy Poisson→Binomial seeded full-plane count stream, source dye-cloud reflect FIR/YVV, controlled explicitly seeded single-worker Numba lognormal microstructure, and final original Double FIR/YVV grain blur. Original unmodified Python grain.py on three 2D source frames provides 4050 Float64 stage channels, maximum absolute error 4.3298697960381105e-15. Default OFF; distinct from the mobile fast Metal Gaussian grain. Inherits v1.8.47 combined bottom 胶卷/调整 menu and horizontal film/paper swipe select. No independent Python vs iPhone full-size RGB/RAW/JPEG certification, no unseeded multiworker Numba prange RNG or full native GPU certification. Strict certified release gate remains enforced. IPA is an experimental unsigned test package that requires signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish isolated v1.8.46 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-grain-three-stage-batch-v1.8.48' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-physical-export-v1.8.49' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.48-source-grain-batch
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.48-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.49-source-physical-export
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.49-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-grain-three-stage-batch-v1.8.48" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-physical-export-v1.8.49" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -1475,12 +1483,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.48 — original source 3x3 grain batch" \
+              --title "SpektraFilm iOS 16.5.1 v1.8.49 — 13MP original physical export & bounded reduction" \
                --notes "v1.8.48 experimental 4-stage original source grain batch. Independent full-image Python and actual iPhone GPU, RAW, Float64 RGB, Numba prange random-stream certification remains required before any fully certified claim."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.48 fully certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.49 fully certified release."
           exit 1
