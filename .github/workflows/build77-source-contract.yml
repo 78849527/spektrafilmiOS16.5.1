@@ -19,22 +19,6 @@ on:
       - "src/spektrafilm/**"
       - "pyproject.toml"
       - ".github/workflows/build77-source-contract.yml"
-  pull_request:
-    paths:
-      - "ios/scripts/build77_source_contract.py"
-      - "ios/scripts/build77_params_digest_reference.py"
-      - "ios/scripts/build77_measured_manifest.py"
-      - "ios/scripts/generate_spectral_data.py"
-      - "ios/tests/Build77MeasuredProfileAudit.swift"
-      - "ios/SpektraFilmPort/SpectralPhysics.swift"
-      - "ios/project.yml"
-      - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
-      - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
-      - "ios/tests/Build77OriginalParameterDigestValidation.swift"
-      - "ios/tests/Build77StageTapeRecorderValidation.swift"
-      - "src/spektrafilm/**"
-      - "pyproject.toml"
-      - ".github/workflows/build77-source-contract.yml"
   workflow_dispatch:
 
 permissions:
