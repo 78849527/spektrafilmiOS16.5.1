@@ -1,0 +1,41 @@
+name: Source diffusion exact-bypass and fail-closed numeric regression
+on:
+  push:
+    branches:
+      - 'validation/source-diffusion-invariants-20261114'
+    paths:
+      - 'ios/scripts/validate_source_diffusion.py'
+      - 'ios/tests/SourceDiffusionNumericValidation.swift'
+      - 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift'
+      - 'src/spektrafilm/model/diffusion.py'
+      - '.github/workflows/ios16-source-diffusion-guards.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-source-numerics:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+      - name: Select iOS16-compatible Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcrun swiftc --version
+          git rev-parse HEAD
+      - name: Set up reference Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned original NumPy SciPy references
+        run: |
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.14.1'
+      - name: Compare original Python and native Swift Double FFT plus failure guards
+        run: python ios/scripts/validate_source_diffusion.py
+      - name: State the verification boundary
+        run: |
+          echo "VALIDATED: original source four-family Double optical PSF numerical cases and disabled/source-failure behavior."
+          echo "NOT VALIDATED: real iPhone GPU parity, full-frame RGB imaging, Numba RNG or a signed installable IPA."
