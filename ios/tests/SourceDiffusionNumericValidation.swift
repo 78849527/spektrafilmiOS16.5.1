@@ -28,7 +28,7 @@ struct SourceDiffusionNumericValidation {
         for caseIndex in settings.indices {
             let (w,h)=dimensions[caseIndex]
             let input=(0..<(w*h*3)).map { k -> Double in
-                Double((k*37+11)%251)/251.0+
+                Double((k*37+11)%251)/251.0 +
                     0.001*Double((k/7)%3)
             }
             let cfg=settings[caseIndex]
