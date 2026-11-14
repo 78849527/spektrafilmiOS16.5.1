@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.31"
-    CURRENT_PROJECT_VERSION: "56"
+    MARKETING_VERSION: "1.8.32"
+    CURRENT_PROJECT_VERSION: "57"
 packages:
   NextLevel:
     path: Vendor/NextLevel

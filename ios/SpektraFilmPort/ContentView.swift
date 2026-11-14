@@ -94,6 +94,13 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceFilmHalationAmount = 1.0
     @Published var sourceFilmHalationScale = 1.0
 
+    /// Legacy-position switches select the original source kernels ONLY
+    /// in full physical mode. For ordinary CI rendering their meaning is
+    /// unchanged. This also reserves actual full-frame halation memory.
+    private var sourcePhysicalHalationRequested: Bool {
+        sourceFilmHalationEnabled || scatterEnabled || halationEnabled
+    }
+
     private var spatialDIRSettings: SpatialDIRSettings {
         SpatialDIRSettings(
             enabled: spatialDIREnabled && spatialDIRStage != nil,
@@ -180,11 +187,19 @@ final class PhotoEditorModel: ObservableObject {
                 "原版 8-bit 像素直连需要先选胶片/相纸，启用原版 DIR FIR/YVV 和 100% 强度"
             )
         }
-        guard !spatialSettings.enabled,!grainEnabled,
-              !scannerFinishingEnabled else {
+        // Plain 8-bit direct DIR still cannot use ANY spatial glow. The
+        // separate full-physical source mode explicitly routes the familiar
+        // scatter/halation switches to OriginalSourceFilmHalation instead.
+        // Random-density grain and old CI scanner finishing stay rejected
+        // in both modes. No unsupported option silently falls back to CI.
+        guard (sourcePhysicalDirectEnabled || !spatialSettings.enabled),
+              !grainEnabled,!scannerFinishingEnabled else {
             throw ImageProcessingError.invalid(
-                "原版像素直连当前不支持光晕/散射、密度颗粒或扫描后处理。" +
-                "请显式关闭这些模块，禁止静默退回 Core Image。"
+                sourcePhysicalDirectEnabled
+                ? "逐像素全光学暂不支持密度随机颗粒或旧版 CI 扫描后处理。" +
+                  "请显式关闭这些模块；乳剂散射与光晕使用原版 Double。"
+                : "普通 8-bit DIR 像素直连不支持散射/光晕、密度颗粒或扫描后处理。" +
+                  "需要原版乳剂效果时请开启「逐像素全光学」，禁止退回 Core Image。"
             )
         }
         return (data,stage)
@@ -245,12 +260,17 @@ final class PhotoEditorModel: ObservableObject {
                 filmFormatMM:35
               )
             : OriginalSourceCameraOptics.Settings()
-        let sourceHalation=OriginalSourceFilmHalation.Settings(
-            active:sourceFilmHalationEnabled,
-            scatterAmount:sourceFilmScatterAmount,
-            scatterSpatialScale:sourceFilmScatterScale,
-            halationAmount:sourceFilmHalationAmount,
-            halationSpatialScale:sourceFilmHalationScale
+        // In source-physical mode BOTH locations in the adjustment panel
+        // enter this source Double optic, never the old SpatialOptics CI.
+        let sourceHalation=OriginalSourceFilmHalation.routedSettings(
+            combinedEnabled:sourceFilmHalationEnabled,
+            scatterToggle:scatterEnabled,
+            halationToggle:halationEnabled,
+            legacyHalationAmount:halationAmount,
+            sourceScatterAmount:sourceFilmScatterAmount,
+            sourceScatterScale:sourceFilmScatterScale,
+            sourceHalationAmount:sourceFilmHalationAmount,
+            sourceHalationScale:sourceFilmHalationScale
         )
         let p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
@@ -824,7 +844,7 @@ final class PhotoEditorModel: ObservableObject {
                         ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                         ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
-                    (sourceFilmHalationEnabled
+                    (sourcePhysicalHalationRequested
                         ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0)
             )
         }
@@ -839,7 +859,7 @@ final class PhotoEditorModel: ObservableObject {
                     : 0) +
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
-                   (sourceFilmHalationEnabled
+                   (sourcePhysicalHalationRequested
                     ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )

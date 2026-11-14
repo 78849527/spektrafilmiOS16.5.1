@@ -192,6 +192,59 @@ enum OriginalSourceCameraBatchValidation {
             print("PASS: source full-frame halation rejects overflowing dimensions")
         }
 
+        // v1.8.32 UI regression: familiar switches in full-physical
+        // mode must route to exact source Double optics independently,
+        // never to previous Core Image glow or silently drop the effect.
+        let none=OriginalSourceFilmHalation.routedSettings(
+            combinedEnabled:false,scatterToggle:false,
+            halationToggle:false,legacyHalationAmount:1.0,
+            sourceScatterAmount:1.0,sourceScatterScale:1.0,
+            sourceHalationAmount:1.0,sourceHalationScale:1.0
+        )
+        let scatterOnly=OriginalSourceFilmHalation.routedSettings(
+            combinedEnabled:false,scatterToggle:true,
+            halationToggle:false,legacyHalationAmount:1.0,
+            sourceScatterAmount:1.0,sourceScatterScale:1.0,
+            sourceHalationAmount:1.0,sourceHalationScale:1.0
+        )
+        let halationOnly=OriginalSourceFilmHalation.routedSettings(
+            combinedEnabled:false,scatterToggle:false,
+            halationToggle:true,legacyHalationAmount:1.5,
+            sourceScatterAmount:1.0,sourceScatterScale:1.0,
+            sourceHalationAmount:1.0,sourceHalationScale:1.0
+        )
+        let both=OriginalSourceFilmHalation.routedSettings(
+            combinedEnabled:false,scatterToggle:true,
+            halationToggle:true,legacyHalationAmount:1.0,
+            sourceScatterAmount:1.0,sourceScatterScale:1.0,
+            sourceHalationAmount:1.0,sourceHalationScale:1.0
+        )
+        let combined=OriginalSourceFilmHalation.routedSettings(
+            combinedEnabled:true,scatterToggle:false,
+            halationToggle:false,legacyHalationAmount:1.0,
+            sourceScatterAmount:0.4,sourceScatterScale:1.7,
+            sourceHalationAmount:0.8,sourceHalationScale:0.6
+        )
+        guard !none.active && none.scatterAmount==0 && none.halationAmount==0,
+              scatterOnly.active && scatterOnly.scatterAmount==1 &&
+                scatterOnly.halationAmount==0,
+              halationOnly.active && halationOnly.scatterAmount==0 &&
+                halationOnly.halationAmount==1.5,
+              both.active && both.scatterAmount==1 &&
+                both.halationAmount==1,
+              combined.active && combined.scatterAmount==0.4 &&
+                combined.halationAmount==0.8 &&
+                combined.scatterSpatialScale==1.7 &&
+                combined.halationSpatialScale==0.6 else {
+            throw Failure.invalid("v1.8.32 UI 原版散射/光晕路由矩阵错误")
+        }
+        try none.validate()
+        try scatterOnly.validate()
+        try halationOnly.validate()
+        try both.validate()
+        try combined.validate()
+        print("PASS: v1.8.32 source physical OFF / scatter / halation / both / combined routing")
+
         // A malformed full-frame geometry must fail explicitly. It must
         // never overflow Int arithmetic or crash before source validation.
         do {

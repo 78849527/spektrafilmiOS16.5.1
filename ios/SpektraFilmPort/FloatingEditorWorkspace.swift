@@ -677,15 +677,30 @@ struct FloatingEditorWorkspace: View {
                         .foregroundColor(.secondary)
                 }
             }
-            resetToggle("乳剂散射", value: $model.scatterEnabled,
-                        enabled: model.hasPhoto)
+            // In the explicitly selected whole-physical path the familiar
+            // switches use the source's actual Double photon optics.
+            // Outside that path these remain unchanged mobile CI controls.
+            resetToggle(model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
+                            ? "乳剂散射 · 原版 Double" : "乳剂散射",
+                        value: $model.scatterEnabled,
+                        enabled: model.hasPhoto && !model.busy)
                 .onChange(of: model.scatterEnabled) { _ in onRefresh() }
-            resetToggle("背反射光晕", value: $model.halationEnabled,
-                        enabled: model.hasPhoto)
+            resetToggle(model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
+                            ? "背反射光晕 · 原版 Double" : "背反射光晕",
+                        value: $model.halationEnabled,
+                        enabled: model.hasPhoto && !model.busy)
                 .onChange(of: model.halationEnabled) { _ in onRefresh() }
             if model.halationEnabled {
-                strengthControl("光晕倍率", value: $model.halationAmount,
+                strengthControl(model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
+                                    ? "原版背反射倍率" : "光晕倍率",
+                                value: $model.halationAmount,
                                 range: 0...3, suffix: "×", resetTo: 1.0)
+            }
+            if model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled {
+                Text("上方两开关现直连 Python 原版 Double 光子域散射／背反射。" +
+                     "单独启用可做 A/B 测试，不经过旧版 Core Image。")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             Divider()
             resetToggle("原版 DIR 空间显影", value: $model.spatialDIREnabled,
@@ -759,11 +774,11 @@ struct FloatingEditorWorkspace: View {
                                      "摄影 EV→全图原版高光 Boost→镜头 FIR/YVV→" +
                                      "胶片 H-D / DIR；高光与镜头计算均为整幅 Double。" +
                                      "关闭时保持 v1.8.29 源精确路径不变；" +
-                                     "不包含尚未移植的摄影扩散/光晕/UV-IR。")
+                                     "不包含尚未移植的摄影扩散/UV-IR；光晕在下方原版模块。")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
-                            resetToggle("原版乳剂散射＋背反射光晕（Double）",
+                            resetToggle("原版乳剂散射＋背反射同时开启（Double）",
                                         value:$model.sourceFilmHalationEnabled,
                                         enabled:model.hasPhoto && !model.busy,
                                         resetTo:false)
@@ -786,7 +801,9 @@ struct FloatingEditorWorkspace: View {
                                 Text("Python 原版 HalationParams：RGB 独立核与指数尾巴；" +
                                      "三次反射、宽度乘 sqrt(k)、衰减 0.5、能量归一。" +
                                      "光子域镜头模糊→乳剂散射→背反射→H-D。" +
-                                     "整图 Double，新增内存预算；与旧版 Core Image 散射分离。")
+                                     "上方两个开关也支持分别启动原版 Double；" +
+                                     "此处可同时启动两种光学模块。内存预算增加，" +
+                                     "与旧版 Core Image 散射分离。")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -822,12 +839,16 @@ struct FloatingEditorWorkspace: View {
                              "整图 Double FIR/YVV 与相纸显影均保留，不缩图；" +
                              "需开启原版 ACES 扫描、Hanatos Float64、" +
                              "负片原版放大机，关闭 CAM16/黑白参考。" +
-                             "尚不支持随机颗粒、光晕与 RAW。")
+                             "尚不支持随机颗粒和 RAW；乳剂光晕使用原版 Double。")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
-                    Text("仅不透明 8-bit 照片：ImageIO→Double DIR→原尺寸 JPEG；" +
-                         "不支持颗粒、光晕、散射和扫描后处理；不静默降级。")
+                    Text(model.sourcePhysicalDirectEnabled
+                         ? "逐像素全光学支持上方原版 Double 乳剂散射／光晕。" +
+                           "随机颗粒与旧版 CI 扫描后处理仍不支持；不静默降级。"
+                         : "仅不透明 8-bit：ImageIO→Double DIR→原尺寸 JPEG。" +
+                           "普通 DIR 像素直连不支持散射／光晕／颗粒；" +
+                           "原版散射需同时开启逐像素全光学。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

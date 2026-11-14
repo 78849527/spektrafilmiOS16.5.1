@@ -47,6 +47,37 @@ enum OriginalSourceFilmHalation {
         }
     }
 
+    /// Routing is mode-scoped: the floating editor's familiar scatter /
+    /// halation controls must enter this genuine source Double optic when
+    /// full physical mode is explicitly selected. Their old CI effects are
+    /// NEVER calculated or used as a fallback in source mode.
+    ///
+    /// "combinedEnabled" preserves the separate v1.8.31 source-pair
+    /// control; otherwise two legacy-position toggles select scatter-only
+    /// or halation-only independently in full physical mode.
+    static func routedSettings(
+        combinedEnabled:Bool,
+        scatterToggle:Bool,
+        halationToggle:Bool,
+        legacyHalationAmount:Double,
+        sourceScatterAmount:Double,
+        sourceScatterScale:Double,
+        sourceHalationAmount:Double,
+        sourceHalationScale:Double
+    ) -> Settings {
+        let scatterSelected = combinedEnabled || scatterToggle
+        let halationSelected = combinedEnabled || halationToggle
+        return Settings(
+            active: scatterSelected || halationSelected,
+            scatterAmount: scatterSelected ? sourceScatterAmount : 0.0,
+            scatterSpatialScale: sourceScatterScale,
+            halationAmount: halationSelected
+                ? (combinedEnabled ? sourceHalationAmount : legacyHalationAmount)
+                : 0.0,
+            halationSpatialScale: sourceHalationScale
+        )
+    }
+
     static func applyInPlace(
         _ photons:inout [Double],width:Int,height:Int,settings:Settings
     ) throws {
