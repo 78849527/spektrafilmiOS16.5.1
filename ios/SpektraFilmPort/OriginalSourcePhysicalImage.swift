@@ -234,7 +234,8 @@ enum OriginalSourcePhysicalImage {
                 (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
                 (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0) +
-                (capturePaperStages ? 48 : 0)
+                (capturePaperStages ? 48 : 0) +
+                (stageDoubleObserver != nil ? 24 : 0)
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -251,6 +252,14 @@ enum OriginalSourcePhysicalImage {
         var inhibitors=[Double](repeating:0,count:size)
         var initialObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
+        // Capture only the actual encoded RGB multiplied by source metering
+        // BEFORE conversion into film photons. This is the source rgb_pre
+        // interface on supported no-crop/no-rescale sRGB inputs, NOT a
+        // claim that original ProPhoto/RAW/crop are fully implemented.
+        let cameraPreActive=parameters.cameraOptics.active ||
+            parameters.filmHalation.active
+        var rgbPreObserved:[Double]? = stageDoubleObserver != nil &&
+            cameraPreActive ? [Double](repeating:0,count:size) : nil
 
         // Original Python chronological camera stage:
         // 1. full-frame decoded RGB -> source exposure-metering preview,
@@ -263,7 +272,7 @@ enum OriginalSourcePhysicalImage {
         //
         // RAW modes are disabled by default; the established v1.8.29 path
         // below remains byte-for-byte unchanged if all options are off.
-        if parameters.cameraOptics.active || parameters.filmHalation.active {
+        if cameraPreActive {
             let autoEV=try OriginalSourceCameraOptics.measureAutoExposureEV(
                 encodedRGB:frame.rgb,width:w,height:h,
                 method:parameters.cameraOptics.metering
@@ -280,10 +289,16 @@ enum OriginalSourcePhysicalImage {
                     frame.rgb[k+1]*autoScale,
                     frame.rgb[k+2]*autoScale
                 ]
+                // Store the same pre-exposure input that the production
+                // photon conversion consumes, without recalculating it.
+                for c in 0..<3 { rgbPreObserved?[k+c]=rgb[c] }
                 let photons=try engine.sourceCameraRaw(
                     encodedRGB:rgb,cameraEV:parameters.cameraEV
                 )
                 for c in 0..<3 { frame.rgb[k+c]=photons[c] }
+            }
+            if let rgbPreObserved {
+                stageDoubleObserver?("rgbPre",rgbPreObserved)
             }
             stageDoubleObserver?("cameraRaw",frame.rgb)
             try OriginalSourceCameraOptics.boostHighlightsInPlace(
@@ -322,6 +337,12 @@ enum OriginalSourcePhysicalImage {
                 )
                 stageDoubleObserver?("filmScatterHalation",frame.rgb)
             }
+        }
+        // If no camera pre-stage was selected, source pre-processing is
+        // identity on the supported uncropped, 1:1 8-bit sRGB input.
+        // Preserve the exact former production image (no copies if not observed).
+        if !cameraPreActive {
+            stageDoubleObserver?("rgbPre",frame.rgb)
         }
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
