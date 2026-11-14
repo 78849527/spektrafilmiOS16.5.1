@@ -102,9 +102,10 @@ struct Build77MeasuredProfileAudit {
         try demand(Set(expected.fields.keys) == seen.subtracting(
             fields.filter { expected.fields[$0.0] == nil }.map { $0.0 }
         ), label + ": unexpected/missing measured source fields")
-        try demand((expected.stage == "filming") ==
-                   (exactChunks["sourceDensityCurvesLayersF64"] != nil),
-                   label + ": original nine-layer presence changed")
+        // All 28 source JSON profiles retain this measured 256×3×3 field,
+        // although only capture films run the grain development algorithm.
+        try demand(exactChunks["sourceDensityCurvesLayersF64"] != nil,
+                   label + ": original measured sublayer data missing")
         let sourceOrder = [
             "sourceLogSensitivityF64", "sourceChannelDensityF64",
             "sourceBaseDensityF64", "sourceLogExposureF64",
