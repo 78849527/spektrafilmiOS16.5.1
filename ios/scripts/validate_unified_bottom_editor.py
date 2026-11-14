@@ -50,16 +50,15 @@ assert 'filmSelectionContent' in panel
 assert 'adjustmentControls' in panel
 assert 'Button(action: closeUnifiedEditor)' in panel
 assert 'private func horizontalMaterialPicker(' in panel
-assert 'ScrollView(.horizontal, showsIndicators: false)' in panel
-assert 'LazyHStack(spacing: 8)' in panel
+assert 'TabView(selection: selection)' in panel
+assert '.tabViewStyle(.page(indexDisplayMode: .never))' in panel
 assert 'horizontalMaterialPicker("胶卷 FILM", items: films,' in panel
 assert 'horizontalMaterialPicker("相纸 PAPER", items: media,' in panel
 assert 'ForEach(items)' in panel
-assert 'selection.wrappedValue = stock.id' in panel
+assert '.tag(stock.id)' in panel
 assert 'selection.wrappedValue = defaultID' in panel
-assert '.onChange(of: selection.wrappedValue)' in panel
-assert 'reader.scrollTo(chosen, anchor: .center)' in panel
-assert 'reader.scrollTo(selection.wrappedValue, anchor: .center)' in panel
+assert '左右滑动切换' in panel
+assert '向左或向右滑动切换当前材料' in panel
 assert 'if isReversal' in panel and '反转片直接扫描 · 无需相纸' in panel
 assert 'Button(action: onOpenCatalog)' in panel
 assert '.pickerStyle(.wheel)' not in ui
@@ -110,7 +109,7 @@ for token in (
     assert token in parent,("film/paper binding changed",token)
 print("PASS: one 16.5.1 bottom-menu entry named 调整; no floating or snapped edge tabs")
 print("PASS: top 胶卷/调整 names switch mutually exclusive full-width content")
-print("PASS: both stock rails swipe horizontally and center selected item; reversal bypass, defaults and catalogue preserved")
+print("PASS: film and paper selection follow every actual horizontal page swipe (no extra tap); reversal bypass, defaults and catalogue preserved")
 print("PASS: selected film/paper IDs still drive production model preview; no algorithm change")
 print("PASS: safe two-stage adjustment mounting and photo/status/export/compare gestures retained")
 print("NOT CERTIFIED: physical-device touch performance, pixel-perfect screenshots")
