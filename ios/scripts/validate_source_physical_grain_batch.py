@@ -85,7 +85,7 @@ device=(root/"ios/SpektraFilmPort/OriginalSourceGrainProductionDiagnostic.swift"
 assert "OriginalSourcePhysicalImage.develop(" in device
 assert "sourceGrainMicrostructure" in device
 assert "sourceSpatialScan(" in device
-assert "no seed" in device
+assert "missingSeed.sourceGrain.numbaSeed=nil" in device
 assert "OriginalSourceGrainProductionDiagnostic.evaluate()" in model
 assert 'OriginalSourcePhysicalImage.develop(' in test
 assert 'grainDensity' in test
