@@ -163,10 +163,9 @@ enum Build78HighBitDepthValidation {
                 CGImageSourceCreateImageAtIndex($0,0,nil)
             }
             FileHandle.standardError.write(Data(
-                "Build78 EXIF \(rotation) TIFF diagnostic: name="
+                ("Build78 EXIF \(rotation) TIFF diagnostic: name="
                 + String(describing:diagCG?.colorSpace?.name)
-                + " bpc=\(diagCG?.bitsPerComponent ?? -1)\n"
-                .utf8
+                + " bpc=\(diagCG?.bitsPerComponent ?? -1)\n").utf8
             ))
             let frame=try OriginalSourcePixelIO.decode(file)
             let rotated=rotation==6 || rotation==8
