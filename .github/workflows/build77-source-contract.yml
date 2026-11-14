@@ -14,6 +14,7 @@ on:
       - "ios/tests/SpectralValidation.swift"
       - "ios/scripts/build77_measured_manifest.py"
       - "ios/scripts/generate_spectral_data.py"
+      - "ios/scripts/generate_original_optics.py"
       - "ios/tests/Build77MeasuredProfileAudit.swift"
       - "ios/SpektraFilmPort/SpectralPhysics.swift"
       - "ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift"
