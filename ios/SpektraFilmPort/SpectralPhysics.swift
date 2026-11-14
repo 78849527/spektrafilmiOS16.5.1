@@ -1228,7 +1228,7 @@ struct SpectralPhysics {
     /// Distinct from the old approximate 3D colour-cube grain inputs.
     func sourceSpatialGrainLayers() throws -> OriginalSourcePhysicalGrain.MeasuredLayers {
         let maxima=film.sublayerMaxima
-        guard useOriginalScanner,sourceMeasuredFloat64,
+        guard useOriginalScanner,
               film.sourceDensityCurvesLayersF64 != nil,
               film.sourceDensityCurvesF64 != nil,
               film.sourceLogExposureF64 != nil,
