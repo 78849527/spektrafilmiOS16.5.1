@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.46 opt-in scanner glare in real full-frame XYZ production
+name: iOS 16.5.1 — v1.8.47 unified bottom film and adjustment editor
 
 on:
   push:
-    branches: ['ios16.5.1/source-scanner-glare-xyz-production-v1.8.46']
+    branches: ['ios16.5.1/unified-bottom-adjustment-v1.8.47']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.46-scanner-glare-production-xyz.md'
+      - 'docs/v1.8.47-unified-bottom-editor.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-scanner-glare-xyz-production-v1.8.46-release
+  group: ios1651-unified-bottom-editor-v1.8.47-release
   cancel-in-progress: true
 
 jobs:
@@ -78,6 +78,10 @@ jobs:
         run: |
           python3 ios/scripts/validate_source_scanner_glare_production.py
           test -f docs/v1.8.46-scanner-glare-production-xyz.md
+      - name: Verify v1.8.47 unified bottom material/editor UI and its source-mode gates
+        run: |
+          python3 ios/scripts/validate_unified_bottom_editor.py
+          test -f docs/v1.8.47-unified-bottom-editor.md
       - name: Verify diagnostic strip, top-aligned preview and bottom menu
         run: |
           python3 - <<'PY'
@@ -87,19 +91,19 @@ jobs:
           assert "VStack(spacing: 4)" in body
           assert body.index("statusChip") < body.index("GeometryReader { previewSlot in") < body.index("bottomToolbar")
           assert body.count(".padding(.bottom, 63)") == 1
-          assert 'edgeDrawerTab("胶片' in body
-          assert 'edgeDrawerTab("调节"' in body
-          assert 'adjustmentDock(width: available.width' in body
-          assert 'frontDrawer == .film ? 2.0 : 1.0' in body
-          assert 'frontDrawer == .adjustment ? 2.0 : 1.0' in body
-          assert 'closeFilmDrawer()' in c
-          assert 'closeAdjustmentDrawer()' in c
+          assert 'unifiedEditorDock(width:' in body
+          assert 'if unifiedEditorExpanded && model.hasPhoto' in body
+          assert 'Button(action: openUnifiedEditor)' in c
+          assert 'Button(action: closeUnifiedEditor)' in c
+          assert 'Text("胶卷")' in c and 'Text("调整")' in c
+          assert 'edgeDrawerTab' not in c
+          assert 'frontDrawer' not in c
           assert ".overlay(alignment: .top) {" not in body
           assert "private var bottomToolbar: some View" in c
           assert ".scaleEffect(photoScale, anchor: .top)" in c
           assert "StableImageHoldRecognizer(isHolding: $originalHeld)" in c
           assert "statusReportSheet" in c
-          print("PASS: status then photo then safe-bottom menu; both docks clear menu; long hold and diagnostics retained")
+          print("PASS: status then photo then safe-bottom one-panel menu; no edge tabs; hold and diagnostics retained")
           PY
       - name: Verify first-row feature menus and switch-only second row
         run: |
@@ -133,8 +137,8 @@ jobs:
               'simpleToggle("Poisson"',
               'selectedFeature = nil',
               'if model.preflashEnabled && model.originalPrintOpticsEnabled',
-              'Button(action: closeFilmDrawer)',
-              'Button(action: closeAdjustmentDrawer)',
+              'Button(action: closeUnifiedEditor)',
+              'Button(action: openUnifiedEditor)',
               'onSaveToPhotos(.original)',
           ):
               assert token in ui, token
@@ -149,7 +153,7 @@ jobs:
           assert "DragGesture(minimumDistance: 16)" not in ui
           assert ".simultaneousGesture(" not in ui
           assert ui.count(".gesture(") == 1
-          print("PASS: first row feature submenus, second row only standalone switches, direct preflash and basic menus, tap-only side drawers")
+          print("PASS: first row feature submenus, second row only standalone switches, merged bottom editor")
           PY
       - name: Guard confirmed source mode dependencies and consent transitions
         run: |
@@ -206,43 +210,25 @@ jobs:
           assert ui.count('.gesture(') == 1
           print("PASS: only confirmed original-source constraints lock controls; source-mode transitions enumerate conflicting changes and require explicit user approval, no silent image fallback")
           PY
-      - name: Guard iOS 16.5.1 safe staged adjustment drawer mounting
+      - name: Guard iOS 16.5.1 safe staged combined editor title switching
         run: |
+          python3 ios/scripts/validate_unified_bottom_editor.py
           python3 - <<'PY'
           from pathlib import Path
           src=Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
-          for part in (
-              '@State private var adjustmentRowsReady = false',
-              '@State private var adjustmentDetailReady = false',
-              'private func openAdjustmentDrawer()',
-              'private func closeAdjustmentDrawer()',
-              'tx.disablesAnimations = true',
-              'withTransaction(tx)',
-              'adjustmentExpanded = true',
-              'adjustmentRowsReady = true',
-              'adjustmentDetailReady = true',
-              'guard adjustmentExpanded else { return }',
-              'guard adjustmentExpanded && adjustmentRowsReady else { return }',
-              'if adjustmentRowsReady {',
-              'guard adjustmentDetailReady else {',
-              'LazyHStack(spacing: 5)',
-              'Button(action: closeAdjustmentDrawer)',
-              'private var featureRow: AnyView',
-              'private var simpleSwitchRow: AnyView',
-              'private var activeSettings: AnyView',
-              '.alert(item: $pendingSourceMode)',
-              'StableImageHoldRecognizer(isHolding: $originalHeld)',
-          ):
-              assert part in src,part
+          assert 'private func selectEditorPage(_ page: EditorPage)' in src
+          assert 'private func openUnifiedEditor()' in src
+          assert 'private func closeUnifiedEditor()' in src
+          assert 'transaction.disablesAnimations = true' in src
+          assert 'withTransaction(transaction)' in src
+          assert 'guard unifiedEditorExpanded && selectedEditorPage == .adjustment' in src
+          assert 'adjustmentRowsReady = true' in src
+          assert 'adjustmentDetailReady = true' in src
+          assert 'guard adjustmentDetailReady else {' in src
           assert src.count('LazyHStack(spacing: 5)') == 2
-          assert '.animation(.easeInOut(duration: 0.22),\n                               value: adjustmentExpanded)' not in src
           assert '.simultaneousGesture(' not in src
-          assert 'DragGesture(minimumDistance: 16)' not in src
           assert src.count('.gesture(') == 1
-          opening=src.split('private func openAdjustmentDrawer()',1)[1].split('private var films:',1)[0]
-          assert 'model.queueSpectralPreview()' not in opening
-          assert 'model.applyMeasuredSimulation()' not in opening
-          print('PASS: staged adjustment drawer shell, lazy two rows, deferred parameter page, no whole-tree animation or renderer mutation on open')
+          print('PASS: one lazy editor shell with deferred adjustment settings, safe iOS16.5 title switch')
           PY
       - name: Guard iOS16 crash CF7DCF7C runtime generic type-erasure boundaries
         run: |
@@ -267,15 +253,15 @@ jobs:
               "guard let selectedFeature else { return AnyView(EmptyView()) }",
               "adjustmentRowsReady = true",
               "adjustmentDetailReady = true",
-              "tx.disablesAnimations = true",
-              "Button(action: closeAdjustmentDrawer)",
+              "transaction.disablesAnimations = true",
+              "Button(action: closeUnifiedEditor)",
           ):
               assert token in src,token
           assert "@ViewBuilder\n    private var activeSettings" not in src
           assert "private var adjustmentControls: some View" not in src
           assert src.count("AnyView(") >= 14
           assert ".simultaneousGesture(" not in src
-          print("PASS: real .ips stack-guard SIGSEGV in adjustmentControls getter: first row, second row, router and detail type-erased; no 9-case ViewBuilder generic tree")
+          print("PASS: iOS16 stack-guard protection retained with type-erased adjustment controls and two-stage unified-editor mounting")
           PY
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -1390,8 +1376,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
           /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.46'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '71'
-          echo "PASS: device bundle 1.8.46 Build71, iOS16.5 minimum and original metal library"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '72'
+          echo "PASS: device bundle 1.8.47 Build72, iOS16.5 minimum and original metal library"
 
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
           /usr/libexec/PlistBuddy -c "Print NSCameraUsageDescription" "$APP/Info.plist" | grep -q '拍照'
@@ -1401,22 +1387,22 @@ jobs:
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.46-original-metal-unsigned.ipa Payload
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned.ipa Payload
       - name: Upload v1.8.46 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.46-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.46-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-scanner-glare-xyz-production-v1.8.46' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/unified-bottom-adjustment-v1.8.47' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.46-scanner-glare-xyz-production-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.46-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.46-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-scanner-glare-xyz-production-v1.8.46" --jq '.object.sha')
+          TAG=ios1651-v1.8.47-unified-bottom-editor-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.47-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/unified-bottom-adjustment-v1.8.47" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -1427,20 +1413,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.46 - source scanner glare production XYZ, controlled seed" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.46 Build71. Adds real opt-in source scanner glare at the correct FULL IMAGE negative-paper XYZ stage BEFORE XYZ-to-linear-RGB and ACES gamut, with original 2D lognormal/reflect FIR-YVV and single-worker Numba explicit seed=8888. v1.8.45 original Python 141 Float64/423 XYZ numerical reference retained; v1.8.46 real SourcePhysicalImageParity tests controlled 2D production frame scannerGlareXYZ, scannerGlareLinearRGB and final sRGB against source-ordered scalar stages. Default OFF; requires source full physical negative, iOS16.5; source unseeded multiworker Numba RNG/complete independent Python RGB/full-RAW/real-device image parity NOT CERTIFIED. All ten nested third-level switches now use the same 28x16 track/12x12 thumb shared with second-level and primary feature switches; preserve 42x32 tap area, double-tap caption reset, disabled feature gates and existing source mode confirm/preview logic. Retains v1.8.43 source Numba fast_poisson/fast_binomial Swift CPU diagnostic as on-device report appendix with 540 original count vectors and bit-exact seeded one-worker MT consumption, generated from pinned upstream fast_stats.py using NumPy 2.4 and Numba 0.64. The v1.8.41 imaging baseline retains original four-family enlarger diffusion on actual spectral paper photon exposure, strictly BEFORE fitted paper H-D and scanner; retains original camera diffusion computed in Double on the source photon image using per-channel normalized PSFs, warmth and all six family overrides, full reflect boundaries and radix-2 FFT convolution before lens blur and film halation. Strict memory preflight fails explicitly instead of reducing precision/PSF. The previous TH-KG3-L enlarger source and Mallett UV/IR stay available. Native stage verified against upstream Python 81-wavelength Double reference. Retains v1.8.38 Mallett 2019 and UV/IR source filters, v1.8.37 type-erased adjustment crash mitigation, iOS 16.5 minimum and original optics/DIR/film-print chain. Native iPhone full-image Float64/RNG/GPU numerical certification and on-device drawer regression remain UNVERIFIED. Not a signed/production release; IPA requires signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.47 Build72 - unified bottom film and adjustment menu" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.47 Build72. UI ONLY: one bottom toolbar entry named 调整 opens a full-width shared editor, top 胶卷 / 调整 title tabs switch content; two horizontal-scroll film and paper rails replace all old vertical wheels and left/right edge-snapped buttons. The full adjustment and source-precision algorithms are unchanged from v1.8.46. Retains real opt-in source scanner glare at the correct FULL IMAGE negative-paper XYZ stage BEFORE XYZ-to-linear-RGB and ACES gamut, with original 2D lognormal/reflect FIR-YVV and single-worker Numba explicit seed=8888. v1.8.45 original Python 141 Float64/423 XYZ numerical reference retained; v1.8.46 real SourcePhysicalImageParity tests controlled 2D production frame scannerGlareXYZ, scannerGlareLinearRGB and final sRGB against source-ordered scalar stages. Default OFF; requires source full physical negative, iOS16.5; source unseeded multiworker Numba RNG/complete independent Python RGB/full-RAW/real-device image parity NOT CERTIFIED. All ten nested third-level switches now use the same 28x16 track/12x12 thumb shared with second-level and primary feature switches; preserve 42x32 tap area, double-tap caption reset, disabled feature gates and existing source mode confirm/preview logic. Retains v1.8.43 source Numba fast_poisson/fast_binomial Swift CPU diagnostic as on-device report appendix with 540 original count vectors and bit-exact seeded one-worker MT consumption, generated from pinned upstream fast_stats.py using NumPy 2.4 and Numba 0.64. The v1.8.41 imaging baseline retains original four-family enlarger diffusion on actual spectral paper photon exposure, strictly BEFORE fitted paper H-D and scanner; retains original camera diffusion computed in Double on the source photon image using per-channel normalized PSFs, warmth and all six family overrides, full reflect boundaries and radix-2 FFT convolution before lens blur and film halation. Strict memory preflight fails explicitly instead of reducing precision/PSF. The previous TH-KG3-L enlarger source and Mallett UV/IR stay available. Native stage verified against upstream Python 81-wavelength Double reference. Retains v1.8.38 Mallett 2019 and UV/IR source filters, v1.8.37 type-erased adjustment crash mitigation, iOS 16.5 minimum and original optics/DIR/film-print chain. Native iPhone full-image Float64/RNG/GPU numerical certification and on-device drawer regression remain UNVERIFIED. Not a signed/production release; IPA requires signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish isolated v1.8.46 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-scanner-glare-xyz-production-v1.8.46' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/unified-bottom-adjustment-v1.8.47' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.46-scanner-glare-xyz-production
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.46-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.47-unified-bottom-editor
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-scanner-glare-xyz-production-v1.8.46" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/unified-bottom-adjustment-v1.8.47" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -1450,7 +1436,7 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.46 — source scanner XYZ controlled production integration" \
+              --title "SpektraFilm iOS 16.5.1 v1.8.47 — unified bottom editor and horizontal stock rails" \
                --notes "v1.8.46 source precision batch includes original Float64 for all 28 measured profiles, 20 original pre-DIR H-D curves, 256 s023 paper exposure samples, CIE1931/Mallett/KG3/illuminants and 128 enlarger pair spectra. Mobile fast arrays unchanged. Source JSON byte parity + native SHA/all 28 materials + Python seven-stage image validation required. User confirmed 10MP physical export functional; full GPU, Numba random and RAW certification outstanding."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"

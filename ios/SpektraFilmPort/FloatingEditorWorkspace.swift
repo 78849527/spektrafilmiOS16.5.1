@@ -2,9 +2,9 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
-/// iOS 16.5.1 portrait editor: the actual photograph is a permanently
-/// mounted full-window canvas. All film wheels and continuous adjustments
-/// live in independently collapsible, draggable translucent dock panels.
+/// iOS 16.5.1 portrait editor: the photograph stays permanently mounted.
+/// Film/paper and continuous adjustments share ONE bottom sheet, switched
+/// by top text tabs; materials are horizontally scrollable, not side docks.
 /// No scrolling container is allowed to move or resize the preview.
 struct FloatingEditorWorkspace: View {
     @ObservedObject var model: PhotoEditorModel
@@ -22,18 +22,15 @@ struct FloatingEditorWorkspace: View {
     let onRefresh: () -> Void
 
     @State private var originalHeld = false
-    // Initialize only the photo and toolbar on iOS 16.5.1.
-    // The two heavy UIKit picker docks are mounted only after opt-in.
+    // Only the photo and toolbar mount initially on iOS 16.5.1.
+    // A single lower editor is mounted by the explicit "调整" button.
     @State private var controlsVisible = false
-    @State private var wheelExpanded = false
-    @State private var adjustmentExpanded = false
-    // iOS 16.5.1: split opening into a light shell, control rows,
-    // then the current parameter page to avoid a full AttributeGraph
-    // replacement during the same edge-button tap transaction.
+    @State private var unifiedEditorExpanded = false
+    @State private var selectedEditorPage: EditorPage = .adjustment
+    // Preserve the proven staged mounting for the heavy adjustment tree:
+    // SwiftUI iOS 16.5.1 crashed when all pages mounted in one transaction.
     @State private var adjustmentRowsReady = false
     @State private var adjustmentDetailReady = false
-    // Last opened panel always overlays the older panel.
-    @State private var frontDrawer: DrawerSide = .film
     @State private var selectedFeature: AdjustmentFeature? = .basic
     // Confirm before changing any OTHER user-selected settings.
     @State private var pendingSourceMode: SourceModeChange?
@@ -42,7 +39,7 @@ struct FloatingEditorWorkspace: View {
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
 
-    private enum DrawerSide { case film, adjustment }
+    private enum EditorPage: String { case film = "胶卷", adjustment = "调整" }
     private enum AdjustmentFeature: String {
         case basic = "基础"
         case scanner = "扫描"
@@ -254,49 +251,65 @@ struct FloatingEditorWorkspace: View {
         .opacity(!isOn && !prerequisite ? 0.45 : 1)
     }
 
-    private func openFilmDrawer() {
-        withAnimation(.easeOut(duration: 0.22)) {
-            wheelExpanded = true
-            frontDrawer = .film
-        }
-    }
-    private func closeFilmDrawer() {
-        withAnimation(.easeOut(duration: 0.22)) { wheelExpanded = false }
-    }
-    private func openAdjustmentDrawer() {
-        guard !adjustmentExpanded else {
-            frontDrawer = .adjustment
-            return
-        }
-        // Do not animate replacement of a large SwiftUI view hierarchy.
-        // It used to be inserted in the same transaction as both @State
-        // mutations; user reported a real-device crash on opening.
-        var tx = Transaction()
-        tx.disablesAnimations = true
-        withTransaction(tx) {
+    /// Change top titles in the ONE lower sheet; the inactive adjustment
+    /// controls stay unmounted. Defer the heavy detail tree across turns,
+    /// preserving the existing iOS16.5.1 AttributeGraph crash protection.
+    private func selectEditorPage(_ page: EditorPage) {
+        guard unifiedEditorExpanded else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            selectedEditorPage = page
             adjustmentRowsReady = false
             adjustmentDetailReady = false
-            frontDrawer = .adjustment
-            adjustmentExpanded = true
         }
-        // Each stage is scheduled only while the drawer is still open,
-        // so closing quickly cannot mount a detached control tree.
+        guard page == .adjustment else { return }
         DispatchQueue.main.async {
-            guard adjustmentExpanded else { return }
+            guard unifiedEditorExpanded && selectedEditorPage == .adjustment else { return }
             adjustmentRowsReady = true
             DispatchQueue.main.async {
-                guard adjustmentExpanded && adjustmentRowsReady else { return }
+                guard unifiedEditorExpanded && selectedEditorPage == .adjustment &&
+                      adjustmentRowsReady else { return }
                 adjustmentDetailReady = true
             }
         }
     }
-    private func closeAdjustmentDrawer() {
-        var tx = Transaction()
-        tx.disablesAnimations = true
-        withTransaction(tx) {
+
+    private func openUnifiedEditor() {
+        guard model.hasPhoto else { return }
+        if unifiedEditorExpanded {
+            closeUnifiedEditor()
+            return
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            controlsVisible = true
+            unifiedEditorExpanded = true
+            selectedEditorPage = .adjustment
+            adjustmentRowsReady = false
+            adjustmentDetailReady = false
+        }
+        // Bottom "调整" opens the adjustment page directly. Preserve the
+        // iOS16-safe two-turn mounting that also runs on title switching.
+        DispatchQueue.main.async {
+            guard unifiedEditorExpanded && selectedEditorPage == .adjustment else { return }
+            adjustmentRowsReady = true
+            DispatchQueue.main.async {
+                guard unifiedEditorExpanded && selectedEditorPage == .adjustment &&
+                      adjustmentRowsReady else { return }
+                adjustmentDetailReady = true
+            }
+        }
+    }
+
+    private func closeUnifiedEditor() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             adjustmentDetailReady = false
             adjustmentRowsReady = false
-            adjustmentExpanded = false
+            unifiedEditorExpanded = false
         }
     }
 
@@ -324,9 +337,7 @@ struct FloatingEditorWorkspace: View {
     var body: some View {
         GeometryReader { canvas in
             let available = canvas.size
-            let wheelWidth = max(132, min(168, available.width * 0.42))
-            let adjustWidth = max(148, min(204, available.width - wheelWidth - 24))
-            ZStack {
+             ZStack {
                 Color.black
                 // Fixed top-to-bottom order; image starts right below
                 // diagnostics. The toolbar never overlays the preview.
@@ -355,41 +366,15 @@ struct FloatingEditorWorkspace: View {
                 }
                 .frame(width: available.width, height: available.height)
             }
-            // Edge-absorbed drawers replace the two freely floating docks.
-            // The last panel opened is visually above the first one.
+            // Single lower menu; NO left/right edge tabs or snapped
+            // drawers. The bottom "调整" button is the only entry.
             .overlay(alignment: .bottom) {
-                if controlsVisible && model.hasPhoto {
-                    let filmWidth = max(168, min(204, available.width * 0.49))
-                    let drawerHeight = min(326, max(280, available.height * 0.45))
-                    ZStack(alignment: .bottom) {
-                        Group {
-                            if wheelExpanded {
-                                wheelDock(width: filmWidth)
-                                    .frame(height: drawerHeight,
-                                           alignment: .top)
-                            } else {
-                                edgeDrawerTab("胶片\n相纸", symbol: "film",
-                                              side: .film)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .zIndex(frontDrawer == .film ? 2.0 : 1.0)
-
-                        Group {
-                            if adjustmentExpanded {
-                                adjustmentDock(width: available.width,
-                                               maxHeight: drawerHeight - 38)
-                            } else {
-                                edgeDrawerTab("调节", symbol: "slider.horizontal.3",
-                                              side: .adjustment)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .zIndex(frontDrawer == .adjustment ? 2.0 : 1.0)
-                    }
-                    .padding(.bottom, 63)
-                    .animation(.easeInOut(duration: 0.22),
-                               value: wheelExpanded)
+                if unifiedEditorExpanded && model.hasPhoto {
+                    let panelHeight = min(392, max(286, available.height * 0.50))
+                    unifiedEditorDock(width: max(260, available.width - 16),
+                                      maxHeight: panelHeight - 44)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 63)
                 }
             }
             .sheet(isPresented: $statusReportPresented) {
@@ -578,9 +563,20 @@ struct FloatingEditorWorkspace: View {
             })
             .disabled(!model.hasPhoto)
 
-            toolButton(controlsVisible ? "eye" : "eye.slash",
-                       name: controlsVisible ? "隐藏全部控件" : "显示双拨轮和调整",
-                       action: { controlsVisible.toggle() })
+            Button(action: openUnifiedEditor) {
+                VStack(spacing: 1) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 16, weight: .medium))
+                    Text("调整")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .frame(width: 43, height: 40)
+                .contentShape(Rectangle())
+            }
+            .disabled(!model.hasPhoto)
+            .accessibilityLabel(unifiedEditorExpanded
+                                ? "收起调整菜单" : "从下方打开调整菜单")
+            .accessibilityHint("上方胶卷与调整名称切换；胶卷和相纸可左右滑动")
         }
         .font(.system(size: 17, weight: .medium))
         .foregroundColor(.primary)
@@ -666,168 +662,171 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    /// An always-touchable edge button expands each snapped drawer.
-    /// No drawer swipe/drag gesture: avoids conflicts with the long-hold
-    /// original preview, film/paper wheels, and iOS 16.5.1 cold start.
-    private func edgeDrawerTab(_ title: String, symbol: String,
-                               side: DrawerSide) -> some View {
-        Button {
-            if side == .film { openFilmDrawer() }
-            else { openAdjustmentDrawer() }
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: symbol).font(.caption)
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .multilineTextAlignment(.center)
-            }
-            .foregroundColor(.primary)
-            .frame(width: 38, height: 94)
-            .background(
-                Color(uiColor: .secondarySystemBackground).opacity(0.94),
-                in: RoundedRectangle(cornerRadius: 11)
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(side == .film
-            ? "点击展开左侧胶片相纸拨轮"
-            : "点击展开右侧全屏宽度调节面板")
-    }
-
-    private func wheelDock(width: CGFloat) -> some View {
+    /// One full-width bottom editor: titles switch content, not separate
+    /// drawers. Keep the existing AnyView-based detail tree intact.
+    private func unifiedEditorDock(width: CGFloat, maxHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundColor(.secondary)
-                Text("胶片 · 相纸")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                Spacer(minLength: 2)
-                Button(action: closeFilmDrawer) {
-                    Image(systemName: "chevron.left")
+            HStack(spacing: 8) {
+                Button {
+                    selectEditorPage(.film)
+                } label: {
+                    Text("胶卷")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(selectedEditorPage == .film
+                                         ? .accentColor : .primary)
+                        .padding(.horizontal, 13)
+                        .frame(height: 34)
+                        .background(selectedEditorPage == .film
+                                    ? Color.accentColor.opacity(0.15)
+                                    : Color.primary.opacity(0.06), in: Capsule())
+                }
+                .accessibilityLabel("胶卷，切换到胶卷与相纸")
+                Button {
+                    selectEditorPage(.adjustment)
+                } label: {
+                    Text("调整")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(selectedEditorPage == .adjustment
+                                         ? .accentColor : .primary)
+                        .padding(.horizontal, 13)
+                        .frame(height: 34)
+                        .background(selectedEditorPage == .adjustment
+                                    ? Color.accentColor.opacity(0.15)
+                                    : Color.primary.opacity(0.06), in: Capsule())
+                }
+                .accessibilityLabel("调整，切换到效果参数")
+                Spacer(minLength: 0)
+                if selectedEditorPage == .adjustment {
+                    Button {
+                        model.applyMeasuredSimulation()
+                    } label: {
+                        Image(systemName: "wand.and.stars")
+                            .font(.caption)
+                            .frame(width: 33, height: 34)
+                    }
+                    .disabled(!model.hasPhoto || model.busy)
+                    .accessibilityLabel("应用模拟")
+                }
+                Button(action: closeUnifiedEditor) {
+                    Image(systemName: "xmark")
                         .font(.caption)
                         .frame(width: 33, height: 34)
                 }
-                .accessibilityLabel("关闭胶片相纸面板，吸附左侧")
+                .accessibilityLabel("关闭下方调整菜单")
             }
-            .frame(height: 38)
-            .padding(.horizontal, 8)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .frame(height: 44)
+            .padding(.horizontal, 10)
 
-            if wheelExpanded {
-                Divider().padding(.horizontal, 6)
-                Text("胶片 FILM · 双击复原")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .onTapGesture(count: 2) {
-                        selectedFilmID = "kodak_portra_400"
-                        model.queueSpectralPreview()
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.top, 5)
-                Picker("胶片", selection: $selectedFilmID) {
-                    ForEach(films) { film in
-                        Text(shortName(film)).font(.caption2).tag(film.id)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .labelsHidden()
-                .frame(width: width - 6, height: 103)
-                .clipped()
+            Divider()
+            if selectedEditorPage == .film {
+                filmSelectionContent
+                    .frame(height: maxHeight, alignment: .top)
+            } else if adjustmentRowsReady {
+                adjustmentControls
+                    .frame(height: maxHeight)
+            } else {
+                Color.clear
+                    .frame(height: maxHeight)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: width, height: maxHeight + 44, alignment: .top)
+        .foregroundColor(.primary)
+        .background(Color(uiColor: .secondarySystemBackground).opacity(0.94),
+                    in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15)
+            .stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
+    }
 
-                Divider().padding(.horizontal, 7)
-                Text(isReversal ? "反转片 DIRECT" : "相纸 PAPER · 双击复原")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .onTapGesture(count: 2) {
-                        selectedPaperID = "kodak_portra_endura"
-                        model.queueSpectralPreview()
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.top, 4)
+    /// Each horizontal page swipe CHANGES the active material binding.
+    /// Unlike a scroll-only carousel, there is no second tap to select.
+    /// The parent ContentView uses selection changes to recalculate
+    /// the real source preview and persist the currently selected stock.
+    private var filmSelectionContent: AnyView {
+        AnyView(
+            VStack(alignment: .leading, spacing: 11) {
+                horizontalMaterialPicker("胶卷 FILM", items: films,
+                                         selection: $selectedFilmID,
+                                         defaultID: "kodak_portra_400")
+                Divider().padding(.horizontal, 10)
                 if isReversal {
-                    VStack(spacing: 3) {
+                    HStack(spacing: 7) {
                         Image(systemName: "film")
-                        Text("反转片直接扫描")
-                            .font(.caption2)
+                        Text("反转片直接扫描 · 无需相纸")
+                            .font(.caption)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 100)
+                    .padding(.horizontal, 13)
+                    .frame(height: 46)
                 } else {
-                    Picker("相纸", selection: $selectedPaperID) {
-                        ForEach(media) { stock in
-                            Text(shortName(stock)).font(.caption2).tag(stock.id)
-                        }
-                    }
-                    .pickerStyle(.wheel)
-                    .labelsHidden()
-                    .frame(width: width - 6, height: 103)
-                    .clipped()
+                    horizontalMaterialPicker("相纸 PAPER", items: media,
+                                             selection: $selectedPaperID,
+                                             defaultID: "kodak_portra_endura")
                 }
                 Button(action: onOpenCatalog) {
                     Text("全部 28 款材料")
                         .font(.caption2)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 7)
+                        .frame(maxWidth: .infinity, minHeight: 30)
                 }
+                .buttonStyle(.plain)
+                Spacer(minLength: 0)
             }
-        }
-        .frame(width: width)
-        .foregroundColor(.primary)
-         .background(Color(uiColor: .secondarySystemBackground).opacity(0.88),
-                    in: RoundedRectangle(cornerRadius: 15))
-        .overlay(RoundedRectangle(cornerRadius: 15)
-            .stroke(Color.primary.opacity(0.08), lineWidth: 1))
-        .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
+            .padding(.top, 7)
+        )
     }
 
-    private func adjustmentDock(width: CGFloat, maxHeight: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundColor(.secondary)
-                Text("调整")
-                    .font(.caption)
+    private func horizontalMaterialPicker(
+        _ title: String, items: [MeasuredStock],
+        selection: Binding<String>, defaultID: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.caption2)
                     .fontWeight(.semibold)
-                Spacer(minLength: 2)
-                Button {
-                    model.applyMeasuredSimulation()
-                } label: {
-                    Image(systemName: "wand.and.stars")
-                        .font(.caption)
-                        .frame(width: 33, height: 34)
-                }
-                .disabled(!model.hasPhoto || model.busy)
-                .accessibilityLabel("应用模拟")
-                Button(action: closeAdjustmentDrawer) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .frame(width: 33, height: 34)
-                }
-                .accessibilityLabel("关闭调节面板，吸附右侧")
+                    .foregroundColor(.secondary)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        selection.wrappedValue = defaultID
+                    }
+                Spacer()
+                Text("左右滑动切换 · 双击名称复原")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
             }
-            .frame(height: 38)
-            .padding(.horizontal, 9)
-            .contentShape(Rectangle())
-            if adjustmentExpanded {
-                Divider()
-                if adjustmentRowsReady {
-                    adjustmentControls
-                        .frame(height: maxHeight)
-                } else {
-                    Color.clear
-                        .frame(height: maxHeight)
-                        .accessibilityHidden(true)
+            .padding(.horizontal, 12)
+            TabView(selection: selection) {
+                ForEach(items) { stock in
+                    HStack(spacing: 12) {
+                        Image(systemName: "chevron.left")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer(minLength: 3)
+                        Text(shortName(stock))
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .foregroundColor(.accentColor)
+                        Spacer(minLength: 3)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Color.accentColor.opacity(0.13),
+                                in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 13)
+                    .tag(stock.id)
+                    .accessibilityLabel(title + " " + shortName(stock))
                 }
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 54)
+            .accessibilityHint("向左或向右滑动切换当前材料")
         }
-        .frame(width: width, height: maxHeight + 38, alignment: .top)
-        .foregroundColor(.primary)
-         .background(Color(uiColor: .secondarySystemBackground).opacity(0.88),
-                    in: RoundedRectangle(cornerRadius: 15))
-        .overlay(RoundedRectangle(cornerRadius: 15)
-            .stroke(Color.primary.opacity(0.08), lineWidth: 1))
-        .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
     }
 
     // First row: only features with parameter panels. Basic is a
