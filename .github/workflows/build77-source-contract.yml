@@ -30,6 +30,8 @@ on:
       - "ios/SpektraFilmPort/FloatingEditorWorkspace.swift"
       - "ios/tests/Build77NeutralFilterParity.swift"
       - "ios/tests/SourceFloat64ProfileValidation.swift"
+      - "ios/SpektraFilmPort/Build77OneShotEvidence.swift"
+      - "ios/SpektraFilmPort/Build77ReferenceInput.swift"
       - "ios/SpektraFilmPort/Build78HighBitDepthIngress.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
@@ -115,6 +117,24 @@ jobs:
           rng = np.random.default_rng(771)
           image = 0.15 + 0.55*rng.random((6, 4, 3))
           np.save("build77-evidence/input.npy", image, allow_pickle=False)
+          PY
+      - name: Verify actual embedded iPhone 6x4 source input against Python NumPy bytes
+        run: |
+          python - <<'PY'
+          import hashlib, numpy as np, re, struct
+          from pathlib import Path
+          text=Path("ios/SpektraFilmPort/Build77ReferenceInput.swift").read_text()
+          payload=text.split("static let bits:[UInt64] = [",1)[1].split("]",1)[0]
+          bits=[int(v,16) for v in re.findall(r"0x[0-9a-fA-F]{16}",payload)]
+          assert len(bits)==72
+          ios_input=b"".join(struct.pack("<Q",v) for v in bits)
+          original=np.load("build77-evidence/input.npy",allow_pickle=False)
+          assert original.shape==(6,4,3)
+          assert original.dtype==np.dtype("<f8")
+          assert original.tobytes()==ios_input, "iPhone embedded Float64 is NOT true Python input"
+          assert hashlib.sha256(ios_input).hexdigest()==(
+            "3584df8f8f1f5e4be21682e17218c4d360902320891bb753935f867dbf020e25")
+          print("PASS: 72/72 iPhone embedded Float64 source bits match independent NumPy original")
           PY
       - name: Execute the real upstream negative-to-print pipeline once
         run: |
