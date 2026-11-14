@@ -67,3 +67,12 @@ The default zero absolute tolerance means this tool does not silently certify ap
 - No new iOS IPA produced; no iPhoneOS compilation or iOS 16.5.1 device test in this Build77 work.
 
 **Stop gate**: remain at Build77 until all 01–05 work items and their missing iOS parameter/tap/Float64 parity evidence pass. Do not advance to Build78 or publish a newly certified IPA.
+
+## Build77 follow-up: real Swift Double tapes and 28-stock native byte checks
+
+- Added ios/SpektraFilmPort/Build77StageTapeRecorder.swift: explicit opt-in recording of actual production Float64 stage callbacks. It preserves Double bit patterns and non-finite values in NPY. iOS internal callbacks are NOT mislabeled as canonical Python taps.
+- Added ios/tests/Build77StageTapeRecorderValidation.swift: native Swift host compiler/readback validated by independent NumPy. This is format integrity, not Python/Swift numerical pipeline parity.
+- Strict Python candidate comparator additionally rejects non-Float64 stage tapes, SHA256 reference drift, nonfinite value class/mask mismatches.
+- Added independent original JSON source 28-stock manifest and native Swift stock data-byte audit, including original 256x3x3 measurements in film and paper profiles. The independent F64/F32 source-byte audit job passed in CI #43601771176. This is data integrity, not device pixel parity.
+- iPhoneOS compilation initially FAILED in CI #43601324457 because missing source-generated Swift data caused unresolved Generated* names. The job now materializes original baseline generated references before compiling; a later build result is required before any claim of success.
+- Source version is still v1.8.51 Build76. Build77 remains unaccepted; no new version, IPA or Release. Complete digest and canonical seven-tap iOS scientific parity remain open.
