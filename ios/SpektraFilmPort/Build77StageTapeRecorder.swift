@@ -271,6 +271,7 @@ final class Build77StageTapeRecorder {
     }
 }
 
+#if os(iOS) || BUILD77_HOST_TAPE
 extension Build77StageTapeRecorder {
     /// Diagnostic entrypoint used by macOS independent host replay AND
     /// by the *actual* iPhone original physical Double rendering path.
@@ -310,3 +311,4 @@ extension Build77StageTapeRecorder {
         return output
     }
 }
+#endif
