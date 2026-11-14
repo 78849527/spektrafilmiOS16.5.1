@@ -47,12 +47,18 @@ enum Build78HighBitDepthValidation {
         return (image,values)
     }
 
-    static func encode(_ image:CGImage, type:UTType) throws -> Data {
+    static func encode(
+        _ image:CGImage, type:UTType, orientation:Int?=nil
+    ) throws -> Data {
         let out=NSMutableData()
         guard let dest=CGImageDestinationCreateWithData(
             out as CFMutableData,type.identifier as CFString,1,nil
         ) else { throw Failure.invalid("Could not encode genuine 16-bit file") }
-        CGImageDestinationAddImage(dest,image,nil)
+        let props:CFDictionary? = orientation.map { value in
+            [kCGImagePropertyOrientation as String:NSNumber(value:value)]
+                as CFDictionary
+        }
+        CGImageDestinationAddImage(dest,image,props)
         guard CGImageDestinationFinalize(dest) else {
             throw Failure.invalid("ImageIO 16-bit fixture encoding failed")
         }
@@ -148,6 +154,39 @@ enum Build78HighBitDepthValidation {
             }
             success+=1
         }
+        // Genuine TIFF EXIF direction data is interpreted by the SAME
+        // production UInt16 reader, never a simulated rotated array.
+        for rotation in [3,6,8] {
+            let file=try encode(image,type:.tiff,orientation:rotation)
+            let frame=try OriginalSourcePixelIO.decode(file)
+            let rotated=rotation==6 || rotation==8
+            guard frame.width==(rotated ? 2 : 3),
+                  frame.height==(rotated ? 3 : 2) else {
+                throw Failure.invalid(
+                    "16-bit TIFF EXIF rotation \(rotation) geometry changed"
+                )
+            }
+            for sy in 0..<2 {
+                for sx in 0..<3 {
+                    let dx:Int,dy:Int
+                    switch rotation {
+                    case 3: dx=2-sx;dy=1-sy
+                    case 6: dx=1-sy;dy=sx
+                    default: dx=sy;dy=2-sx
+                    }
+                    for c in 0..<3 {
+                        let wanted=Double(reference[(sy*3+sx)*4+c])/65535
+                        let got=frame.rgb[(dy*frame.width+dx)*3+c]
+                        guard got.bitPattern==wanted.bitPattern else {
+                            throw Failure.invalid(
+                                "16-bit TIFF EXIF \(rotation) changed pixel "
+                                + "\(sx),\(sy) channel \(c)"
+                            )
+                        }
+                    }
+                }
+            }
+        }
         let (p3Image,_)=try fixture(space:p3)
         try expectReject(try encode(p3Image,type:.tiff),label:"16-bit P3 TIFF")
 
@@ -159,6 +198,7 @@ enum Build78HighBitDepthValidation {
               + "\(success)/2, 18 per-file RGB channels bitwise exact "
               + "as Double(UInt16)/65535, nearest 16-bit preview, "
               + "no 8-bit/Float16 fallback, invalid P3/alpha and "
+              + "all tested TIFF EXIF orientations preserve UInt16; "
               + "unsupported precise export resizing rejected; "
               + "NOT full ICC, RAW or Float TIFF equivalence.")
     }
