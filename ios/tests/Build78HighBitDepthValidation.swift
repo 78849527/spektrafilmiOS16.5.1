@@ -126,7 +126,7 @@ enum Build78HighBitDepthValidation {
                 let sourceOffset=(3+inputX)*4
                 for ch in 0..<3 {
                     let wanted=Double(reference[sourceOffset+ch])/65535.0
-                    guard preview.rgb[outX*3+ch].bitPattern==
+                    guard preview.rgb[outX*3+ch].bitPattern ==
                             wanted.bitPattern else {
                         throw Failure.invalid(
                             "Build78 nearest 16-bit preview mutated a pixel"
