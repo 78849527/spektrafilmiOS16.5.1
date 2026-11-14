@@ -568,6 +568,10 @@ extension OriginalSourcePixelIO {
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
+                (parameters.scannerGlare.active && parameters.scannerGlare.percent>0
+                    ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
+                (parameters.sourceGrain.active
+                    ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active
