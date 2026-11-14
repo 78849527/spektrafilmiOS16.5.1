@@ -1,0 +1,96 @@
+name: SpektraFilm v1.8.41 source microstructure parameter parity
+
+on:
+  push:
+    branches:
+      - 'ios16.5.1/microstructure-parameter-parity-v1.8.41'
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios16-microstructure-v1.8.41.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-numeric:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+      - name: Show source identity and native Swift compiler
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+          test "$(git hash-object src/spektrafilm/model/grain.py)" = f2d2b23e3eab4f4a1d919f69bcb4aceb714e024d
+      - name: Set up Python 3.11 for original NumPy source
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned source reference dependency
+        run: python -m pip install --disable-pip-version-check 'numpy==1.26.4'
+      - name: Call actual pinned upstream grain.py source function
+        run: python ios/scripts/validate_source_microstructure_parameter_api.py
+      - name: Generate source-guarded original deterministic reference
+        run: python ios/scripts/generate_source_microstructure.py
+      - name: Compile tested Swift Double microstructure implementation
+        run: |
+          swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/tests/SourceMicrostructureValidation.swift \
+            -o /tmp/SourceMicrostructureValidation
+      - name: Compare all source parameter and deterministic lognormal cases
+        run: /tmp/SourceMicrostructureValidation
+      - name: Assert live production Metal renderer accepts both original inputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          metal=Path("ios/SpektraFilmPort/OriginalMetalGrain.swift").read_text()
+          cpu=Path("ios/SpektraFilmPort/OriginalSourceMicrostructure.swift").read_text()
+          for token in (
+              "microBlurUM: Double = 0.2",
+              "microStructureNM: Double = 30.0",
+              "microBlurUM: microBlurUM",
+              "microStructureNM: microStructureNM",
+          ):
+              assert token in metal,token
+          assert "microStructureNM * 0.001 / pixelUM" in cpu
+          assert "microBlurUM / pixelUM" in cpu
+          print("PASS: native source parameters reach physical coefficients and render API; Numba RNG is NOT certified")
+          PY
+
+  mac-native-compile:
+    runs-on: macos-15
+    timeout-minutes: 18
+    needs: source-numeric
+    steps:
+      - name: Checkout exact validated SHA
+        uses: actions/checkout@v4
+      - name: Pin iOS16-compatible Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Prepare source-guarded Swift fixture
+        run: python3 ios/scripts/generate_source_microstructure.py
+      - name: Parse production grain, Metal diagnostics and source maths
+        run: |
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
+            ios/tests/SourceMicrostructureValidation.swift
+      - name: Compile and run native Apple Metal-linked source numeric test
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/tests/SourceMicrostructureValidation.swift \
+            -o /tmp/SourceMicrostructureValidation
+          /tmp/SourceMicrostructureValidation
+      - name: State certification boundary
+        run: |
+          echo "VALIDATED: source μm/nm parameter transfer and deterministic Double microstructure math."
+          echo "NOT VALIDATED: Numba thread RNG, iPhone GPU parity, full RGB image, IPA signing."
