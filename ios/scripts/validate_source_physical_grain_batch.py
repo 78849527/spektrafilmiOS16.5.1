@@ -103,6 +103,12 @@ assert 'manifest.cases.count==4' in test
 assert 'fullGrainRGBChannels' in test
 assert '"grainPrinted","printed"' in test
 assert 'fixture.numba_micro_enabled' in test
+spectral=(root/"ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
+assert 'sourceOriginal: Bool = false' in spectral
+assert 'sourceOriginal:true' in spectral
+assert 'let reciprocal=delta == 0 ? 0.0 : 1.0/delta' in spectral
+assert 'return sourceOriginal ? sample : max(0,sample)' in spectral
+assert '("grainSublayers","sourceGrainSublayers",9,1e-8,1e-10)' in test
 # Reuse of CPU Float64 scratch arrays changes only allocations,
 # never the 9 source SciPy seeds, stochastic order or blur mathematics.
 for token in (
