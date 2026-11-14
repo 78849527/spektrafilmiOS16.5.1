@@ -55,7 +55,7 @@ enum Build79RAWSignatureValidation {
         cr2[18]=0x0f; cr2[19]=0x01 // Make
         cr2[20]=2; cr2[22]=6 // TIFF ASCII length six
         cr2[26]=80
-        for (i,b) in Data("Canon\\0".utf8).enumerated() {
+        for (i,b) in Data("Canon\0".utf8).enumerated() {
             cr2[80+i]=b
         }
         var dngBig=Data(repeating:0,count:128)
