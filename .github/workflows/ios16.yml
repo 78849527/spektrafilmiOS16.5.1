@@ -1,14 +1,15 @@
-name: iOS 16.5.1 — v1.8.50 full original grain→RGB + efficient scratch Build75
+name: iOS 16.5.1 — v1.8.51 batch original grain + 12MP safe / 7.2MP economy Build76
 
 on:
   push:
-    branches: ['ios16.5.1/source-full-grain-rgb-v1.8.50']
+    branches: ['ios16.5.1/batch-source-efficiency-12mp-7p2mp-v1.8.51']
     paths:
       - 'ios/**'
       - 'docs/v1.8.47-unified-bottom-editor.md'
       - 'docs/v1.8.48-source-grain-batch.md'
       - 'docs/v1.8.49-physical-export-13mp.md'
       - 'docs/v1.8.50-independent-full-grain-rgb-efficiency.md'
+      - 'docs/v1.8.51-batch-source-efficiency-12mp-7p2mp.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -17,7 +18,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-source-full-grain-rgb-v1.8.50-release
+  group: ios1651-batch-12mp-7p2mp-v1.8.51-release
   cancel-in-progress: true
 
 jobs:
@@ -91,6 +92,7 @@ jobs:
           test -s docs/v1.8.48-source-grain-batch.md
           test -s docs/v1.8.49-physical-export-13mp.md
           test -s docs/v1.8.50-independent-full-grain-rgb-efficiency.md
+          test -s docs/v1.8.51-batch-source-efficiency-12mp-7p2mp.md
       - name: Verify diagnostic strip, top-aligned preview and bottom menu
         run: |
           python3 - <<'PY'
@@ -1156,7 +1158,7 @@ jobs:
             ios/SpektraFilmPort/SafeExportResolution.swift \
             ios/tests/SafeExportResolutionValidation.swift \
             -o /tmp/SpektrafilmSafeExportValidation
-      - name: Verify adaptive 50% and economy 3MP whole-frame memory geometry
+      - name: Verify adaptive 12MP/7.2MP output upper bounds and live-memory limits
         run: /tmp/SpektrafilmSafeExportValidation
       - name: Guard original, adaptive and economy export for Photos and Files
         run: |
@@ -1179,8 +1181,11 @@ jobs:
           for action in ('onSaveToPhotos','onExport'):
               for mode in ('original','safe','economy'):
                   assert f'{action}(.{mode})' in ui
-          assert '智能安全分辨率（约 50% 内存预算）' in ui
-          assert '省内存分辨率（最高 300 万像素）' in ui
+          assert '智能安全分辨率（最高 1200 万像素）' in ui
+          assert '省内存分辨率（最高 720 万像素）' in ui
+          safe = Path('ios/SpektraFilmPort/SafeExportResolution.swift').read_text()
+          assert 'safeMaximumPixels: UInt64 = 12_000_000' in safe
+          assert 'economyMaximumPixels: UInt64 = 7_200_000' in safe
           assert 'os_proc_available_memory' in Path('ios/SpektraFilmPort/SafeExportResolution.swift').read_text()
           assert 'let processHeadroomBytes: UInt64?' in Path('ios/SpektraFilmPort/SafeExportResolution.swift').read_text()
           assert 'validateBeforeRender(plan)' in photo
@@ -1245,9 +1250,15 @@ jobs:
           ui = Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
           assert 'densityCurvesLayers' in engine
           assert 'func layerDensity(' in engine
-          assert 'sourceOriginal:true' in engine
+          assert 'sublayersInto:{ density,output in' in engine
           assert 'var high=256' in engine  # original NumPy [0,256) search bound
           assert 'var hi = 255' in engine  # separate original mobile quick path
+          assert 'let axes=(0..<3).map { ch in' in engine
+          assert 'try writeSourceSublayers(density,&output)' in engine
+          grain=Path('ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift').read_text()
+          assert 'try sublayersInto(inputCMY,&layerScratch)' in grain
+          scanner=Path('ios/SpektraFilmPort/OriginalSourceScannerOptics.swift').read_text()
+          assert 'width<=13_000_000/height' in scanner
           assert 'sublayerCubes: stage.sublayerCubes' in model
           assert '@Published var grainSublayersEnabled = false' in model
           assert 'measuredSublayersEnabled: grainSublayersEnabled' in model
@@ -1444,35 +1455,35 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.50'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.51'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '75'
-          echo "PASS: device bundle 1.8.50 Build75, iOS16.5 minimum and original metal library"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '76'
+          echo "PASS: device bundle 1.8.51 Build76, iOS16.5 minimum and original metal library"
 
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
           /usr/libexec/PlistBuddy -c "Print NSCameraUsageDescription" "$APP/Info.plist" | grep -q '拍照'
           /usr/libexec/PlistBuddy -c "Print UIFileSharingEnabled" "$APP/Info.plist" | grep -qx 'true'
-      - name: Package v1.8.50 unsigned IPA
+      - name: Package v1.8.51 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.50-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.50 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.51-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.51 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.50-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.50-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.51-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.51-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-full-grain-rgb-v1.8.50' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/batch-source-efficiency-12mp-7p2mp-v1.8.51' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.50-source-full-grain-rgb-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.50-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.50-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-full-grain-rgb-v1.8.50" --jq '.object.sha')
+          TAG=ios1651-v1.8.51-batch-source-efficiency-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.51-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.51-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/batch-source-efficiency-12mp-7p2mp-v1.8.51" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -1483,20 +1494,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.50 Build75 - Python source full grain RGB and reusable scratch" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.50 Build75, iOS16.5.1. New independent original-Python full-image fixtures with true Hanatos→measured H-D→2D DIR→unmodified source grain.py nine sublayers/dye clouds/controlled Numba microstructure/final FIR-YVV→optical enlarger/paper XYZ-ACES-sRGB. All five granular stage buffers plus final RGB are compared with Swift at unchanged 0.002/0.0005 error gate; 12x10 small-pixel sample actually enables Numba lognormal. Reuse nine-source-layer rates/probabilities/saturation/dye-cloud Double buffers to reduce heap allocations WITHOUT altering RNG order, parameters, kernels or Float64 equations. Retains explicit 13MP entry, safe/economy full optical output and iOS16.5.1. No measured device speedup claimed. Still NOT certified: unseeded original Numba prange, RAW, independent real-device full-resolution RGB/JPEG, complete GPU spectral parity or signing. The unsigned IPA requires signing to install; fail-closed official certification gate remains."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.51 Build76 - exact 3x3 grain batch and 12MP/7.2MP export ceilings" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.51 Build76 iOS16.5.1. Safe 12MP and economy 7.2MP ceilings retain memory-based 50% and 30% allocation guards, explicit dimension confirmation, no silent resizing or algorithm fallback. Source original Float64 grain precomputes measured nonmonotonic H-D axes and all layers once per frame, three NumPy-equivalent right-biased binary searches per pixel instead of nine, writes nine layers to reusable Double buffers; SciPy/Numba seeds and order unchanged. Original scanner 13MP geometry aligned. FOUR independent Python source whole-frame grain-to-optical RGB tests including active Numba microstructure retain 1e-8 maximum sublayer tolerance; no fake performance claim. Fully original 12MP grain may NOT fit A15 due full pipeline memory. Uncertified real full-size iPhone RGB/RAW, multiworker unseeded Numba RNG and complete Metal spectral parity still block certified Release. Experimental unsigned IPA requires signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
       - name: Publish fully certified original source release ONLY if all evidence gates pass
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-full-grain-rgb-v1.8.50' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/batch-source-efficiency-12mp-7p2mp-v1.8.51' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.50-source-full-grain-rgb
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.50-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.51-batch-source-efficiency
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.51-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-full-grain-rgb-v1.8.50" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/batch-source-efficiency-12mp-7p2mp-v1.8.51" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -1506,12 +1517,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.50 — original grain→RGB and precision-preserving scratch reuse" \
-               --notes "Controlled 4-image Python source grain→optical RGB parity and Swift numeric comparisons; native iPhone full-size RGB/RAW, unseeded parallel Numba RNG and GPU spectral equivalence require separate evidence."
+              --title "SpektraFilm iOS 16.5.1 v1.8.51 — source grain batch and adaptive resolution ceilings" \
+               --notes "Controlled four-image Python original source grain to optical RGB verification with three-search-per-pixel optimization; native full iPhone RAW/RGB, unseeded Numba prange and independent GPU parity still require evidence."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.50 fully certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.51 fully certified release."
           exit 1
