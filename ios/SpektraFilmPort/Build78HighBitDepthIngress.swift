@@ -89,7 +89,7 @@ enum Build78HighBitDepthIngress {
             )
         }
         guard let provider=image.dataProvider,
-              let data=CGDataProviderCopyData(provider) as Data? else {
+              let data=provider.data as Data? else {
             throw Failure.invalid("Build78 ImageIO 16-bit bitmap provider 缺失")
         }
         let required=(image.height-1)*image.bytesPerRow +
