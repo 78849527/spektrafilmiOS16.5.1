@@ -3,11 +3,11 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Build78/07: true IEEE754 binary32 TIFF ingress from the ORIGINAL
+/// Build78/07: IEEE754 binary16/binary32 TIFF ingress from the ORIGINAL
 /// ImageIO bitmap provider into the physical Float64 RGB pipeline.
 ///
-/// Reads the file's *decoded* binary32 bits. Never runs CIImage, Quartz
-/// RGBA8, Float16, gamut mapping, CCTF, clipping or tonemapping.
+/// Reads the file's *decoded* floating component bits. Never runs CIImage, Quartz
+/// RGBA8, gamut mapping, CCTF, clipping or tonemapping.
 /// Values < 0 and > 1 are deliberately preserved. Only finite RGB is
 /// accepted; alpha, orientation, source profile and layout are checked.
 /// The original Python default ProPhoto RGB contract is a SEPARATE stage.
@@ -37,10 +37,10 @@ enum Build78FloatTIFFIngress {
                 "Build78 Float32 TIFF 原版三次插值缩放尚未完成数值验证；禁止自动插值"
             )
         }
-        guard image.bitsPerComponent==32,
+        guard (image.bitsPerComponent==16 || image.bitsPerComponent==32),
               image.bitmapInfo.contains(.floatComponents) else {
             throw Failure.invalid(
-                "Build78 TIFF 不是可验证的 IEEE754 Float32 通道，禁止当作 UInt32 读取"
+                "Build78 TIFF 不是可验证的 IEEE754 Float16/Float32 通道"
             )
         }
         // ImageIO represents float-channel TIFF sRGB pixels with the
@@ -81,14 +81,19 @@ enum Build78FloatTIFFIngress {
         default:
             throw Failure.invalid("Build78 Float32 TIFF Alpha 排列未被支持")
         }
-        guard image.bitsPerPixel==channels*32,
-              image.bytesPerRow>=image.width*channels*4 else {
+        let sampleBytes=image.bitsPerComponent/8
+        guard image.bitsPerPixel==channels*image.bitsPerComponent,
+              image.bytesPerRow>=image.width*channels*sampleBytes else {
             throw Failure.invalid("Build78 Float32 TIFF 位宽与行跨距不一致")
         }
         let byteOrder=image.bitmapInfo.rawValue &
             CGBitmapInfo.byteOrderMask.rawValue
-        let little=byteOrder==CGBitmapInfo.byteOrder32Little.rawValue
-        let big=byteOrder==CGBitmapInfo.byteOrder32Big.rawValue
+        let little=byteOrder == (sampleBytes==2
+            ? CGBitmapInfo.byteOrder16Little.rawValue
+            : CGBitmapInfo.byteOrder32Little.rawValue)
+        let big=byteOrder == (sampleBytes==2
+            ? CGBitmapInfo.byteOrder16Big.rawValue
+            : CGBitmapInfo.byteOrder32Big.rawValue)
         guard little || big else {
             throw Failure.invalid("Build78 Float32 TIFF 字节序未指定")
         }
@@ -97,7 +102,7 @@ enum Build78FloatTIFFIngress {
             throw Failure.invalid("Build78 Float32 TIFF 原始位图 provider 不存在")
         }
         let lastRow=(image.height-1)*image.bytesPerRow
-        guard data.count>=lastRow+image.width*channels*4 else {
+        guard data.count>=lastRow+image.width*channels*sampleBytes else {
             throw Failure.invalid("Build78 Float32 TIFF 原始像素字节不足")
         }
         let side=max(image.width,image.height)
@@ -119,14 +124,20 @@ enum Build78FloatTIFFIngress {
         try data.withUnsafeBytes { bytes in
             guard let p=bytes.baseAddress?.assumingMemoryBound(to:UInt8.self)
             else { throw Failure.invalid("Build78 Float32 TIFF 没有可读取数据") }
-            func readFloat(_ off:Int) -> Float {
+            func readFloat(_ off:Int) -> Double {
+                if sampleBytes==2 {
+                    let raw:UInt16 = little
+                        ? (UInt16(p[off]) | (UInt16(p[off+1]) << 8))
+                        : ((UInt16(p[off]) << 8) | UInt16(p[off+1]))
+                    return Double(Float16(bitPattern:raw))
+                }
                 var raw:UInt32=0
                 if little {
                     for i in 0..<4 { raw |= UInt32(p[off+i]) << (8*i) }
                 } else {
                     for i in 0..<4 { raw=(raw<<8)|UInt32(p[off+i]) }
                 }
-                return Float(bitPattern:raw)
+                return Double(Float(bitPattern:raw))
             }
             for y in 0..<h {
                 let sy=min(image.height-1,
@@ -134,9 +145,9 @@ enum Build78FloatTIFFIngress {
                 for x in 0..<w {
                     let sx=min(image.width-1,
                                Int((Double(x)+0.5)*Double(image.width)/Double(w)))
-                    let off=sy*image.bytesPerRow+sx*channels*4
+                    let off=sy*image.bytesPerRow+sx*channels*sampleBytes
                     if let alphaIndex {
-                        let alpha=readFloat(off+alphaIndex*4)
+                        let alpha=readFloat(off+alphaIndex*sampleBytes)
                         guard alpha.isFinite,alpha==1.0 else {
                             throw Failure.invalid(
                                 "Build78 Float32 TIFF 存在透明／非有限 Alpha；禁止预乘混色"
@@ -157,13 +168,13 @@ enum Build78FloatTIFFIngress {
                     let result=(dy*outW+dx)*3
                     let first=alphaIndex==0 ? 1 : 0
                     for c in 0..<3 {
-                        let value=readFloat(off+(first+c)*4)
+                        let value=readFloat(off+(first+c)*sampleBytes)
                         guard value.isFinite else {
                             throw Failure.invalid(
-                                "Build78 Float32 TIFF RGB 中存在 NaN/Inf；保留源数据但拒绝不确定显影"
+                                "Build78 浮点 TIFF RGB 中存在 NaN/Inf；保留源数据但拒绝不确定显影"
                             )
                         }
-                        rgb[result+c]=Double(value)
+                        rgb[result+c]=value
                     }
                 }
             }
