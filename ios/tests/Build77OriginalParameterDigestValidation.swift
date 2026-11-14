@@ -10,6 +10,15 @@ struct Build77OriginalParameterDigestValidation {
                 "Usage: audit SOURCE_REFERENCE.json SWIFT_RESULTS.json"
             )
         }
+        let numericProbe = try Build77ExactJSONValue.decodeObject(
+            from: Data("{\"probe\":100.12236156288677}".utf8)
+        )
+        guard let decoded = numericProbe["probe"] as? Double,
+              decoded.bitPattern == (100.12236156288677 as Double).bitPattern else {
+            throw Build77OriginalParameterDigest.DigestError.invalid(
+                "Original Python Float64 1-ULP decimal decoder regression"
+            )
+        }
         let inputURL = URL(fileURLWithPath: CommandLine.arguments[1])
         let outputURL = URL(fileURLWithPath: CommandLine.arguments[2])
         let raw = try Data(contentsOf: inputURL)
