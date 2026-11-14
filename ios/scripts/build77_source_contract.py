@@ -309,10 +309,55 @@ def compare_taps(args: argparse.Namespace) -> None:
     reference = json.loads((refdir / "manifest.json").read_text())
     require(reference["source_sha"] == UPSTREAM_SHA,
             "Reference does not match locked Python source")
+    # A real iOS capture labels files by its ACTUAL production observer,
+    # not the original Python stage names. Optional mapping MUST have been
+    # emitted by the strict Swift recorder, never inferred from file names.
+    alias = {}
+    observed_by_name = {}
+    if args.candidate_mapping:
+        manifest_file = iosdir / "candidate-source-tap-mapping.json"
+        mapping_report = json.loads(manifest_file.read_text())
+        require(mapping_report["status"] ==
+                "IOS_CANDIDATE_MAPPING_NOT_PYTHON_NUMERIC_PARITY",
+                "Candidate map must be the real unverified Swift recorder output")
+        require(mapping_report["numerically_certified"] is False,
+                "Mapping is not independent parity evidence")
+        require(mapping_report["source_sha"] == UPSTREAM_SHA,
+                "Candidate tap mapping has a different upstream source")
+        branch = "direct_scan" if reference["scan_film"] else "negative_print"
+        require(mapping_report["film_branch"] == branch,
+                "Candidate/true-original Python routing differs")
+        require(mapping_report["float_storage"] == "<f8",
+                "Candidate mapping must preserve exact Float64 payloads")
+        alias = mapping_report["source_to_ios_actual_observer"]
+        require(set(alias) == set(reference["taps"]),
+                "Source candidate tap names must match the real Python topology")
+        require(len(set(alias.values())) == len(alias),
+                "Candidate source taps cannot alias one observer twice")
+        require(mapping_report["source_tap_order"] ==
+                list(reference["taps"]), "Candidate source tap order differs")
+        manifest = json.loads((iosdir / "manifest.json").read_text())
+        require(manifest["status"] == "IOS_INTERNAL_DIAGNOSTIC_NOT_PYTHON_TAP_PARITY",
+                "Candidate must carry actual Swift recorder NPY metadata")
+        observed_by_name = {row["name"]: row for row in manifest["observations"]}
     records = {}
     for tap in reference["taps"]:
-        path = iosdir / (tap + ".npy")
-        require(path.is_file(), f"Missing iOS stage: {tap}")
+        observed_name = alias.get(tap, tap)
+        path = iosdir / (observed_name + ".npy")
+        require(path.is_file(), f"Missing iOS stage: {tap} / {observed_name}")
+        if args.candidate_mapping:
+            require(observed_name in observed_by_name,
+                    f"Swift observer manifest omits: {observed_name}")
+            row = observed_by_name[observed_name]
+            require(row["dtype"] == "<f8", f"{tap} Swift stage is not Float64")
+            require(row["shape"] == reference["taps"][tap]["shape"],
+                    f"{tap} Swift stage shape differs")
+            require(row["bytes"] == path.stat().st_size,
+                    f"{tap} candidate NPY length differs from Swift manifest")
+            if "file_sha256" in row:
+                require(hashlib.sha256(path.read_bytes()).hexdigest()
+                        == row["file_sha256"],
+                        f"{tap} actual Swift .npy payload SHA256 mismatch")
         ref = np.load(refdir / (tap + ".npy"), allow_pickle=False)
         got = np.load(path, allow_pickle=False)
         # STRICT: a Float32 candidate must not be accepted via implicit
@@ -368,6 +413,9 @@ def main() -> int:
     c.add_argument("--reference", required=True)
     c.add_argument("--candidate", required=True)
     c.add_argument("--atol", type=float, default=0.0)
+    c.add_argument("--candidate-mapping", action="store_true",
+                   help="Use real Swift iOS production stage mapping manifest and "
+                        "fail closed on all 5/7 stage metadata; never auto-certify")
     sub.add_parser("self-test")
     args = parser.parse_args()
     try:
