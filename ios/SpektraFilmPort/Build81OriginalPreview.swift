@@ -2,7 +2,7 @@ import Foundation
 
 /// Build81/14-15: source preview.resize_for_preview for Float64 H×W×3.
 /// This is NOT ImageIO's fast thumbnail or Core Image's linear resize.
-/// It models skimage 0.25.2 resize(preserve_range=True,
+/// It models skimage 0.26.0 resize(preserve_range=True,
 /// anti_aliasing=True,order=1,mode="reflect"):
 /// scipy.ndimage gaussian_filter(mode="mirror",truncate=4) followed by
 /// ndi.zoom(order=1,grid_mode=True,mode="mirror"), then original range clip.
