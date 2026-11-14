@@ -25,15 +25,44 @@ struct FloatingEditorWorkspace: View {
     // Initialize only the photo and toolbar on iOS 16.5.1.
     // The two heavy UIKit picker docks are mounted only after opt-in.
     @State private var controlsVisible = false
-    @State private var wheelsCollapsed = false
-    @State private var adjustmentCollapsed = false
+    @State private var wheelExpanded = false
+    @State private var adjustmentExpanded = false
+    // Last opened panel always overlays the older panel.
+    @State private var frontDrawer: DrawerSide = .film
+    @State private var selectedSettingSection: AdjustmentSection = .exposure
     @State private var comparisonEnabled = false
     @State private var statusReportPresented = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
 
-    @State private var wheelOffset = CGSize.zero
-    @State private var adjustOffset = CGSize.zero
+    private enum DrawerSide { case film, adjustment }
+    private enum AdjustmentSection: String, CaseIterable {
+        case exposure = "基础"
+        case scanner = "扫描"
+        case print = "印相"
+        case optics = "光学"
+        case dir = "DIR"
+        case grain = "颗粒"
+    }
+
+    private func openFilmDrawer() {
+        withAnimation(.easeOut(duration: 0.22)) {
+            wheelExpanded = true
+            frontDrawer = .film
+        }
+    }
+    private func closeFilmDrawer() {
+        withAnimation(.easeOut(duration: 0.22)) { wheelExpanded = false }
+    }
+    private func openAdjustmentDrawer() {
+        withAnimation(.easeOut(duration: 0.22)) {
+            adjustmentExpanded = true
+            frontDrawer = .adjustment
+        }
+    }
+    private func closeAdjustmentDrawer() {
+        withAnimation(.easeOut(duration: 0.22)) { adjustmentExpanded = false }
+    }
 
     private var films: [MeasuredStock] {
         SpectralPhysics.supportedFilmIDs.compactMap { id in
@@ -90,21 +119,43 @@ struct FloatingEditorWorkspace: View {
                 }
                 .frame(width: available.width, height: available.height)
             }
-            .overlay(alignment: .bottomLeading) {
+            // Edge-absorbed drawers replace the two freely floating docks.
+            // The last panel opened is visually above the first one.
+            .overlay(alignment: .bottom) {
                 if controlsVisible && model.hasPhoto {
-                    wheelDock(width: wheelWidth)
-                        .offset(x: wheelOffset.width, y: wheelOffset.height)
-                        .padding(.leading, 8)
-                        .padding(.bottom, 63)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if controlsVisible && model.hasPhoto {
-                    adjustmentDock(width: adjustWidth,
-                                   maxHeight: available.height * 0.43)
-                        .offset(x: adjustOffset.width, y: adjustOffset.height)
-                        .padding(.trailing, 8)
-                        .padding(.bottom, 63)
+                    let filmWidth = max(168, min(204, available.width * 0.49))
+                    let drawerHeight = min(326, max(280, available.height * 0.45))
+                    ZStack(alignment: .bottom) {
+                        Group {
+                            if wheelExpanded {
+                                wheelDock(width: filmWidth)
+                                    .frame(height: drawerHeight,
+                                           alignment: .top)
+                            } else {
+                                edgeDrawerTab("胶片\n相纸", symbol: "film",
+                                              side: .film)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .zIndex(frontDrawer == .film ? 2.0 : 1.0)
+
+                        Group {
+                            if adjustmentExpanded {
+                                adjustmentDock(width: available.width,
+                                               maxHeight: drawerHeight - 38)
+                            } else {
+                                edgeDrawerTab("调节", symbol: "slider.horizontal.3",
+                                              side: .adjustment)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .zIndex(frontDrawer == .adjustment ? 2.0 : 1.0)
+                    }
+                    .padding(.bottom, 63)
+                    .animation(.easeInOut(duration: 0.22),
+                               value: wheelExpanded)
+                    .animation(.easeInOut(duration: 0.22),
+                               value: adjustmentExpanded)
                 }
             }
             .sheet(isPresented: $statusReportPresented) {
@@ -367,6 +418,43 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
+    /// A single thin vertical handle remains touchable at either edge.
+    /// Film opens by tap/right swipe; adjustment by tap/left swipe.
+    private func edgeDrawerTab(_ title: String, symbol: String,
+                               side: DrawerSide) -> some View {
+        Button {
+            if side == .film { openFilmDrawer() }
+            else { openAdjustmentDrawer() }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: symbol).font(.caption)
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundColor(.primary)
+            .frame(width: 38, height: 94)
+            .background(
+                Color(uiColor: .secondarySystemBackground).opacity(0.94),
+                in: RoundedRectangle(cornerRadius: 11)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(side == .film
+            ? "点击或向右滑动展开左侧胶片相纸拨轮"
+            : "点击或向左滑动展开右侧全屏宽度调节面板")
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 16)
+                .onEnded { g in
+                    if side == .film && g.translation.width > 28 {
+                        openFilmDrawer()
+                    } else if side == .adjustment && g.translation.width < -28 {
+                        openAdjustmentDrawer()
+                    }
+                }
+        )
+    }
+
     private func wheelDock(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
@@ -376,30 +464,24 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                 Spacer(minLength: 2)
-                Button {
-                    wheelsCollapsed.toggle()
-                } label: {
-                    Image(systemName: wheelsCollapsed ? "chevron.up" : "chevron.down")
+                Button(action: closeFilmDrawer) {
+                    Image(systemName: "chevron.left")
                         .font(.caption)
-                        .frame(width: 25, height: 31)
+                        .frame(width: 33, height: 34)
                 }
-                .accessibilityLabel(wheelsCollapsed ? "展开拨轮" : "收起拨轮")
+                .accessibilityLabel("关闭胶片相纸面板，吸附左侧")
             }
             .frame(height: 38)
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 8)
-                    .onEnded { gesture in
-                        wheelOffset = clampedOffset(
-                            previous: wheelOffset, translation: gesture.translation,
-                            available: UIScreen.main.bounds.size, panelWidth: width,
-                            panelHeight: wheelsCollapsed ? 40 : 296, anchor: .left
-                        )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 16)
+                    .onEnded { g in
+                        if g.translation.width < -32 { closeFilmDrawer() }
                     }
             )
 
-            if !wheelsCollapsed {
+            if wheelExpanded {
                 Divider().padding(.horizontal, 6)
                 Text("胶片 FILM · 双击复原")
                     .font(.caption2)
@@ -476,39 +558,37 @@ struct FloatingEditorWorkspace: View {
                     .fontWeight(.semibold)
                 Spacer(minLength: 2)
                 Button {
-                    adjustmentCollapsed.toggle()
+                    model.applyMeasuredSimulation()
                 } label: {
-                    Image(systemName: adjustmentCollapsed ? "chevron.up" : "chevron.down")
+                    Image(systemName: "wand.and.stars")
                         .font(.caption)
-                        .frame(width: 25, height: 31)
+                        .frame(width: 33, height: 34)
                 }
-                .accessibilityLabel(adjustmentCollapsed ? "展开调整" : "收起调整")
+                .disabled(!model.hasPhoto || model.busy)
+                .accessibilityLabel("应用模拟")
+                Button(action: closeAdjustmentDrawer) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .frame(width: 33, height: 34)
+                }
+                .accessibilityLabel("关闭调节面板，吸附右侧")
             }
             .frame(height: 38)
             .padding(.horizontal, 9)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 8)
-                    .onEnded { gesture in
-                        adjustOffset = clampedOffset(
-                            previous: adjustOffset, translation: gesture.translation,
-                            available: UIScreen.main.bounds.size, panelWidth: width,
-                            panelHeight: adjustmentCollapsed ? 40 : maxHeight,
-                            anchor: .right
-                        )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 16)
+                    .onEnded { g in
+                        if g.translation.width > 32 { closeAdjustmentDrawer() }
                     }
             )
-            if !adjustmentCollapsed {
+            if adjustmentExpanded {
                 Divider()
-                ScrollView {
-                    adjustmentControls
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                }
-                .frame(height: max(170, min(maxHeight, 365)))
+                adjustmentControls
+                    .frame(height: maxHeight)
             }
         }
-        .frame(width: width)
+        .frame(width: width, height: maxHeight + 38, alignment: .top)
         .foregroundColor(.primary)
          .background(Color(uiColor: .secondarySystemBackground).opacity(0.88),
                     in: RoundedRectangle(cornerRadius: 15))
@@ -517,14 +597,141 @@ struct FloatingEditorWorkspace: View {
         .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
     }
 
-    private var adjustmentControls: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            resetToggle("Hanatos 原版 Float64", value: $model.hanatosOriginalPrecisionEnabled,
-                        enabled: model.hasPhoto && !model.busy,
-                        resetTo: true)
-                .onChange(of: model.hanatosOriginalPrecisionEnabled) { _ in
+    // Row 1: horizontal one-line switches with 28x16 tracks.
+    private var compactMainSwitches: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                compactSwitch("64位", value: $model.hanatosOriginalPrecisionEnabled,
+                              section: .exposure) { model.queueSpectralPreview() }
+                compactSwitch("扫描", value: $model.originalScannerEnabled,
+                              section: .scanner) { model.queueSpectralPreview() }
+                compactSwitch("锐化", value: $model.scannerFinishingEnabled,
+                              section: .scanner) { onRefresh() }
+                compactSwitch("放大机", value: $model.originalPrintOpticsEnabled,
+                              section: .print, allowed: !isReversal) {
                     model.queueSpectralPreview()
                 }
+                compactSwitch("预闪", value: $model.preflashEnabled,
+                              section: .print,
+                              allowed: !isReversal && model.originalPrintOpticsEnabled) {
+                    model.queueSpectralPreview()
+                }
+                compactSwitch("s023", value: $model.printMorphEnabled,
+                              section: .print, allowed: !isReversal) {
+                    model.queueSpectralPreview()
+                }
+                compactSwitch("散射", value: $model.scatterEnabled,
+                              section: .optics) { onRefresh() }
+                compactSwitch("光晕", value: $model.halationEnabled,
+                              section: .optics) { onRefresh() }
+                compactSwitch("DIR", value: $model.spatialDIREnabled,
+                              section: .dir) { model.queueSpectralPreview() }
+                compactSwitch("颗粒", value: $model.grainEnabled,
+                              section: .grain) {
+                    if model.grainEnabled { model.queueSpectralPreview() }
+                    else { onRefresh() }
+                }
+            }
+            .padding(.horizontal, 5)
+        }
+        .frame(height: 34)
+    }
+
+    private func compactSwitch(_ title: String, value: Binding<Bool>,
+                               section: AdjustmentSection, allowed: Bool = true,
+                               changed: @escaping () -> Void) -> some View {
+        Button {
+            guard model.hasPhoto && !model.busy && allowed else { return }
+            value.wrappedValue.toggle()
+            selectedSettingSection = section
+            changed()
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                ZStack {
+                    Capsule()
+                        .fill(value.wrappedValue
+                              ? Color.accentColor
+                              : Color.gray.opacity(0.46))
+                        .frame(width: 28, height: 16)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 12, height: 12)
+                        .offset(x: value.wrappedValue ? 6 : -6)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.07), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.hasPhoto || model.busy || !allowed)
+        .accessibilityLabel(title + (value.wrappedValue ? "，已开启" : "，已关闭"))
+        .accessibilityHint("点按切换，并显示该项的二级参数")
+    }
+
+    // Row 2: categories; the selected category controls row 3.
+    private var settingCategoryRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                ForEach(AdjustmentSection.allCases, id: \.self) { section in
+                    Button {
+                        selectedSettingSection = section
+                    } label: {
+                        Text(section.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(selectedSettingSection == section
+                                             ? Color.accentColor : .primary)
+                            .padding(.horizontal, 11)
+                            .frame(height: 27)
+                            .background(
+                                selectedSettingSection == section
+                                    ? Color.accentColor.opacity(0.13)
+                                    : Color.primary.opacity(0.07),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(section.rawValue + "二级设置")
+                }
+            }
+            .padding(.horizontal, 5)
+        }
+        .frame(height: 31)
+    }
+
+    // Row 3: show just one parameter section, never the entire switch wall.
+    private var adjustmentControls: some View {
+        VStack(spacing: 4) {
+            compactMainSwitches
+            settingCategoryRow
+            Divider().padding(.horizontal, 8)
+            ScrollView(.vertical) {
+                activeSettings
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var activeSettings: some View {
+        switch selectedSettingSection {
+        case .exposure: exposureSettings
+        case .scanner: scannerSettings
+        case .print: printSettings
+        case .optics: opticsSettings
+        case .dir: dirSettings
+        case .grain: grainSettings
+        }
+    }
+
+    private var exposureSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             Text(model.hanatosOriginalPrecisionEnabled
                  ? "原版双精度光谱响应 · 未近似存储"
                  : "移动快速 Float16 光谱响应 · 已量化")
@@ -569,11 +776,11 @@ struct FloatingEditorWorkspace: View {
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
-            resetToggle("扫描光源 · ACES 色域", value: $model.originalScannerEnabled,
-                        enabled: model.hasPhoto && !model.busy)
-                .onChange(of: model.originalScannerEnabled) { _ in
-                    model.queueSpectralPreview()
-                }
+        }
+    }
+
+    private var scannerSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             if model.originalScannerEnabled {
                 resetToggle("原版默认 CAM16-UCS", value: $model.scannerCAM16Enabled,
                             enabled: model.hasPhoto && !model.busy)
@@ -603,21 +810,18 @@ struct FloatingEditorWorkspace: View {
                         .foregroundColor(.secondary)
                 }
             }
-            resetToggle("扫描锐化 / 微眩光", value: $model.scannerFinishingEnabled,
-                        enabled: model.hasPhoto)
-                .onChange(of: model.scannerFinishingEnabled) { _ in onRefresh() }
             if model.scannerFinishingEnabled {
                 strengthControl("锐化强度",
                                 value: $model.scannerSharpenAmount,
                                 range: 0...1.5, suffix: "×", resetTo: 0.7)
             }
+        }
+    }
+
+    private var printSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             Divider()
             if !isReversal {
-                resetToggle("原版放大机归一化 / CMY", value: $model.originalPrintOpticsEnabled,
-                            enabled: model.hasPhoto && !model.busy)
-                    .onChange(of: model.originalPrintOpticsEnabled) { _ in
-                        model.queueSpectralPreview()
-                    }
                 if model.originalPrintOpticsEnabled {
                     Text("胶片 → 二色滤色光谱 → 相纸曝光")
                         .font(.caption2)
@@ -640,11 +844,6 @@ struct FloatingEditorWorkspace: View {
                                 range: -40...40)
                     morphSlider("黄色 Y / CC", value: $model.printYellowShift,
                                 range: -40...40)
-                    resetToggle("相纸预闪光", value: $model.preflashEnabled,
-                                enabled: model.hasPhoto && !model.busy)
-                        .onChange(of: model.preflashEnabled) { _ in
-                            model.queueSpectralPreview()
-                        }
                     if model.preflashEnabled {
                         morphSlider("预闪曝光", value: $model.preflashExposure,
                                     range: 0...0.2)
@@ -658,11 +857,6 @@ struct FloatingEditorWorkspace: View {
                     }
                 }
                 Divider()
-                resetToggle("相纸显影曲线 s023", value: $model.printMorphEnabled,
-                            enabled: model.hasPhoto && !model.busy)
-                    .onChange(of: model.printMorphEnabled) { _ in
-                        model.queueSpectralPreview()
-                    }
                 if model.printMorphEnabled {
                     morphSlider("总体伽马", value: $model.printGamma,
                                 range: 0.65...1.45, resetTo: 1.0)
@@ -677,19 +871,14 @@ struct FloatingEditorWorkspace: View {
                         .foregroundColor(.secondary)
                 }
             }
+        }
+    }
+
+    private var opticsSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             // In the explicitly selected whole-physical path the familiar
             // switches use the source's actual Double photon optics.
             // Outside that path these remain unchanged mobile CI controls.
-            resetToggle(model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
-                            ? "乳剂散射 · 原版 Double" : "乳剂散射",
-                        value: $model.scatterEnabled,
-                        enabled: model.hasPhoto && !model.busy)
-                .onChange(of: model.scatterEnabled) { _ in onRefresh() }
-            resetToggle(model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
-                            ? "背反射光晕 · 原版 Double" : "背反射光晕",
-                        value: $model.halationEnabled,
-                        enabled: model.hasPhoto && !model.busy)
-                .onChange(of: model.halationEnabled) { _ in onRefresh() }
             if model.halationEnabled {
                 strengthControl(model.sourcePixelIOEnabled && model.sourcePhysicalDirectEnabled
                                     ? "原版背反射倍率" : "光晕倍率",
@@ -702,12 +891,12 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+        }
+    }
+
+    private var dirSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             Divider()
-            resetToggle("原版 DIR 空间显影", value: $model.spatialDIREnabled,
-                        enabled: model.hasPhoto && !model.busy)
-                .onChange(of: model.spatialDIREnabled) { _ in
-                    model.queueSpectralPreview()
-                }
             if model.spatialDIREnabled {
                 resetToggle("DIR 原版 FIR/YVV", value: $model.spatialDIRSourceConvolutionEnabled,
                             enabled: model.hasPhoto && !model.busy,
@@ -862,12 +1051,11 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
-            resetToggle("密度颗粒", value: $model.grainEnabled,
-                        enabled: model.hasPhoto && !model.busy)
-                .onChange(of: model.grainEnabled) { enabled in
-                    if enabled { model.queueSpectralPreview() }
-                    else { onRefresh() }
-                }
+        }
+    }
+
+    private var grainSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             if model.grainEnabled {
                 resetToggle("实测三乳剂亚层", value: $model.grainSublayersEnabled,
                             enabled: model.hasPhoto && !model.busy)
@@ -925,24 +1113,6 @@ struct FloatingEditorWorkspace: View {
                 }
                 strengthControl("颗粒强度", value: $model.grainAmount,
                                 range: 0...2, suffix: "×", resetTo: 1.0)
-            }
-
-            Button {
-                model.applyMeasuredSimulation()
-            } label: {
-                Text("应用模拟")
-                    .font(.caption)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!model.hasPhoto || model.busy)
-
-            if model.busy {
-                ProgressView("计算中").font(.caption2)
-            } else {
-                Text("拨轮停止后自动计算")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
             }
         }
     }
@@ -1071,21 +1241,6 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    private enum DockAnchor { case left, right }
-
-    private func clampedOffset(previous: CGSize, translation: CGSize,
-                               available: CGSize, panelWidth: CGFloat,
-                               panelHeight: CGFloat, anchor: DockAnchor) -> CGSize {
-        let x = previous.width + translation.width
-        let y = previous.height + translation.height
-        let horizontal = max(0, available.width - panelWidth - 16)
-        let vertical = min(0, -available.height + panelHeight + 85)
-        return CGSize(
-            width: anchor == .left ? min(horizontal, max(0, x))
-                 : min(0, max(-horizontal, x)),
-            height: min(0, max(vertical, y))
-        )
-    }
 }
 
 /// Continuous UIKit recognition survives SwiftUI view refresh on iOS 16.5.1:
