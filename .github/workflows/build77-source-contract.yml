@@ -74,6 +74,7 @@ jobs:
             ios/SpektraFilmPort/Build78FloatTIFFIngress.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
+            ios/tests/Build78FloatTIFFValidation.swift \
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/Build77StageTapeRecorder.swift \
