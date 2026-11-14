@@ -414,3 +414,35 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
   Build77 item 03 remains **IN PROGRESS** overall; complete
   production mapping of camera/film/scan defaults and all
   original branches still requires further work.
+
+### Build77/03 neutral 160-pair production image CI certification boundary
+
+- After the first 180-case audit passed, the full Swift spectral
+  regression rejected an OLD **128-pair count assertion** in
+  `ios/tests/SourceFloat64ProfileValidation.swift`. This was a
+  test coverage assumption, not an actual pixel or Float64 value
+  mismatch. The assertion is now updated to **160 exact source
+  spectra**, preserving all original per-pair finite and f64/f32
+  byte checks. The 128 real negative→paper *render routes* remain
+  128 in other tests, because direct-positive film scans do not
+  develop onto paper.
+- Verified [GitHub Actions #43613420063](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43613420063)
+  from exact tested code SHA
+  `ffa9ed52083b7d2eb09f058ec4192f55af991799`:
+  **all seven jobs PASS**. This includes original Python upstream
+  seven-tap generation, 28-stock native data audit, 360-case
+  original-Python/native-Swift parameter digest comparison, 160-case
+  original film-stock halation baseline check, and the **180-case
+  original/production-Swift neutral database on/off and missing
+  record checks**, plus full Swift spectral/real source paper-tap
+  regression.
+- Xcode 16.4 iPhoneOS arm64 Release compilation logged
+  **BUILD SUCCEEDED** with minimum deployment iOS **16.5**,
+  bundle version **1.8.52 Build77**.
+- User's explicit batch policy is retained: these were code and
+  source-numeric CI tests only, **no new IPA/Release**. The
+  160 table/source database and UI binding are real production
+  changes; numerical signoff still applies only to the explicitly
+  tested filter parameter selection subbranch. The overall Build77
+  01-05 gates remain **OPEN** pending complete source parameters
+  and canonical 7-tap device parity.
