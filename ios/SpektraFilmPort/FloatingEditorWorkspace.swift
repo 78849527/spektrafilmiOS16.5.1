@@ -20,6 +20,7 @@ struct FloatingEditorWorkspace: View {
     let onExport: (ExportResolutionMode) -> Void
     let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
+    let onCaptureBuild77Evidence: () -> Void
 
     @State private var originalHeld = false
     // Only the photo and toolbar mount initially on iOS 16.5.1.
@@ -631,6 +632,16 @@ struct FloatingEditorWorkspace: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
+                    Button {
+                        onCaptureBuild77Evidence()
+                    } label: {
+                        Label("一次采集完整负片／正片／扩散阶段证据",systemImage:"square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy)
+                    Text("仅导出真实 iPhone Float64 阶段数据；本操作不声明 Python 数值等价。结果保存在「文件」App 的本机应用目录。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                     Text(model.hardwareDiagnosticReport ?? model.status)
                         .font(.system(size: 14, design: .monospaced))
                         .foregroundColor(.primary)
