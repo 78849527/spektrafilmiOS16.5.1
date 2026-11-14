@@ -542,6 +542,10 @@ struct FloatingEditorWorkspace: View {
             .accessibilityLabel("从相册导入照片")
 
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
+            toolButton("crop.rotate", name: "Build81 原版裁剪与预览数值诊断（需小于 2MP sRGB）") {
+                model.probeBuild81OriginalGeometry()
+            }
+            .disabled(model.busy)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
             // original unchanged, adaptive 50% of live memory capped at 12MP, or economy 30% capped at 7.2MP.
