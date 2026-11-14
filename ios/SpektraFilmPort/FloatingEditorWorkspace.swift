@@ -512,6 +512,29 @@ struct FloatingEditorWorkspace: View {
                     model.probePreservedRAWBackend()
                 }
                 .disabled(model.busy)
+                Menu {
+                    Button("原片白平衡 / EV 0 / 不校正镜头") {
+                        model.probePreservedRAWDevelopment(.asShot)
+                    }
+                    Button("Apple RAW：6504K / Tint 0（诊断）") {
+                        model.probePreservedRAWDevelopment(.daylightDiagnostic)
+                    }
+                    Button("Apple RAW：2850K / Tint 0（诊断）") {
+                        model.probePreservedRAWDevelopment(.tungstenDiagnostic)
+                    }
+                    Button("Apple RAW：6504K / EV +1 / 镜头校正（诊断）") {
+                        model.probePreservedRAWDevelopment(.init(
+                            whiteBalance: .appleTemperature(
+                                kelvin: 6504, tintOffset: 0),
+                            exposureEV: 1,
+                            appleLensCorrection: true
+                        ))
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("Apple RAW 白平衡、曝光和镜头诊断；不等于 Python rawpy")
+                .disabled(model.busy)
             }
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 Image(systemName: "photo")
