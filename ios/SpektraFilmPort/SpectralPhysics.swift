@@ -426,6 +426,7 @@ struct SpectralPhysics {
     private let isPositive: Bool
     private let hanatos: OriginalHanatosResponse
     private let cameraRawMethod: CameraRawMethod
+    private let cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace
     private let filmMatrix: [[Double]]    // film channel -> source linear RGB
     // Exact upstream colour.RGB_to_RGB(sRGB→sRGB) row-transform,
     // retained even for nominal identity to avoid 5e-5 source mismatch.
@@ -522,6 +523,7 @@ struct SpectralPhysics {
          hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64,
          sourceMeasuredFloat64: Bool = false,
          cameraRawMethod: CameraRawMethod = .hanatos2025,
+         cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB,
          cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
@@ -540,8 +542,16 @@ struct SpectralPhysics {
                 "请选择 Mallett 2019 光谱积分，禁止忽略所选滤镜"
             )
         }
+        guard cameraInputColorSpace != .proPhotoLinear ||
+                cameraRawMethod == .hanatos2025 else {
+            throw PhysicsError.invalid(
+                "原版 ProPhoto 输入尚未接入 Mallett 光谱反演，"
+                + "只能选择精确 Hanatos，禁止默默当成 sRGB"
+            )
+        }
         let originalHanatos = try OriginalHanatosResponse(
-            filmID: filmID, precision: hanatosPrecision
+            filmID: filmID, precision: hanatosPrecision,
+            inputColorSpace:cameraInputColorSpace
         )
         let positive = originalFilm.polarity == "positive"
         guard !printOptics.enabled || printOptics.isValid else {
@@ -553,6 +563,7 @@ struct SpectralPhysics {
         paper = originalPaper
         hanatos = originalHanatos
         self.cameraRawMethod = cameraRawMethod
+        self.cameraInputColorSpace = cameraInputColorSpace
         isPositive = positive
         useOriginalScanner = sourceScanner
         useReferenceBlackWhite = scannerBlackWhite
@@ -1431,7 +1442,11 @@ struct SpectralPhysics {
               cameraEV.isFinite && abs(cameraEV)<=4 else {
             throw PhysicsError.invalid("原版自动测光后的相机 RGB 或曝光无效")
         }
-        let linear=encodedRGB.map { Self.decodeSRGB($0) }
+        let linear: [Double]
+        switch cameraInputColorSpace {
+        case .sRGB: linear=encodedRGB.map { Self.decodeSRGB($0) }
+        case .proPhotoLinear: linear=encodedRGB
+        }
         let raw: [Double]
         switch cameraRawMethod {
         case .hanatos2025:
@@ -1476,7 +1491,11 @@ struct SpectralPhysics {
               cameraEV.isFinite && abs(cameraEV) <= 4 else {
             throw PhysicsError.invalid("源逐像素 Hanatos 输入或曝光无效")
         }
-        let linear = encodedRGB.map { Self.decodeSRGB($0) }
+        let linear: [Double]
+        switch cameraInputColorSpace {
+        case .sRGB: linear=encodedRGB.map { Self.decodeSRGB($0) }
+        case .proPhotoLinear: linear=encodedRGB
+        }
         let raw: [Double]
         switch cameraRawMethod {
         case .hanatos2025:
