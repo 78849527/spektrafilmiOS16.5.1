@@ -370,3 +370,47 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
   OPEN, no automatic IPA/Release. In the master 47-item plan this
   closes one production parameter-binding *subcomponent*, not
   whole item 03 or any other batch.
+
+## Build77/03 source-neutral database on/off: real optical production binding
+
+- Found a **real pre-existing source data coverage defect**: the old
+  `ios/scripts/generate_original_optics.py` materialised neutral CMY
+  lookup for just 16 negative films × 8 printing stocks (128 pairs).
+  Original Python `digest_params` applies neutral filter database
+  lookup to all **20 filming stocks**, including four positive stocks,
+  even if positive direct-scan rendering skips the paper stage.
+  The independent native/Python audit correctly FAILED on the
+  `fujifilm_provia_100f | fujifilm_crystal_archive_typeii` M-channel
+  before the generator was repaired. This was not a tolerance issue.
+- Fixed the actual production generated-optics source to cover
+  **20 films × 8 papers = 160 combinations** (all 28 original
+  profile identities), preserving the source's missing-row schema
+  fallback `[C=0,M=65,Y=55]`. No false database mapping
+  from a different film is allowed.
+- Added `OriginalPrintOptics.Settings.neutralPrintFiltersFromDatabase`
+  default `true`, and its exact source-order resolver
+  `OriginalPrintOptics.sourceNeutralCC` for live production
+  optical-print parameters; turned OFF, it keeps the original
+  `EnlargerParams` default `[0,65,55]`. `TH-KG3-L` does not
+  borrow `TH-KG3` database entries. A malformed triplet throws.
+- **Real app**: the switch is now reachable in
+  `FloatingEditorWorkspace.enlargerSettings` and passes through
+  `ContentView.sourcePhysicalParameters`, then
+  `SpectralPhysics`'s live `OriginalPrintOptics.prepare`
+  source light spectrum. The preview refreshes when toggled;
+  existing fast/mobile branch is unmodified.
+- Added `ios/tests/Build77NeutralFilterParity.swift`; independently
+  compiles **actual** `OriginalPrintOptics` and
+  `GeneratedOriginalOptics` from the build generator and checks
+  the original Python `init_params→digest_params` artifact:
+  160 source stock/paper combinations in database-on and 20 in
+  database-off, each C/M/Y value bit-exact Float64, plus lens
+  illuminant default, missing-row default and malformed-row rejection.
+- Native 180-case source parameter validation PASSED in
+  [GitHub Actions run #43613028318](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43613028318).
+  This proves source neutral-selection **parameter logic**, NOT
+  resulting 81-wavelength light and photo RGB, nor all Build77.
+- No IPA generated or published in the no-IPA workflow.
+  Build77 item 03 remains **IN PROGRESS** overall; complete
+  production mapping of camera/film/scan defaults and all
+  original branches still requires further work.
