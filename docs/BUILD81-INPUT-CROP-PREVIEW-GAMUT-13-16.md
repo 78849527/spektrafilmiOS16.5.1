@@ -22,9 +22,14 @@
   
 `Build81OriginalInputValidation.swift` 与 CI 中的 Swift 原生实现逐项对照：裁剪及 no-resize 必须 Float64 **按位相等**；预览需通过明确的绝对误差阈值 `3e-6+2e-6×abs(original)`，打印 MAE/RMSE/max；色域色品误差 ≤1e-9，knee ≤1e-12。任何失败立即中止 CI，不对未通过模块宣称完成。
 
+### 实际源输入帧及 UI 接入
+
+- `Build81OriginalSourceInputStage.swift` 将真实 `OriginalSourcePixelIO.Frame` 的 CPU Float64 数据接入源裁剪、抗锯齿预览，测试同样验证此生产封装函数没有更改像素位模式。
+- `PhotoEditorModel.probeBuild81OriginalGeometry()` 和悬浮编辑器新增的裁剪图标供用户**明确触发**：仅接收实际 8-bit sRGB 图片，超过 2MP 明确报错。真实原图解码后执行中心 60% 源裁剪与 max 600 的源预览，返回尺寸与样本。该功能**不覆盖默认预览、不更改原图，不声称 iOS 整图认证**。
+
 ### 尚未认证／不可偷换
 
-- 当前色域算法仅使用**显式传入的光谱多边形**；源默认的真实 CIE 1931 380–700nm、5nm 的 polygon 需要单独数据绑定并对照。源 Oklch 分支尚未移植。
+- **源默认 CIE 1931 现已接入生成器**：`ios/scripts/build81_generate_source_locus.py` 从固定 Python `spectral_locus_xy()` 原函数实际调用 `colour-science==0.4.6`，生成 380–700nm/5nm 的 **65+1** 个 xy 点及 Float64 SHA256；`Build81OriginalInputGamut.compressUsingOriginalSpectralLocus` 接入默认表，Python oracle 额外生成每组输入的真实默认光谱色域结果。只有 CI 数据对照通过后才可认定此支路在测试范围内数值等价。源 Oklch 分支尚未移植。
 - 本次预览的 Float64 路径是实际缩放数学；Float32（scikit/SciPy 每阶段强制窄化）尚未单独等价认证。
 - 现有 ImageIO/Quartz 缩略图不得默认冒充原版 scikit-image 预览。
 - 本批不会把图像导入、缩图或 gamut 从旧默认路径**静默替换**；接入生产完整链前必须保留原版源色域、源参数与输入边界。
