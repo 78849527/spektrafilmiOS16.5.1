@@ -37,6 +37,13 @@ jobs:
     steps:
       - name: Checkout exact candidate commit
         uses: actions/checkout@v4
+      - name: Fast static Swift parse of changed production stage boundaries
+        run: |
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/Build77StageTapeRecorder.swift \
+            ios/tests/SourcePhysicalImageParity.swift
       - name: Python 3.13 (upstream requires ~=3.13)
         uses: actions/setup-python@v5
         with:
