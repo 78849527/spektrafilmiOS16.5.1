@@ -679,9 +679,11 @@ struct SpectralPhysics {
             }
             opticalLighting = OriginalPrintOptics.prepare(
                 source: unfiltered,
-                neutralCC: useLensLight ? [0, 65, 55] :
-                    (GeneratedOriginalOptics.neutralCMYByPair[printKey]
-                     ?? [0, 65, 55]),
+                neutralCC: try OriginalPrintOptics.sourceNeutralCC(
+                    filmID:filmID,paperID:paperID,
+                    settings:printOptics,
+                    neutralByPair:GeneratedOriginalOptics.neutralCMYByPair
+                ),
                 settings: printOptics,
                 filmBase: (0..<81).map { originalFilm.base($0) },
                 filmBaseValid: originalFilm.baseWavelengthValid,
