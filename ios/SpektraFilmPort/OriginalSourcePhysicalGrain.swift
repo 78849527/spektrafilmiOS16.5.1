@@ -66,6 +66,10 @@ enum OriginalSourcePhysicalGrain {
     struct MeasuredLayers {
         let maxima: [Double]
         let sublayers: ([Double]) throws -> [Double]
+        /// Original source only: write 9 measured Float64 densities into
+        /// a caller-owned scratch array; no per-pixel heap allocation.
+        /// Legacy test fixtures can still supply just `sublayers`.
+        var sublayersInto: (([Double], inout [Double]) throws -> Void)? = nil
     }
 
     static func apply(
@@ -119,15 +123,21 @@ enum OriginalSourcePhysicalGrain {
         // Interpolate all 9 sublayers BEFORE SciPy RNG; the source uses
         // this measured inversion, not total CMY RGB surrogates.
         var layerInputs=[Double](repeating:0,count:pixels*9)
+        var inputCMY=[Double](repeating:0,count:3)
+        var layerScratch=[Double](repeating:0,count:9)
         for p in 0..<pixels {
             let k=p*3
-            let layer=try measured.sublayers(
-                [densityCMY[k],densityCMY[k+1],densityCMY[k+2]]
-            )
-            guard layer.count==9,layer.allSatisfy({$0.isFinite}) else {
+            for ch in 0..<3 { inputCMY[ch]=densityCMY[k+ch] }
+            if let sublayersInto=measured.sublayersInto {
+                try sublayersInto(inputCMY,&layerScratch)
+            } else {
+                layerScratch=try measured.sublayers(inputCMY)
+            }
+            guard layerScratch.count==9,
+                  layerScratch.allSatisfy({$0.isFinite}) else {
                 throw Failure.invalid("原版胶片三亚层密度未完整计算")
             }
-            for i in 0..<9 { layerInputs[p*9+i]=layer[i] }
+            for i in 0..<9 { layerInputs[p*9+i]=layerScratch[i] }
         }
         stageObserver?("sourceGrainSublayers",layerInputs)
 
