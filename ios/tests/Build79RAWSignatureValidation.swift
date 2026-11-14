@@ -51,6 +51,13 @@ enum Build79RAWSignatureValidation {
         cr2[8]=0x43; cr2[9]=0x52 // "CR"
         cr2[10]=2; cr2[11]=0
         cr2[12]=64 // IFD3 offset
+        cr2[16]=1 // IFD0 entry count
+        cr2[18]=0x0f; cr2[19]=0x01 // Make
+        cr2[20]=2; cr2[22]=6 // TIFF ASCII length six
+        cr2[26]=80
+        for (i,b) in Data("Canon\\0".utf8).enumerated() {
+            cr2[80+i]=b
+        }
         var dngBig=Data(repeating:0,count:128)
         dngBig[0]=0x4d;dngBig[1]=0x4d;dngBig[3]=0x2a
         dngBig[7]=8; dngBig[9]=1 // big-endian one-entry IFD
@@ -75,6 +82,10 @@ enum Build79RAWSignatureValidation {
 
         var fake=Data([0xff,0xd8,0xff,0xe0])
         fake.append(Data(repeating:0,count:100))
+        var brokenCR2=cr2
+        brokenCR2[16]=0 // valid signature, missing IFD0
+        var brokenCR3=cr3
+        brokenCR3[3]=8 // box length 8 cannot contain brand
         for (name,data) in [
             ("renamed.dng",fake),
             ("renamed.raf",fake),
@@ -85,7 +96,9 @@ enum Build79RAWSignatureValidation {
             ("no-dng-version.dng",tiff(0x010f,2,6,64)),
             ("zero-dng-version.dng",tiff(50706,1,4,0)),
             ("wrong-brand.arw",nef),
-            ("wrong-brand.nef",arw)
+            ("wrong-brand.nef",arw),
+            ("broken-ifd.cr2",brokenCR2),
+            ("broken-ftyp.cr3",brokenCR3)
         ] {
             var rejected=false
             do {
@@ -152,7 +165,7 @@ enum Build79RAWSignatureValidation {
         print(
             "PASS Build79 6 RAW source signatures "
             + "(RAF/CR3/DNG/NEF/CR2/ARW, plus big-endian DNG), "
-            + "11 disguised/invalid header rejections, "
+            + "12 disguised/invalid header rejections, "
             + "unsupported RAW fail closed, non-RAW intact; "
             + "RAF file stream-copy SHA256 identical. "
             + "NO demosaic or numeric RAW backend equivalence claimed."
