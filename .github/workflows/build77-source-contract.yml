@@ -6,6 +6,10 @@ on:
       - port/build77-source-contract-01-05
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/scripts/build77_measured_manifest.py"
+      - "ios/scripts/generate_spectral_data.py"
+      - "ios/tests/Build77MeasuredProfileAudit.swift"
+      - "ios/SpektraFilmPort/SpectralPhysics.swift"
       - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
       - "ios/tests/Build77StageTapeRecorderValidation.swift"
       - "src/spektrafilm/**"
@@ -14,6 +18,10 @@ on:
   pull_request:
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/scripts/build77_measured_manifest.py"
+      - "ios/scripts/generate_spectral_data.py"
+      - "ios/tests/Build77MeasuredProfileAudit.swift"
+      - "ios/SpektraFilmPort/SpectralPhysics.swift"
       - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
       - "ios/tests/Build77StageTapeRecorderValidation.swift"
       - "src/spektrafilm/**"
@@ -172,4 +180,49 @@ jobs:
         with:
           name: build77-ios-source-double-recorder-smoke-not-parity
           path: build77-evidence/swift/
+          if-no-files-found: warn
+
+  native-stock-byte-audit:
+    name: Swift 28-stock F64/F32 source byte audit (not pixel parity)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+      - name: Python 3.13 source fixture environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Original source identity and independent 28-stock manifest
+        run: |
+          python ios/scripts/build77_source_contract.py verify
+          python ios/scripts/build77_measured_manifest.py \
+            --output build77-evidence/independent-measured-profiles.json
+      - name: Generate production Swift 28-stock measured data unchanged
+        run: |
+          python ios/scripts/generate_spectral_data.py
+          test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
+      - name: Parse changed iOS production profile integrity guard
+        run: |
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/SpectralPhysics.swift
+      - name: Compile independent native Swift consumer of production stock bytes
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/GeneratedSpectralData.swift \
+            ios/tests/Build77MeasuredProfileAudit.swift \
+            -o /tmp/Build77MeasuredProfileAudit
+      - name: Check every generated Swift profile against independent original JSON
+        run: |
+          /tmp/Build77MeasuredProfileAudit \
+            build77-evidence/independent-measured-profiles.json \
+            | tee build77-evidence/swift-28-stock-audit.txt
+      - name: Retain original JSON versus native Swift audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-original-json-vs-native-swift-stock-bytes
+          path: |
+            build77-evidence/independent-measured-profiles.json
+            build77-evidence/swift-28-stock-audit.txt
           if-no-files-found: warn
