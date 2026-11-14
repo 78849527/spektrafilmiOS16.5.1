@@ -6,8 +6,8 @@ import os
 /// User chooses resolution explicitly; original must never silently shrink.
 enum ExportResolutionMode: Equatable {
     case original
-    case safe      // adaptive 50% of measured budget, no fixed pixel ceiling
-    case economy   // conservative <=3MP fallback at 30% of budget
+    case safe      // adaptive 50% of live memory, up to 12MP
+    case economy   // adaptive 30% of live memory, up to 7.2MP
 
     var title: String {
         switch self {
@@ -27,7 +27,10 @@ enum ExportResolutionMode: Equatable {
 /// memory headroom. The app may still be killed by jetsam: this is a
 /// conservative heuristic, not a memory reservation or a guarantee.
 enum SafeExportResolution {
-    static let economyMaximumPixels: UInt64 = 3_000_000
+    // User-selected size ceilings, NOT guaranteed output dimensions.
+    // Live memory and exact original per-pixel staging still take priority.
+    static let safeMaximumPixels: UInt64 = 12_000_000
+    static let economyMaximumPixels: UInt64 = 7_200_000
     static let estimatedBytesPerPixel: UInt64 = 104
     static let physicalMaximumBudget: UInt64 = 1_500_000_000
     static let intelligentBudgetPercent: UInt64 = 50
@@ -61,6 +64,7 @@ enum SafeExportResolution {
             } ?? "未获取（按物理预算估算）"
             return """
             原始照片：\(sourceWidth) × \(sourceHeight)（约 \(Double(sourceWidth)*Double(sourceHeight)/1_000_000) 百万像素）
+            已选档位：\(mode == .safe ? "智能安全（上限1200万）" : mode == .economy ? "省内存（上限720万）" : "原始尺寸")
             预计输出：\(dimensions.width) × \(dimensions.height)（约 \(Double(dimensions.pixels)/1_000_000) 百万像素）
             预计显影峰值：约 \(estimatedMB) MB
             设备安全预算：约 \(budgetMB) MB；本档计划上限 \(allowanceMB) MB
@@ -128,7 +132,7 @@ enum SafeExportResolution {
             let byMemory = allowance / estimatedBytesPerPixel
             targetPixels = min(
                 sourcePixels, byMemory,
-                mode == .economy ? economyMaximumPixels : sourcePixels
+                mode == .economy ? economyMaximumPixels : safeMaximumPixels
             )
         }
         guard targetPixels > 0 else {
@@ -194,7 +198,7 @@ enum SafeExportResolution {
         }
     }
 
-    /// Backwards-compatibility for old tests; .safe now means adaptive.
+    /// Backwards-compatibility for old tests; .safe is adaptive and capped.
     static func target(
         width: Int, height: Int, physicalMemory: UInt64
     ) throws -> Dimensions {
