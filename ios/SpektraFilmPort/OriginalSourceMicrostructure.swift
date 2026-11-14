@@ -14,14 +14,22 @@ enum OriginalSourceMicrostructure {
         }
     }
 
-    static func physical(pixelUM: Double) throws -> (
-        microStd: Double, blur: Double, enabled: Bool
-    ) {
-        guard pixelUM > 0, pixelUM.isFinite else {
-            throw Failure.invalid("原版微结构：像素尺寸无效")
+    /// Python grain.py: micro_structure[0] is μm of blur and [1] is
+    /// nm of lognormal variation. Defaults retain the upstream stock profile.
+    /// The parameters must remain independent rather than fixed 0.2/30.
+    static func physical(
+        pixelUM: Double,
+        microBlurUM: Double = 0.2,
+        microStructureNM: Double = 30.0
+    ) throws -> (microStd: Double, blur: Double, enabled: Bool) {
+        guard pixelUM > 0, pixelUM.isFinite,
+              microBlurUM.isFinite, microBlurUM >= 0,
+              microStructureNM.isFinite, microStructureNM >= 0 else {
+            throw Failure.invalid("原版微结构：像素尺寸或μm/nm原版参数无效")
         }
-        let microStd = 30.0 * 0.001 / pixelUM
-        let blur = 0.2 / pixelUM
+        // Keep the source's *exact* operation ordering and threshold.
+        let blur = microBlurUM / pixelUM
+        let microStd = microStructureNM * 0.001 / pixelUM
         guard microStd.isFinite, blur.isFinite else {
             throw Failure.invalid("原版微结构：源公式溢出")
         }
