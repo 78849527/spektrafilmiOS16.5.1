@@ -48,7 +48,7 @@ jobs:
           test -s ios/verification/generated-source-grain-v1.8.48/yvv_micro_active.final.f64le
       - name: Compile 4 stage full-Double Swift source grain numerical tests
         run: |
-          xcrun swiftc -Onone -parse-as-library \
+          xcrun swiftc -Onone -parse-as-library -D SOURCE_GRAIN_STANDALONE \
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
             ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
