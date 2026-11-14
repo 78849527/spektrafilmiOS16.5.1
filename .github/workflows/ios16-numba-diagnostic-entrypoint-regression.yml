@@ -1,0 +1,71 @@
+name: v1.8.43 actual iPhone diagnostic entrypoint regression
+
+on:
+  push:
+    branches:
+      - 'validation/v1.8.43-ondevice-diagnostic-regression-20261114'
+    paths:
+      - 'ios/tests/SourceNumbaOnDeviceDiagnosticSmoke.swift'
+      - '.github/workflows/ios16-numba-diagnostic-entrypoint-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-diagnostic-entrypoint:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+      - name: Pin Xcode used by iPhoneOS Build68
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+      - name: Validate actual UI calls diagnostic and distinguishes it from 8 Metal stages
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('ios/SpektraFilmPort/ContentView.swift').read_text()
+          anchor='let fastCounts = try OriginalSourceNumbaFastCountsDiagnostic.evaluate()'
+          assert src.count(anchor)==1
+          assert src.index('checks.append("8/8 【通过】Numba 微结构') < src.index(anchor)
+          assert '附录【v1.8.43 Numba 快速计数｜仅受控单线程数值对照】' in src
+          assert '附录【v1.8.43 Numba 快速计数｜未通过／未认证】' in src
+          assert 'hardwareDiagnosticReport = report' in src
+          assert 'UIPasteboard.general.string' in Path('ios/SpektraFilmPort/FloatingEditorWorkspace.swift').read_text()
+          print('PASS: real iPhone UI routes source Numba result to copyable diagnostic appendix and reports failure distinctly')
+          PY
+      - name: Prepare original Python 3.13 and Numba
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install upstream pinned source dependencies
+        run: python -m pip install --disable-pip-version-check --quiet 'numpy==2.4.0' 'numba==0.64.0'
+      - name: Generate upstream Numba RNG reference and independent MT reference
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: 'workqueue'
+        run: |
+          test "$(git hash-object src/spektrafilm/utils/fast_stats.py)" = 9e80d29ce6b9f7820ae70f5c09da15edfaa70a0d
+          test "$(git hash-object src/spektrafilm/model/grain.py)" = f2d2b23e3eab4f4a1d919f69bcb4aceb714e024d
+          python ios/scripts/generate_source_numba_fast_counts.py
+          python ios/scripts/generate_source_mt19937.py
+      - name: Compile Swift functions exactly as embedded in v1.8.43 iPhone app
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCountsDiagnostic.swift \
+            ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift \
+            ios/tests/SourceNumbaOnDeviceDiagnosticSmoke.swift \
+            -o /tmp/SourceNumbaOnDeviceDiagnosticSmoke
+      - name: Execute actual iPhone diagnostic, repeatability and negative-path smoke
+        run: /tmp/SourceNumbaOnDeviceDiagnosticSmoke
+      - name: State no live-device certification
+        run: |
+          echo "PASS: actual iPhone diagnostic entrypoint's numerical output and UI wiring"
+          echo "NOT CERTIFIED: installed-on-iPhone hardware, Numba parallel RNG, full-image parity"
