@@ -86,7 +86,7 @@ jobs:
           assert "statusReportSheet" in c
           print("PASS: status then photo then safe-bottom menu; both docks clear menu; long hold and diagnostics retained")
           PY
-      - name: Verify edge drawer gestures and three-row compact switch UI
+      - name: Verify tap-only snapped edge drawers and three-row compact switch UI
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -99,10 +99,10 @@ jobs:
               'private func openAdjustmentDrawer()',
               'private func closeAdjustmentDrawer()',
               'edgeDrawerTab',
-              'g.translation.width > 28',
-              'g.translation.width < -28',
-              'if g.translation.width < -32',
-              'if g.translation.width > 32',
+              'Button(action: closeFilmDrawer)',
+              'Button(action: closeAdjustmentDrawer)',
+              '点击展开左侧胶片相纸拨轮',
+              '点击展开右侧全屏宽度调节面板',
               'frontDrawer = .film',
               'frontDrawer = .adjustment',
               'private var compactMainSwitches: some View',
@@ -129,7 +129,12 @@ jobs:
           assert src.count('onTapGesture(count: 2)') >= 6
           assert 'wheelsCollapsed' not in src and 'adjustmentCollapsed' not in src
           assert 'wheelOffset' not in src and 'adjustOffset' not in src
-          print("PASS: left swipe-out and right full-width drawer, last-open on top, compact toggle/group/parameter rows, all six original settings groups")
+          # Only the before/after photo comparison needs a drag gesture.
+          # Neither edge drawer may install a DragGesture or simultaneousGesture.
+          assert 'DragGesture(minimumDistance: 16)' not in src
+          assert '.simultaneousGesture(' not in src
+          assert src.count('.gesture(') == 1
+          print("PASS: tap-only left film/right full-width drawers, edge open/close buttons, overlap order, compact three-row controls and six settings groups")
           PY
       - name: Install XcodeGen
         run: brew install xcodegen

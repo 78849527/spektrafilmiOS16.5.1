@@ -418,8 +418,9 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    /// A single thin vertical handle remains touchable at either edge.
-    /// Film opens by tap/right swipe; adjustment by tap/left swipe.
+    /// An always-touchable edge button expands each snapped drawer.
+    /// No drawer swipe/drag gesture: avoids conflicts with the long-hold
+    /// original preview, film/paper wheels, and iOS 16.5.1 cold start.
     private func edgeDrawerTab(_ title: String, symbol: String,
                                side: DrawerSide) -> some View {
         Button {
@@ -441,18 +442,8 @@ struct FloatingEditorWorkspace: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(side == .film
-            ? "点击或向右滑动展开左侧胶片相纸拨轮"
-            : "点击或向左滑动展开右侧全屏宽度调节面板")
-        .gesture(
-            DragGesture(minimumDistance: 16)
-                .onEnded { g in
-                    if side == .film && g.translation.width > 28 {
-                        openFilmDrawer()
-                    } else if side == .adjustment && g.translation.width < -28 {
-                        openAdjustmentDrawer()
-                    }
-                }
-        )
+            ? "点击展开左侧胶片相纸拨轮"
+            : "点击展开右侧全屏宽度调节面板")
     }
 
     private func wheelDock(width: CGFloat) -> some View {
@@ -474,12 +465,6 @@ struct FloatingEditorWorkspace: View {
             .frame(height: 38)
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 16)
-                    .onEnded { g in
-                        if g.translation.width < -32 { closeFilmDrawer() }
-                    }
-            )
 
             if wheelExpanded {
                 Divider().padding(.horizontal, 6)
@@ -576,12 +561,6 @@ struct FloatingEditorWorkspace: View {
             .frame(height: 38)
             .padding(.horizontal, 9)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 16)
-                    .onEnded { g in
-                        if g.translation.width > 32 { closeAdjustmentDrawer() }
-                    }
-            )
             if adjustmentExpanded {
                 Divider()
                 adjustmentControls
