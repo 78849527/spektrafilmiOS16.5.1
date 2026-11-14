@@ -506,8 +506,12 @@ struct FloatingEditorWorkspace: View {
             toolButton("camera.fill", name: "NextLevel 专业拍照并直接冲印", action: onOpenCamera)
                 .disabled(model.busy)
             if model.capturedRAWURL != nil {
-                toolButton("doc", name: "分享拍摄的原始 DNG 文件", action: onShareRaw)
+                toolButton("doc", name: "分享保留的原始 RAW 文件", action: onShareRaw)
                     .disabled(model.busy)
+                toolButton("checkmark.shield", name: "检测真实 Apple RAW 后端（不改变原片）") {
+                    model.probePreservedRAWBackend()
+                }
+                .disabled(model.busy)
             }
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 Image(systemName: "photo")
