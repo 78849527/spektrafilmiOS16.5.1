@@ -814,8 +814,7 @@ struct SpectralPhysics {
                 weights: pWeights, reference: printReference, printEV: 0.0,
                 preflashRaw: opticalPreflashRaw,
                 opticalPrint: useOriginalPrintOptics,
-                sourceHD: sourcePaperHDCurve,
-                paperStageObserver: paperStageObserver
+                sourceHD: sourcePaperHDCurve
             )
         }
         let midLinear = Self.scanLinear(
@@ -1234,7 +1233,8 @@ struct SpectralPhysics {
                 morph: printMorphCurve,
                 preflashRaw: opticalPreflashRaw,
                 opticalPrint: useOriginalPrintOptics,
-                sourceHD: sourcePaperHDCurve
+                sourceHD: sourcePaperHDCurve,
+                paperStageObserver: paperStageObserver
             )
             substrate = paper
         }
