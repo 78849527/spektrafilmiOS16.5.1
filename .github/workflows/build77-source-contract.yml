@@ -354,6 +354,7 @@ jobs:
             ios/SpektraFilmPort/SpectralPhysics.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/SpektraFilmPort/Build78HighBitDepthIngress.swift \
+            ios/SpektraFilmPort/Build78FloatTIFFIngress.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
@@ -411,6 +412,7 @@ jobs:
             ios/tests/SourceFloat64ProfileValidation.swift \
             ios/tests/SourceHDInterpolationValidation.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
+            ios/tests/Build78FloatTIFFValidation.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Validate actual in-production optical paper stage taps
