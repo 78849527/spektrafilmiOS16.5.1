@@ -107,6 +107,14 @@ def main():
         use_fast_stats=False,
     )
 
+    # Warm the actual source Numba lognormal kernel (with micro active)
+    # BEFORE reseeding. A first-call compilation must not be mistaken for
+    # NumPy/SciPy/Numba random-stream parity evidence.
+    original_micro(
+        np.full((2,2,3),0.15,dtype=np.float64), (0.0,30.0), 0.3
+    )
+    seed_numba_one_worker(8888)
+
     OUT.mkdir(parents=True,exist_ok=True)
     manifest={"scope":"ACTUAL unmodified original grain.py: 9 SciPy layers + dye cloud Gaussian + single worker Numba micro + final blur",
               "source_sha":BLOBS,"numba_seed":8888,
