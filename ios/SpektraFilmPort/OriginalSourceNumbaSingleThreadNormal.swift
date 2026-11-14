@@ -26,6 +26,12 @@ struct OriginalSourceNumbaSingleThreadNormal {
         self.mt = OriginalSourceMT19937(seed: seed)
     }
 
+    /// Numba legacy np.random.rand() consumes exactly two MT words.
+    /// Keep this separate from nextNormal()'s cached Gaussian output.
+    mutating func nextUniform() -> Double {
+        mt.randomSample()
+    }
+
     mutating func nextNormal() throws -> Double {
         if let cached = cachedNormal {
             cachedNormal = nil
