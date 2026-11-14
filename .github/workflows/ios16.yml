@@ -1270,7 +1270,7 @@ jobs:
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
               --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.39 - source TH-KG3-L enlarger lens" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.39 Build64. Original TH-KG3-L 3400K Schott KG3 plus measured Canon lens-transmission source illuminant is now selectable in original enlarger settings with correct default neutral CC (0,65,55). Native stage verified against upstream Python 81-wavelength Double reference. Retains v1.8.38 Mallett 2019 and UV/IR source filters, v1.8.37 type-erased adjustment crash mitigation, iOS 16.5 minimum and original optics/DIR/film-print chain. Native iPhone full-image Float64/RNG/GPU numerical certification and on-device drawer regression remain UNVERIFIED. Not a signed/production release; IPA requires signing." \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.39 Build64. Original TH-KG3-L 3400K Schott KG3 plus measured Canon lens-transmission source illuminant is now selectable in original enlarger settings with correct default neutral CC (0,65,55). Native stage verified against upstream Python 81-wavelength Double reference. Retains v1.8.38 Mallett 2019 and UV/IR source filters, v1.8.37 type-erased adjustment crash mitigation, iOS 16.5 minimum and original optics/DIR/film-print chain. Native iPhone full-image Float64/RNG/GPU numerical certification and on-device drawer regression remain UNVERIFIED. Not a signed/production release; IPA requires signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
