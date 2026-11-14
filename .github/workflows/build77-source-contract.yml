@@ -203,12 +203,26 @@ jobs:
           python ios/scripts/generate_print_optics.py
           test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
           test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
-          test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
           test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSourceCameraReference.swift
           echo "Original source fixture generation complete; no algorithm substitutions"
+      - name: Configure exact upstream Numba reference generator toolchain
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Generate original fast-statistics and scanner-glare Swift fixtures
+        env:
+          NUMBA_NUM_THREADS: "1"
+          NUMBA_THREADING_LAYER: "workqueue"
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==2.4.0' 'numba==0.64.0' 'scipy==1.16.3'
+          python ios/scripts/generate_source_numba_fast_counts.py
+          python ios/scripts/generate_source_scanner_glare.py
+          test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
       - name: Generate and compile unsigned iPhoneOS 16.5.1 app (no IPA)
         run: |
           brew install xcodegen
