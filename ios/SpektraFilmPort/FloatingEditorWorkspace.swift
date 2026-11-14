@@ -443,7 +443,7 @@ struct FloatingEditorWorkspace: View {
         .accessibilityLabel(side == .film
             ? "点击或向右滑动展开左侧胶片相纸拨轮"
             : "点击或向左滑动展开右侧全屏宽度调节面板")
-        .simultaneousGesture(
+        .gesture(
             DragGesture(minimumDistance: 16)
                 .onEnded { g in
                     if side == .film && g.translation.width > 28 {
@@ -474,7 +474,7 @@ struct FloatingEditorWorkspace: View {
             .frame(height: 38)
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
-            .simultaneousGesture(
+            .gesture(
                 DragGesture(minimumDistance: 16)
                     .onEnded { g in
                         if g.translation.width < -32 { closeFilmDrawer() }
@@ -576,7 +576,7 @@ struct FloatingEditorWorkspace: View {
             .frame(height: 38)
             .padding(.horizontal, 9)
             .contentShape(Rectangle())
-            .simultaneousGesture(
+            .gesture(
                 DragGesture(minimumDistance: 16)
                     .onEnded { g in
                         if g.translation.width > 32 { closeAdjustmentDrawer() }
