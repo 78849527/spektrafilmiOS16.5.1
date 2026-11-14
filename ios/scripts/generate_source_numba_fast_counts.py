@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numba
 import numpy as np
-from numba import njit
+from numba import njit, prange
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src/spektrafilm/utils/fast_stats.py"
@@ -30,14 +30,22 @@ def git_blob(path: Path) -> str:
     ).hexdigest()
 
 
-@njit
+@njit(parallel=True)
 def seed_numba(seed):
-    np.random.seed(seed)
+    # Seed the *same parallel-worker state* used by upstream fast_poisson
+    # and fast_binomial. On macOS ARM, seeding a nonparallel @njit
+    # function can touch a different Numba TLS state from prange.
+    for _ in prange(1):
+        np.random.seed(seed)
 
 
-@njit
+@njit(parallel=True)
 def next_source_uniform():
-    return np.random.rand()
+    # Probe the upstream prange worker, NOT a separate sequential TLS.
+    output = np.empty(1, dtype=np.float64)
+    for i in prange(1):
+        output[i] = np.random.rand()
+    return output[0]
 
 
 def swift_doubles(values):
@@ -63,6 +71,7 @@ def main():
     spec.loader.exec_module(upstream)
 
     numba.set_num_threads(1)
+    assert numba.get_num_threads() == 1
     # Warm the Numba jit before establishing the explicit RNG seed.
     upstream.fast_poisson(np.asarray([1.0, 35.0], dtype=np.float64))
     upstream.fast_binomial(
