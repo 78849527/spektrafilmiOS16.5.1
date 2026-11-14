@@ -144,7 +144,8 @@ enum OriginalSourcePhysicalGrain {
         var probabilities=[Double](repeating:0,count:pixels)
         var rates=[Double](repeating:0,count:pixels)
         var saturations=[Double](repeating:0,count:pixels)
-        var cloud=[Double](repeating:0,count:pixels*3)
+        var cloud=settings.dyeCloudBlurUM>0
+            ? [Double](repeating:0,count:pixels*3) : []
         for ch in 0..<3 {
             for sl in 0..<3 {
                 let li=sl*3+ch
