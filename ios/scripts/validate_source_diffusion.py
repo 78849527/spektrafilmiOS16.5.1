@@ -113,7 +113,11 @@ def main():
         proc=subprocess.run([str(exe)],check=True,
                             capture_output=True,text=True)
     parsed={}
+    source_guards_seen = False
     for line in proc.stdout.splitlines():
+        if line.strip() == "SOURCE_GUARDS_PASS":
+            source_guards_seen = True
+            continue
         row=line.strip().split(",")
         case=int(row[1])
         entry=parsed.setdefault(case,{"results":[]})
@@ -131,6 +135,7 @@ def main():
         else:
             raise AssertionError("Unexpected Swift output "+line)
     assert set(parsed)==set(range(4))
+    assert source_guards_seen, "Native source bypass/error guards did not execute"
     maximum=0.0
     for k,w,h,settings,rgb in source_cases():
         got=parsed[k]
@@ -174,6 +179,8 @@ def main():
         maximum=max(maximum,float(error))
         print(f"PASS: {settings.filter_family}: {w}x{h}, r={radius}, "
               f"max absolute Double FFT error {error:.3g}")
+    print("PASS: source inactive/zero strength/zero scale bypass and "
+          "strict fail-closed invalid-input guards")
     print("PASS: four full source Python PSF+reflect+FFT source stages "
           f"on native Swift, max error {maximum:.3g}<1e-12")
 if __name__=="__main__":
