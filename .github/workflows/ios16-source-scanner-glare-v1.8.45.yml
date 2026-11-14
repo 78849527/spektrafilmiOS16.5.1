@@ -35,7 +35,7 @@ jobs:
           python-version: '3.13'
       - name: Install pinned source Numba and NumPy
         run: |
-          python -m pip install --disable-pip-version-check --quiet 'numpy==2.4.0' 'numba==0.64.0'
+          python -m pip install --disable-pip-version-check --quiet 'numpy==2.4.0' 'numba==0.64.0' 'scipy==1.16.3'
           python -c "import numpy,numba; print(numpy.__version__,numba.__version__)"
       - name: Execute unchanged glare.py + Numba fast_stats + original FIR/YVV
         env:
