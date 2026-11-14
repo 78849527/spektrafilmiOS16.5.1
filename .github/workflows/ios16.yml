@@ -209,7 +209,7 @@ jobs:
               'guard adjustmentExpanded else { return }',
               'guard adjustmentExpanded && adjustmentRowsReady else { return }',
               'if adjustmentRowsReady {',
-              'if adjustmentDetailReady {',
+              'guard adjustmentDetailReady else {',
               'LazyHStack(spacing: 5)',
               'Button(action: closeAdjustmentDrawer)',
               'private var featureRow: AnyView',
