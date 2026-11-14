@@ -68,6 +68,87 @@ enum Build78FloatTIFFValidation {
         return bytes as Data
     }
 
+
+    // Build78/07: real ImageIO binary16 TIFF; unsupported OS encoders
+    // must fail closed rather than promoting the input through RGBA8.
+    // A source binary16 value is always exactly representable in Double.
+    static func evaluateHalf() throws {
+        let words:[UInt16] = [
+            0xbc00,0x0000,0x3e00,0x3c00,
+            0x0001,0x8000,0x4100,0x3c00,
+            0x3c00,0xc000,0x3800,0x3c00,
+            0x3400,0x3a00,0x3c00,0x3c00,
+            0x3555,0x7bff,0x0001,0x3c00,
+            0xb800,0x0400,0x3c00,0x3c00
+        ]
+        var data=Data()
+        for word in words {
+            data.append(UInt8(truncatingIfNeeded:word))
+            data.append(UInt8(truncatingIfNeeded:word >> 8))
+        }
+        guard let profile=CGColorSpace(name:CGColorSpace.extendedSRGB),
+              let provider=CGDataProvider(data:data as CFData),
+              let image=CGImage(
+                width:3,height:2,bitsPerComponent:16,
+                bitsPerPixel:64,bytesPerRow:24,space:profile,
+                bitmapInfo:CGBitmapInfo(rawValue:
+                    CGBitmapInfo.floatComponents.rawValue |
+                    CGBitmapInfo.byteOrder16Little.rawValue |
+                    CGImageAlphaInfo.noneSkipLast.rawValue),
+                provider:provider,decode:nil,
+                shouldInterpolate:false,intent:.defaultIntent
+              ) else {
+            print("UNAVAILABLE Build78 actual Float16 CGImage construction; "
+                  + "Float16 TIFF not certified on this host")
+            return
+        }
+        guard let file=try? encodedTIFF(image),
+              let src=CGImageSourceCreateWithData(file as CFData,nil),
+              let actual=CGImageSourceCreateImageAtIndex(src,0,nil) else {
+            print("UNAVAILABLE Build78 Float16 TIFF ImageIO encoding; "
+                  + "retain fail-closed production decoder")
+            return
+        }
+        let isFloating=actual.bitmapInfo.contains(.floatComponents)
+            && (actual.bitsPerComponent==16 ||
+                actual.bitsPerComponent==32)
+        let tagged=actual.colorSpace.map { CFEqual($0,profile) } ?? false
+        if !isFloating || !tagged {
+            var unexpectedlyAccepted=false
+            do { _=try OriginalSourcePixelIO.decode(file)
+                 unexpectedlyAccepted=true }
+            catch {}
+            guard !unexpectedlyAccepted else {
+                throw Failure.invalid(
+                    "Build78 Float16 TIFF silently accepted an unverified "
+                    + "integer or incorrectly tagged ImageIO conversion")
+            }
+            print("PASS Build78 Float16 TIFF fail-closed: ImageIO "
+                  + "returned bpc=\\(actual.bitsPerComponent), "
+                  + "float=\\(actual.bitmapInfo.contains(.floatComponents)), "
+                  + "tagged extended sRGB=\\(tagged)")
+            return
+        }
+        let frame=try OriginalSourcePixelIO.decode(file)
+        guard frame.width==3,frame.height==2,frame.rgb.count==18 else {
+            throw Failure.invalid("Build78 Float16 TIFF decoded wrong shape")
+        }
+        for pixel in 0..<6 {
+            for c in 0..<3 {
+                let expected=Double(Float16(bitPattern:words[pixel*4+c]))
+                let got=frame.rgb[pixel*3+c]
+                guard got.bitPattern==expected.bitPattern else {
+                    throw Failure.invalid(
+                        "Float16 TIFF lost exact sample at "
+                        + "\\(pixel),\\(c): \\(expected) != \\(got)")
+                }
+            }
+        }
+        print("PASS Build78 genuine Float16 TIFF 18/18 exact CPU Double "
+              + "samples, including signed zero, subnormal, negative "
+              + "and superwhite; only current ImageIO host certified")
+    }
+
     static func evaluate() throws {
         let bytes=try encodedTIFF(originalImage())
         guard let src=CGImageSourceCreateWithData(bytes as CFData,nil),
@@ -139,12 +220,13 @@ enum Build78FloatTIFFValidation {
                 "Build78 wrong: Float32 P3 TIFF silently passed as extended sRGB"
             )
         }
+        try evaluateHalf()
         print(
             "PASS Build78 actual Float32 TIFF 3x2 provider: 18/18 samples "
             + "equal Double(Float32), negative and >1 preserved, TIFF ICC "
             + "and packing checked, float P3 rejected, "
             + "resized export explicitly rejected; "
-            + "does NOT establish ProPhoto, EXR, Float16 or full-frame parity."
+            + "does NOT establish ProPhoto, EXR, device Float16 or full-frame parity."
         )
     }
 }
