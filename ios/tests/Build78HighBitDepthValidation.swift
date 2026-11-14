@@ -18,7 +18,7 @@ enum Build78HighBitDepthValidation {
     }
 
     static func fixture(
-        space:CGColorSpace,alpha:UInt16=65535
+        space:CGColorSpace,alpha:UInt16=65535,declareAlpha:Bool=false
     ) throws -> (CGImage,[UInt16]) {
         let values:[UInt16]=[
             0,1023,65535,alpha, 65535,0,32768,alpha,
@@ -35,7 +35,8 @@ enum Build78HighBitDepthValidation {
                 width:3,height:2,bitsPerComponent:16,bitsPerPixel:64,
                 bytesPerRow:24,space:space,
                 bitmapInfo:CGBitmapInfo(
-                    rawValue:CGImageAlphaInfo.noneSkipLast.rawValue |
+                    rawValue:(declareAlpha ? CGImageAlphaInfo.last.rawValue :
+                        CGImageAlphaInfo.noneSkipLast.rawValue) |
                         CGBitmapInfo.byteOrder16Little.rawValue
                 ),
                 provider:provider,decode:nil,shouldInterpolate:false,
@@ -150,7 +151,7 @@ enum Build78HighBitDepthValidation {
         let (p3Image,_)=try fixture(space:p3)
         try expectReject(try encode(p3Image,type:.tiff),label:"16-bit P3 TIFF")
 
-        let (alphaImage,_)=try fixture(space:srgb,alpha:32768)
+        let (alphaImage,_)=try fixture(space:srgb,alpha:32768,declareAlpha:true)
         try expectReject(try encode(alphaImage,type:.tiff),
                          label:"nonopaque alpha TIFF")
 
