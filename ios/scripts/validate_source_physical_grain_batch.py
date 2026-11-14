@@ -15,8 +15,8 @@ source=(root/"src/spektrafilm/model/grain.py").read_text()
 test=(root/"ios/tests/SourcePhysicalImageParity.swift").read_text()
 generator=(root/"ios/scripts/generate_source_physical_grain.py").read_text()
 version=(root/"ios/project.yml").read_text()
-assert 'MARKETING_VERSION: "1.8.49"' in version
-assert 'CURRENT_PROJECT_VERSION: "74"' in version
+assert 'MARKETING_VERSION: "1.8.50"' in version
+assert 'CURRENT_PROJECT_VERSION: "75"' in version
 assert 'iOS: "16.5"' in version
 for token in (
     'def apply_grain_to_density_layers(',
@@ -90,6 +90,32 @@ assert "OriginalSourceGrainProductionDiagnostic.evaluate()" in model
 assert 'OriginalSourcePhysicalImage.develop(' in test
 assert 'grainDensity' in test
 assert 'sourceGrainFinalDensity' in test
+# Build75 compares the very SAME Python-Hanatos/DIR source image through
+# pinned unmodified grain.py and true print/scanner RGB in Swift production.
+physical_gen=(root/"ios/scripts/generate_source_physical_frame.py").read_text()
+assert 'source_grain.apply_grain_to_density_layers(' in physical_gen
+assert 'density.interp_density_cmy_layers(' in physical_gen
+assert 'grain_printed = source_optical_paper_scan(grain_density)' in physical_gen
+assert '"grainSublayers"' in physical_gen and '"grainPrinted"' in physical_gen
+assert '"kodak_grain_micro_yvv"' in physical_gen
+assert 'seed_numba_one_worker(8888)' in physical_gen
+assert 'manifest.cases.count==4' in test
+assert 'fullGrainRGBChannels' in test
+assert '"grainPrinted","printed"' in test
+assert 'fixture.numba_micro_enabled' in test
+# Reuse of CPU Float64 scratch arrays changes only allocations,
+# never the 9 source SciPy seeds, stochastic order or blur mathematics.
+for token in (
+    'var probabilities=[Double](repeating:0,count:pixels)',
+    'var rates=[Double](repeating:0,count:pixels)',
+    'var saturations=[Double](repeating:0,count:pixels)',
+    'var cloud=settings.dyeCloudBlurUM>0',
+):
+    assert token in grain,token
+assert grain.count('var probabilities=')==1
+assert grain.count('var rates=')==1
+assert grain.count('var saturations=')==1
+assert grain.count('var cloud=')==1
 assert 'generate_source_physical_grain.py' in (root/".github/workflows/ios16-source-grain-batch-v1.8.48.yml").read_text()
 assert 'BLOBS={' in generator and 'model/grain.py' in generator
 assert 'grain.apply_grain_to_density_layers(' in generator
