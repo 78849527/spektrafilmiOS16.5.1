@@ -329,6 +329,8 @@ def compare_taps(args: argparse.Namespace) -> None:
                 "Candidate/true-original Python routing differs")
         require(mapping_report["float_storage"] == "<f8",
                 "Candidate mapping must preserve exact Float64 payloads")
+        require(mapping_report["width"] > 0 and mapping_report["height"] > 0,
+                "Invalid captured iOS pixel dimensions")
         alias = mapping_report["source_to_ios_actual_observer"]
         require(set(alias) == set(reference["taps"]),
                 "Source candidate tap names must match the real Python topology")
@@ -343,6 +345,11 @@ def compare_taps(args: argparse.Namespace) -> None:
     records = {}
     for tap in reference["taps"]:
         observed_name = alias.get(tap, tap)
+        require(isinstance(observed_name, str)
+                and len(observed_name) <= 100 and observed_name
+                and all(ch.isascii() and (ch.isalnum() or ch in "-_")
+                        for ch in observed_name),
+                f"Unsafe iOS callback file name for source stage {tap}")
         path = iosdir / (observed_name + ".npy")
         require(path.is_file(), f"Missing iOS stage: {tap} / {observed_name}")
         if args.candidate_mapping:
