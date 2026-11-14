@@ -32,6 +32,7 @@ on:
       - "ios/tests/Build77NeutralFilterParity.swift"
       - "ios/tests/SourceFloat64ProfileValidation.swift"
       - "ios/SpektraFilmPort/Build77OneShotEvidence.swift"
+      - "ios/tests/SpectralValidation.swift"
       - "ios/SpektraFilmPort/Build77ReferenceInput.swift"
       - "ios/SpektraFilmPort/Build78HighBitDepthIngress.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
@@ -412,7 +413,18 @@ jobs:
         run: |
           test -s ios/verification/generated-physical-v1.8.22/manifest.json
           test -s ios/verification/generated-physical-v1.8.22/kodak_neutral_fir.rgbPre.f64le
-          /tmp/SpektrafilmSpectralValidation
+          mkdir -p build77-evidence/host-original-physical-tapes
+          BUILD77_HOST_ONESHOT_OUTPUT="$PWD/build77-evidence/host-original-physical-tapes" \
+            /tmp/SpektrafilmSpectralValidation
+          test "$(find build77-evidence/host-original-physical-tapes -name one-shot-manifest.json | wc -l | tr -d ' ')" -eq 1
+          echo "Actual macOS production code exercised all three diagnostic topologies; not device certification."
+      - name: Keep complete macOS source-stage tapes for Python and manual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-three-branch-ACTUAL-SWIFT-host-source-tapes-NOT-iPhone
+          path: build77-evidence/host-original-physical-tapes/
+          if-no-files-found: warn
       - name: Generate and compile unsigned iPhoneOS 16.5.1 Build77 app
         run: |
           brew install xcodegen
