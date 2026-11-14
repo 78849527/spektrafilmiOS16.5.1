@@ -197,3 +197,47 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
 - These checks are stage/local CPU and iPhoneOS compilation evidence,
   NOT complete canonical Python↔iOS seven-tap numerical
   equivalence or a physical iPhone device run. Build77 01–05 is open.
+
+## Build77/02 real Python rgb_pre source preprocessing (sRGB, no crop/rescale)
+
+- The locked Python source `SimulationPipeline._preprocess` calls
+  `FilmingStage.auto_exposure` and `ResizingService.crop_and_rescale`
+  in that order. Source default parameters use **ProPhoto RGB** and
+  `input_cctf_decoding=false`, so source `rgb_pre` is not generally
+  identical to decoded mobile sRGB.
+- `OriginalSourcePhysicalImage.developInPlace` now emits read-only
+  `rgbPre` from the REAL pre-photon input. When source camera metering
+  is selected, the stored Double values are those actually given to
+  `engine.sourceCameraRaw`; in the no-camera route the stage is an
+  identity on the 8-bit sRGB input. Normal rendering does not allocate
+  this diagnostic buffer, and the diagnostic path increases its
+  preflight memory budget by 24 bytes per pixel.
+- The tape recorder's required stage order now includes
+  `iosInput → rgbPre → logRaw` in both negative-print and direct-film
+  routes. It never relabels the other iOS internals as certified
+  original Python seven-tap outputs.
+- `ios/scripts/generate_build77_rgb_pre_original.py` executes the
+  original upstream Python `SimulationPipeline._preprocess`,
+  `FilmingStage.auto_exposure`, `ResizingService.crop_and_rescale`
+  and `utils.autoexposure.measure_autoexposure_ev`, **without
+  rewriting method bodies**. To avoid importing unrelated RAW
+  `exiv2`, only the exact pinned upstream class AST definitions are
+  compiled with their original method bodies and a minimal fixture
+  environment; original meter utility is run unchanged. All four
+  original source Git blob IDs are checked before executing.
+- Independent Float64 reference uses `kodak_neutral_fir` 19×13
+  encoded sRGB fixture, CCTF decoding enabled, center-weighted
+  metering, crop disabled, upscale factor 1.0. Its source file
+  `kodak_neutral_fir.rgbPre.f64le` is saved with SHA256 in the
+  generated manifest. The original no-auto-exposure branch is also
+  checked for full-image identity.
+- Actual Swift production runs the identical fixture with selected
+  `.centerWeighted` metering, records its pre-photon values,
+  numerically compares every channel against the independently
+  generated Python source, and requires the final scan RGB to be
+  bit-identical with and without any observer.
+- **Scope limitation:** this is not full upstream default ProPhoto
+  preprocessing, arbitrary crop/skimage rescale, RAW/ICC equivalence,
+  stochastic full-frame parity, complete seven-tap iOS equivalence
+  or an iPhone device acceptance. Build77 is still IN PROGRESS.
+  CI performs no IPA packaging or publication.
