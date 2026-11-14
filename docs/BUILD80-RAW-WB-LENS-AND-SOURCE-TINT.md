@@ -34,6 +34,14 @@
 - 工作流 `.github/workflows/build77-source-contract.yml` 把新增源文件编进 host Swift 主测试，之后实际编译 arm64-apple-ios16.5；同时跑原有 Python 参考、28 胶片数据与阶段验证。
 - 本轮 CI：[GitHub Actions 43626039906](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43626039906)；只以最终成功的对应提交作结果判断。尚无新增 IPA。
 
+## Build80/10 续批：Python 源 RAW 白点与 Von Kries/CAT02 原生移植
+
+- **新增真实 Swift 模块**：`Build80OriginalRAWWhiteBalance.swift` 使用 CPU Double 实现固定源码的 `_whitepoint_xyz_from_temperature` 与 `_apply_white_balance_adaptation`。4000K 及以上按 CIE Illuminant D（7000K 处分段）；低于 4000K 按 Kang 2002（2222K 处分段）；对 ACES2065-1/AP0 先 RGB→XYZ，再用默认 **CAT02** 的 Von Kries 矩阵变换，最后 XYZ→RGB 和源规定的 Float32 转换。
+- **原版 Python 独立参照**：`ios/scripts/build80_raw_wb_original_oracle.py` 严格验证 Python 原文件 Git blob SHA 与 `colour-science==0.4.6`，直接运行原函数 AST，而非复写一个伪 Python oracle。对 2000、2850、3999、4000、6504、7000、9000、25000K 共 8 组 × 18 Float32 色彩通道生成 Python 参考。
+- **生产 Swift / 原 Python 数值比对**：`Build80OriginalRAWWhiteBalanceValidation.swift` 在源参考的每个白点 XYZ 上要求绝对误差 ≤2×10^-10；每像素 Float32 通道要求误差 ≤2×10^-6 + 2×10^-6 × |Python 值|，输出 MAE、RMSE、max。CI 不通过即停止认证。
+- 科学边界：此处只移植了 **rawpy 已提供线性 ACES 后的后处理数学**。尚未实现原版 RAW 传感器解码、rawpy/Lensfun 全链路，Apple 4×4 诊断输出是 extended-linear-sRGB，**绝不直接送入该 ACES 算法冒充已完成 RAW 移植**。
+- 测试：[最新 Build80 CI](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43627202219)。该链接最终状态、iPhoneOS 编译和样本误差必须按完成后的日志更新，不能提前写通过。
+
 ## 严格未完成边界
 
 - Apple CIRAWFilter 解码、X-Trans 去马赛克、白平衡、Tint 和镜头校正 **不等于** rawpy/LibRaw/Lensfun。
