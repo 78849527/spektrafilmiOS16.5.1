@@ -488,7 +488,7 @@ final class PhotoEditorModel: ObservableObject {
                     + "（尚未显影）"
                 capturedRAWURL=saved.url
                 status="已无损导入 ."+kind.rawValue.uppercased()
-                    + " 原片，SHA256="+saved.sha256.prefix(12)
+                    + " 原片，SHA256="+String(saved.sha256.prefix(12))
                     + "…，已保存至「文件」/ SpektraFilm RAW Imports。"
                     + "尚未执行 RAW 去马赛克；禁止使用内嵌 JPEG 代替。"
                 return
