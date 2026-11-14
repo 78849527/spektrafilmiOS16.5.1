@@ -43,7 +43,21 @@ enum Build78FloatTIFFIngress {
                 "Build78 TIFF 不是可验证的 IEEE754 Float32 通道，禁止当作 UInt32 读取"
             )
         }
-        try OriginalSourcePixelIO.requireExplicitSRGB(image)
+        // ImageIO represents float-channel TIFF sRGB pixels with the
+        // explicitly named EXTENDED sRGB ICC model to preserve negative
+        // and above-white values. This is extended-encoded sRGB, NOT
+        // extendedLinearSRGB and not an untagged/Display P3 profile.
+        // Numeric samples are passed through untouched to Float64; the
+        // downstream original spectral model still independently guards
+        // unsupported out-of-[0,1] ranges (no quiet clipping).
+        guard let colour=image.colorSpace,colour.model == .rgb,
+              let extended=CGColorSpace(name:CGColorSpace.extendedSRGB),
+              CFEqual(colour,extended) else {
+            throw Failure.invalid(
+                "Build78 Float32 TIFF 必须明确标注 extended sRGB；"
+                + "未标记、P3 或 extended-linear 不能暗中当作编码 sRGB"
+            )
+        }
         try OriginalSourcePixelIO.validatePixelDimensions(
             width:image.width,height:image.height,
             maximumAllowedPixels:maximumAllowedPixels
