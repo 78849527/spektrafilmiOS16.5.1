@@ -1,6 +1,4 @@
-#if os(iOS)
 import Foundation
-import UIKit
 import CryptoKit
 
 /// ONE device operation for all Build77 source stage tape branches.
@@ -29,7 +27,9 @@ enum Build77OneShotEvidence {
         let spatialPrint:Bool
     }
 
-    static func captureAll(deviceModel:String,systemVersion:String) throws -> URL {
+    static func captureAll(
+        deviceModel:String,systemVersion:String,outputDirectory:URL?=nil
+    ) throws -> URL {
         guard Build77ReferenceInput.bits.count ==
                 Build77ReferenceInput.width*Build77ReferenceInput.height*3
         else {
@@ -55,7 +55,7 @@ enum Build77OneShotEvidence {
             height:Build77ReferenceInput.height,
             rgb:Build77ReferenceInput.values
         )
-        guard let documents=FileManager.default.urls(
+        guard let documents=outputDirectory ?? FileManager.default.urls(
             for:.documentDirectory,in:.userDomainMask
         ).first else {
             throw Failure.invalid("Build77 无法找到文件应用诊断导出目录")
@@ -135,10 +135,10 @@ enum Build77OneShotEvidence {
                     test.name+"/candidate-source-tap-mapping.json"
             ])
         }
-        #if targetEnvironment(simulator)
-        let isSimulator=true
+        #if os(iOS) && !targetEnvironment(simulator)
+        let isRealIPhone=true
         #else
-        let isSimulator=false
+        let isRealIPhone=false
         #endif
         let manifest:[String:Any]=[
             "status":"REAL_IPHONE_STAGED_EVIDENCE_NOT_PYTHON_CERTIFIED",
@@ -151,7 +151,7 @@ enum Build77OneShotEvidence {
             "app_build":Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
             "app_version":Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
             "device_model":deviceModel,
-            "actual_hardware_device":!isSimulator,
+            "actual_hardware_device":isRealIPhone,
             "system_version":systemVersion,
             "cases":results,
             "certification_note":
@@ -170,4 +170,3 @@ enum Build77OneShotEvidence {
         return folder
     }
 }
-#endif
