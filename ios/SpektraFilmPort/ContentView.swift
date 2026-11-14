@@ -52,6 +52,7 @@ final class PhotoEditorModel: ObservableObject {
     @Published var originalPrintOpticsEnabled = false
     // Source TH-KG3 default; optional TH-KG3-L measured Canon lens.
     @Published var printIlluminant: OriginalPrintOptics.Illuminant = .thKG3
+    @Published var neutralPrintFiltersFromDatabase = true
     // Original Python EnlargerParams.diffusion_filter, opt-in.
     // Applied to full-frame paper photons before fitted paper H-D.
     @Published var printSourceDiffusionEnabled = false
@@ -286,6 +287,7 @@ final class PhotoEditorModel: ObservableObject {
         let print=OriginalPrintOptics.Settings(
             enabled:originalPrintOpticsEnabled,
             illuminant:printIlluminant,
+            neutralPrintFiltersFromDatabase:neutralPrintFiltersFromDatabase,
             normalizePrintExposure:normalizePrintExposure,
             printExposureCompensation:printExposureCompensation,
             cyanShift:printCyanShift,
@@ -355,7 +357,12 @@ final class PhotoEditorModel: ObservableObject {
                 "请选择原版 Mallett 2019 或关闭滤镜，不允许静默忽略"
             )
         }
-        let sourceHalation=OriginalSourceFilmHalation.routedSettings(
+        // Build77/03: source-physical mode must use the Python original
+        // per-film antihalation/use metadata and source halation presets.
+        // The familiar UI scatter/halation amount sliders remain multipliers;
+        // the underlying physical baseline is now stock-specific.
+        let stockHalation=try Build77StockHalation.originalPreset(filmID:filmID)
+        var sourceHalation=OriginalSourceFilmHalation.routedSettings(
             combinedEnabled:sourceFilmHalationEnabled,
             scatterToggle:scatterEnabled,
             halationToggle:halationEnabled,
@@ -365,6 +372,8 @@ final class PhotoEditorModel: ObservableObject {
             sourceHalationAmount:sourceFilmHalationAmount,
             sourceHalationScale:sourceFilmHalationScale
         )
+        sourceHalation.halationFirstSigmaUM=stockHalation.sigmaUM
+        sourceHalation.halationStrength=stockHalation.strength
         let p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
@@ -547,6 +556,7 @@ final class PhotoEditorModel: ObservableObject {
         let printOptics = OriginalPrintOptics.Settings(
             enabled: originalPrintOpticsEnabled,
             illuminant: printIlluminant,
+            neutralPrintFiltersFromDatabase:neutralPrintFiltersFromDatabase,
             normalizePrintExposure: normalizePrintExposure,
             printExposureCompensation: printExposureCompensation,
             cyanShift: printCyanShift,

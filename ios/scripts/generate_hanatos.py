@@ -106,6 +106,7 @@ def main():
     cie = np.asarray(colour.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"]
                      .copy().align(SHAPE).values, dtype=np.float64)
     matrices={}
+    prophoto_matrices={}
     for info, _ in originals:
         illum = reference_illuminant(info["reference_illuminant"])
         illum_xyz = np.einsum("w,wc->c", illum, cie)
@@ -117,6 +118,15 @@ def main():
         )
         assert mat.shape == (3,3)
         matrices[info["stock"]]=mat
+        # Original source default IOParams uses "ProPhoto RGB" and
+        # input_cctf_decoding=False. Preserve that colour-science CAT16
+        # matrix separately; never recast the source values as sRGB.
+        prophoto=np.asarray(colour.RGB_to_XYZ(
+            np.eye(3),colourspace="ProPhoto RGB",
+            apply_cctf_decoding=False,illuminant=illum_xy,
+            chromatic_adaptation_transform="CAT16"),dtype=np.float64)
+        assert prophoto.shape==(3,3) and np.isfinite(prophoto).all()
+        prophoto_matrices[info["stock"]]=prophoto
 
     lines = [
         "// ORIGINAL Hanatos2025 spectral irradiation TC response from upstream",
@@ -133,6 +143,11 @@ def main():
         lines.append("        " + q(stock) + ": [" +
                      ",".join(format(float(x), ".17g") for x in mat.ravel()) +
                      "],")
+    lines.append("    ]")
+    lines.append("    static let proPhotoRGBToXYZByFilm: [String: [Double]] = [")
+    for stock,mat in prophoto_matrices.items():
+        lines.append("        "+q(stock)+": ["+
+                     ",".join(format(float(x),".17g") for x in mat.ravel())+"],")
     lines.extend([
         "    ]",
         "    static let lutByFilm: [String: String] = [",
@@ -189,7 +204,18 @@ def main():
             lines.append(f'    static let refRaw{idx}: [Double] = ['+
                          ",".join(format(float(a),".16g") for a in y)+"]")
             idx+=1
-    lines.append("}")
+    # Independently calculated direct Python colour-science ProPhoto
+    # source default vectors, with the original sensor-integrated LUT.
+    lines.append("    static let proPhotoSourceReferences:"
+                 " [(stock:String,input:[Double],raw:[Double])] = [")
+    for info,_ in originals:
+        stock=info["stock"]
+        for x in sample:
+            raw=film_response(x,prophoto_matrices[stock],lut_map[stock])
+            fmt=lambda a: "["+",".join(format(float(v),".17g") for v in a)+"]"
+            lines.append("        (stock:"+q(stock)+",input:"+fmt(x)+
+                         ",raw:"+fmt(raw)+"),")
+    lines.extend(["    ]", "}"])
     DEST.write_text("\n".join(lines)+"\n", encoding="utf-8")
     precise_lines.extend(["    ]", "}"])
     PRECISE_DEST.write_text("\n".join(precise_lines)+"\n",encoding="utf-8")

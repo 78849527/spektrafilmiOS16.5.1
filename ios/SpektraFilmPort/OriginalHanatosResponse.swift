@@ -29,6 +29,14 @@ struct OriginalHanatosResponse {
     private let rgbToXYZ: [Double]
     private let n: Int
 
+    /// Original IOParams.input_color_space, with source CCTF semantics.
+    /// ProPhoto values in this branch are already linear
+    /// (input_cctf_decoding=false), exactly as in upstream defaults.
+    enum InputColorSpace: Sendable {
+        case sRGB
+        case proPhotoLinear
+    }
+
     /// Source-precision mode is the default. The previous Float16 storage
     /// remains available explicitly as a faster, quantized mobile alternative.
     /// Precision selects LUT STORAGE, not a different interpolation algorithm.
@@ -37,12 +45,25 @@ struct OriginalHanatosResponse {
         case mobileFloat16
     }
 
-    init(filmID: String, precision: Precision = .originalFloat64) throws {
+    init(
+        filmID: String, precision: Precision = .originalFloat64,
+        inputColorSpace: InputColorSpace = .sRGB
+    ) throws {
         let n = GeneratedHanatosData.dimension
+        let matrix: [Double]?
+        switch inputColorSpace {
+        case .sRGB:
+            matrix=GeneratedHanatosData.sRGBToXYZByFilm[filmID]
+        case .proPhotoLinear:
+            matrix=GeneratedHanatosData.proPhotoRGBToXYZByFilm[filmID]
+        }
         guard n >= 32,
-              let matrix = GeneratedHanatosData.sRGBToXYZByFilm[filmID],
-              matrix.count == 9 else {
-            throw DecodeError.unavailable("该胶片缺少原版 Hanatos CAT16 参考矩阵")
+              let matrix,
+              matrix.count == 9,
+              matrix.allSatisfy({ $0.isFinite }) else {
+            throw DecodeError.unavailable(
+                "该胶片缺少原版色彩空间 Hanatos CAT16 矩阵：" + filmID
+            )
         }
         rgbToXYZ = matrix
         self.n = n
@@ -129,8 +150,10 @@ struct OriginalHanatosResponse {
 
     func raw(linearRGB: [Double]) -> [Double] {
         guard linearRGB.count == 3 else { return [] }
-        // Original _rgb_to_tc_b: input linear-sRGB -> XYZ-D55 with CAT16.
-        // The adaptation matrix is generated via colour.RGB_to_XYZ at build.
+        // Original _rgb_to_tc_b: selected source linear RGB -> XYZ
+        // with the selected stock's reference illuminant and CAT16.
+        // The precise sRGB/ProPhoto matrix comes from colour.RGB_to_XYZ.
+        // CCTF decoding is performed by the upstream caller, not here.
         let m = rgbToXYZ
         let xyz = (0..<3).map { c in
             (0..<3).reduce(0.0) { sum, rgb in

@@ -189,7 +189,7 @@ enum SourceFloat64ProfileValidation {
             throw ValidationError.invalid("Original 20 film DIR profiles absent")
         }
 
-        // Optical constants and 128 neutral film×print enlarger spectra
+        // Optical constants and all 20×8=160 source neutral film×print spectra
         // are also independent exact copies of the original source f64.
         let optics:[(String,String,Int)]=[
             (GeneratedOriginalOptics.mallettBasis,
@@ -234,10 +234,10 @@ enum SourceFloat64ProfileValidation {
         }
         let pairs=GeneratedOriginalOptics.printIlluminantByPair
         let precisePairs=GeneratedOriginalOptics.sourceF64PrintIlluminantByPair
-        guard pairs.count==128,
+        guard pairs.count==160,
               Set(pairs.keys)==Set(precisePairs.keys) else {
             throw ValidationError.invalid(
-                "128 source enlarger filter pairs incomplete"
+                "160 source enlarger filter pairs incomplete"
             )
         }
         for (key,fast) in pairs {
@@ -251,7 +251,7 @@ enum SourceFloat64ProfileValidation {
               "\(truncatedMobile) were rounded in legacy Float32; " +
               "20 exact DIR curves (\(dirSamples) nodes), " +
               "20 full nine-layer measurement sets, 9 optical spectra " +
-              "and 128 real enlarger pair spectra. " +
+              "and 160 real enlarger pair spectra. " +
               "Source SHA256, NaN masks and mobile Float32 remain intact.")
     }
 }

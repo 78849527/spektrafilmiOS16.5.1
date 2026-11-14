@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// iOS 16.5.1 measured-spectra photo simulation.
 /// Ported ORIGINAL Spektrafilm components: Hanatos2025 colour-to-raw LUT,
@@ -122,6 +123,11 @@ struct SpectralPhysics {
                 record.sourceDensityCurvesLayersF64, count:2304,
                 enabled:sourceMeasuredFloat64, allowEmpty:true
             )
+            if sourceMeasuredFloat64 {
+                // Build77: verify that the exact production buffers still have
+                // the source JSON Float64 bytes. Fail closed on corruption.
+                try Self.verifySourceProfileSHA(record, id: id)
+            }
             if let dir = GeneratedDIRData.records[id] {
                 dirCorrectedCurves = try Self.decode(dir.correctedCurves, count: 768)
                 sourceCorrectedCurvesF64 = try Self.decodeOptionalSource(
@@ -168,6 +174,49 @@ struct SpectralPhysics {
                 materialMinima[channel] = channelMin
             }
             minimumDensity = materialMinima
+        }
+
+        /// Strict production-time source data integrity, including the
+        /// original 20 film-only 3×3 measured sublayers. This is a DATA
+        /// contract, not certification of every optical algorithm branch.
+        private static func verifySourceProfileSHA(
+            _ record: GeneratedSpectralData.Record, id: String
+        ) throws {
+            let fields: [(String, String, Int)] = [
+                ("log_sensitivity", record.sourceLogSensitivityF64, 243),
+                ("channel_density", record.sourceChannelDensityF64, 243),
+                ("base_density", record.sourceBaseDensityF64, 81),
+                ("log_exposure", record.sourceLogExposureF64, 256),
+                ("density_curves", record.sourceDensityCurvesF64, 768)
+            ]
+            var payload = Data()
+            for (label, encoded, count) in fields {
+                guard let bytes = Data(base64Encoded: encoded),
+                      bytes.count == count * 8 else {
+                    throw PhysicsError.invalid(
+                        "原版测量 Float64 数据缺失或损坏：" + id + "/" + label
+                    )
+                }
+                payload.append(bytes)
+            }
+            // Source JSON carries 256×3×3 measured layers for all
+            // 28 materials, including 8 print media. Never drop them.
+            guard let layers = Data(
+                base64Encoded: record.sourceDensityCurvesLayersF64
+            ), layers.count == 2304 * 8 else {
+                throw PhysicsError.invalid(
+                    "原版 256×3×3 Float64 曲线缺失或损坏：" + id
+                )
+            }
+            payload.append(layers)
+            let actual = SHA256.hash(data: payload).map {
+                String(format: "%02x", $0)
+            }.joined()
+            guard actual == record.sourceFloat64SHA256 else {
+                throw PhysicsError.invalid(
+                    "原版 Float64 SHA256 不匹配，拒绝静默降级：" + id
+                )
+            }
         }
 
         /// Explicit little-endian decode avoids unaligned Float pointers on
@@ -377,6 +426,7 @@ struct SpectralPhysics {
     private let isPositive: Bool
     private let hanatos: OriginalHanatosResponse
     private let cameraRawMethod: CameraRawMethod
+    private let cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace
     private let filmMatrix: [[Double]]    // film channel -> source linear RGB
     // Exact upstream colour.RGB_to_RGB(sRGB→sRGB) row-transform,
     // retained even for nominal identity to avoid 5e-5 source mismatch.
@@ -473,6 +523,7 @@ struct SpectralPhysics {
          hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64,
          sourceMeasuredFloat64: Bool = false,
          cameraRawMethod: CameraRawMethod = .hanatos2025,
+         cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB,
          cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
@@ -491,8 +542,16 @@ struct SpectralPhysics {
                 "请选择 Mallett 2019 光谱积分，禁止忽略所选滤镜"
             )
         }
+        guard cameraInputColorSpace != .proPhotoLinear ||
+                cameraRawMethod == .hanatos2025 else {
+            throw PhysicsError.invalid(
+                "原版 ProPhoto 输入尚未接入 Mallett 光谱反演，"
+                + "只能选择精确 Hanatos，禁止默默当成 sRGB"
+            )
+        }
         let originalHanatos = try OriginalHanatosResponse(
-            filmID: filmID, precision: hanatosPrecision
+            filmID: filmID, precision: hanatosPrecision,
+            inputColorSpace:cameraInputColorSpace
         )
         let positive = originalFilm.polarity == "positive"
         guard !printOptics.enabled || printOptics.isValid else {
@@ -504,6 +563,7 @@ struct SpectralPhysics {
         paper = originalPaper
         hanatos = originalHanatos
         self.cameraRawMethod = cameraRawMethod
+        self.cameraInputColorSpace = cameraInputColorSpace
         isPositive = positive
         useOriginalScanner = sourceScanner
         useReferenceBlackWhite = scannerBlackWhite
@@ -619,9 +679,11 @@ struct SpectralPhysics {
             }
             opticalLighting = OriginalPrintOptics.prepare(
                 source: unfiltered,
-                neutralCC: useLensLight ? [0, 65, 55] :
-                    (GeneratedOriginalOptics.neutralCMYByPair[printKey]
-                     ?? [0, 65, 55]),
+                neutralCC: try OriginalPrintOptics.sourceNeutralCC(
+                    filmID:filmID,paperID:paperID,
+                    settings:printOptics,
+                    neutralByPair:GeneratedOriginalOptics.neutralCMYByPair
+                ),
                 settings: printOptics,
                 filmBase: (0..<81).map { originalFilm.base($0) },
                 filmBaseValid: originalFilm.baseWavelengthValid,
@@ -1168,7 +1230,9 @@ struct SpectralPhysics {
     /// pipeline. A reversal film bypasses printing.
     func scanFilmDensity(_ filmDensity: [Double], paperEV: Double,
                          sourceLinearOutput: Bool = false,
-                         sourceXYZOutput: Bool = false) -> [Double] {
+                         sourceXYZOutput: Bool = false,
+                         paperStageObserver: (([Double], [Double]) -> Void)? = nil
+    ) -> [Double] {
         let resultDensity: [Double]
         let substrate: Profile
         if isPositive {
@@ -1182,7 +1246,8 @@ struct SpectralPhysics {
                 morph: printMorphCurve,
                 preflashRaw: opticalPreflashRaw,
                 opticalPrint: useOriginalPrintOptics,
-                sourceHD: sourcePaperHDCurve
+                sourceHD: sourcePaperHDCurve,
+                paperStageObserver: paperStageObserver
             )
             substrate = paper
         }
@@ -1379,7 +1444,11 @@ struct SpectralPhysics {
               cameraEV.isFinite && abs(cameraEV)<=4 else {
             throw PhysicsError.invalid("原版自动测光后的相机 RGB 或曝光无效")
         }
-        let linear=encodedRGB.map { Self.decodeSRGB($0) }
+        let linear: [Double]
+        switch cameraInputColorSpace {
+        case .sRGB: linear=encodedRGB.map { Self.decodeSRGB($0) }
+        case .proPhotoLinear: linear=encodedRGB
+        }
         let raw: [Double]
         switch cameraRawMethod {
         case .hanatos2025:
@@ -1424,7 +1493,11 @@ struct SpectralPhysics {
               cameraEV.isFinite && abs(cameraEV) <= 4 else {
             throw PhysicsError.invalid("源逐像素 Hanatos 输入或曝光无效")
         }
-        let linear = encodedRGB.map { Self.decodeSRGB($0) }
+        let linear: [Double]
+        switch cameraInputColorSpace {
+        case .sRGB: linear=encodedRGB.map { Self.decodeSRGB($0) }
+        case .proPhotoLinear: linear=encodedRGB
+        }
         let raw: [Double]
         switch cameraRawMethod {
         case .hanatos2025:
@@ -1499,7 +1572,8 @@ struct SpectralPhysics {
     ///   scanner XYZ/ACES without a second reprint or LUT interpolation.
     func sourceSpatialScanPrintedPhoton(
         _ photon:[Double],sourceLinearOutput:Bool=false,
-        sourceXYZOutput:Bool=false
+        sourceXYZOutput:Bool=false,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard !isPositive,useOriginalPrintOptics,
               let sourcePaperHDCurve,
@@ -1514,6 +1588,10 @@ struct SpectralPhysics {
         guard density.allSatisfy({$0.isFinite}) else {
             throw PhysicsError.invalid("原版印相扩散后相纸 H-D 非有限")
         }
+        // Actual production PrintingStage boundaries, not synthetic taps:
+        // source log10-photon exposure and its exact 256-node H-D output.
+        // This observer never recomputes or substitutes either computation.
+        paperStageObserver?(rawLog,density)
         let output=scanDevelopedSubstrateDensity(
             density,substrate:paper,
             sourceLinearOutput:sourceLinearOutput,
@@ -1526,14 +1604,18 @@ struct SpectralPhysics {
     }
 
     func sourceSpatialScan(
-        filmDensity: [Double], paperEV: Double
+        filmDensity: [Double], paperEV: Double,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard filmDensity.count == 3,
               filmDensity.allSatisfy({ $0.isFinite }),
               paperEV.isFinite && abs(paperEV) <= 4 else {
             throw PhysicsError.invalid("原版相纸及扫描输入密度无效")
         }
-        let output = scanFilmDensity(filmDensity,paperEV:paperEV)
+        let output = scanFilmDensity(
+            filmDensity,paperEV:paperEV,
+            paperStageObserver:paperStageObserver
+        )
         guard output.count == 3,
               output.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相纸 H-D 或光谱扫描输出非有限")
@@ -1546,7 +1628,8 @@ struct SpectralPhysics {
     /// boundary changes. In source physical mode B/W reference and CAM16
     /// LUT are explicitly forbidden rather than silently approximated.
     func sourceSpatialScanXYZ(
-        filmDensity:[Double],paperEV:Double
+        filmDensity:[Double],paperEV:Double,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard useOriginalScanner, !useReferenceBlackWhite,
               !defaultCAM16Gamut,
@@ -1558,7 +1641,8 @@ struct SpectralPhysics {
             )
         }
         let xyz=scanFilmDensity(
-            filmDensity,paperEV:paperEV,sourceXYZOutput:true
+            filmDensity,paperEV:paperEV,sourceXYZOutput:true,
+            paperStageObserver:paperStageObserver
         )
         guard xyz.count==3,xyz.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版光谱 XYZ 生成失败")
@@ -1597,7 +1681,8 @@ struct SpectralPhysics {
     /// True original linear RGB before scanner lens Gaussian and unsharp.
     /// Requires source optical scan, not the mobile scanner fallback.
     func sourceSpatialScanLinear(
-        filmDensity:[Double],paperEV:Double
+        filmDensity:[Double],paperEV:Double,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard useOriginalScanner && !defaultCAM16Gamut else {
             throw PhysicsError.invalid(
@@ -1605,7 +1690,8 @@ struct SpectralPhysics {
             )
         }
         let linear=scanFilmDensity(
-            filmDensity,paperEV:paperEV,sourceLinearOutput:true
+            filmDensity,paperEV:paperEV,sourceLinearOutput:true,
+            paperStageObserver:paperStageObserver
         )
         guard linear.count==3,linear.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("源扫描模糊前的真实线性 RGB 无效")
@@ -1941,7 +2027,8 @@ struct SpectralPhysics {
                                        morph: OriginalPrintMorph.PreparedCurve? = nil,
                                        preflashRaw: [Double] = [0, 0, 0],
                                        opticalPrint: Bool = false,
-                                       sourceHD: OriginalPrintMorph.SourceCurve? = nil
+                                       sourceHD: OriginalPrintMorph.SourceCurve? = nil,
+                                       paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) -> [Double] {
         let raw = printRaw(
             filmDensities: filmDensities, film: film, weights: weights,
@@ -1952,7 +2039,7 @@ struct SpectralPhysics {
                 raw: raw, reference: reference, preflash: preflashRaw,
                 printEV: printEV
               ) : []
-        return (0..<3).map { c in
+        let developed=(0..<3).map { c in
             let logE = opticalPrint ? originalExposure[c]
                 : log10(max(1e-14, raw[c]) / reference) +
                     printEV * 0.301029995664
@@ -1978,6 +2065,11 @@ struct SpectralPhysics {
             return max(0,min(limit,measured +
                 morph.densityDelta(logE,channel:c)))
         }
+        // Observe the ACTUAL Python-equivalent no-diffusion source
+        // paper log exposure and fitted density, before any scanner work.
+        // Direct-positive scan does not have a paper stage.
+        if opticalPrint { paperStageObserver?(originalExposure,developed) }
+        return developed
     }
 
     /// Source _return_callable_cmy_to_log_xyz exact spectral sum:

@@ -152,6 +152,7 @@ enum SourcePhysicalImageParity {
         var total=0
         var checkedProductionGlare=false
         var checkedProductionGrain=false
+        var checkedProductionPaperStages=false
         var activeMicroCases=0
         var fullGrainRGBChannels=0
         for fixture in manifest.cases {
@@ -210,6 +211,111 @@ enum SourcePhysicalImageParity {
                     traces[stage]=pixels
                 }
             )
+            // Build77/02: compare the ACTUAL production pre-photon
+            // input against ORIGINAL Python SimulationPipeline._preprocess
+            // for the explicitly supported sRGB/CCTF, no crop/resize case.
+            // This is not a claim of default ProPhoto or RAW correctness.
+            guard let identity=traces["rgbPre"],identity == frame.rgb else {
+                throw Failure.invalid(
+                    "Build77 no-meter/no-crop source rgb_pre must be identity"
+                )
+            }
+            if fixture.name == "kodak_neutral_fir" {
+                guard let expectedSHA=fixture.sha256["rgbPre"] else {
+                    throw Failure.invalid(
+                        "Missing independent Python _preprocess reference"
+                    )
+                }
+                let expectedPre=try original(
+                    fixtures:fixtures,name:fixture.name,stage:"rgbPre",
+                    checksum:expectedSHA,width:fixture.width,
+                    height:fixture.height
+                )
+                var metered=params
+                metered.cameraOptics.metering = .centerWeighted
+                var meteredTrace=[String:[Double]]()
+                let meteredImage=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:metered,
+                    stageDoubleObserver:{key,values in
+                        meteredTrace[key]=values
+                    }
+                )
+                let noObserver=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:metered
+                )
+                guard meteredImage.rgb == noObserver.rgb,
+                      let actualPre=meteredTrace["rgbPre"],
+                      let meter=meteredTrace["cameraAutoExposureEV"],
+                      meter.count==1 && meter[0].isFinite,
+                      actualPre.count==frame.rgb.count else {
+                    throw Failure.invalid(
+                        "Build77 production rgb_pre missing or changes output"
+                    )
+                }
+                let preMetrics=try compare(
+                    observed:actualPre,expected:expectedPre,
+                    maxTolerance:5e-11,maeTolerance:1e-11,
+                    label:"Build77 true Python _preprocess sRGB/no-resize"
+                )
+                print("PASS Build77 real Python rgb_pre vs production "
+                      + "center-weighted source input: "
+                      + "\(actualPre.count) Float64 channels, "
+                      + "max=\(preMetrics.maximum), "
+                      + "observer-off output bit-exact")
+            }
+            // Build77/02: verify source NORMAL print branch also gives
+            // the actual Python PrintingStage log-exposure and developed
+            // CMY density, before scanning; not a post-RGB reconstruction.
+            if !SpectralPhysics.isPositiveFilm(fixture.film) {
+                guard let paperLog=traces["paperLogExposure"],
+                      let paperDensity=traces["paperDevelopedDensity"],
+                      let filmDensity=traces["density"],
+                      paperLog.count == frame.rgb.count,
+                      paperDensity.count == frame.rgb.count,
+                      filmDensity.count == frame.rgb.count else {
+                    throw Failure.invalid(
+                        "Build77 missing real normal-branch paper stages"
+                    )
+                }
+                let engine=try params.createEngine()
+                for offset in stride(from:0,to:frame.rgb.count,by:3) {
+                    var sourceLog=[Double]()
+                    var sourceDensity=[Double]()
+                    let final=try engine.sourceSpatialScan(
+                        filmDensity:Array(filmDensity[offset..<(offset+3)]),
+                        paperEV:fixture.paperEV,
+                        paperStageObserver: { log,density in
+                            sourceLog=log
+                            sourceDensity=density
+                        }
+                    )
+                    guard sourceLog.count==3,sourceDensity.count==3 else {
+                        throw Failure.invalid("Build77 source normal callback absent")
+                    }
+                    for c in 0..<3 {
+                        guard paperLog[offset+c].bitPattern ==
+                                sourceLog[c].bitPattern,
+                              paperDensity[offset+c].bitPattern ==
+                                sourceDensity[c].bitPattern,
+                              final[c].bitPattern ==
+                                actual.rgb[offset+c].bitPattern else {
+                            throw Failure.invalid(
+                                "Build77 normal source paper tap drift at "
+                                + "pixel=\(offset/3) ch=\(c)"
+                            )
+                        }
+                    }
+                }
+                print("PASS Build77 normal original print log_e_print/"
+                      + "cmy_print storage, all \((frame.rgb.count)) "
+                      + "Double channels preserved; source-scanner RGB "
+                      + "remains bit-exact")
+            } else {
+                guard traces["paperLogExposure"] == nil,
+                      traces["paperDevelopedDensity"] == nil else {
+                    throw Failure.invalid("Direct film scan acquired false paper taps")
+                }
+            }
             for stage in stages {
                 guard let expectedSHA=fixture.sha256[stage],
                       let observed=traces[stage] else {
@@ -441,9 +547,76 @@ enum SourcePhysicalImageParity {
                     "optical RGB discrepancy max=\\(worst), no seed rejected"
                 )
             }
+            // Build77 02: ACTUAL 2D optical print production must expose
+            // paper raw-photon→log exposure→H-D without recomputation or
+            // modifying final rendered RGB. This is scoped to the active
+            // original print-diffusion branch, not generic seven-tap parity.
+            if !SpectralPhysics.isPositiveFilm(fixture.film) &&
+                !checkedProductionPaperStages {
+                var paperParams=params
+                paperParams.printDiffusion.active=true
+                paperParams.printDiffusion.strength=0.5
+                var paperTraces=[String:[Double]]()
+                let withTaps=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:paperParams,
+                    stageDoubleObserver: { key,values in
+                        paperTraces[key]=values
+                    }
+                )
+                let withoutTaps=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:paperParams
+                )
+                let count=fixture.width*fixture.height*3
+                guard withTaps.rgb == withoutTaps.rgb,
+                      let raw=paperTraces["printDiffusion"],
+                      let log=paperTraces["paperLogExposure"],
+                      let density=paperTraces["paperDevelopedDensity"],
+                      raw.count==count,log.count==count,density.count==count
+                else {
+                    throw Failure.invalid(
+                        "Build77 source print stages missing or changed pixel RGB"
+                    )
+                }
+                let engine=try paperParams.createEngine()
+                for k in stride(from:0,to:count,by:3) {
+                    let photon=[raw[k],raw[k+1],raw[k+2]]
+                    var returnedLog=[Double]()
+                    var returnedDensity=[Double]()
+                    let output=try engine.sourceSpatialScanPrintedPhoton(
+                        photon,
+                        paperStageObserver:{ values,valuesDensity in
+                            returnedLog=values
+                            returnedDensity=valuesDensity
+                        }
+                    )
+                    guard returnedLog.count==3,
+                          returnedDensity.count==3 else {
+                        throw Failure.invalid("Build77 print callback missing")
+                    }
+                    for c in 0..<3 {
+                        let expectedLog=log10(max(0,photon[c])+1e-10)
+                        guard log[k+c].bitPattern==expectedLog.bitPattern,
+                              returnedLog[c].bitPattern==log[k+c].bitPattern,
+                              returnedDensity[c].bitPattern==density[k+c].bitPattern,
+                              output[c].bitPattern==withTaps.rgb[k+c].bitPattern
+                        else {
+                            throw Failure.invalid(
+                                "Build77 actual paper tap drift at k=\(k) c=\(c)"
+                            )
+                        }
+                    }
+                }
+                checkedProductionPaperStages=true
+                print("PASS Build77 paper source photon→actual log exposure→"
+                      + "original H-D→scan output; \(count) channels; "
+                      + "stage observer bit-exact, final RGB unchanged")
+            }
             total+=fixture.width*fixture.height*3
             print("PASS original nonlinear whole-frame stock " +
                   fixture.film + " → " + fixture.paper)
+        }
+        guard checkedProductionPaperStages else {
+            throw Failure.invalid("No production print-diffusion source stage evidence")
         }
         guard checkedProductionGlare else {
             throw Failure.invalid("No negative print fixture exercised source production scanner glare")

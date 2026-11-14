@@ -1253,6 +1253,13 @@ struct FloatingEditorWorkspace: View {
                 .onChange(of: model.printIlluminant) { _ in
                     model.queueSpectralPreview()
                 }
+                simpleToggle(
+                    "原版中性滤镜数据库（关＝原版默认 C0/M65/Y55）",
+                    value:$model.neutralPrintFiltersFromDatabase,
+                    resetTo:true
+                ) {
+                    model.queueSpectralPreview()
+                }
                 Text("胶片 → 二色滤色光谱 → 相纸曝光")
                     .font(.caption2)
                     .foregroundColor(.secondary)

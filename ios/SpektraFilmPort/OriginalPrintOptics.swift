@@ -16,6 +16,10 @@ enum OriginalPrintOptics {
     struct Settings {
         var enabled = false
         var illuminant: Illuminant = .thKG3
+        // Python RuntimePhotoParams.settings.neutral_print_filters_from_database
+        // controls whether the stock-pair CC values override schema defaults.
+        // Original default is true; false must preserve (0,65,55) exactly.
+        var neutralPrintFiltersFromDatabase = true
         var normalizePrintExposure = true
         var printExposureCompensation = true
         var cyanShift = 0.0
@@ -41,6 +45,35 @@ enum OriginalPrintOptics {
     struct Prepared {
         let printIlluminant: [Double]
         let preflashRaw: [Double]
+    }
+
+    /// Exact Python params_builder.apply_database_neutral_print_filters:
+    /// when the database switch is disabled or there is no matching entry,
+    /// the EnlargerParams schema default [C=0, M=65, Y=55] remains intact.
+    /// Database keys are paper/illuminant/film, so the TH-KG3-L lens light
+    /// does not reuse the stock-specific TH-KG3 row. Invalid rows fail.
+    static func sourceNeutralCC(
+        filmID:String,paperID:String,settings:Settings,
+        neutralByPair:[String:[Double]]
+    ) throws -> [Double] {
+        let defaults:[Double]=[0.0,65.0,55.0]
+        if !settings.neutralPrintFiltersFromDatabase ||
+            settings.illuminant != .thKG3 {
+            return defaults
+        }
+        guard let entry=neutralByPair[filmID+"|"+paperID] else {
+            // The original Python source emits a warning and retains
+            // schema defaults for missing database entries.
+            return defaults
+        }
+        guard entry.count==3,entry.allSatisfy({$0.isFinite}) else {
+            throw NSError(
+                domain:"OriginalPrintOptics.SourceNeutralCC",code:1,
+                userInfo:[NSLocalizedDescriptionKey:
+                    "原版中性滤镜数据库中胶片/相纸三通道记录损坏"]
+            )
+        }
+        return entry
     }
 
     /// The original custom dichroics: erf transition profile, in CMY order.
