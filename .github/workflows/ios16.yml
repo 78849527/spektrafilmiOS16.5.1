@@ -1044,18 +1044,24 @@ jobs:
           assert "NOT whole rendering" in generator or "NOT whole rendering" in swift
           print("PASS: stage-scoped original reversal-film RGB truth vectors and explicit MAE/RMSE/max, NOT full film->print->RGB certification")
           PY
-      - name: Guard iOS 16 floating editor cold-start regression
+      - name: Guard iOS 16 unified bottom editor cold-start regression
         run: |
           python3 - <<'PY'
           from pathlib import Path
           source = Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
           assert "@State private var controlsVisible = false" in source
-          assert source.count("if controlsVisible && model.hasPhoto") >= 2
+          assert "@State private var unifiedEditorExpanded = false" in source
+          assert source.count("if controlsVisible && model.hasPhoto") >= 1
+          assert "if unifiedEditorExpanded && model.hasPhoto" in source
+          assert "private func openUnifiedEditor()" in source
+          assert "private func closeUnifiedEditor()" in source
+          assert "adjustmentRowsReady = false" in source
+          assert "adjustmentDetailReady = false" in source
           assert ".onChange(of: model.hasPhoto)" not in source
           assert "@GestureState" not in source
           assert ".simultaneousGesture(" not in source
           assert "StableImageHoldRecognizer" in source
-          print("PASS: launch rendering defers both pickers and adjustment dock")
+          print("PASS: iOS16 cold start mounts only photo and toolbar; single bottom menu and nested adjustments stay lazy")
           PY
       - name: Guard clickable right-hand numeric slider reset and original defaults
         run: |
@@ -1443,5 +1449,5 @@ jobs:
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.46 fully certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.47 fully certified release."
           exit 1
