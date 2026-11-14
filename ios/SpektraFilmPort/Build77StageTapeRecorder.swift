@@ -86,8 +86,8 @@ final class Build77StageTapeRecorder {
         if let errorMessage { throw TapeError.invalid(errorMessage) }
         let names=samples.map { $0.name }
         let keys=positiveFilm
-            ? ["iosInput","logRaw","density","printed","iosOutput"]
-            : ["iosInput","logRaw","density","paperLogExposure",
+            ? ["iosInput","rgbPre","logRaw","density","printed","iosOutput"]
+            : ["iosInput","rgbPre","logRaw","density","paperLogExposure",
                "paperDevelopedDensity","printed","iosOutput"]
         let pixelCount=width*height*3
         var previousIndex = -1
