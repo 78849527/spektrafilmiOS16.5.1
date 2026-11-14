@@ -100,6 +100,70 @@ struct SpectralValidation {
         }
         print("PASS: 12 Hanatos2025 reference vectors with mobile Float16 precision.")
 
+        // Build77/02: original Python IOParams defaults to ProPhoto RGB
+        // with input_cctf_decoding=false, NOT encoded sRGB. Python
+        // colour.RGB_to_XYZ(... ProPhoto RGB, CAT16) generates 80 native
+        // Float64 source references for all 20 filming stocks. These
+        // values exercise the same Hanatos response used in actual
+        // SpectralPhysics source-physical image production.
+        let originalProPhoto=GeneratedHanatosData.proPhotoSourceReferences
+        precondition(originalProPhoto.count==80,
+                     "Build77 ProPhoto source camera table must have 20x4 entries")
+        var proPhotoStocks=Set<String>()
+        for reference in originalProPhoto {
+            let response=try OriginalHanatosResponse(
+                filmID:reference.stock,precision:.originalFloat64,
+                inputColorSpace:.proPhotoLinear
+            )
+            let actual=response.raw(linearRGB:reference.input)
+            precondition(actual.count==3)
+            for channel in 0..<3 {
+                let tolerance=max(2e-10,abs(reference.raw[channel])*2e-10)
+                precondition(abs(actual[channel]-reference.raw[channel])<=tolerance,
+                             "Original Python ProPhoto/CAT16 Hanatos source Float64 mismatch: "
+                             + reference.stock + " ch=\(channel), "
+                             + "\(actual[channel]) vs \(reference.raw[channel])")
+            }
+            proPhotoStocks.insert(reference.stock)
+        }
+        precondition(proPhotoStocks.count==20)
+        // Production camera engine, not a private alternate interpolation:
+        // pass original upstream *linear ProPhoto* triplet to the same
+        // sourceCameraRaw method the image pathway invokes.
+        let target=originalProPhoto.first {
+            $0.stock=="kodak_portra_400"
+        }!
+        let realEngine=try SpectralPhysics(
+            filmID:"kodak_portra_400",paperID:"kodak_portra_endura",
+            sourceScanner:true,sourceMeasuredFloat64:true,
+            cameraRawMethod:.hanatos2025,
+            cameraInputColorSpace:.proPhotoLinear
+        )
+        let engineRaw=try realEngine.sourceCameraRaw(
+            encodedRGB:target.input,cameraEV:0
+        )
+        for channel in 0..<3 {
+            let tolerance=max(2e-10,abs(target.raw[channel])*2e-10)
+            precondition(abs(engineRaw[channel]-target.raw[channel])<=tolerance,
+                         "Production source ProPhoto Hanatos camera mismatch")
+        }
+        var rejectedUnsupported=false
+        do {
+            _ = try SpectralPhysics(
+                filmID:"kodak_portra_400",paperID:"kodak_portra_endura",
+                sourceScanner:true,sourceMeasuredFloat64:true,
+                cameraRawMethod:.mallett2019,
+                cameraInputColorSpace:.proPhotoLinear
+            )
+        } catch { rejectedUnsupported=true }
+        precondition(rejectedUnsupported,
+                     "Unported Mallett+ProPhoto must not silently use sRGB")
+        print("PASS Build77 original Python ProPhoto RGB/CAT16 -> "
+              + "Hanatos Float64: 80 vectors, 20 stocks, direct "
+              + "production camera raw parity; unsupported route fails closed."
+              + " Exact colour-file ingress remains UNVERIFIED.")
+
+
         // Retain the previously validated Mallett2019 alternative.
         let mallett: [(String, [Double], [Double])] = [
             (GeneratedOriginalOptics.referenceStock0, GeneratedOriginalOptics.referenceRGB0, GeneratedOriginalOptics.referenceRaw0),
