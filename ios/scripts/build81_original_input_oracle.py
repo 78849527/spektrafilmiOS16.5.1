@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import colour
 import numpy as np
 import skimage
 from skimage.transform import resize
@@ -40,7 +42,8 @@ def extract(filename: str, names: set[str]) -> dict:
                 if isinstance(node, ast.FunctionDef) and node.name in names]
     if len(selected) != len(names):
         raise RuntimeError(f"Original source functions missing in {filename}")
-    ns = {"np": np, "resize": resize, "__name__": "__main__"}
+    ns = {"np": np, "resize": resize, "colour": colour,
+          "_SPECTRAL_LOCUS_XY_CACHE": None, "__name__": "__main__"}
     compiled = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
     exec(compile(compiled, str(path), "exec"), ns)
     return ns
@@ -61,13 +64,16 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--output",required=True,type=Path)
     args=parser.parse_args()
+    if colour.__version__ != "0.4.6":
+        raise RuntimeError("Source CMFs require colour-science 0.4.6")
     if skimage.__version__ != "0.25.2":
         raise RuntimeError(
             f"Source preview oracle pins skimage 0.25.2, got {skimage.__version__}")
     crop=extract("crop_resize.py",{"crop_image"})["crop_image"]
     preview=extract("preview.py",{"resize_for_preview"})["resize_for_preview"]
     gamut=extract("gamut_compression.py",{
-        "reinhard_knee","_ray_polygon_distance","compress_xy_radial","compress_xy"
+        "reinhard_knee","_ray_polygon_distance","compress_xy_radial","compress_xy",
+        "spectral_locus_xy"
     })
 
     crop_cases=[]
@@ -117,6 +123,12 @@ def main():
         [0.6,0.65],[0.42,0.4]
     ],dtype=np.float64)
     white=np.array([0.3,0.3],dtype=np.float64)
+    actual_cie_locus=gamut["spectral_locus_xy"]()
+    if actual_cie_locus.shape!=(66,2):
+        raise RuntimeError("Original CIE1931 spectral locus shape drift")
+    cie_hash=hashlib.sha256(
+        np.ascontiguousarray(actual_cie_locus,dtype="<f8").tobytes()
+    ).hexdigest()
     gamut_cases=[]
     for knee in [(0.0,1.0,6.0),(0.25,1.0,2.5),(0.0,1.5,6.0)]:
         spec=SimpleNamespace(active=True,algorithm="xy",knee=knee)
@@ -127,7 +139,9 @@ def main():
         knee_output=gamut["reinhard_knee"](
             distances,threshold=knee[0],limit=knee[1],power=knee[2]
         )
+        default_result=gamut["compress_xy"](xy,white,spec)
         gamut_cases.append({
+            "default_cie_output":default_result.tolist(),
             "knee":list(knee),
             "input":xy.tolist(),
             "output":result.tolist(),
@@ -147,6 +161,8 @@ def main():
         "scope":"Pinned original AST geometry + preview Float64 + xy gamut with explicit polygon",
         "crop":crop_cases,"preview":preview_cases,
         "gamut":{"white":white.tolist(),"locus":square,
+                 "default_cie_locus_sha256":cie_hash,
+                 "default_cie_locus_count":len(actual_cie_locus),
                  "cases":gamut_cases,"inactive":inactive.tolist()},
     }
     args.output.parent.mkdir(parents=True,exist_ok=True)
