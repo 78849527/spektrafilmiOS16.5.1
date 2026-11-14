@@ -14,7 +14,14 @@ enum SourcePhysicalImageParity {
         }
     }
     private struct Manifest: Decodable {
+        struct GrainEvidence: Decodable {
+            let scope: String
+            let numba_seed: UInt32
+            let numba_workers: Int
+            let source_blobs: [String:String]
+        }
         let scope: String
+        let grain: GrainEvidence
         let cases: [Case]
     }
     private struct Case: Decodable {
@@ -31,6 +38,7 @@ enum SourcePhysicalImageParity {
         let flashM: Double
         let flashY: Double
         let shift: [Double]
+        let numba_micro_enabled: Bool
         let sha256: [String: String]
     }
 
@@ -53,14 +61,15 @@ enum SourcePhysicalImageParity {
     }
     private static func original(
         fixtures: URL, name: String, stage: String,
-        checksum: String, width: Int, height: Int
+        checksum: String, width: Int, height: Int,
+        channels: Int = 3
     ) throws -> [Double] {
         let bytes=try read(
             fixtures.appendingPathComponent(
                 name + "." + stage + ".f64le"
             ),sha:checksum
         )
-        let n=width*height*3
+        let n=width*height*channels
         guard bytes.count == n*8 else {
             throw Failure.invalid(
                 "Original Python \(name)/\(stage) not Float64 RGB"
@@ -85,7 +94,8 @@ enum SourcePhysicalImageParity {
     }
     private static func compare(
         observed: [Double], expected: [Double],
-        maxTolerance: Double, maeTolerance: Double, label: String
+        maxTolerance: Double, maeTolerance: Double, label: String,
+        channels: Int = 3
     ) throws -> Metrics {
         guard observed.count == expected.count,
               !expected.isEmpty else {
@@ -110,13 +120,13 @@ enum SourcePhysicalImageParity {
         print(
             "\(label) n=\(expected.count) MAE=\(metrics.mae) " +
             "RMSE=\(metrics.rmse) max=\(metrics.maximum) " +
-            "worstPixel=\(worst/3) channel=\(worst%3) over=\(over)"
+            "worstPixel=\(worst/channels) channel=\(worst%channels) over=\(over)"
         )
         guard over==0,metrics.mae <= maeTolerance else {
             throw Failure.invalid(
                 "FAIL original nonlinear Python entire image \(label): " +
                 "MAE=\(metrics.mae) RMSE=\(metrics.rmse) " +
-                "max=\(metrics.maximum) pixel=\(worst/3) ch=\(worst%3). " +
+                "max=\(metrics.maximum) pixel=\(worst/channels) ch=\(worst%channels). " +
                 "Do not promote source image precision."
             )
         }
@@ -130,12 +140,20 @@ enum SourcePhysicalImageParity {
         let manifest=try JSONDecoder().decode(Manifest.self,from:doc)
         guard manifest.scope ==
               "original-source-nonlinear-hanatos-spatial-dir-paper-aces-8bit",
-              manifest.cases.count==3 else {
+              manifest.cases.count==4,
+              manifest.grain.numba_seed==8888,
+              manifest.grain.numba_workers==1,
+              manifest.grain.source_blobs["model/grain.py"] ==
+                  "f2d2b23e3eab4f4a1d919f69bcb4aceb714e024d",
+              manifest.grain.scope.contains("original optical paper RGB")
+              else {
             throw Failure.invalid("Wrong Python original physical fixture scope")
         }
         var total=0
         var checkedProductionGlare=false
         var checkedProductionGrain=false
+        var activeMicroCases=0
+        var fullGrainRGBChannels=0
         for fixture in manifest.cases {
             guard fixture.width>0 && fixture.height>0,
                   fixture.width<=8192,fixture.height<=8192,
@@ -311,8 +329,7 @@ enum SourcePhysicalImageParity {
             // v1.8.48: TRUE production H-D/DIR→9 SciPy sublayer grain
             // → source print/scan integration on an existing Python
             // original image fixture; no post-RGB grain is allowed.
-            if !checkedProductionGrain &&
-               !SpectralPhysics.isPositiveFilm(fixture.film) {
+            if !SpectralPhysics.isPositiveFilm(fixture.film) {
                 var enabled=params
                 enabled.sourceGrain.active=true
                 enabled.sourceGrain.numbaSeed=8888
@@ -344,6 +361,48 @@ enum SourcePhysicalImageParity {
                         "Controlled source 3x3 grain was not integrated at the film density/print boundary"
                     )
                 }
+                // Independent Python is now RUN on the same entire
+                // original image, including original SciPy counts,
+                // one-worker Numba microstructure and optical paper RGB.
+                // The previous Swift self-loop check below is retained,
+                // but it NEVER substitutes for these source comparisons.
+                let upstreamStages:[(String,String,Int,Double,Double)] = [
+                    ("grainSublayers","sourceGrainSublayers",9,0.002,0.0003),
+                    ("grainDyeClouds","sourceGrainDyeClouds",3,0.002,0.0005),
+                    ("grainMicrostructure","sourceGrainMicrostructure",3,0.002,0.0005),
+                    ("grainDensity","grainDensity",3,0.002,0.0005),
+                    ("grainPrinted","printed",3,0.002,0.0005),
+                ]
+                for (name,key,channels,maxError,meanError) in upstreamStages {
+                    guard let sha=fixture.sha256[name],
+                          let observed=grainTraces[key] else {
+                        throw Failure.invalid(
+                            "Missing independent Python grain full RGB " +
+                            fixture.name + "/" + name
+                        )
+                    }
+                    let truth=try original(
+                        fixtures:fixtures,name:fixture.name,stage:name,
+                        checksum:sha,width:fixture.width,
+                        height:fixture.height,channels:channels
+                    )
+                    _ = try compare(
+                        observed:observed,expected:truth,
+                        maxTolerance:maxError,maeTolerance:meanError,
+                        label:fixture.name+"/upstream/"+name,
+                        channels:channels
+                    )
+                }
+                guard fixture.numba_micro_enabled ==
+                      (enabled.sourceGrain.microstructureNM * 0.001 /
+                       fixture.pixelUM > 0.05) else {
+                    throw Failure.invalid(
+                        "Python/Swift actual Numba microstructure gate mismatch"
+                    )
+                }
+                if fixture.numba_micro_enabled {activeMicroCases+=1}
+                fullGrainRGBChannels += developed.rgb.count
+
                 // The new production buffer after grain must be passed to
                 // the SAME original full optical enlarger/paper/scanner,
                 // not an RGB postprocessing blur or a colour cube.
@@ -375,7 +434,7 @@ enum SourcePhysicalImageParity {
                 } catch OriginalSourcePhysicalGrain.Failure.invalid {}
                 checkedProductionGrain=true
                 print(
-                    "PASS v1.8.48 ACTUAL full physical grain " +
+                    "PASS v1.8.50 ACTUAL full physical grain " +
                     "9 SciPy layers→dye cloud→Numba controlled micro→FIR/YVV" +
                     "→original enlarger/paper/scanner; " +
                     "\\(after.count) CMY channels, source-order " +
@@ -389,9 +448,19 @@ enum SourcePhysicalImageParity {
         guard checkedProductionGlare else {
             throw Failure.invalid("No negative print fixture exercised source production scanner glare")
         }
-        guard checkedProductionGrain else {
-            throw Failure.invalid("No original negative image exercised real source 3x3 grain production")
+        guard checkedProductionGrain,
+              activeMicroCases > 0,fullGrainRGBChannels > 0 else {
+            throw Failure.invalid(
+                "Missing full independent Python grain+paper RGB image " +
+                "with ACTUALLY ACTIVE Numba microstructure"
+            )
         }
+        print(
+            "PASS original Python→Swift full 2D grain+optical RGB " +
+            "\(fullGrainRGBChannels) channels, four upstream source " +
+            "image fixtures, active-micro cases \(activeMicroCases); " +
+            "strict fail-closed, no fast LUT fallback"
+        )
         // Explicit memory guard: cannot silently scale the image, nor
         // downgrade to a Float32 optical 3D LUT when original is requested.
         let tooLarge=OriginalSourcePixelIO.Frame(
