@@ -241,11 +241,11 @@ enum SourcePhysicalImageParity {
                         throw Failure.invalid("Build77 source normal callback absent")
                     }
                     for c in 0..<3 {
-                        guard paperLog[offset+c].bitPattern==
+                        guard paperLog[offset+c].bitPattern ==
                                 sourceLog[c].bitPattern,
-                              paperDensity[offset+c].bitPattern==
+                              paperDensity[offset+c].bitPattern ==
                                 sourceDensity[c].bitPattern,
-                              final[c].bitPattern==
+                              final[c].bitPattern ==
                                 actual.rgb[offset+c].bitPattern else {
                             throw Failure.invalid(
                                 "Build77 normal source paper tap drift at "
