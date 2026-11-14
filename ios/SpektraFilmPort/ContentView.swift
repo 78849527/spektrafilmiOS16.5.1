@@ -777,6 +777,14 @@ final class PhotoEditorModel: ObservableObject {
                 checks.append("7/8 【通过】正式显影 SciPy 随机数 → Metal 颗粒密度\n" + production)
                 let micro = try OriginalSourceMicrostructure.hardwareDiagnostic()
                 checks.append("8/8 【通过】Numba 微结构确定性 lognormal 变换\n" + micro)
+                // v1.8.43: newest Numba fast_stats one-worker source reference.
+                // Kept OUTSIDE 8/8 Metal certification; failure is displayed.
+                do {
+                    let fastCounts = try OriginalSourceNumbaFastCountsDiagnostic.evaluate()
+                    checks.append("附录【v1.8.43 Numba 快速计数｜仅受控单线程数值对照】\n" + fastCounts)
+                } catch {
+                    checks.append("附录【v1.8.43 Numba 快速计数｜未通过／未认证】\n" + error.localizedDescription)
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
