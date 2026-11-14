@@ -295,12 +295,18 @@ extension Build77StageTapeRecorder {
         try recorder.requirePhysicalSourceTopology(
             positiveFilm:SpectralPhysics.isPositiveFilm(parameters.filmID)
         )
+        // Resolve all source stage mappings before touching output files.
+        // The marker is NOT numerical certification.
+        _ = try recorder.candidateSourceTapMapping(
+            positiveFilm:SpectralPhysics.isPositiveFilm(parameters.filmID),
+            sourceGrainApplied:parameters.sourceGrain.active
+        )
+        try recorder.write(to:folder)
         try recorder.writeCandidateSourceTapMapping(
             to:folder,
             positiveFilm:SpectralPhysics.isPositiveFilm(parameters.filmID),
             sourceGrainApplied:parameters.sourceGrain.active
         )
-        try recorder.write(to: folder)
         return output
     }
 }
