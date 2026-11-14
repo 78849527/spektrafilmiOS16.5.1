@@ -29,18 +29,21 @@ struct FloatingEditorWorkspace: View {
     @State private var adjustmentExpanded = false
     // Last opened panel always overlays the older panel.
     @State private var frontDrawer: DrawerSide = .film
-    @State private var selectedSettingSection: AdjustmentSection = .exposure
+    @State private var selectedFeature: AdjustmentFeature? = .basic
     @State private var comparisonEnabled = false
     @State private var statusReportPresented = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
 
     private enum DrawerSide { case film, adjustment }
-    private enum AdjustmentSection: String, CaseIterable {
-        case exposure = "基础"
+    private enum AdjustmentFeature: String {
+        case basic = "基础"
         case scanner = "扫描"
-        case print = "印相"
-        case optics = "光学"
+        case sharpening = "锐化"
+        case enlarger = "放大机"
+        case preflash = "预闪"
+        case morphology = "s023"
+        case halation = "光晕"
         case dir = "DIR"
         case grain = "颗粒"
     }
@@ -576,116 +579,216 @@ struct FloatingEditorWorkspace: View {
         .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
     }
 
-    // Row 1: horizontal one-line switches with 28x16 tracks.
-    private var compactMainSwitches: some View {
+    // First row: only features with parameter panels. Basic is a
+    // direct editor, not a master switch. Tapping a disabled feature
+    // activates it AND opens its own parameters below; tapping its
+    // label again selects it without disabling. The tiny dedicated
+    // switch turns it OFF and removes its parameters immediately.
+    private var featureRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 5) {
-                compactSwitch("64位", value: $model.hanatosOriginalPrecisionEnabled,
-                              section: .exposure) { model.queueSpectralPreview() }
-                compactSwitch("扫描", value: $model.originalScannerEnabled,
-                              section: .scanner) { model.queueSpectralPreview() }
-                compactSwitch("锐化", value: $model.scannerFinishingEnabled,
-                              section: .scanner) { onRefresh() }
-                compactSwitch("放大机", value: $model.originalPrintOpticsEnabled,
-                              section: .print, allowed: !isReversal) {
+                Button { selectedFeature = .basic } label: {
+                    Text("基础")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 11)
+                        .frame(height: 29)
+                        .foregroundColor(selectedFeature == .basic ? .accentColor : .primary)
+                        .background(
+                            selectedFeature == .basic
+                                ? Color.accentColor.opacity(0.15)
+                                : Color.primary.opacity(0.07),
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.hasPhoto || model.busy)
+                .accessibilityLabel("基础，点按显示曝光与效果强度")
+
+                featureToggle("扫描", feature: .scanner,
+                              value: $model.originalScannerEnabled) {
                     model.queueSpectralPreview()
                 }
-                compactSwitch("预闪", value: $model.preflashEnabled,
-                              section: .print,
+                featureToggle("锐化", feature: .sharpening,
+                              value: $model.scannerFinishingEnabled) {
+                    onRefresh()
+                }
+                featureToggle("放大机", feature: .enlarger,
+                              value: $model.originalPrintOpticsEnabled,
+                              allowed: !isReversal) {
+                    model.queueSpectralPreview()
+                }
+                featureToggle("预闪", feature: .preflash,
+                              value: $model.preflashEnabled,
                               allowed: !isReversal && model.originalPrintOpticsEnabled) {
                     model.queueSpectralPreview()
                 }
-                compactSwitch("s023", value: $model.printMorphEnabled,
-                              section: .print, allowed: !isReversal) {
+                featureToggle("s023", feature: .morphology,
+                              value: $model.printMorphEnabled,
+                              allowed: !isReversal) {
                     model.queueSpectralPreview()
                 }
-                compactSwitch("散射", value: $model.scatterEnabled,
-                              section: .optics) { onRefresh() }
-                compactSwitch("光晕", value: $model.halationEnabled,
-                              section: .optics) { onRefresh() }
-                compactSwitch("DIR", value: $model.spatialDIREnabled,
-                              section: .dir) { model.queueSpectralPreview() }
-                compactSwitch("颗粒", value: $model.grainEnabled,
-                              section: .grain) {
+                featureToggle("光晕", feature: .halation,
+                              value: $model.halationEnabled) {
+                    onRefresh()
+                }
+                featureToggle("DIR", feature: .dir,
+                              value: $model.spatialDIREnabled) {
+                    model.queueSpectralPreview()
+                }
+                featureToggle("颗粒", feature: .grain,
+                              value: $model.grainEnabled) {
                     if model.grainEnabled { model.queueSpectralPreview() }
                     else { onRefresh() }
                 }
             }
-            .padding(.horizontal, 5)
+            .padding(.horizontal, 6)
         }
         .frame(height: 34)
     }
 
-    private func compactSwitch(_ title: String, value: Binding<Bool>,
-                               section: AdjustmentSection, allowed: Bool = true,
+    private func featureToggle(_ title: String, feature: AdjustmentFeature,
+                               value: Binding<Bool>, allowed: Bool = true,
                                changed: @escaping () -> Void) -> some View {
+        let ready = model.hasPhoto && !model.busy && allowed
+        return HStack(spacing: 2) {
+            Button {
+                guard ready else { return }
+                if !value.wrappedValue {
+                    value.wrappedValue = true
+                    changed()
+                }
+                selectedFeature = feature
+            } label: {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .padding(.leading, 8)
+                    .padding(.vertical, 7)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title + "，开启并显示二级参数")
+            Button {
+                guard ready else { return }
+                let next = !value.wrappedValue
+                value.wrappedValue = next
+                if next {
+                    selectedFeature = feature
+                } else if selectedFeature == feature {
+                    selectedFeature = nil
+                }
+                changed()
+            } label: {
+                miniatureSwitch(isOn: value.wrappedValue)
+                    .frame(width: 34, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title + (value.wrappedValue
+                                        ? "，关闭并收起参数" : "，开启并展开参数"))
+        }
+        .foregroundColor(selectedFeature == feature && value.wrappedValue
+                         ? .accentColor : .primary)
+        .background(selectedFeature == feature && value.wrappedValue
+                    ? Color.accentColor.opacity(0.15)
+                    : Color.primary.opacity(0.07), in: Capsule())
+        .disabled(!ready)
+    }
+
+    // Second row: ONLY independent on/off functions with no
+    // parameter page. Advanced child switches remain inside their
+    // parent's detailed page to preserve the original dependencies.
+    private var simpleSwitchRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                simpleToggle("64位", value: $model.hanatosOriginalPrecisionEnabled) {
+                    model.queueSpectralPreview()
+                }
+                simpleToggle("散射", value: $model.scatterEnabled) {
+                    onRefresh()
+                }
+                if model.originalScannerEnabled {
+                    simpleToggle("CAM16", value: $model.scannerCAM16Enabled) {
+                        model.queueSpectralPreview()
+                    }
+                    if model.scannerBlackWhiteEnabled && !isReversal {
+                        simpleToggle("曝光参考", value: $model.exposureReferenceEnabled) {
+                            model.queueSpectralPreview()
+                        }
+                    }
+                }
+                if model.originalPrintOpticsEnabled && !isReversal {
+                    simpleToggle("归一化", value: $model.normalizePrintExposure,
+                                 resetTo: true) {
+                        model.queueSpectralPreview()
+                    }
+                    simpleToggle("曝光补偿", value: $model.printExposureCompensation,
+                                 resetTo: true) {
+                        model.queueSpectralPreview()
+                    }
+                }
+                if model.grainEnabled && model.grainSublayersEnabled {
+                    if model.grainOriginalMetalEnabled {
+                        simpleToggle("SciPy", value: $model.grainOriginalSciPyEnabled) {
+                            onRefresh()
+                        }
+                    }
+                    simpleToggle("Poisson", value: $model.grainDiscreteParticlesEnabled,
+                                 allowed: !model.grainOriginalMetalEnabled) {
+                        onRefresh()
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+        }
+        .frame(height: 34)
+    }
+
+    private func miniatureSwitch(isOn: Bool) -> some View {
+        ZStack {
+            Capsule()
+                .fill(isOn ? Color.accentColor : Color.gray.opacity(0.46))
+                .frame(width: 28, height: 16)
+            Circle()
+                .fill(.white)
+                .frame(width: 12, height: 12)
+                .offset(x: isOn ? 6 : -6)
+        }
+    }
+
+    private func simpleToggle(_ title: String, value: Binding<Bool>,
+                              allowed: Bool = true, resetTo: Bool = false,
+                              changed: @escaping () -> Void) -> some View {
         Button {
             guard model.hasPhoto && !model.busy && allowed else { return }
             value.wrappedValue.toggle()
-            selectedSettingSection = section
             changed()
         } label: {
             HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 10, weight: .semibold))
-                    .lineLimit(1)
-                ZStack {
-                    Capsule()
-                        .fill(value.wrappedValue
-                              ? Color.accentColor
-                              : Color.gray.opacity(0.46))
-                        .frame(width: 28, height: 16)
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 12, height: 12)
-                        .offset(x: value.wrappedValue ? 6 : -6)
-                }
+                miniatureSwitch(isOn: value.wrappedValue)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .background(Color.primary.opacity(0.07), in: Capsule())
         }
         .buttonStyle(.plain)
+        .onTapGesture(count: 2) {
+            guard model.hasPhoto && !model.busy && allowed else { return }
+            value.wrappedValue = resetTo
+            changed()
+        }
         .disabled(!model.hasPhoto || model.busy || !allowed)
         .accessibilityLabel(title + (value.wrappedValue ? "，已开启" : "，已关闭"))
-        .accessibilityHint("点按切换，并显示该项的二级参数")
+        .accessibilityHint("单击切换；双击恢复默认。纯开关，没有二级参数")
     }
 
-    // Row 2: categories; the selected category controls row 3.
-    private var settingCategoryRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
-                ForEach(AdjustmentSection.allCases, id: \.self) { section in
-                    Button {
-                        selectedSettingSection = section
-                    } label: {
-                        Text(section.rawValue)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(selectedSettingSection == section
-                                             ? Color.accentColor : .primary)
-                            .padding(.horizontal, 11)
-                            .frame(height: 27)
-                            .background(
-                                selectedSettingSection == section
-                                    ? Color.accentColor.opacity(0.13)
-                                    : Color.primary.opacity(0.07),
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(section.rawValue + "二级设置")
-                }
-            }
-            .padding(.horizontal, 5)
-        }
-        .frame(height: 31)
-    }
-
-    // Row 3: show just one parameter section, never the entire switch wall.
+    // Top feature row and pure-switch second row. The parameter
+    // region below exists only for an enabled selected feature.
     private var adjustmentControls: some View {
-        VStack(spacing: 4) {
-            compactMainSwitches
-            settingCategoryRow
+        VStack(spacing: 3) {
+            featureRow
+            simpleSwitchRow
             Divider().padding(.horizontal, 8)
             ScrollView(.vertical) {
                 activeSettings
@@ -699,13 +802,31 @@ struct FloatingEditorWorkspace: View {
 
     @ViewBuilder
     private var activeSettings: some View {
-        switch selectedSettingSection {
-        case .exposure: exposureSettings
-        case .scanner: scannerSettings
-        case .print: printSettings
-        case .optics: opticsSettings
-        case .dir: dirSettings
-        case .grain: grainSettings
+        if let selectedFeature {
+            switch selectedFeature {
+            case .basic:
+                exposureSettings
+            case .scanner:
+                if model.originalScannerEnabled { scannerSettings }
+            case .sharpening:
+                if model.scannerFinishingEnabled { sharpeningSettings }
+            case .enlarger:
+                if model.originalPrintOpticsEnabled && !isReversal {
+                    enlargerSettings
+                }
+            case .preflash:
+                if model.preflashEnabled && model.originalPrintOpticsEnabled && !isReversal {
+                    preflashSettings
+                }
+            case .morphology:
+                if model.printMorphEnabled && !isReversal { morphologySettings }
+            case .halation:
+                if model.halationEnabled { halationSettings }
+            case .dir:
+                if model.spatialDIREnabled { dirSettings }
+            case .grain:
+                if model.grainEnabled { grainSettings }
+            }
         }
     }
 
@@ -761,11 +882,6 @@ struct FloatingEditorWorkspace: View {
     private var scannerSettings: some View {
         VStack(alignment: .leading, spacing: 7) {
             if model.originalScannerEnabled {
-                resetToggle("原版默认 CAM16-UCS", value: $model.scannerCAM16Enabled,
-                            enabled: model.hasPhoto && !model.busy)
-                    .onChange(of: model.scannerCAM16Enabled) { _ in
-                        model.queueSpectralPreview()
-                    }
                 Text(model.scannerCAM16Enabled
                      ? "默认色域 · CAM16 查表插值"
                      : "可选色域 · ACES RGC")
@@ -777,11 +893,6 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
                 if model.scannerBlackWhiteEnabled && !isReversal {
-                    resetToggle("按印相曝光计算黑白参考", value: $model.exposureReferenceEnabled,
-                                enabled: model.hasPhoto && !model.busy)
-                        .onChange(of: model.exposureReferenceEnabled) { _ in
-                            model.queueSpectralPreview()
-                        }
                     Text(model.exposureReferenceEnabled
                          ? "胶片两端 → 印相显影 → 曝光补偿"
                          : "使用旧版密度端点近似")
@@ -789,6 +900,11 @@ struct FloatingEditorWorkspace: View {
                         .foregroundColor(.secondary)
                 }
             }
+        }
+    }
+
+    private var sharpeningSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
             if model.scannerFinishingEnabled {
                 strengthControl("锐化强度",
                                 value: $model.scannerSharpenAmount,
@@ -797,63 +913,57 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    private var printSettings: some View {
+    private var enlargerSettings: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Divider()
-            if !isReversal {
-                if model.originalPrintOpticsEnabled {
-                    Text("胶片 → 二色滤色光谱 → 相纸曝光")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    resetToggle("归一化印相曝光", value: $model.normalizePrintExposure,
-                                enabled: model.hasPhoto && !model.busy,
-                                resetTo: true)
-                        .onChange(of: model.normalizePrintExposure) { _ in
-                            model.queueSpectralPreview()
-                        }
-                    resetToggle("补偿拍摄曝光", value: $model.printExposureCompensation,
-                                enabled: model.hasPhoto && !model.busy,
-                                resetTo: true)
-                        .onChange(of: model.printExposureCompensation) { _ in
-                            model.queueSpectralPreview()
-                        }
-                    morphSlider("青色 C / CC", value: $model.printCyanShift,
-                                range: -40...40)
-                    morphSlider("洋红 M / CC", value: $model.printMagentaShift,
-                                range: -40...40)
-                    morphSlider("黄色 Y / CC", value: $model.printYellowShift,
-                                range: -40...40)
-                    if model.preflashEnabled {
-                        morphSlider("预闪曝光", value: $model.preflashExposure,
-                                    range: 0...0.2)
-                        morphSlider("预闪 M / CC", value: $model.preflashMagentaShift,
-                                    range: -40...40)
-                        morphSlider("预闪 Y / CC", value: $model.preflashYellowShift,
-                                    range: -40...40)
-                        Text("原版相纸曝光累加，非 RGB 提亮")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Divider()
-                if model.printMorphEnabled {
-                    morphSlider("总体伽马", value: $model.printGamma,
-                                range: 0.65...1.45, resetTo: 1.0)
-                    morphSlider("快乳剂层", value: $model.printFastGamma,
-                                range: 0.7...1.4, resetTo: 1.0)
-                    morphSlider("慢乳剂层", value: $model.printSlowGamma,
-                                range: 0.7...1.4, resetTo: 1.0)
-                    morphSlider("显影剂疲劳", value: $model.printDeveloperExhaustion,
-                                range: 0...1)
-                    Text("原版三层 CDF，默认不改变已有曲线")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
+            if model.originalPrintOpticsEnabled && !isReversal {
+                Text("胶片 → 二色滤色光谱 → 相纸曝光")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                morphSlider("青色 C / CC", value: $model.printCyanShift,
+                            range: -40...40)
+                morphSlider("洋红 M / CC", value: $model.printMagentaShift,
+                            range: -40...40)
+                morphSlider("黄色 Y / CC", value: $model.printYellowShift,
+                            range: -40...40)
             }
         }
     }
 
-    private var opticsSettings: some View {
+    private var preflashSettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if model.preflashEnabled && model.originalPrintOpticsEnabled && !isReversal {
+                morphSlider("预闪曝光", value: $model.preflashExposure,
+                            range: 0...0.2)
+                morphSlider("预闪 M / CC", value: $model.preflashMagentaShift,
+                            range: -40...40)
+                morphSlider("预闪 Y / CC", value: $model.preflashYellowShift,
+                            range: -40...40)
+                Text("原版相纸曝光累加，非 RGB 提亮")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var morphologySettings: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if model.printMorphEnabled && !isReversal {
+                morphSlider("总体伽马", value: $model.printGamma,
+                            range: 0.65...1.45, resetTo: 1.0)
+                morphSlider("快乳剂层", value: $model.printFastGamma,
+                            range: 0.7...1.4, resetTo: 1.0)
+                morphSlider("慢乳剂层", value: $model.printSlowGamma,
+                            range: 0.7...1.4, resetTo: 1.0)
+                morphSlider("显影剂疲劳", value: $model.printDeveloperExhaustion,
+                            range: 0...1)
+                Text("原版三层 CDF，默认不改变已有曲线")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var halationSettings: some View {
         VStack(alignment: .leading, spacing: 7) {
             // In the explicitly selected whole-physical path the familiar
             // switches use the source's actual Double photon optics.
@@ -1052,12 +1162,6 @@ struct FloatingEditorWorkspace: View {
                         Text("实测三乳剂 → 离散显影 → 染料云 → 微结构 → 反射滤波")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        resetToggle("SciPy 原版随机序列（实验性，较慢）",
-                                    value: $model.grainOriginalSciPyEnabled,
-                                    enabled: model.hasPhoto && !model.busy)
-                            .onChange(of: model.grainOriginalSciPyEnabled) { _ in
-                                onRefresh()
-                            }
                         Text(model.grainOriginalSciPyEnabled
                              ? "逐通道全图 Poisson→Binomial，源固定种子；Metal Float32 后处理。大图可能耗时并受内存预算限制。"
                              : "Metal 快速随机颗粒；统计分布一致，但并非 SciPy 原版逐像素随机序列。")
@@ -1072,13 +1176,6 @@ struct FloatingEditorWorkspace: View {
                         .buttonStyle(.bordered)
                         .disabled(model.busy)
                     }
-                    resetToggle("原版离散 Poisson 颗粒",
-                                value: $model.grainDiscreteParticlesEnabled,
-                                enabled: model.hasPhoto && !model.busy &&
-                                         !model.grainOriginalMetalEnabled)
-                        .onChange(of: model.grainDiscreteParticlesEnabled) { _ in
-                            onRefresh()
-                        }
                     Text("原版 3×3 亚层密度 · 独立显影颗粒")
                         .font(.caption2)
                         .foregroundColor(.secondary)
