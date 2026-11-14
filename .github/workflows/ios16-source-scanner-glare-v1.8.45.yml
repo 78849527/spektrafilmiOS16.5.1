@@ -46,13 +46,27 @@ jobs:
           python ios/scripts/generate_source_mt19937.py
           test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
+      - name: Isolate unchanged source FIR/YVV enum from its app-only DIR wrappers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src=Path("ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift").read_text()
+          marker="// Native source-exact DIR route:"
+          assert src.count(marker)==1
+          part=src.split(marker)[0]
+          assert "enum SourceSpatialDIRConvolution" in part
+          assert "static func diffuseMemoryBounded(" in part
+          assert part.rstrip().endswith("}")
+          Path("/tmp/SourceSpatialDIRConvolutionSourceBlur.swift").write_text(part)
+          print("PASS: compile exact original source FIR/YVV enum unmodified, omit unrelated app-only DIR wrappers")
+          PY
       - name: Compile actual source Float64 RGB/XYZ optics and scanner module
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
             ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
-            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            /tmp/SourceSpatialDIRConvolutionSourceBlur.swift \
             ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
             ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift \
             ios/tests/SourceScannerGlareValidation.swift \
@@ -67,7 +81,7 @@ jobs:
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
             ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
-            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            /tmp/SourceSpatialDIRConvolutionSourceBlur.swift \
             ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
             ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
       - name: Keep full original certification blocked
