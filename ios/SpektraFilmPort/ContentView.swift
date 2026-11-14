@@ -566,6 +566,57 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Build81/13-15: opt-in real-file geometry/preview diagnostic.
+    /// Decodes the actual original sRGB file at its original dimensions
+    /// (max 2MP for bounded diagnosis), then executes the source CPU Double
+    /// crop and skimage-style preview. It does NOT change the original photo,
+    /// the regular preview, export or the spectral film processing path.
+    func probeBuild81OriginalGeometry() {
+        guard let data=originalPhotoData else {
+            status="请先加载普通 sRGB 图片；RAW/未解码文件不能伪装为源像素"
+            return
+        }
+        guard !busy else {return}
+        busy=true
+        status="Build81：正在检查原片 8-bit sRGB，执行 CPU Double 原版裁剪/预览…"
+        Task { @MainActor in
+            defer {busy=false}
+            do {
+                let proof=try await Task.detached(priority:.userInitiated) {
+                    try OriginalSourcePixelIO.preflightExport(
+                        data,maximumAllowedPixels:2_000_000
+                    )
+                    let frame=try OriginalSourcePixelIO.decode(
+                        data,maximumAllowedPixels:2_000_000
+                    )
+                    let cropped=try OriginalSourcePixelIO.cropOriginal81(
+                        frame,sizeX:0.6,sizeY:0.6
+                    )
+                    let scaled=try OriginalSourcePixelIO.previewOriginal81(
+                        cropped,maxSide:600
+                    )
+                    return (
+                        frame.width,frame.height,
+                        cropped.width,cropped.height,
+                        scaled.width,scaled.height,
+                        scaled.rgb.first ?? 0
+                    )
+                }.value
+                let label=[
+                    "Build81 实际原片 Float64：",
+                    "\(proof.0)×\(proof.1) → 源裁剪 ",
+                    "\(proof.2)×\(proof.3) → 源预览 ",
+                    "\(proof.4)×\(proof.5)；样本 ",
+                    String(format:"%.9f",proof.6),
+                    "。仅验证原版几何/预览数学，不代表 RAW、ICC 或整图等价。"
+                ]
+                status=label.joined()
+            } catch {
+                status="Build81 原版裁剪/预览诊断失败：" + error.localizedDescription
+            }
+        }
+    }
+
     private func loadPhoto(_ data: Data) throws {
         invalidateSimulation()
         let decoded = try PhotoProcessor.decode(data)
