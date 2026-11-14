@@ -79,7 +79,7 @@ assert "confirmedSimpleLock(title)" in second
 assert "confirmedFeatureLock(feature)" in feature
 
 third_calls = re.findall(r'\bresetToggle\("([^"]+)"', src)
-assert len(third_calls) == 10, f"Expected 10 nested switches, found {third_calls}"
+assert len(third_calls) == 11, f"Expected 11 nested switches, found {third_calls}"
 assert len(set(third_calls)) == len(third_calls)
 for token in (
     'resetToggle("黑白场校准"',
@@ -88,13 +88,14 @@ for token in (
     'resetToggle("原版乳剂散射＋背反射同时开启（Double）"',
     'resetToggle("原版扫描镜头 / Unsharp（Double）"',
     'resetToggle("源扫描 XYZ 眩光（单线程实验）"',
+    'resetToggle("源三亚层颗粒 / 染料云（Float64 实验）"',
     'resetToggle("相机 UV 光谱截止"',
     'resetToggle("相机 IR 光谱截止"',
     'resetToggle("实测三乳剂亚层"',
     'resetToggle("原版 Metal 显影链"',
 ):
     assert token in src, f"Original third-level feature lost: {token}"
-assert src.count("resetToggle(") == 11
+assert src.count("resetToggle(") == 12
 
 # Keep the iOS16.5.1 crash-mitigation and the original report UI.
 for token in (
@@ -118,7 +119,7 @@ assert 'private func unifiedEditorDock(width:' in src
 assert 'private func horizontalMaterialPicker(' in src
 assert 'private func edgeDrawerTab(' not in src
 assert '.pickerStyle(.wheel)' not in src
-print("PASS: ten nested switches remain unchanged after merged film/adjustment menu refactor")
+print("PASS: eleven nested switches use unchanged miniature geometry after source grain batch")
 
 
 # The new source-scanner control is a separate, type-erased subview;
