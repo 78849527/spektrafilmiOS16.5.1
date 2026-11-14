@@ -34,8 +34,13 @@ struct SafeExportResolutionValidation {
                         SafeExportResolution.estimatedBytesPerPixel
                     precondition(d.pixels <= limit)
                     precondition(plan.estimatedPeakBytes <= plan.allocationAllowanceBytes)
+                    if mode == .safe {
+                        precondition(d.pixels <=
+                            SafeExportResolution.safeMaximumPixels)
+                    }
                     if mode == .economy {
-                        precondition(d.pixels <= 3_000_000)
+                        precondition(d.pixels <=
+                            SafeExportResolution.economyMaximumPixels)
                     }
                 }
                 if d.reduced && min(d.width,d.height)>2 {
@@ -46,8 +51,9 @@ struct SafeExportResolutionValidation {
                 }
             }
         }
-        // For a device with an actual ~1500MB budget and enough source
-        // pixels, adaptive 50% should exceed 7MP; 3MP remains an option.
+        // Even with an actual 1.5GB upper budget, output can be BELOW
+        // the user-selected 12MP/7.2MP ceilings because the safety
+        // percentages and source-pipeline memory estimates take priority.
         let adaptive = try SafeExportResolution.plan(
             width:6000,height:4000,physicalMemory:6_000_000_000,
             processAvailableMemory:1_500_000_000,mode:.safe
@@ -58,8 +64,42 @@ struct SafeExportResolutionValidation {
         )
         precondition(adaptive.dimensions.pixels >= 7_000_000)
         precondition(adaptive.dimensions.pixels <= 7_211_539)
-        precondition(economy.dimensions.pixels <= 3_000_000)
+        precondition(economy.dimensions.pixels <= 7_200_000)
+        precondition(economy.dimensions.pixels > 3_000_000)
         precondition(adaptive.dimensions.pixels > economy.dimensions.pixels)
+
+        // A high-efficiency pipeline with identical safe/economy
+        // percentages MUST obey the new 12MP and 7.2MP ceilings.
+        // This is a controlled budget test, not a declaration that
+        // 12MP source Float64+grain fits in an A15 memory budget.
+        let largeSource=(width:6000,height:4000)
+        for (mode,limit) in [
+            (ExportResolutionMode.safe,UInt64(12_000_000)),
+            (.economy,UInt64(7_200_000))
+        ] {
+            let plan=try SafeExportResolution.plan(
+                width:largeSource.width,height:largeSource.height,
+                physicalMemory:6_000_000_000,
+                processAvailableMemory:1_500_000_000,
+                mode:mode,estimatedBytesPerPixel:32
+            )
+            precondition(plan.dimensions.pixels<=limit)
+            precondition(plan.dimensions.pixels>=limit-10_000)
+            precondition(plan.summary.contains(
+                mode == .safe ? "上限1200万" : "上限720万"
+            ))
+        }
+        // Source geometry remains unchanged when the image is SMALLER
+        // than the selected output cap and available budget.
+        for mode in [ExportResolutionMode.safe,.economy] {
+            let small=try SafeExportResolution.plan(
+                width:1200,height:900,physicalMemory:6_000_000_000,
+                processAvailableMemory:1_500_000_000,
+                mode:mode,estimatedBytesPerPixel:32
+            )
+            precondition(small.dimensions.width==1200 &&
+                         small.dimensions.height==900)
+        }
 
         // New true source physics no longer uses general CoreImage's 104
         // bytes/pixel budget; the 120B/px Double full-image pipeline is
@@ -116,6 +156,6 @@ struct SafeExportResolutionValidation {
                 fatalError("Must reject invalid export inputs")
             } catch SafeExportResolution.Failure.invalid {}
         }
-        print("PASS: adaptive 50% (~7.2MP at 1.5GB), original unchanged, <=3MP economy, process-memory cap and aspect ratio")
+        print("PASS Build76: source original unchanged, adaptive safe<=12MP, economy<=7.2MP, memory headroom and original aspect ratio protected")
     }
 }
