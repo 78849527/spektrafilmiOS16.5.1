@@ -131,3 +131,48 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
 - Added ios/SpektraFilmPort/Build77ExactJSONValue.swift using native Swift JSONDecoder, with an explicit bit-pattern regression test for this input value. This repairs source-fixture decoding, not rendering output.
 - [GitHub Actions run #43605486020](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43605486020): independent Swift host compile and STRICT 360/360 original Python vs native Swift parameter digest per-field comparison PASSED.
 - This establishes only the validated scalar parameter digest subtree. iPhoneOS/macOS compilation, UI production mapping, seven-tap numerical equivalence and full-device image acceptance have separate gates. No new IPA was generated.
+
+## Build77/02 in-production paper stage taps (standard and spatial print diffusion)
+
+- The exact upstream source stage boundary has been checked against
+  `src/spektrafilm/runtime/stages/printing.py`: for a negative,
+  `PrintingStage.expose` computes photon-domain optical printing,
+  optional full-frame diffusion, and `log10(max(raw, 0) + 1e-10)`
+  BEFORE `PrintingStage.develop` maps to CMY paper densities.
+- Existing `SpectralPhysics.scanFilmDensity` / `paperDensities` now
+  expose **actual internal computations** via an optional read-only
+  `paperStageObserver`. This covers the ordinary print branch with
+  no PSF and supports the source normal paper path.
+- Existing `SpectralPhysics.sourceSpatialScanPrintedPhoton` likewise
+  exposes the actual log and source H-D values *after* full-frame
+  2D original paper diffusion, not an independently recomputed
+  diagnostic image.
+- `OriginalSourcePhysicalImage.developInPlace` records
+  `paperLogExposure` and `paperDevelopedDensity` as independent
+  Float64 arrays in both normal and diffusion paths. Direct positive
+  scanning must not produce either. Normal export/preview never
+  allocates these extra tapes. Diagnostic capture explicitly reserves
+  their 48 additional bytes per pixel in the preflight memory budget.
+- The explicit `Build77StageTapeRecorder.capturePhysical` guard now
+  enforces source-stage order and 3-channel dimensions; it rejects
+  missing negative print taps and invented positive print taps.
+- The pre-existing real-device path is unchanged unless the optional
+  observer is present. `ios/tests/SourcePhysicalImageParity.swift`
+  now requires bitwise identity between observable production paper
+  stages and the actual functions that produced them, and verifies
+  observer-enabled and observer-disabled final RGB are identical.
+  `Build77StageTapeRecorderValidation.swift` separately tests
+  positive/direct versus negative/print topology violations.
+- The Python original `build77_source_contract.py emit-taps` now
+  additionally supports `--print-diffusion` to run the actual
+  original `PrintingStage.expose` PSF branch. CI retains three
+  separate source topologies/conditions: negative default,
+  negative with 2D print PSF, and positive direct scan.
+- **Scientific limitation:** having correspondingly located stages is
+  NOT a Python-vs-iOS numerical match. The real `rgb_pre` original
+  preprocessing, high-bit-depth/RAW ICC paths, full production parameter
+  binding, exact default RNG and scanner output gamut remain missing
+  or not yet independently certified. Do not call Build77 complete.
+- CI is **NO IPA** by default: bundled host numerical proofs and
+  iPhoneOS arm64 compiler evidence are generated without
+  publishing a new installable test build.
