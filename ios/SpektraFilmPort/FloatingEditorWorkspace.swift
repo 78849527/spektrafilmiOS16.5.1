@@ -1495,7 +1495,8 @@ struct FloatingEditorWorkspace: View {
                 resetToggle("源扫描 XYZ 眩光（单线程实验）",
                             value:$model.sourceScannerGlareEnabled,
                             enabled:model.hasPhoto && !model.busy &&
-                                    sourcePhysicalMode && !isReversal,
+                                    model.sourcePixelIOEnabled &&
+                                    model.sourcePhysicalDirectEnabled && !isReversal,
                             resetTo:false)
                     .onChange(of:model.sourceScannerGlareEnabled) { _ in
                         model.queueSpectralPreview()
