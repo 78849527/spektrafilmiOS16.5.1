@@ -295,7 +295,7 @@ jobs:
 
   native-parameter-digest-audit:
     name: Python original vs native Swift source-order parameter digest 360 cases
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     needs: [python-reference-taps]
     timeout-minutes: 20
     steps:
@@ -317,7 +317,8 @@ jobs:
           PY
       - name: Compile native Swift production digest module and independent driver
         run: |
-          xcrun swiftc -Onone -parse-as-library \
+          swiftc --version
+          swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/Build77OriginalParameterDigest.swift \
             ios/tests/Build77OriginalParameterDigestValidation.swift \
             -o /tmp/Build77OriginalParameterDigestValidation
