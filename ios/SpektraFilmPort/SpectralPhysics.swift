@@ -814,7 +814,8 @@ struct SpectralPhysics {
                 weights: pWeights, reference: printReference, printEV: 0.0,
                 preflashRaw: opticalPreflashRaw,
                 opticalPrint: useOriginalPrintOptics,
-                sourceHD: sourcePaperHDCurve
+                sourceHD: sourcePaperHDCurve,
+                paperStageObserver: paperStageObserver
             )
         }
         let midLinear = Self.scanLinear(
@@ -1217,7 +1218,9 @@ struct SpectralPhysics {
     /// pipeline. A reversal film bypasses printing.
     func scanFilmDensity(_ filmDensity: [Double], paperEV: Double,
                          sourceLinearOutput: Bool = false,
-                         sourceXYZOutput: Bool = false) -> [Double] {
+                         sourceXYZOutput: Bool = false,
+                         paperStageObserver: (([Double], [Double]) -> Void)? = nil
+    ) -> [Double] {
         let resultDensity: [Double]
         let substrate: Profile
         if isPositive {
@@ -1580,14 +1583,18 @@ struct SpectralPhysics {
     }
 
     func sourceSpatialScan(
-        filmDensity: [Double], paperEV: Double
+        filmDensity: [Double], paperEV: Double,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard filmDensity.count == 3,
               filmDensity.allSatisfy({ $0.isFinite }),
               paperEV.isFinite && abs(paperEV) <= 4 else {
             throw PhysicsError.invalid("原版相纸及扫描输入密度无效")
         }
-        let output = scanFilmDensity(filmDensity,paperEV:paperEV)
+        let output = scanFilmDensity(
+            filmDensity,paperEV:paperEV,
+            paperStageObserver:paperStageObserver
+        )
         guard output.count == 3,
               output.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相纸 H-D 或光谱扫描输出非有限")
@@ -1600,7 +1607,8 @@ struct SpectralPhysics {
     /// boundary changes. In source physical mode B/W reference and CAM16
     /// LUT are explicitly forbidden rather than silently approximated.
     func sourceSpatialScanXYZ(
-        filmDensity:[Double],paperEV:Double
+        filmDensity:[Double],paperEV:Double,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard useOriginalScanner, !useReferenceBlackWhite,
               !defaultCAM16Gamut,
@@ -1612,7 +1620,8 @@ struct SpectralPhysics {
             )
         }
         let xyz=scanFilmDensity(
-            filmDensity,paperEV:paperEV,sourceXYZOutput:true
+            filmDensity,paperEV:paperEV,sourceXYZOutput:true,
+            paperStageObserver:paperStageObserver
         )
         guard xyz.count==3,xyz.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版光谱 XYZ 生成失败")
@@ -1651,7 +1660,8 @@ struct SpectralPhysics {
     /// True original linear RGB before scanner lens Gaussian and unsharp.
     /// Requires source optical scan, not the mobile scanner fallback.
     func sourceSpatialScanLinear(
-        filmDensity:[Double],paperEV:Double
+        filmDensity:[Double],paperEV:Double,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard useOriginalScanner && !defaultCAM16Gamut else {
             throw PhysicsError.invalid(
@@ -1659,7 +1669,8 @@ struct SpectralPhysics {
             )
         }
         let linear=scanFilmDensity(
-            filmDensity,paperEV:paperEV,sourceLinearOutput:true
+            filmDensity,paperEV:paperEV,sourceLinearOutput:true,
+            paperStageObserver:paperStageObserver
         )
         guard linear.count==3,linear.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("源扫描模糊前的真实线性 RGB 无效")
@@ -1995,7 +2006,8 @@ struct SpectralPhysics {
                                        morph: OriginalPrintMorph.PreparedCurve? = nil,
                                        preflashRaw: [Double] = [0, 0, 0],
                                        opticalPrint: Bool = false,
-                                       sourceHD: OriginalPrintMorph.SourceCurve? = nil
+                                       sourceHD: OriginalPrintMorph.SourceCurve? = nil,
+                                       paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) -> [Double] {
         let raw = printRaw(
             filmDensities: filmDensities, film: film, weights: weights,
@@ -2006,7 +2018,7 @@ struct SpectralPhysics {
                 raw: raw, reference: reference, preflash: preflashRaw,
                 printEV: printEV
               ) : []
-        return (0..<3).map { c in
+        let developed=(0..<3).map { c in
             let logE = opticalPrint ? originalExposure[c]
                 : log10(max(1e-14, raw[c]) / reference) +
                     printEV * 0.301029995664
@@ -2032,6 +2044,11 @@ struct SpectralPhysics {
             return max(0,min(limit,measured +
                 morph.densityDelta(logE,channel:c)))
         }
+        // Observe the ACTUAL Python-equivalent no-diffusion source
+        // paper log exposure and fitted density, before any scanner work.
+        // Direct-positive scan does not have a paper stage.
+        if opticalPrint { paperStageObserver?(originalExposure,developed) }
+        return developed
     }
 
     /// Source _return_callable_cmy_to_log_xyz exact spectral sum:
