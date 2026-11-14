@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// Build77/03 — literal source-order digest of Python
 /// runtime/params_builder.py on a JSON-compatible scalar parameter subtree.
