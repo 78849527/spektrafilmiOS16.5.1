@@ -272,3 +272,57 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
 - This CI is a **no-IPA batch**. No new Test Release or IPA was
   packaged or published; the previously user-tested Build77 IPA
   remains unchanged.
+
+## 2026-11-14 progress accounting and Build77/02+05 real-tap candidate harness
+
+### Project-wide progress basis
+
+- The 47-item / 16-batch [master roadmap](MASTER-PORTING-ROADMAP-ios16.5.1.md)
+  remains the sole completion checklist. **Estimated implementation coverage:
+  about 35%** across legacy and Build77 code (a planning estimate, not a
+  statistically exact result or proof of full scientific equivalence).
+  **Strictly accepted batches: 0 of 16**. Build77 01–05 remains open.
+- Some previous source-optics/film/grain modules have real source-specific
+  Float64 numerical proofs, but important defaults, production/UI parameter
+  mapping, RAW/high bit depth/ProPhoto, free-running Numba random, whole
+  7-tap iPhone data, and high-resolution memory/colour tests are incomplete.
+  Therefore 35% MUST NOT be represented as a certified equivalence rate.
+
+### New real-production candidate source tap map (no IPA)
+
+- `ios/SpektraFilmPort/Build77StageTapeRecorder.swift` now emits a
+  **candidate-source-tap-mapping.json** alongside original
+  per-observer Float64 `.npy` files. Mapping is constructed from
+  *actual* production observer names and a strict source topology check.
+- Negative optical print: source tap candidates
+  `rgb_in → iosInput`, `rgb_pre → rgbPre`,
+  `log_e_film → logRaw`, `cmy_film → density` if
+  stochastic grain is disabled or `grainDensity` if source grain ran,
+  `log_e_print → paperLogExposure`,
+  `cmy_print → paperDevelopedDensity`, `rgb_out → iosOutput`.
+- Positive direct scan: only the five applicable stages are mapped;
+  fabricated print stages are rejected. When source grain is requested
+  but `grainDensity` is absent, mapping fails; it also rejects grain
+  capture after the actual paper stage or missing/duplicate observations.
+  This is essential for subsequent independent tap-to-tap matching.
+- `ios/scripts/build77_source_contract.py compare-taps
+  --candidate-mapping` consumes these real observer names and the
+  original Python reference in separate folders. It checks
+  topology/branch, source SHA, file name safety, `<f8` dtype,
+  dimensions, file byte lengths, optional Swift SHA256, source
+  payload checksums, NaN/Inf class masks, MAE/RMSE/max per stage and
+  the explicit tolerance. It never silently upcasts Float32.
+- `ios/scripts/build77_candidate_tape_selftest.py` checks this
+  comparator with *ephemeral synthetic source-self-copies only*, then
+  requires it to reject numeric perturbations, falsely marked
+  certification and unsafe aliases. The artificial self-copy MUST
+  NEVER be presented as Swift/iPhone equivalence; no matching device
+  source tapes have yet been captured and compared end-to-end.
+- A strict scope marker
+  `IOS_CANDIDATE_MAPPING_NOT_PYTHON_NUMERIC_PARITY`, the
+  locked upstream source hash, and `numerically_certified:false`
+  are mandatory. No native code path is renamed or replaced by source
+  fixtures. The Swift recorder remains opt-in only; normal image
+  output and performance paths are unchanged.
+- All further iPhoneOS builds here remain **CI-only with no IPA**,
+  unless later actual device verification becomes the blocker.
