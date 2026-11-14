@@ -1000,7 +1000,9 @@ final class PhotoEditorModel: ObservableObject {
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                         ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                     (sourcePhysicalHalationRequested
-                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0)
+                        ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
+                    (printSourceDiffusionEnabled
+                        ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
             )
         }
         return try SafeExportResolution.capture(
@@ -1021,7 +1023,9 @@ final class PhotoEditorModel: ObservableObject {
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                    (sourcePhysicalHalationRequested
-                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0))
+                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
+                   (printSourceDiffusionEnabled
+                    ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0))
                 : SafeExportResolution.estimatedBytesPerPixel
         )
     }
