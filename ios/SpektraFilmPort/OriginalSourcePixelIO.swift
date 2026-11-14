@@ -157,11 +157,12 @@ enum OriginalSourcePixelIO {
                 maximumAllowedPixels:maximumAllowedPixels
             )
         }
-        // Build78/07: TIFF IEEE754 32-bit floating source values go
-        // directly to Float64 without gamut/clipping/8-bit coercion.
-        // This is an explicitly tagged sRGB file-pixel path only:
-        // Python default ProPhoto, RAW and 16-bit float remain separate.
-        if original.bitsPerComponent == 32,
+        // Build78/07: tagged TIFF IEEE754 Float16 or Float32 source
+        // components are promoted exactly to CPU Double, without
+        // downcasting to RGBA8, gamut conversion or hidden clipping.
+        // Python default ProPhoto, RAW and EXR are separate stages.
+        if (original.bitsPerComponent == 16 ||
+            original.bitsPerComponent == 32),
            original.bitmapInfo.contains(.floatComponents) {
             return try Build78FloatTIFFIngress.decode(
                 source:imageSource,image:original,
