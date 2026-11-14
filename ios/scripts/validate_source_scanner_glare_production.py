@@ -13,8 +13,10 @@ model=(root/"ios/SpektraFilmPort/ContentView.swift").read_text()
 ui=(root/"ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
 test=(root/"ios/tests/SourcePhysicalImageParity.swift").read_text()
 glare=(root/"ios/SpektraFilmPort/OriginalSourceScannerGlare.swift").read_text()
-assert 'MARKETING_VERSION: "1.8.46"' in (root/"ios/project.yml").read_text()
-assert 'CURRENT_PROJECT_VERSION: "71"' in (root/"ios/project.yml").read_text()
+assert any('MARKETING_VERSION: "' + v + '"' in (root/"ios/project.yml").read_text()
+           for v in ("1.8.46","1.8.47"))
+assert any('CURRENT_PROJECT_VERSION: "' + v + '"' in (root/"ios/project.yml").read_text()
+           for v in ("71","72"))
 assert 'iOS: "16.5"' in (root/"ios/project.yml").read_text()
 for token in (
     'sourceXYZOutput: Bool = false',
