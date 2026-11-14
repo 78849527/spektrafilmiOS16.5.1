@@ -118,6 +118,14 @@ struct SourceScannerGlareValidation {
             "\(totalXYZ) Float64 XYZ channels. maxAmount=\(maxAmountError), " +
             "maxXYZ=\(maxXYZError)"
         )
+        // Exercise the same method the iPhone Metal diagnostic report calls.
+        let liveAppendix = try OriginalSourceScannerGlareDiagnostic.evaluate()
+        guard liveAppendix.contains("141 个眩光 Float64 值"),
+              liveAppendix.contains("423 个 XYZ 通道"),
+              liveAppendix.contains("未接入完整生产扫描 XYZ") else {
+            fatalError("On-device source glare diagnostic did not preserve limits")
+        }
+        print("PASS: actual on-device glare diagnostic evaluate() uses source Float64 fixtures")
         print(
             "NOT CERTIFIED: Python Numba unseeded multiworker RNG, " +
             "full production scanner XYZ integration, complete RGB, " +
