@@ -44,11 +44,27 @@ enum Build79RAWSignatureValidation {
         cr3.append(Data(repeating:0,count:116))
         let dng=tiff(50706,1,4,0x00000401)
         let nef=tiff(0x010f,2,6,64,extra:Data("NIKON\0".utf8))
+        let arw=tiff(0x010f,2,5,64,extra:Data("SONY\0".utf8))
+        var cr2=Data(repeating:0,count:128)
+        cr2[0]=0x49; cr2[1]=0x49; cr2[2]=0x2a
+        cr2[4]=16
+        cr2[8]=0x43; cr2[9]=0x52 // "CR"
+        cr2[10]=2; cr2[11]=0
+        cr2[12]=64 // IFD3 offset
+        var dngBig=Data(repeating:0,count:128)
+        dngBig[0]=0x4d;dngBig[1]=0x4d;dngBig[3]=0x2a
+        dngBig[7]=8; dngBig[9]=1 // big-endian one-entry IFD
+        dngBig[10]=0xc6;dngBig[11]=0x12 // DNGVersion
+        dngBig[13]=1;dngBig[17]=4 // BYTE[4]
+        dngBig[18]=1;dngBig[19]=4 // version 1.4.0.0
         for (name,data,kind) in [
             ("X-T5.RAF",raf,Build79RAWSignature.Kind.raf),
             ("EOS-R.cr3",cr3,.cr3),
             ("Apple-ProRAW.dng",dng,.dng),
-            ("Nikon.Z9.NEF",nef,.nef)
+            ("Nikon.Z9.NEF",nef,.nef),
+            ("Canon-5D.CR2",cr2,.cr2),
+            ("Sony-A7.ARW",arw,.arw),
+            ("big-endian.dng",dngBig,.dng)
         ] {
             guard try Build79RAWSignature.classify(
                 filename:name,header:data
@@ -64,7 +80,12 @@ enum Build79RAWSignatureValidation {
             ("renamed.raf",fake),
             ("renamed.cr3",fake),
             ("renamed.nef",fake),
-            ("no-dng-version.dng",tiff(0x010f,2,6,64))
+            ("renamed.cr2",fake),
+            ("renamed.arw",fake),
+            ("no-dng-version.dng",tiff(0x010f,2,6,64)),
+            ("zero-dng-version.dng",tiff(50706,1,4,0)),
+            ("wrong-brand.arw",nef),
+            ("wrong-brand.nef",arw)
         ] {
             var rejected=false
             do {
@@ -81,11 +102,11 @@ enum Build79RAWSignatureValidation {
         var unknownRejected=false
         do {
             _=try Build79RAWSignature.classify(
-                filename:"Sony.arw",header:fake
+                filename:"Olympus.orf",header:fake
             )
         } catch { unknownRejected=true }
         guard unknownRejected else {
-            throw Failure.invalid("Unported Sony ARW must fail explicitly")
+            throw Failure.invalid("Unported Olympus ORF must fail explicitly")
         }
         guard try Build79RAWSignature.classify(
             filename:"not-raw.jpg",header:fake
@@ -129,8 +150,9 @@ enum Build79RAWSignatureValidation {
             )
         }
         print(
-            "PASS Build79 4 RAW source signatures "
-            + "(RAF/CR3/DNG/NEF), 5 disguised/invalid header rejections, "
+            "PASS Build79 6 RAW source signatures "
+            + "(RAF/CR3/DNG/NEF/CR2/ARW, plus big-endian DNG), "
+            + "11 disguised/invalid header rejections, "
             + "unsupported RAW fail closed, non-RAW intact; "
             + "RAF file stream-copy SHA256 identical. "
             + "NO demosaic or numeric RAW backend equivalence claimed."
