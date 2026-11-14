@@ -1,4 +1,4 @@
-name: Build77 source contract + experimental unsigned IPA
+name: Build77 batched original source verification (NO IPA)
 
 on:
   push:
@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   upstream-contract:
@@ -245,26 +245,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 77
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
           echo "Build77 unsigned test app 1.8.52(77) compiled; upstream scientific parity NOT certified"
-      - name: Package unsigned Build77 iPhoneOS app with exact tested bundle
-        run: |
-          set -euo pipefail
-          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
-          IPA=SpektraFilmPort-iOS16.5.1-v1.8.52-Build77-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          test -f "$APP/SpektraFilmPort"
-          test -s "$APP/default.metallib"
-          mkdir -p ios/build/package/Payload
-          cp -R "$APP" ios/build/package/Payload/
-          cd ios/build/package
-          /usr/bin/zip -q -r "../$IPA" Payload
-          unzip -t "../$IPA" >/dev/null
-          test -s "../$IPA"
-          shasum -a 256 "../$IPA"
-      - name: Upload unsigned Build77 IPA for transparent test distribution
-        uses: actions/upload-artifact@v4
-        with:
-          name: build77-1p8p52-unsigned-test-ipa
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.52-Build77-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          if-no-files-found: error
       - name: Preserve host-generated Swift diagnostic tape
         if: always()
         uses: actions/upload-artifact@v4
@@ -318,42 +298,3 @@ jobs:
             build77-evidence/swift-28-stock-audit.txt
           if-no-files-found: warn
 
-  build77-experimental-release:
-    name: Publish unsigned Build77 TEST ONLY after all 4 jobs pass
-    runs-on: ubuntu-latest
-    needs: [upstream-contract, python-reference-taps, ios-stage-recorder, native-stock-byte-audit]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/port/build77-source-contract-01-05'
-    steps:
-      - name: Download exact Build77 compiled IPA
-        uses: actions/download-artifact@v4
-        with:
-          name: build77-1p8p52-unsigned-test-ipa
-          path: build77-distribution
-      - name: Verify unsigned payload SHA256 and publish immutable experimental Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          TAG=ios1651-v1.8.52-build77-source-contract-UNVERIFIED-TEST
-          IPA=build77-distribution/SpektraFilmPort-iOS16.5.1-v1.8.52-Build77-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          test -s "$IPA"
-          unzip -t "$IPA" >/dev/null
-          unzip -l "$IPA" | grep -F 'Payload/SpektraFilmPort.app/SpektraFilmPort'
-          sha256sum "$IPA"
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/port/build77-source-contract-01-05" --jq '.object.sha')
-          if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
-            echo "::error::Branch changed after validation; refuse stale IPA release"
-            exit 1
-          fi
-          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            echo "::error::Immutable experimental tag already exists; refuse silent replacement"
-            exit 1
-          fi
-          gh release create "$TAG" "$IPA" --repo "$GH_REPO" \
-            --target "$GITHUB_SHA" --prerelease \
-            --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.52 Build77 - source contract 01-05" \
-            --notes "Unsigned experimental iPhoneOS Build77 package compiled from this exact commit after Python original source contract, seven-tap SOURCE-ONLY fixture generation, 28-stock native byte audit, Swift recorder format validation, and arm64 iPhoneOS compile. Not certified for complete source Python↔Swift numeric parity, true matching iOS seven taps, default/parameter mapping, stochastic full-image equivalence, RAW, real-device runtime, or performance. Build77 01–05 remains IN PROGRESS. Requires signing to install; not a finished precision release."
-          URL=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$TAG" --jq '.assets[] | select(.name == "SpektraFilmPort-iOS16.5.1-v1.8.52-Build77-EXPERIMENTAL-UNVERIFIED-unsigned.ipa") | .browser_download_url')
-          test -n "$URL"
-          echo "Verified actual GitHub Release asset: $URL"
