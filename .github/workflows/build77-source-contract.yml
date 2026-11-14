@@ -71,6 +71,7 @@ jobs:
             ios/SpektraFilmPort/ContentView.swift \
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
             ios/SpektraFilmPort/Build78HighBitDepthIngress.swift \
+            ios/SpektraFilmPort/Build78FloatTIFFIngress.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/SpektraFilmPort/SpectralPhysics.swift \
