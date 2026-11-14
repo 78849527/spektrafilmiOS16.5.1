@@ -26,6 +26,17 @@ https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43621321979/artifa
   `FloatingEditorWorkspace`：用户保存原 RAW 后可以手动点击“检测真实 Apple RAW 后端”，
   不修改源文件或已选择的胶片/相纸，不静默启用未经认证的 RAW 原版模式。
 
+## Build79/09 后续补缺：CR2 / ARW 与严格 TIFF/DNG 头验证
+
+- 真实生产 `Build79RAWSignature.Kind` 新增 `.cr2`、`.arw`。它们沿用 `loadPhotoFile → Build79RAWStorage.preserve` 的文件入口与 SHA256 保留逻辑，并可走用户显式调用的 `CIRAWFilter` **能力检测**；不能宣称已经完成传感器解码。
+- Canon CR2：检查合法 TIFF II/MM 签名、偏移 8 的 `CR` 标志、2.0 版本、IFD0 和 IFD3 偏移，并验证 IFD0 结构。参考 [libopenraw CR2 格式说明](https://libopenraw.freedesktop.org/formats/cr2/)。
+- Sony ARW：需要 TIFF IFD0 `Make` ASCII 值含 `SONY`；支持 TIFF 端序及短值/偏移字符串，避免只靠 `.arw` 后缀误识别。
+- DNG：`DNGVersion` 除 BYTE[4] 类型验证外，强制读取 inline 真实版本值；拒绝零填充和未知非 1.x 主版本。覆盖大、小端 TIFF。
+- Canon CR3：验证 `ftyp` Box 长度、边界以及 `crx ` 品牌，拒绝长度非法的伪造文件头。
+- `Build79RAWSignatureValidation.swift` 增加 CR2、ARW、Big Endian DNG 签名样本及共 12 个无效/伪造头拒绝用例。样本为**自构造容器头**，不等于真实相机 RAW。
+- 代码提交：`e9bd7ef4e647969dc8045f8064508d21f302383b`；验证：[Actions 43624477909](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43624477909)。结果须在运行结束后独立确认。
+- **尚未认证**：X-T5 RAF（压缩/未压缩）、真实 CR2/ARW/CR3/NEF/DNG、机型兼容矩阵、RAW 全幅渲染、rawpy/LibRaw 数值、真机测试。现阶段仍不发布正式或实验 IPA。
+
 ## 经过自动化检查的边界
 
 `Build79RAWSignatureValidation.swift` 覆盖 4 类签名、伪装文件/非法头、
