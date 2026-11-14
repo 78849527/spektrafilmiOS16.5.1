@@ -135,13 +135,20 @@ enum OriginalSourcePhysicalGrain {
         // probability-of-development. Accumulate sublayer particle
         // density, later subtract total channel density_min once.
         var out=[Double](repeating:0,count:pixels*3)
+        // Float64 3×3 performance: each of the 9 SciPy source layers
+        // overwrites ALL pixels in these temporary arrays. Reuse them
+        // instead of allocating 9 × (3 scalar fields + 1 RGB blur field).
+        // RNG order, formula order, source spatial kernel and precision
+        // are unchanged. Independent Python stage + final RGB parity
+        // must remain the authority for this allocation-only optimization.
+        var probabilities=[Double](repeating:0,count:pixels)
+        var rates=[Double](repeating:0,count:pixels)
+        var saturations=[Double](repeating:0,count:pixels)
+        var cloud=[Double](repeating:0,count:pixels*3)
         for ch in 0..<3 {
             for sl in 0..<3 {
                 let li=sl*3+ch
                 let n=particleN[li],od=densityOD[li]
-                var probabilities=[Double](repeating:0,count:pixels)
-                var rates=[Double](repeating:0,count:pixels)
-                var saturations=[Double](repeating:0,count:pixels)
                 for p in 0..<pixels {
                     let sourceD=layerInputs[p*9+li]+minLayers[li]
                     let probability=min(1.0-1e-6,max(1e-6,sourceD/densityMax[li]))
@@ -159,7 +166,6 @@ enum OriginalSourcePhysicalGrain {
                 // multiplies sqrt(optical density per particle).
                 let sigma=settings.dyeCloudBlurUM*sqrt(od)
                 if sigma>0 {
-                    var cloud=[Double](repeating:0,count:pixels*3)
                     for p in 0..<pixels {
                         cloud[p*3]=Double(counts[p])*od*saturations[p]
                     }
