@@ -124,3 +124,10 @@ parameters, UI bindings, user defaults, original seven canonical iPhone taps,
 full-graph RNG, scanner gamut, RAW and whole-frame device equivalence still
 require implementation and test. Build77 01–05 remains open. Build78 is not
 unlocked. No new IPA is requested or emitted for these host-verifiable changes.
+
+### Build77/03 native result and Float64 JSON parser regression
+
+- The first strict comparison correctly rejected the loss of one Float64 ULP: Python 100.12236156288677 became 100.12236156288675 in the Swift Foundation JSONSerialization parser. The original input and zero-tolerance acceptance rule were NOT changed.
+- Added ios/SpektraFilmPort/Build77ExactJSONValue.swift using native Swift JSONDecoder, with an explicit bit-pattern regression test for this input value. This repairs source-fixture decoding, not rendering output.
+- [GitHub Actions run #43605486020](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43605486020): independent Swift host compile and STRICT 360/360 original Python vs native Swift parameter digest per-field comparison PASSED.
+- This establishes only the validated scalar parameter digest subtree. iPhoneOS/macOS compilation, UI production mapping, seven-tap numerical equivalence and full-device image acceptance have separate gates. No new IPA was generated.
