@@ -225,7 +225,7 @@ jobs:
           python ios/scripts/generate_source_scanner_glare.py
           test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
-      - name: Build77: native full original source spectral numerical suite
+      - name: "Build77: native full original source spectral numerical suite"
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/SpectralPhysics.swift \
