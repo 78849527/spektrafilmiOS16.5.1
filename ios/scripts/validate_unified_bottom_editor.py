@@ -73,7 +73,7 @@ for forbidden in (
 
 for stage in (
     'private func openUnifiedEditor()', 'private func closeUnifiedEditor()',
-    'private func selectEditorPage(_ page: EditorPage)',
+    'selectedEditorPage = page',
     'transaction.disablesAnimations = true',
     'withTransaction(transaction)',
     'adjustmentRowsReady = false',
@@ -84,6 +84,7 @@ for stage in (
     'guard unifiedEditorExpanded && selectedEditorPage == .adjustment',
 ):
     assert stage in lifecycle,stage
+assert 'private func selectEditorPage(_ page: EditorPage)' in ui
 assert 'selectedEditorPage = .adjustment' in lifecycle
 assert 'model.applyMeasuredSimulation()' not in lifecycle
 assert 'model.queueSpectralPreview()' not in lifecycle
