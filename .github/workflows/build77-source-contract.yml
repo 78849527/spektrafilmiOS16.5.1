@@ -7,10 +7,13 @@ on:
     paths:
       - "ios/scripts/build77_source_contract.py"
       - "ios/scripts/build77_params_digest_reference.py"
+      - "ios/scripts/generate_build77_rgb_pre_original.py"
       - "ios/scripts/build77_measured_manifest.py"
       - "ios/scripts/generate_spectral_data.py"
       - "ios/tests/Build77MeasuredProfileAudit.swift"
       - "ios/SpektraFilmPort/SpectralPhysics.swift"
+      - "ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift"
+      - "ios/tests/SourcePhysicalImageParity.swift"
       - "ios/project.yml"
       - "ios/SpektraFilmPort/Build77StageTapeRecorder.swift"
       - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
@@ -216,6 +219,7 @@ jobs:
           NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
             NUMBA_THREADING_LAYER=workqueue \
             python ios/scripts/generate_source_physical_frame.py
+          python ios/scripts/generate_build77_rgb_pre_original.py
           python ios/scripts/generate_scanner_reference.py
           python ios/scripts/generate_cam16_gamut.py
           python ios/scripts/generate_print_morph.py
@@ -308,6 +312,7 @@ jobs:
       - name: Validate actual in-production optical paper stage taps
         run: |
           test -s ios/verification/generated-physical-v1.8.22/manifest.json
+          test -s ios/verification/generated-physical-v1.8.22/kodak_neutral_fir.rgbPre.f64le
           /tmp/SpektrafilmSpectralValidation
       - name: Generate and compile unsigned iPhoneOS 16.5.1 Build77 app
         run: |
