@@ -28,6 +28,7 @@ on:
       - "ios/SpektraFilmPort/OriginalPrintOptics.swift"
       - "ios/SpektraFilmPort/FloatingEditorWorkspace.swift"
       - "ios/tests/Build77NeutralFilterParity.swift"
+      - "ios/tests/SourceFloat64ProfileValidation.swift"
       - "ios/tests/Build77StockHalationParity.swift"
       - "ios/SpektraFilmPort/Build77OriginalParameterDigest.swift"
       - "ios/SpektraFilmPort/Build77ExactJSONValue.swift"
@@ -550,7 +551,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Materialize actual production original spectrum and 128 stock-pair neutral rows
+      - name: Materialize actual production original spectrum and 160 stock-pair neutral rows
         run: |
           python -m pip install --quiet --disable-pip-version-check \
             'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6'
