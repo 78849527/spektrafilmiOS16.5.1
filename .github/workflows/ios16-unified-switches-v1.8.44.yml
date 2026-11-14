@@ -1,0 +1,35 @@
+name: v1.8.44 iOS16 unified menu switch geometry and behavior
+on:
+  push:
+    branches:
+      - 'ios16.5.1/unified-switches-v1.8.44'
+    paths:
+      - 'ios/SpektraFilmPort/FloatingEditorWorkspace.swift'
+      - 'ios/SpektraFilmPort/ContentView.swift'
+      - 'ios/scripts/validate_unified_switches.py'
+      - '.github/workflows/ios16-unified-switches-v1.8.44.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  nested-toggle-parity:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Xcode 16.4 supports iOS16.5 target
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Validate actual editor switch geometry and preserved control logic
+        run: python3 ios/scripts/validate_unified_switches.py
+      - name: Swift source parser regression for iOS16 View and model
+        run: |
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/ContentView.swift
+      - name: Declare certification boundaries
+        run: |
+          echo "PASS: shared 28x16 switch across all editor menu levels, source-mode buttons and label reset behavior."
+          echo "NOT CERTIFIED: physical iPhone tap/screen geometry until signed user device test."

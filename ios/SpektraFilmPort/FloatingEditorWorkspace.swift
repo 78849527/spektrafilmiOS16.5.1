@@ -242,7 +242,8 @@ struct FloatingEditorWorkspace: View {
                 requestSourceMode(mode)
             } label: {
                 miniatureSwitch(isOn: isOn)
-                    .frame(width: 42, height: 32)
+                    .frame(width: MiniSwitchMetrics.tapWidth,
+                           height: MiniSwitchMetrics.tapHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1016,15 +1017,30 @@ struct FloatingEditorWorkspace: View {
         )
     }
 
+    // Shared visible switch geometry across first, second and third menu
+    // levels. Only the surrounding tap area differs by placement.
+    // The native SwiftUI Toggle was taller and inconsistent on iOS 16.5.
+    private enum MiniSwitchMetrics {
+        static let trackWidth: CGFloat = 28
+        static let trackHeight: CGFloat = 16
+        static let thumbSize: CGFloat = 12
+        static let thumbOffset: CGFloat = 6
+        static let tapWidth: CGFloat = 42
+        static let tapHeight: CGFloat = 32
+    }
+
     private func miniatureSwitch(isOn: Bool) -> some View {
         ZStack {
             Capsule()
                 .fill(isOn ? Color.accentColor : Color.gray.opacity(0.46))
-                .frame(width: 28, height: 16)
+                .frame(width: MiniSwitchMetrics.trackWidth,
+                       height: MiniSwitchMetrics.trackHeight)
             Circle()
                 .fill(.white)
-                .frame(width: 12, height: 12)
-                .offset(x: isOn ? 6 : -6)
+                .frame(width: MiniSwitchMetrics.thumbSize,
+                       height: MiniSwitchMetrics.thumbSize)
+                .offset(x: isOn ? MiniSwitchMetrics.thumbOffset
+                         : -MiniSwitchMetrics.thumbOffset)
         }
     }
 
@@ -1691,9 +1707,9 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    // Double-tap the left caption to reset this switch. Toggle itself
-    // retains native single-tap action; no drag/tap recognizer is placed
-    // over the actual controls (iOS 16.5.1-safe).
+    // Third-level switches share the second-level 28×16 visible track.
+    // Preserve one-tap switch change and double-tap LABEL reset (never
+    // attach competing gestures to the actual switch on iOS 16.5.1).
     private func resetToggle(_ title: String, value: Binding<Bool>,
                              enabled: Bool, resetTo: Bool = false) -> some View {
         HStack(spacing: 5) {
@@ -1702,11 +1718,22 @@ struct FloatingEditorWorkspace: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
+                    guard enabled else { return }
                     value.wrappedValue = resetTo
                 }
                 .accessibilityHint("双击标签恢复该模块默认状态")
-            Toggle(title, isOn: value)
-                .labelsHidden()
+            Button {
+                guard enabled else { return }
+                value.wrappedValue.toggle()
+            } label: {
+                miniatureSwitch(isOn: value.wrappedValue)
+                    .frame(width: MiniSwitchMetrics.tapWidth,
+                           height: MiniSwitchMetrics.tapHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title + (value.wrappedValue ? "，已开启" : "，已关闭"))
+            .accessibilityHint("单击切换；双击左侧标签恢复默认")
         }
         .disabled(!enabled)
     }
