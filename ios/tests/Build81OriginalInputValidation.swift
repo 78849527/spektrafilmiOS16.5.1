@@ -54,7 +54,7 @@ enum Build81OriginalInputValidation {
               pins["crop_resize.py"]=="4737b922c34f5cf77f66f8bb022b0625e4e37dd1",
               pins["preview.py"]=="985c4099c775c6b3fc6fe660a0b467175d62f91f",
               pins["gamut_compression.py"]=="9783e7fcfc2909c4acdf2da53595c5404645dde9",
-              root["skimage_version"] as? String=="0.25.2",
+              root["skimage_version"] as? String=="0.26.0",
               let crops=root["crop"] as? [[String:Any]],
               let previews=root["preview"] as? [[String:Any]],
               let gamut=root["gamut"] as? [String:Any] else {
