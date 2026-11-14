@@ -5,8 +5,8 @@ import Foundation
 /// numba_boost_hightlights.boost_highlights (in RAW photon space), and
 /// apply_gaussian_blur_um (also in RAW space before H-D).
 ///
-/// Not a substitute for nonported UV/IR spectral recalculation, source
-/// diffusion filters, scatter, halation or RAW mosaic decoding.
+/// Original UV/IR spectral and diffusion stages are integrated
+/// separately; RAW mosaic decoding is not yet source-equivalent.
 enum OriginalSourceCameraOptics {
     enum Failure: LocalizedError {
         case invalid(String)
@@ -47,11 +47,19 @@ enum OriginalSourceCameraOptics {
         var protectEV: Double = 4
         var lensBlurUM: Double = 0
         var filmFormatMM: Double = 35
+        var diffusion: OriginalSourceDiffusion.Settings = .init()
 
-        var active: Bool { metering != .disabled || boostEV > 0 || lensBlurUM > 0 }
-        var needsWholeImageBlur: Bool { lensBlurUM > 0 }
+        var active: Bool {
+            metering != .disabled || boostEV > 0 || lensBlurUM > 0 ||
+            (diffusion.active && diffusion.strength > 0 && diffusion.spatialScale > 0)
+        }
+        var needsWholeImageBlur: Bool {
+            lensBlurUM > 0 || (diffusion.active && diffusion.strength > 0 &&
+                              diffusion.spatialScale > 0)
+        }
 
         func validate() throws {
+            try diffusion.validate()
             guard boostEV.isFinite, (0...20).contains(boostEV),
                   boostRange.isFinite, (0...1).contains(boostRange),
                   protectEV.isFinite, (0...20).contains(protectEV),

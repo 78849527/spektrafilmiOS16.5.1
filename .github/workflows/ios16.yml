@@ -1,11 +1,11 @@
-name: iOS 16.5.1 — v1.8.39 source TH-KG3-L spectral enlarger
+name: iOS 16.5.1 — v1.8.40 source camera Double FFT diffusion
 
 on:
   push:
-    branches: ['ios16.5.1/source-enlarger-lens-v1.8.39']
+    branches: ['ios16.5.1/source-camera-diffusion-v1.8.40']
     paths:
       - 'ios/**'
-      - 'docs/v1.8.39-source-enlarger-lens.md'
+      - 'docs/v1.8.40-source-camera-diffusion.md'
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 # Prevent older push runs from re-uploading their IPA over a newer SHA.
 concurrency:
-  group: ios1651-source-enlarger-lens-v1.8.39-release
+  group: ios1651-source-camera-diffusion-v1.8.40-release
   cancel-in-progress: true
 
 jobs:
@@ -47,7 +47,9 @@ jobs:
           xcrun swiftc -frontend -parse \
             ios/SpektraFilmPort/NextLevelCamera.swift \
             ios/tests/SourceCameraBandpassNumericValidation.swift \
+            ios/tests/SourceDiffusionNumericValidation.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
             ios/SpektraFilmPort/OriginalSourceCameraBandpass.swift \
             ios/SpektraFilmPort/OriginalSourceFilmHalation.swift \
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
@@ -420,6 +422,49 @@ jobs:
           print("PASS: source TH-KG3-L measured lens spectrum and default CC logic wired into both native printing branches")
           PY
 
+
+      - name: Validate original four-family Double PSF and native reflect FFT diffusion
+        run: |
+          python3 ios/scripts/validate_source_diffusion.py
+          python3 - <<'PY'
+          from pathlib import Path
+          native=Path("ios/SpektraFilmPort/OriginalSourceDiffusion.swift").read_text()
+          camera=Path("ios/SpektraFilmPort/OriginalSourceCameraOptics.swift").read_text()
+          physical=Path("ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift").read_text()
+          model=Path("ios/SpektraFilmPort/ContentView.swift").read_text()
+          editor=Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+          for token in (
+              "case glimmerglass",
+              'case blackProMist = "black_pro_mist"',
+              'case proMist = "pro_mist"',
+              "case cinebloom",
+              "private static func haloWeights(",
+              "static func scatterFraction(",
+              "static func psf(",
+              "private static func fft2(",
+              "private static func reflect(",
+              "static func apply(",
+              "let kernel=try psf(",
+              '512 MB Float64 FFT',
+          ): assert token in native,token
+          assert "var diffusion: OriginalSourceDiffusion.Settings" in camera
+          assert "try diffusion.validate()" in camera
+          assert "OriginalSourceDiffusion.apply(" in physical
+          camera_stage=physical.index('stageDoubleObserver?("cameraBoost",frame.rgb)')
+          diffusion_stage=physical.index("OriginalSourceDiffusion.apply(")
+          lens_stage=physical.index("OriginalSourceCameraOptics.applyLensBlur(")
+          film_stage=physical.index("OriginalSourceFilmHalation.applyInPlace(")
+          assert camera_stage < diffusion_stage < lens_stage < film_stage
+          assert "sourceCameraDiffusionEnabled" in model
+          assert "diffusion:OriginalSourceDiffusion.Settings(" in model
+          assert "case cameraDiffusion" in editor
+          assert 'featureToggle("摄影扩散"' in editor
+          assert "private var sourceCameraDiffusionSettings: AnyView" in editor
+          assert ".simultaneousGesture(" not in editor
+          assert "@ViewBuilder\n    private var activeSettings" not in editor
+          print("PASS: actual Double FFT source camera diffusion production path in original ordering, safe opt-in & named submenu, no approximations, crash type erasure retained")
+          PY
+
       - name: Early compile actual 2D spatial DIR source parity
         run: |
           xcrun swiftc -Onone -parse-as-library \
@@ -692,6 +737,7 @@ jobs:
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
             ios/SpektraFilmPort/OriginalSourceCameraBandpass.swift \
             ios/SpektraFilmPort/OriginalSourceFilmHalation.swift \
             ios/SpektraFilmPort/GeneratedSourceCameraReference.swift \
@@ -773,7 +819,7 @@ jobs:
           assert "OriginalFilmDIRPrintParity.evaluate()" in Path("ios/tests/SpectralValidation.swift").read_text()
           assert "OriginalFilmDIRPrintParity.evaluate()" in model
           assert "OriginalCameraFilmPrintParity.evaluate()" in model
-          # v1.8.39 executes exact upstream source FIR/YVV spatial
+          # v1.8.40 executes exact upstream source FIR/YVV spatial
           # diffusion and the real CoreImage production path, not grep-only.
           # On-device source precision: quantify iOS CI RGBAh input
           # boundary separately from the source FIR/YVV Double kernel.
@@ -785,14 +831,14 @@ jobs:
           assert "float16Reference(c.input[i])" in parity
           assert "let bits=Float(value).bitPattern" in parity
           assert "if rem > tie" in parity
-          # v1.8.39: test source Double arrays before the iOS
+          # v1.8.40: test source Double arrays before the iOS
           # Core Image half-float boundary; Metal bit-pattern proof occurs
           # only in real-device hardwareDiagnostic and never certifies the
           # complete image algorithm.
           dirSource=Path("ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift").read_text()
           assert "sourceRGBOverride:[Double]?=nil" in dirSource
           assert "stageDoubleObserver" in dirSource
-          # v1.8.39: source mode must consume actual Double-calculated
+          # v1.8.40: source mode must consume actual Double-calculated
           # nonlinear Hanatos/H-D/paper/scan optical nodes. CI/mobile retains
           # its separate Float32 cubes, never selected as a fallback.
           physics=Path("ios/SpektraFilmPort/SpectralPhysics.swift").read_text()
@@ -1071,7 +1117,7 @@ jobs:
           assert 'SpatialDIR.apply(' in source
           assert 'DensityGrain.perturbDensityImage' in stage
           assert 'sourceDIRSubtract' in stage
-          # UI v1.8.39 moves DIR to compact row 1 while preserving
+          # UI v1.8.40 moves DIR to compact row 1 while preserving
           # its original @Published binding and the nested source DIR path.
           assert 'featureToggle("DIR", feature: .dir' in ui
           assert 'if model.spatialDIREnabled {' in ui
@@ -1230,35 +1276,35 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.39'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.40'
           test ! -e "$APP/Resources/profiles/index.json"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '64'
-          echo "PASS: device bundle 1.8.39 Build64, iOS16.5 minimum and original metal library"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '65'
+          echo "PASS: device bundle 1.8.40 Build65, iOS16.5 minimum and original metal library"
 
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
           /usr/libexec/PlistBuddy -c "Print NSCameraUsageDescription" "$APP/Info.plist" | grep -q '拍照'
           /usr/libexec/PlistBuddy -c "Print UIFileSharingEnabled" "$APP/Info.plist" | grep -qx 'true'
-      - name: Package v1.8.39 unsigned IPA
+      - name: Package v1.8.40 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.39-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.39 IPA build artifact
+          zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.40-original-metal-unsigned.ipa Payload
+      - name: Upload v1.8.40 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpektraFilmPort-iOS16.5.1-v1.8.39-original-metal-unsigned
-          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.39-original-metal-unsigned.ipa
+          name: SpektraFilmPort-iOS16.5.1-v1.8.40-original-metal-unsigned
+          path: ios/build/SpektraFilmPort-iOS16.5.1-v1.8.40-original-metal-unsigned.ipa
           if-no-files-found: error
       - name: Publish explicitly unverified on-device diagnostic IPA
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-enlarger-lens-v1.8.39' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-camera-diffusion-v1.8.40' && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.39-source-enlarger-lens-UNVERIFIED-TEST
-          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.39-original-metal-unsigned.ipa
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.39-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-enlarger-lens-v1.8.39" --jq '.object.sha')
+          TAG=ios1651-v1.8.40-source-camera-diffusion-UNVERIFIED-TEST
+          SOURCE=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.40-original-metal-unsigned.ipa
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.40-EXPERIMENTAL-UNVERIFIED-unsigned.ipa
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-camera-diffusion-v1.8.40" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping stale experimental binary (head=$CURRENT_HEAD)"
             exit 0
@@ -1269,20 +1315,20 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" --prerelease \
-              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.39 - source TH-KG3-L enlarger lens" \
-               --notes "EXPERIMENTAL UNSIGNED v1.8.39 Build64. Original TH-KG3-L 3400K Schott KG3 plus measured Canon lens-transmission source illuminant is now selectable in original enlarger settings with correct default neutral CC (0,65,55). Native stage verified against upstream Python 81-wavelength Double reference. Retains v1.8.38 Mallett 2019 and UV/IR source filters, v1.8.37 type-erased adjustment crash mitigation, iOS 16.5 minimum and original optics/DIR/film-print chain. Native iPhone full-image Float64/RNG/GPU numerical certification and on-device drawer regression remain UNVERIFIED. Not a signed/production release; IPA requires signing."
+              --title "TEST ONLY | SpektraFilm iOS 16.5.1 v1.8.40 - original camera Double FFT diffusion" \
+               --notes "EXPERIMENTAL UNSIGNED v1.8.40 Build65. Opt-in original four-family camera diffusion is computed in Double on the source photon image using per-channel normalized PSFs, warmth and all six family overrides, full reflect boundaries and radix-2 FFT convolution before lens blur and film halation. Strict memory preflight fails explicitly instead of reducing precision/PSF. The previous TH-KG3-L enlarger source and Mallett UV/IR stay available. Native stage verified against upstream Python 81-wavelength Double reference. Retains v1.8.38 Mallett 2019 and UV/IR source filters, v1.8.37 type-erased adjustment crash mitigation, iOS 16.5 minimum and original optics/DIR/film-print chain. Native iPhone full-image Float64/RNG/GPU numerical certification and on-device drawer regression remain UNVERIFIED. Not a signed/production release; IPA requires signing."
           fi
           gh release view "$TAG" --json tagName,url
           echo "TEST ONLY: signed install needed; no certified source parity."
-      - name: Publish isolated v1.8.39 prerelease and synchronize tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-enlarger-lens-v1.8.39' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
+      - name: Publish isolated v1.8.40 prerelease and synchronize tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/ios16.5.1/source-camera-diffusion-v1.8.40' && steps.metal_source_gpu.outcome == 'success' && steps.iir_source_gpu.outcome == 'success' && steps.source_replay_gpu.outcome == 'success' && steps.precision_certificate.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=ios1651-v1.8.39-source-enlarger-lens
-          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.39-original-metal-unsigned.ipa
+          TAG=ios1651-v1.8.40-source-camera-diffusion
+          ASSET=ios/build/SpektraFilmPort-iOS16.5.1-v1.8.40-original-metal-unsigned.ipa
           # A superseded run must never publish its older binary.
-          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-enlarger-lens-v1.8.39" --jq '.object.sha')
+          CURRENT_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/ios16.5.1/source-camera-diffusion-v1.8.40" --jq '.object.sha')
           if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
             echo "Skipping release from superseded commit $GITHUB_SHA (head=$CURRENT_HEAD)"
             exit 0
@@ -1292,12 +1338,12 @@ jobs:
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" "$ASSET" --target "$GITHUB_SHA" \
-              --title "SpektraFilm iOS 16.5.1 v1.8.39 — TH-KG3-L source enlarger lens" \
-               --notes "v1.8.39 source precision batch includes original Float64 for all 28 measured profiles, 20 original pre-DIR H-D curves, 256 s023 paper exposure samples, CIE1931/Mallett/KG3/illuminants and 128 enlarger pair spectra. Mobile fast arrays unchanged. Source JSON byte parity + native SHA/all 28 materials + Python seven-stage image validation required. User confirmed 10MP physical export functional; full GPU, Numba random and RAW certification outstanding."
+              --title "SpektraFilm iOS 16.5.1 v1.8.40 — source camera Double FFT diffusion" \
+               --notes "v1.8.40 source precision batch includes original Float64 for all 28 measured profiles, 20 original pre-DIR H-D curves, 256 s023 paper exposure samples, CIE1931/Mallett/KG3/illuminants and 128 enlarger pair spectra. Mobile fast arrays unchanged. Source JSON byte parity + native SHA/all 28 materials + Python seven-stage image validation required. User confirmed 10MP physical export functional; full GPU, Numba random and RAW certification outstanding."
           fi
           echo "PASS: release asset and real tag point to tested SHA $GITHUB_SHA"
       - name: Reject source Metal certification when native GPU parity failed
         if: always() && (steps.metal_source_gpu.outcome != 'success' || steps.iir_source_gpu.outcome != 'success' || steps.source_replay_gpu.outcome != 'success' || steps.precision_certificate.outcome != 'success')
         run: |
-          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.39 fully certified release."
+          echo "::error::Source grain/IIR/replay GPU or complete original RNG/float/full-image/real-iPhone certification is missing or failed. Unsigned IPA exists only as an experimental Actions artifact. NO v1.8.40 fully certified release."
           exit 1

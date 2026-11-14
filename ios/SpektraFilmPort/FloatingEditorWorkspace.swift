@@ -52,6 +52,7 @@ struct FloatingEditorWorkspace: View {
         case morphology = "s023"
         case halation = "光晕"
         case dir = "DIR"
+        case cameraDiffusion = "摄影扩散"
         case grain = "颗粒"
     }
 
@@ -884,6 +885,12 @@ struct FloatingEditorWorkspace: View {
                               value: $model.spatialDIREnabled) {
                     model.queueSpectralPreview()
                 }
+                featureToggle("摄影扩散", feature: .cameraDiffusion,
+                              value: $model.sourceCameraDiffusionEnabled,
+                              allowed: fullPhysicalMode &&
+                                       model.sourceCameraPreFilmEnabled) {
+                    model.queueSpectralPreview()
+                }
                 featureToggle("颗粒", feature: .grain,
                               value: $model.grainEnabled) {
                     if model.grainEnabled { model.queueSpectralPreview() }
@@ -1111,6 +1118,11 @@ struct FloatingEditorWorkspace: View {
         case .dir:
             return model.spatialDIREnabled
                 ? AnyView(dirSettings) : AnyView(EmptyView())
+        case .cameraDiffusion:
+            return model.sourceCameraDiffusionEnabled &&
+                   fullPhysicalMode && model.sourceCameraPreFilmEnabled
+                ? AnyView(sourceCameraDiffusionSettings)
+                : AnyView(EmptyView())
         case .grain:
             return model.grainEnabled
                 ? AnyView(grainSettings) : AnyView(EmptyView())
@@ -1338,7 +1350,8 @@ struct FloatingEditorWorkspace: View {
                                      "摄影 EV→全图原版高光 Boost→镜头 FIR/YVV→" +
                                      "胶片 H-D / DIR；高光与镜头计算均为整幅 Double。" +
                                      "关闭时保持 v1.8.29 源精确路径不变；" +
-                                     "不包含尚未移植的摄影扩散/UV-IR；光晕在下方原版模块。")
+                                     "UV/IR 和摄影扩散已提供独立原版入口；" +
+                                     "光晕在下方原版模块。")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -1433,6 +1446,64 @@ struct FloatingEditorWorkspace: View {
     /// SettingsParams.rgb_to_raw_method. The full-physical source stage
     /// consumes the same data; no mobile LUT approximation.
     /// Keep this heavy view erased at a separate boundary on iOS 16.
+    /// Dedicated erased source-physical camera diffusion editor.
+    /// All original parameters are adjustable; no CI bloom surrogate.
+    /// Parent controls require explicit source camera and full physical mode.
+    private var sourceCameraDiffusionSettings: AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:6) {
+                Text("摄影扩散原版 Double｜PSF + reflect FFT")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Picker("原版滤镜族",selection:$model.sourceCameraDiffusionFamily) {
+                    Text("Glimmerglass").tag(OriginalSourceDiffusion.Family.glimmerglass)
+                    Text("Black Pro-Mist").tag(OriginalSourceDiffusion.Family.blackProMist)
+                    Text("Pro-Mist").tag(OriginalSourceDiffusion.Family.proMist)
+                    Text("CineBloom").tag(OriginalSourceDiffusion.Family.cinebloom)
+                }
+                .pickerStyle(.menu)
+                .onChange(of:model.sourceCameraDiffusionFamily) { _ in
+                    model.queueSpectralPreview()
+                }
+                morphSlider("扩散强度（滤镜档位）",
+                            value:$model.sourceCameraDiffusionStrength,
+                            range:0...2,resetTo:0.5)
+                morphSlider("光学空间倍率",
+                            value:$model.sourceCameraDiffusionSpatialScale,
+                            range:0...3,resetTo:1)
+                morphSlider("外圈色晕暖度",
+                            value:$model.sourceCameraDiffusionWarmth,
+                            range:-1.5...1.5,resetTo:0)
+                Text("以下六项为原版每组 PSF 权重和尺寸倍率（默认均为 1）。")
+                    .font(.caption2).foregroundColor(.secondary)
+                morphSlider("中心权重",
+                            value:$model.sourceCameraDiffusionCoreIntensity,
+                            range:0...4,resetTo:1)
+                morphSlider("中心尺寸",
+                            value:$model.sourceCameraDiffusionCoreSize,
+                            range:0.1...4,resetTo:1)
+                morphSlider("晕光权重",
+                            value:$model.sourceCameraDiffusionHaloIntensity,
+                            range:0...4,resetTo:1)
+                morphSlider("晕光尺寸",
+                            value:$model.sourceCameraDiffusionHaloSize,
+                            range:0.1...4,resetTo:1)
+                morphSlider("Bloom 权重",
+                            value:$model.sourceCameraDiffusionBloomIntensity,
+                            range:0...4,resetTo:1)
+                morphSlider("Bloom 尺寸",
+                            value:$model.sourceCameraDiffusionBloomSize,
+                            range:0.1...4,resetTo:1)
+                Text("Python 顺序：光谱 RAW→高光恢复→摄影 PSF 扩散→" +
+                     "镜头 FIR/YVV→乳剂散射与光晕→胶片 H-D。" +
+                     "大尺寸需要整图 Float64 FFT 内存；不足时明确报错，" +
+                     "不会截断原版 PSF 或静默换成 Core Image。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            .padding(.vertical,4)
+        )
+    }
+
     private var sourceCameraSpectralSettings: AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 6) {

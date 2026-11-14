@@ -207,8 +207,9 @@ enum OriginalSourcePhysicalImage {
         // 2. global RGB auto-exposure before Hanatos spectral conversion,
         // 3. film exposure compensation in linear RAW photon units,
         // 4. global image-maximum highlight boost (Numba scalar formula),
-        // 5. source full-dimension reflect FIR/YVV camera lens Gaussian,
-        // 6. log10 photon exposure -> H-D -> DIR.
+        // 5. source Double camera 2D PSF+reflect FFT diffusion if enabled,
+        // 6. source full-dimension reflect FIR/YVV camera lens Gaussian,
+        // 7. source scattering/halation if enabled; then log10 -> H-D/DIR.
         //
         // RAW modes are disabled by default; the established v1.8.29 path
         // below remains byte-for-byte unchanged if all options are off.
@@ -242,6 +243,21 @@ enum OriginalSourcePhysicalImage {
                 protectEV:parameters.cameraOptics.protectEV
             )
             stageDoubleObserver?("cameraBoost",frame.rgb)
+            // Original FilmingStage.expose chronology is:
+            //   boost_highlights -> camera diffusion_filter PSF -> 
+            //   lens Gaussian -> film scattering & halation -> log10 H-D.
+            // This is the real Double FFT source, never CI bloom/blur.
+            let diffusion=parameters.cameraOptics.diffusion
+            if diffusion.active && diffusion.strength > 0 &&
+                diffusion.spatialScale > 0 {
+                let pixelUM=parameters.cameraOptics.filmFormatMM *
+                    1000.0 / Double(max(w,h))
+                frame.rgb=try OriginalSourceDiffusion.apply(
+                    frame.rgb,width:w,height:h,pixelUM:pixelUM,
+                    settings:diffusion
+                )
+                stageDoubleObserver?("cameraDiffusion",frame.rgb)
+            }
             if parameters.cameraOptics.needsWholeImageBlur {
                 frame.rgb=try OriginalSourceCameraOptics.applyLensBlur(
                     frame.rgb,width:w,height:h,

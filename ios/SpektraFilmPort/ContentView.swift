@@ -90,6 +90,19 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceCameraHighlightBoostRange = 0.3
     @Published var sourceCameraHighlightProtectEV = 4.0
     @Published var sourceCameraLensBlurUM = 0.0
+    // Original Python CameraParams.diffusion_filter: opt-in, with
+    // every preset/advanced override. OFF preserves prior source output.
+    @Published var sourceCameraDiffusionEnabled = false
+    @Published var sourceCameraDiffusionFamily: OriginalSourceDiffusion.Family = .blackProMist
+    @Published var sourceCameraDiffusionStrength = 0.5
+    @Published var sourceCameraDiffusionSpatialScale = 1.0
+    @Published var sourceCameraDiffusionWarmth = 0.0
+    @Published var sourceCameraDiffusionCoreIntensity = 1.0
+    @Published var sourceCameraDiffusionCoreSize = 1.0
+    @Published var sourceCameraDiffusionHaloIntensity = 1.0
+    @Published var sourceCameraDiffusionHaloSize = 1.0
+    @Published var sourceCameraDiffusionBloomIntensity = 1.0
+    @Published var sourceCameraDiffusionBloomSize = 1.0
     // Original Python SettingsParams.rgb_to_raw_method.
     // Hanatos remains the default; Mallett is a real source-Double
     // photon-input alternate, not a preview LUT approximation.
@@ -275,7 +288,20 @@ final class PhotoEditorModel: ObservableObject {
                 boostRange:sourceCameraHighlightBoostRange,
                 protectEV:sourceCameraHighlightProtectEV,
                 lensBlurUM:sourceCameraLensBlurUM,
-                filmFormatMM:35
+                filmFormatMM:35,
+                diffusion:OriginalSourceDiffusion.Settings(
+                    active:sourceCameraDiffusionEnabled,
+                    family:sourceCameraDiffusionFamily,
+                    strength:sourceCameraDiffusionStrength,
+                    spatialScale:sourceCameraDiffusionSpatialScale,
+                    haloWarmth:sourceCameraDiffusionWarmth,
+                    coreIntensity:sourceCameraDiffusionCoreIntensity,
+                    coreSize:sourceCameraDiffusionCoreSize,
+                    haloIntensity:sourceCameraDiffusionHaloIntensity,
+                    haloSize:sourceCameraDiffusionHaloSize,
+                    bloomIntensity:sourceCameraDiffusionBloomIntensity,
+                    bloomSize:sourceCameraDiffusionBloomSize
+                )
               )
             : OriginalSourceCameraOptics.Settings()
         // In source-physical mode BOTH locations in the adjustment panel
