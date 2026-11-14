@@ -49,7 +49,7 @@ for token in (
     'film.sourceDensityCurvesLayersF64 != nil',
     'film.sourceDensityCurvesF64 != nil',
     'film.sourceLogExposureF64 != nil',
-    'profile.layerDensity(total:density[ch],channel:ch,sublayer:sl)',
+    'sourceOriginal:true',
 ):
     assert token in engine, token
 for token in (
