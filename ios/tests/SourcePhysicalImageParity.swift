@@ -211,6 +211,58 @@ enum SourcePhysicalImageParity {
                     traces[stage]=pixels
                 }
             )
+            // Build77/02: compare the ACTUAL production pre-photon
+            // input against ORIGINAL Python SimulationPipeline._preprocess
+            // for the explicitly supported sRGB/CCTF, no crop/resize case.
+            // This is not a claim of default ProPhoto or RAW correctness.
+            guard let identity=traces["rgbPre"],identity == frame.rgb else {
+                throw Failure.invalid(
+                    "Build77 no-meter/no-crop source rgb_pre must be identity"
+                )
+            }
+            if fixture.name == "kodak_neutral_fir" {
+                guard let expectedSHA=fixture.sha256["rgbPre"] else {
+                    throw Failure.invalid(
+                        "Missing independent Python _preprocess reference"
+                    )
+                }
+                let expectedPre=try original(
+                    fixtures:fixtures,name:fixture.name,stage:"rgbPre",
+                    checksum:expectedSHA,width:fixture.width,
+                    height:fixture.height
+                )
+                var metered=params
+                metered.cameraOptics.metering = .centerWeighted
+                var meteredTrace=[String:[Double]]()
+                let meteredImage=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:metered,
+                    stageDoubleObserver:{key,values in
+                        meteredTrace[key]=values
+                    }
+                )
+                let noObserver=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:metered
+                )
+                guard meteredImage.rgb == noObserver.rgb,
+                      let actualPre=meteredTrace["rgbPre"],
+                      let meter=meteredTrace["cameraAutoExposureEV"],
+                      meter.count==1 && meter[0].isFinite,
+                      actualPre.count==frame.rgb.count else {
+                    throw Failure.invalid(
+                        "Build77 production rgb_pre missing or changes output"
+                    )
+                }
+                let preMetrics=try compare(
+                    observed:actualPre,expected:expectedPre,
+                    maxTolerance:5e-11,maeTolerance:1e-11,
+                    label:"Build77 true Python _preprocess sRGB/no-resize"
+                )
+                print("PASS Build77 real Python rgb_pre vs production "
+                      + "center-weighted source input: "
+                      + "\(actualPre.count) Float64 channels, "
+                      + "max=\(preMetrics.maximum), "
+                      + "observer-off output bit-exact")
+            }
             // Build77/02: verify source NORMAL print branch also gives
             // the actual Python PrintingStage log-exposure and developed
             // CMY density, before scanning; not a post-RGB reconstruction.
