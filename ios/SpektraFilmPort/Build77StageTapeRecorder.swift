@@ -271,9 +271,9 @@ final class Build77StageTapeRecorder {
     }
 }
 
-#if os(iOS)
 extension Build77StageTapeRecorder {
-    /// Explicit device diagnostic entrypoint using the *actual* full-Double
+    /// Diagnostic entrypoint used by macOS independent host replay AND
+    /// by the *actual* iPhone original physical Double rendering path.
     /// production image path. Never runs automatically during normal preview
     /// or export and does not change user's original resolution.
     static func capturePhysical(
@@ -310,4 +310,3 @@ extension Build77StageTapeRecorder {
         return output
     }
 }
-#endif
