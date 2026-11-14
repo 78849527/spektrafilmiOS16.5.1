@@ -42,8 +42,8 @@ enum SourcePhysicalGrainValidation {
         let sha=SHA256.hash(data:data).map{
             String(format:"%02x",$0)
         }.joined()
-        guard sha==expectedSha,data.count==width*height*
-              (stage=="sublayers" ? 9 : 3)*8 else {
+        guard sha==expectedSha,
+              data.count == width * height * (stage=="sublayers" ? 9 : 3) * 8 else {
             throw Failure.invalid("Python grain.py fixture hash/count mismatch "+path.lastPathComponent)
         }
         return data.withUnsafeBytes{raw in
@@ -76,8 +76,7 @@ enum SourcePhysicalGrainValidation {
             var density=[Double](repeating:0,count:w*h*3)
             for p in 0..<(w*h) {
                 for ch in 0..<3 {
-                    density[p*3+ch]=0.12+
-                        0.015*Double((p+ch*4)%9)
+                    density[p*3+ch] = 0.12 + 0.015 * Double((p+ch*4)%9)
                 }
             }
             let measured=OriginalSourcePhysicalGrain.MeasuredLayers(
@@ -130,15 +129,12 @@ enum SourcePhysicalGrainValidation {
                     peak=max(peak,diff)
                     guard diff.isFinite && diff<=1e-10 else {
                         throw Failure.invalid(
-                            "upstream grain.py divergence case="+sample.name+
-                            " stage="+python+" pixel=\(k) error=\(diff) "+
-                            "Python=\(expected[k]) Swift=\(observed[k])"
+                            "upstream grain.py divergence case=\(sample.name) stage=\(python) pixel=\(k) error=\(diff) Python=\(expected[k]) Swift=\(observed[k])"
                         )
                     }
                 }
                 worst=max(worst,peak)
-                print("PASS original source grain "+sample.name+
-                      " stage="+python+" channels=\(observed.count) max=\(peak)")
+                print("PASS original source grain \(sample.name) stage=\(python) channels=\(observed.count) max=\(peak)")
                 checked+=observed.count
             }
             // Actual engine repeatability and NO silent approximation.
@@ -158,11 +154,7 @@ enum SourcePhysicalGrainValidation {
                 throw Failure.invalid("Missing Numba seed silently accepted")
             } catch OriginalSourcePhysicalGrain.Failure.invalid {}
         }
-        print("PASS original Python grain.py source 3x3 production DENSITY: "+
-              "\(manifest.cases.count) real whole-frame fixtures, "+
-              "\(checked) stage channels, max Float64 discrepancy=\(worst), "+
-              "controlled seed 8888 reproducibility and missing-seed rejection.")
-        print("NOT CERTIFIED: unseeded prange multiworker RNG, RAW, "+
-              "real iPhone full-display RGB original matching.")
+        print("PASS original Python grain.py source 3x3 production DENSITY: \(manifest.cases.count) real whole-frame fixtures, \(checked) stage channels, max Float64 discrepancy=\(worst), controlled seed 8888 reproducibility and missing-seed rejection.")
+        print("NOT CERTIFIED: unseeded prange multiworker RNG, RAW, real iPhone full-display RGB original matching.")
     }
 }
