@@ -1274,22 +1274,70 @@ struct SpectralPhysics {
                 "原版三亚层颗粒需要完整 Float64 原始实测密度曲线，禁止使用 Float32 LUT"
             )
         }
+        // Python original fast_interp.py runs 3 channel-specific
+        // np.searchsorted(x_axis, x, side='right') lookups per pixel.
+        // The former Swift implementation did 9 *identical* searches
+        // for each of the 3 sublayers. Precompute source Float64 axes
+        // once per rendered frame, then search each channel only once.
+        // Preserve non-monotonic measured H-D data, endpoint order,
+        // [0,256) right-biased search and reciprocal interpolation.
         let profile=film
+        let sign=profile.polarity == "positive" ? -1.0 : 1.0
+        let axes=(0..<3).map { ch in
+            (0..<256).map { i in
+                (profile.densityAt(i*3+ch) -
+                 profile.minimumDensity[ch]) * sign
+            }
+        }
+        let layers=(0..<(256*9)).map { profile.layerAt($0) }
+        func writeSourceSublayers(
+            _ density:[Double],_ result:inout [Double]
+        ) throws {
+            guard density.count==3,result.count==9,
+                  density.allSatisfy({$0.isFinite}) else {
+                throw PhysicsError.invalid("原版三亚层 CMY 输入错误")
+            }
+            for ch in 0..<3 {
+                let desired=density[ch]*sign
+                let axis=axes[ch]
+                let first:Int
+                let second:Int
+                let t:Double
+                if desired<=axis[0] {
+                    first=0;second=0;t=0
+                } else if desired>=axis[255] {
+                    first=255;second=255;t=0
+                } else {
+                    var low=0
+                    var high=256
+                    while low<high {
+                        let mid=(low+high)/2
+                        if desired<axis[mid] {high=mid}
+                        else {low=mid+1}
+                    }
+                    first=low-1
+                    second=low
+                    let delta=axis[second]-axis[first]
+                    let reciprocal=delta == 0 ? 0.0 : 1.0/delta
+                    t=(desired-axis[first])*reciprocal
+                }
+                for sl in 0..<3 {
+                    let li=sl*3+ch
+                    let y0=layers[first*9+li]
+                    let y1=layers[second*9+li]
+                    result[li]=y0+t*(y1-y0)
+                }
+            }
+        }
         return OriginalSourcePhysicalGrain.MeasuredLayers(
             maxima:maxima,
             sublayers:{ density in
-                guard density.count==3,
-                      density.allSatisfy({$0.isFinite}) else {
-                    throw PhysicsError.invalid("原版三亚层 CMY 输入错误")
-                }
-                return (0..<3).flatMap { sl in
-                    (0..<3).map { ch in
-                        profile.layerDensity(
-                            total:density[ch],channel:ch,sublayer:sl,
-                            sourceOriginal:true
-                        )
-                    }
-                }
+                var output=[Double](repeating:0,count:9)
+                try writeSourceSublayers(density,&output)
+                return output
+            },
+            sublayersInto:{ density,output in
+                try writeSourceSublayers(density,&output)
             }
         )
     }
