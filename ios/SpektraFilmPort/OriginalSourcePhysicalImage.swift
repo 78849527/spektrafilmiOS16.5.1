@@ -221,6 +221,10 @@ enum OriginalSourcePhysicalImage {
         let controlledScannerGlare=parameters.scannerGlare.active &&
             parameters.scannerGlare.percent>0
         let controlledFilmGrain=parameters.sourceGrain.active
+        // The production paper taps are opt-in; reserve their 2x3 Double
+        // buffers in the memory gate BEFORE any full-frame allocation.
+        let capturePaperStages=stageDoubleObserver != nil &&
+            !SpectralPhysics.isPositiveFilm(parameters.filmID)
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:
@@ -229,7 +233,8 @@ enum OriginalSourcePhysicalImage {
                 (controlledFilmGrain ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
-                (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0)
+                (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0) +
+                (capturePaperStages ? 48 : 0)
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -370,6 +375,22 @@ enum OriginalSourcePhysicalImage {
             ? nil : [Double](repeating:0,count:size)
         var densityObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
+        var paperLogObserved:[Double]? = capturePaperStages
+            ? [Double](repeating:0,count:size) : nil
+        var paperDensityObserved:[Double]? = capturePaperStages
+            ? [Double](repeating:0,count:size) : nil
+        // The exact source PrintingStage is fused with the scanner in the
+        // current iOS implementation. Observe its REAL computed Double
+        // boundaries from BOTH print paths, never call a second renderer.
+        func recordPaper(_ offset:Int) -> (([Double],[Double]) -> Void)? {
+            guard capturePaperStages else { return nil }
+            return { logExposure,developedDensity in
+                for ch in 0..<3 {
+                    paperLogObserved?[offset+ch]=logExposure[ch]
+                    paperDensityObserved?[offset+ch]=developedDensity[ch]
+                }
+            }
+        }
         // Each corrected pixel is completely consumed before its
         // historical camera log buffer is overwritten by final scan RGB.
         for p in 0..<(w*h) {
@@ -397,15 +418,18 @@ enum OriginalSourcePhysicalImage {
                 // Store actual developed PAPER XYZ in the reusable Double
                 // frame, not sRGB or post-gamut RGB.
                 rgb=try engine.sourceSpatialScanXYZ(
-                    filmDensity:density,paperEV:parameters.paperEV
+                    filmDensity:density,paperEV:parameters.paperEV,
+                    paperStageObserver:recordPaper(k)
                 )
             } else {
                 rgb=try parameters.scannerOptics.active
                     ? engine.sourceSpatialScanLinear(
-                        filmDensity:density,paperEV:parameters.paperEV
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:recordPaper(k)
                       )
                     : engine.sourceSpatialScan(
-                        filmDensity:density,paperEV:parameters.paperEV
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:recordPaper(k)
                       )
             }
             for c in 0..<3 {
@@ -443,28 +467,24 @@ enum OriginalSourcePhysicalImage {
                     )
                 } else if controlledScannerGlare {
                     printed=try engine.sourceSpatialScanXYZ(
-                        filmDensity:density,paperEV:parameters.paperEV
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:recordPaper(k)
                     )
                 } else {
                     printed=try parameters.scannerOptics.active
                         ? engine.sourceSpatialScanLinear(
-                            filmDensity:density,paperEV:parameters.paperEV
+                            filmDensity:density,paperEV:parameters.paperEV,
+                            paperStageObserver:recordPaper(k)
                           )
                         : engine.sourceSpatialScan(
-                            filmDensity:density,paperEV:parameters.paperEV
+                            filmDensity:density,paperEV:parameters.paperEV,
+                            paperStageObserver:recordPaper(k)
                           )
                 }
                 for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
             }
         }
         if activePrintDiffusion {
-            // Debug-only full Double snapshots of REAL in-production paper
-            // exposure and H-D output. Zero extra full-frame buffers when
-            // no observer is supplied; no normal preview/export change.
-            var paperLogObserved:[Double]? = stageDoubleObserver == nil
-                ? nil : [Double](repeating:0,count:size)
-            var paperDensityObserved:[Double]? = stageDoubleObserver == nil
-                ? nil : [Double](repeating:0,count:size)
             let pixelUM=parameters.cameraOptics.filmFormatMM * 1000.0 /
                 Double(max(w,h))
             // Raw paper photons are already multiplied by the enlarger EV.
@@ -480,22 +500,16 @@ enum OriginalSourcePhysicalImage {
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
                     sourceLinearOutput:parameters.scannerOptics.active,
                     sourceXYZOutput:controlledScannerGlare,
-                    paperStageObserver: stageDoubleObserver == nil
-                        ? nil : { logExposure,paperDensity in
-                            for c in 0..<3 {
-                                paperLogObserved?[k+c]=logExposure[c]
-                                paperDensityObserved?[k+c]=paperDensity[c]
-                            }
-                        }
+                    paperStageObserver:recordPaper(k)
                 )
                 for c in 0..<3 { frame.rgb[k+c]=output[c] }
             }
-            if let paperLogObserved {
-                stageDoubleObserver?("paperLogExposure",paperLogObserved)
-            }
-            if let paperDensityObserved {
-                stageDoubleObserver?("paperDevelopedDensity",paperDensityObserved)
-            }
+        }
+        if let paperLogObserved {
+            stageDoubleObserver?("paperLogExposure",paperLogObserved)
+        }
+        if let paperDensityObserved {
+            stageDoubleObserver?("paperDevelopedDensity",paperDensityObserved)
         }
         if controlledScannerGlare {
             // Python scanning.py exact sequence for negative prints:
