@@ -66,7 +66,7 @@ def main():
     args=parser.parse_args()
     if colour.__version__ != "0.4.6":
         raise RuntimeError("Source CMFs require colour-science 0.4.6")
-    if skimage.__version__ != "0.25.2":
+    if skimage.__version__ != "0.26.0":
         raise RuntimeError(
             f"Source preview oracle pins skimage 0.25.2, got {skimage.__version__}")
     crop=extract("crop_resize.py",{"crop_image"})["crop_image"]
