@@ -52,9 +52,9 @@ def exact_input(w: int, h: int) -> np.ndarray:
     return np.sin(n*0.137) * 0.611 + n*0.00047 - 0.15
 
 
-def flat_bits(x: np.ndarray) -> list[int]:
+def flat_bits(x: np.ndarray) -> list[str]:
     z = np.ascontiguousarray(x, dtype=np.float64).reshape(-1)
-    return z.view(np.uint64).tolist()
+    return [f"{int(v):016x}" for v in z.view(np.uint64)]
 
 
 def main():
