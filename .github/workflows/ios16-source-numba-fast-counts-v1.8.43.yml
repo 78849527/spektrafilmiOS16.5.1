@@ -55,3 +55,41 @@ jobs:
         run: |
           echo "Validated: original source Numba one-worker fast Poisson/Binomial, thresholds, source phase order and RNG state."
           echo "NOT CERTIFIED: unseeded multiworker prange, on-device Metal, full-image Float64 and iPhone."
+
+  ios16-native-typecheck:
+    needs: original-numba-fast-counts
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact source candidate
+        uses: actions/checkout@v4
+      - name: Select original iOS 16.5.1 compatible Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Supply type-only stub for existing generated MT19937 reference
+        run: |
+          cat > /tmp/GeneratedSourceMT19937TypeStub.swift <<'SWIFT'
+          enum GeneratedSourceMT19937Reference {
+              struct Case {
+                  let seed: UInt32
+                  let uint32: [UInt32]
+                  let uniform53: [Double]
+              }
+              static let cases: [Case] = []
+          }
+          SWIFT
+      - name: Typecheck actual Swift port against iPhoneOS 16.5 SDK target
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun swiftc -target arm64-apple-ios16.5 -sdk "$SDK" \
+            -parse-as-library -typecheck \
+            /tmp/GeneratedSourceMT19937TypeStub.swift \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift
+      - name: Keep device certification separate from source compile
+        run: |
+          echo "PASS: Swift Numba fast-stat algorithm typechecked for iPhoneOS arm64 iOS16.5."
+          echo "NOT CERTIFIED: production app build, iPhone GPU, Numba prange RNG or IPA."
