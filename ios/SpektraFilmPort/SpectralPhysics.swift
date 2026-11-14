@@ -280,7 +280,10 @@ struct SpectralPhysics {
         /// measured 3 separate sublayer densities at that same exposure.
         /// Reversal stocks invert with -density / -curve so the lookup
         /// direction is monotonically increasing (model/density_curves.py).
-        func layerDensity(total: Double, channel: Int, sublayer: Int) -> Double {
+        func layerDensity(
+            total: Double, channel: Int, sublayer: Int,
+            sourceOriginal: Bool = false
+        ) -> Double {
             guard !densityCurvesLayers.isEmpty else { return 0 }
             let sign = polarity == "positive" ? -1.0 : 1.0
             let desired = total * sign
@@ -291,8 +294,18 @@ struct SpectralPhysics {
             func value(_ index: Int) -> Double {
                 layerAt(index * 9 + sublayer * 3 + channel)
             }
-            if desired <= domain(0) { return max(0, value(0)) }
-            if desired >= domain(255) { return max(0, value(255)) }
+            // Source model/density_curves.py::interp_density_cmy_layers
+            // delegates to fast_interp.py: endpoints are returned AS-IS,
+            // without clipping physically measured signed layer density.
+            // The old fast/mobile LUT keeps its historical zero clamp.
+            if desired <= domain(0) {
+                let sample=value(0)
+                return sourceOriginal ? sample : max(0,sample)
+            }
+            if desired >= domain(255) {
+                let sample=value(255)
+                return sourceOriginal ? sample : max(0,sample)
+            }
             var lo = 0
             var hi = 255
             while lo + 1 < hi {
@@ -301,6 +314,14 @@ struct SpectralPhysics {
                 else { hi = mid }
             }
             let delta = domain(hi) - domain(lo)
+            if sourceOriginal {
+                // Upstream Numba exact right-biased upper_bound and
+                // precomputed reciprocal: repeated x -> inv_dx=0, use
+                // LOWER interval y0, never silently substitute y1.
+                let reciprocal=delta == 0 ? 0.0 : 1.0/delta
+                let t=(desired-domain(lo))*reciprocal
+                return value(lo)+t*(value(hi)-value(lo))
+            }
             if delta <= 1e-12 { return max(0, value(hi)) }
             let t = min(1, max(0, (desired-domain(lo))/delta))
             return max(0, value(lo)+(value(hi)-value(lo))*t)
@@ -1248,7 +1269,10 @@ struct SpectralPhysics {
                 }
                 return (0..<3).flatMap { sl in
                     (0..<3).map { ch in
-                        profile.layerDensity(total:density[ch],channel:ch,sublayer:sl)
+                        profile.layerDensity(
+                            total:density[ch],channel:ch,sublayer:sl,
+                            sourceOriginal:true
+                        )
                     }
                 }
             }
