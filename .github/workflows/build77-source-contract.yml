@@ -433,6 +433,8 @@ jobs:
           test -f "$APP/SpektraFilmPort"
           test -f "$APP/Info.plist"
           grep -Fq 'Build77-ONE-SHOT' ios/SpektraFilmPort/Build77OneShotEvidence.swift
+          /usr/libexec/PlistBuddy -c "Add :Build77SourceCommit string $GITHUB_SHA" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :Build77SourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
           mkdir -p ios/build/one-shot/Payload
           cp -R "$APP" ios/build/one-shot/Payload/
           cd ios/build/one-shot
