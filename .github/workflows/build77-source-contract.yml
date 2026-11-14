@@ -155,6 +155,23 @@ jobs:
             --output build77-evidence/negative-print-diffusion \
             --film kodak_portra_400 --paper kodak_portra_endura \
             --print-diffusion
+      - name: Record all 3 CONTROLLED original Python source topologies for the single iPhone evidence capture
+        run: |
+          python ios/scripts/build77_source_contract.py emit-taps \
+            --input build77-evidence/input.npy \
+            --output build77-evidence/negative-print-controlled \
+            --film kodak_portra_400 --paper kodak_portra_endura \
+            --oneshot-controlled
+          python ios/scripts/build77_source_contract.py emit-taps \
+            --input build77-evidence/input.npy \
+            --output build77-evidence/direct-scan-controlled \
+            --film fujifilm_provia_100f --paper kodak_portra_endura \
+            --oneshot-controlled --scan-film
+          python ios/scripts/build77_source_contract.py emit-taps \
+            --input build77-evidence/input.npy \
+            --output build77-evidence/negative-print-diffusion-controlled \
+            --film kodak_portra_400 --paper kodak_portra_endura \
+            --oneshot-controlled --print-diffusion
       - name: Verify reference tape serialization and comparator
         run: |
           python ios/scripts/build77_source_contract.py compare-taps \
