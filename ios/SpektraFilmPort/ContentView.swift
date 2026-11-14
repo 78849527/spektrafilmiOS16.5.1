@@ -528,6 +528,45 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Build80/10-12: user-initiated Apple-only diagnostic processing.
+    /// The preserved RAW remains unchanged and not fed to the film path.
+    /// This does not claim parity with source rawpy/Lensfun/ACES.
+    func probePreservedRAWDevelopment(_ options: Build80AppleRAWDevelopment.Options) {
+        guard let url=capturedRAWURL else {
+            status="请先导入真实 RAW 原片，再测试白平衡和镜头校正"
+            return
+        }
+        guard !busy else { return }
+        busy=true
+        status="正在执行 Apple RAW 白平衡、曝光与镜头诊断（非 Python 原版显影）…"
+        Task { @MainActor in
+            defer { busy=false }
+            do {
+                let proof=try await Task.detached(priority:.userInitiated) {
+                    try Build80AppleRAWDevelopment.probe(url,options:options)
+                }.value
+                let first=proof.measuredRGBA.prefix(4).map {
+                    String(format:"%.6f",Double($0))
+                }.joined(separator:",")
+                status="Build80 Apple RAW ."+proof.format.rawValue.uppercased()
+                    +"：真实 4×4 RGBA Float32 渲染通过。"
+                    +"样本 RGBA="+first
+                    +"；线性 sRGB；Apple 色温="
+                    +String(format:"%.0f",Double(proof.actualTemperature))
+                    +"K、Tint 偏移="
+                    +String(format:"%.1f",Double(proof.actualTintOffset))
+                    +"；曝光="
+                    +String(format:"%.2f",Double(proof.actualExposureEV))
+                    +" EV；Apple 镜头校正="
+                    +(proof.appleLensCorrectionEnabled ? "开" : "关")
+                    +"。不代表 Python rawpy/ACES/Lensfun 数值等价。"
+            } catch {
+                status="Build80 RAW 实际解码或参数诊断失败："
+                    +error.localizedDescription
+            }
+        }
+    }
+
     private func loadPhoto(_ data: Data) throws {
         invalidateSimulation()
         let decoded = try PhotoProcessor.decode(data)
