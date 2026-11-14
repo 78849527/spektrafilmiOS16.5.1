@@ -7,6 +7,7 @@ on:
       - port/build78-input-06-08
     paths:
       - "ios/scripts/build77_source_contract.py"
+      - "ios/scripts/certify_build77_oneshot.py"
       - "ios/scripts/build77_candidate_tape_selftest.py"
       - "ios/scripts/build77_params_digest_reference.py"
       - "ios/scripts/generate_build77_rgb_pre_original.py"
@@ -645,3 +646,64 @@ jobs:
         run: |
           /tmp/Build77NeutralFilterParity build77-evidence/parameter-digest.json
           echo "Scope: source filter database switching and actual pair CC only; not full image parity."
+
+  one-shot-full-device-certification-preflight:
+    name: One-shot Build77 3-branch Python oracle and real-device evidence fail-closed gate
+    runs-on: ubuntu-24.04
+    needs: [python-reference-taps]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build77-python-original-taps-not-swift-certified
+          path: build77-evidence
+      - name: Inspect source branch topology in ONE whole-contract test
+        run: |
+          python -m pip install --quiet numpy
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("build77-evidence")
+          specs={
+            "negative-print-controlled":(7,False,False),
+            "direct-scan-controlled":(5,True,False),
+            "negative-print-diffusion-controlled":(7,False,True),
+          }
+          for name,(taps,direct,diffused) in specs.items():
+              p=root/name/"manifest.json"
+              assert p.is_file(),f"Source reference absent: {p}"
+              m=json.loads(p.read_text())
+              assert m["mode"]=="PYTHON_SOURCE_CONTROLLED_BUILD77_ONESHOT"
+              assert m["source_sha"]=="3bb2c2d2801ff68b92019cf1dbcbb133d60832bc"
+              assert m["scan_film"]==direct and m["print_diffusion"]==diffused
+              assert len(m["taps"])==taps
+          print("PASS: all three real Python original controlled source tap cases ready")
+          PY
+      - name: Full-certification gate MUST reject absent physical iPhone evidence
+        run: |
+          python -m py_compile ios/scripts/certify_build77_oneshot.py
+          set +e
+          python ios/scripts/certify_build77_oneshot.py \
+            --source-evidence build77-evidence \
+            --iphone-evidence build77-evidence/DEVICE_EVIDENCE_NOT_AVAILABLE \
+            --report build77-evidence/certification-aggregate-INCOMPLETE.json
+          code=$?
+          set -e
+          test "$code" -eq 2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("build77-evidence/certification-aggregate-INCOMPLETE.json")
+          result=json.loads(p.read_text())
+          assert result["status"]=="MISSING_HARDWARE_OR_SOURCE_EVIDENCE"
+          assert result["full_build77_certified"] is False
+          assert result["controlled_3_branch_parity_pass"] is False
+          print("PASS: whole-contract gate correctly BLOCKS false device/full certification")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build77-one-shot-full-certification-NOT-YET-COMPLETE
+          path: build77-evidence/certification-aggregate-INCOMPLETE.json
+          if-no-files-found: warn
