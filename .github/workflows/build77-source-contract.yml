@@ -54,6 +54,7 @@ on:
       - "ios/SpektraFilmPort/Build81OriginalCrop.swift"
       - "ios/SpektraFilmPort/Build81OriginalPreview.swift"
       - "ios/SpektraFilmPort/Build81OriginalInputGamut.swift"
+      - "ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift"
       - "ios/tests/Build81OriginalInputValidation.swift"
       - "ios/scripts/build81_original_input_oracle.py"
       - "ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift"
@@ -101,6 +102,7 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalCrop.swift \
             ios/SpektraFilmPort/Build81OriginalPreview.swift \
             ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
+            ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/Build78FloatTIFFValidation.swift \
@@ -411,6 +413,7 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalCrop.swift \
             ios/SpektraFilmPort/Build81OriginalPreview.swift \
             ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
+            ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
