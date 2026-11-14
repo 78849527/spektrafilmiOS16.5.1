@@ -7,6 +7,21 @@ import Foundation
 @main
 struct SpectralValidation {
     static func main() throws {
+        // Execute the IDENTICAL data path used by the one-button iPhone
+        // capture. This is real macOS Swift production, never simulated
+        // phone evidence, and must not masquerade as iPhone certification.
+        if let destination=ProcessInfo.processInfo.environment[
+            "BUILD77_HOST_ONESHOT_OUTPUT"
+        ] {
+            let folder=try Build77OneShotEvidence.captureAll(
+                deviceModel:"macOS-host-validation-NOT-iPhone",
+                systemVersion:ProcessInfo.processInfo.operatingSystemVersionString,
+                outputDirectory:URL(fileURLWithPath:destination,isDirectory:true)
+            )
+            print("PASS Build77 original Swift physical 3-branch host source "
+                  + "staged capture: "+folder.path
+                  + " (NOT iPhone / NOT Python numeric parity)")
+        }
         // v1.8.25: independently certify every source input bit is still
         // original binary64; fast Float32 material bytes remain unchanged.
         // Build78/07: actual 16-bit TIFF/PNG provider -> source Float64 pixels.
