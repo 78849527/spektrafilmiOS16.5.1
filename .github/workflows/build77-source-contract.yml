@@ -21,6 +21,11 @@ on:
       - ".github/workflows/build77-source-contract.yml"
   workflow_dispatch:
 
+# Keep only the newest batched test run for the active migration branch.
+concurrency:
+  group: build77-batched-source-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
