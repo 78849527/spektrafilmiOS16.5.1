@@ -81,6 +81,12 @@ assert 'sourcePhysicalGrainSettings' in ui
 assert 'resetToggle("源三亚层颗粒 / 染料云（Float64 实验）"' in ui
 assert 'model.sourcePhysicalDirectEnabled' in ui
 assert 'no seed rejected' in test
+device=(root/"ios/SpektraFilmPort/OriginalSourceGrainProductionDiagnostic.swift").read_text()
+assert "OriginalSourcePhysicalImage.develop(" in device
+assert "sourceGrainMicrostructure" in device
+assert "sourceSpatialScan(" in device
+assert "no seed" in device
+assert "OriginalSourceGrainProductionDiagnostic.evaluate()" in model
 assert 'OriginalSourcePhysicalImage.develop(' in test
 assert 'grainDensity' in test
 assert 'sourceGrainFinalDensity' in test
