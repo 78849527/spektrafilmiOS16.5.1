@@ -1413,6 +1413,10 @@ struct FloatingEditorWorkspace: View {
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
+                            // Separate type-erased view: full physical
+                            // source XYZ random glare is controlled only;
+                            // never activate unseeded production prange.
+                            sourceScannerGlareSettings
                             resetToggle("原版扫描镜头 / Unsharp（Double）",
                                         value:$model.sourceScannerOpticalEnabled,
                                         enabled:model.hasPhoto && !model.busy,
@@ -1481,6 +1485,44 @@ struct FloatingEditorWorkspace: View {
     /// Strict source-only enlarger diffusion editor, not an RGB
     /// postprocessing bloom. AnyView prevents recurrence of iOS 16.5.1
     /// generic metadata stack overflow seen in v1.8.36.
+    /// Python source glare.py: original lognormal + 2D reflect FIR/YVV
+    /// is applied to real paper XYZ before RGB/ACES. This is a seeded
+    /// one-worker experiment, not default unseeded Numba equivalence.
+    /// Keep a separate erased view to avoid iOS 16.5.1 generic stacks.
+    private var sourceScannerGlareSettings: AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:6) {
+                resetToggle("源扫描 XYZ 眩光（单线程实验）",
+                            value:$model.sourceScannerGlareEnabled,
+                            enabled:model.hasPhoto && !model.busy &&
+                                    sourcePhysicalMode && !isReversal,
+                            resetTo:false)
+                    .onChange(of:model.sourceScannerGlareEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.sourceScannerGlareEnabled {
+                    morphSlider("原版扫描眩光百分比 %",
+                                value:$model.sourceScannerGlarePercent,
+                                range:0...0.3,resetTo:0.03)
+                    morphSlider("原版眩光 roughness",
+                                value:$model.sourceScannerGlareRoughness,
+                                range:0...3,resetTo:0.7)
+                    morphSlider("原版眩光模糊 σ / px",
+                                value:$model.sourceScannerGlareBlur,
+                                range:0...8,resetTo:0.5)
+                }
+                Text("原版扫描眩光严格在相纸光谱 XYZ 后、" +
+                     "XYZ→RGB/ACES 前叠加；随后才执行原版扫描镜头和 sRGB。" +
+                     "仅负片、原版逐像素全光学可用。显式固定单线程" +
+                     " seed=8888，关闭时保持原图。尚未认证原版无固定" +
+                     "种子的 Numba prange 多线程 RNG；不能冒充完整精确模式。" +
+                     "独立计算并检查 Float64 内存，不经旧版 CI 哈希眩光。")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        )
+    }
+
     private var sourcePrintDiffusionSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {
