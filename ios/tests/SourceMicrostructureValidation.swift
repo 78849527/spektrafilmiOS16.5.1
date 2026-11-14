@@ -28,7 +28,7 @@ struct SourceMicrostructureValidation {
                     domain: "OriginalSourceMicrostructure",
                     code: 1,
                     userInfo: [NSLocalizedDescriptionKey:
-                        "μm/nm source parameter mismatch at pixelUM=\\(fixture.pixelUM)"]
+                        "μm/nm source parameter mismatch at pixelUM=\(fixture.pixelUM)"]
                 )
             }
         }
