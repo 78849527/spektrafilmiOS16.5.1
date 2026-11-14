@@ -1,4 +1,4 @@
-name: Build77 batched original source verification (NO IPA)
+name: Build77-80 original source verification and Build80 requested unsigned IPA
 
 on:
   push:
@@ -495,6 +495,41 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 80
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
           echo "Build80 unsigned test app 1.8.55(80) compiled; upstream scientific parity NOT certified"
+      - name: Package requested Build80 v1.8.55 unsigned diagnostic IPA
+        if: github.ref == 'refs/heads/port/build80-raw-wb-lens-10-12'
+        run: |
+          set -euo pipefail
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -s "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx '1.8.55'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx '80'
+          xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
+          /usr/libexec/PlistBuddy -c "Add :Build80SourceCommit string $GITHUB_SHA" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :Build80ScientificParityCertified bool false' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :Build80SourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
+          DEST="$PWD/ios/build/build80-ipa-release"
+          mkdir -p "$DEST/Payload"
+          cp -R "$APP" "$DEST/Payload/SpektraFilmPort.app"
+          cd "$DEST"
+          IPA='SpektraFilm-1.8.55-Build80-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa'
+          zip -q -r "$IPA" Payload
+          test -s "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/SpektraFilmPort'
+          shasum -a 256 "$IPA" > "$IPA.sha256"
+          printf '%s\n' "SOURCE_COMMIT=$GITHUB_SHA" 'iOS minimum version=16.5' 'App version=1.8.55(80)' 'ARCH=arm64' 'UNSIGNED=YES' 'PYTHON_FULL_RAW_PARITY=NOT_CERTIFIED' 'INSTALL=REQUIRES_YOUR_OWN_APPLE_SIGNING' > verification.txt
+          echo "Build80 package verified: $IPA"
+      - name: Upload requested Build80 IPA artifact for pre-release publication
+        if: github.ref == 'refs/heads/port/build80-raw-wb-lens-10-12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build80-ipa-unsigned-v1.8.55
+          path: |
+            ios/build/build80-ipa-release/*.ipa
+            ios/build/build80-ipa-release/*.sha256
+            ios/build/build80-ipa-release/verification.txt
+          if-no-files-found: error
       - name: Package ONE actual-device-evidence IPA only on Build78 diagnostic branch
         if: github.ref == 'refs/heads/port/build78-input-06-08'
         run: |
@@ -776,3 +811,58 @@ jobs:
           name: build77-one-shot-full-certification-NOT-YET-COMPLETE
           path: build77-evidence/certification-aggregate-INCOMPLETE.json
           if-no-files-found: warn
+
+  publish-build80-requested-test-ipa:
+    name: Publish requested unsigned Build80 IPA (pre-release, NOT certified)
+    if: github.ref == 'refs/heads/port/build80-raw-wb-lens-10-12'
+    needs:
+      - upstream-contract
+      - python-reference-taps
+      - ios-stage-recorder
+      - native-stock-byte-audit
+      - native-parameter-digest-audit
+      - native-stock-halation-digest-audit
+      - native-neutral-filter-database-audit
+      - one-shot-full-device-certification-preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact passed SHA
+        uses: actions/checkout@v4
+      - name: Retrieve artifact only from this fully successful workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: build80-ipa-unsigned-v1.8.55
+          path: build80-ipa
+      - name: Verify package SHA256 and publish one clearly unverified prerelease
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd build80-ipa
+          IPA='SpektraFilm-1.8.55-Build80-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa'
+          test -s "$IPA"
+          test -s "$IPA.sha256"
+          test -s verification.txt
+          shasum -a 256 -c "$IPA.sha256"
+          grep -Fx "SOURCE_COMMIT=$GITHUB_SHA" verification.txt
+          grep -Fx 'UNSIGNED=YES' verification.txt
+          grep -Fx 'PYTHON_FULL_RAW_PARITY=NOT_CERTIFIED' verification.txt
+          TAG='ios1651-v1.8.55-build80-RAW-DIAGNOSTIC-UNSIGNED-UNVERIFIED'
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite an existing Build80 tag, release or IPA."
+            exit 1
+          fi
+          gh release create "$TAG" \
+            "$IPA" "$IPA.sha256" verification.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title 'SpektraFilm 1.8.55 Build80 iOS16.5.1 (UNSIGNED / NOT CERTIFIED)' \
+            --notes 'User-requested experimental IPA. It is unsigned and requires your own Apple signing; it cannot be installed directly on a standard iPhone. Includes Build80 Apple RAW diagnostic and source white-balance/tint modules. RAW demosaic, rawpy/LibRaw/Lensfun numerical parity, exact image equivalence, and iOS16.5.1 device certification are NOT established.' \
+            --prerelease
+          LINK="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            --jq ".assets[] | select(.name == \"$IPA\") | .browser_download_url")"
+          test -n "$LINK"
+          echo "VERIFIED_BUILD80_IPA_DIRECT_URL=$LINK"
+          echo "VERIFIED_SOURCE_COMMIT=$GITHUB_SHA"
