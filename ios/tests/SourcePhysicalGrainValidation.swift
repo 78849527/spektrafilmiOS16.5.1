@@ -69,8 +69,8 @@ enum SourcePhysicalGrainValidation {
         var worst=0.0
         for sample in manifest.cases {
             let w=sample.width,h=sample.height
-            let max=sample.maxima
-            guard max.count==9 else {
+            let maxima=sample.maxima
+            guard maxima.count==9 else {
                 throw Failure.invalid("3x3 source maxima absent")
             }
             var density=[Double](repeating:0,count:w*h*3)
@@ -81,15 +81,15 @@ enum SourcePhysicalGrainValidation {
                 }
             }
             let measured=OriginalSourcePhysicalGrain.MeasuredLayers(
-                maxima:max,
+                maxima:maxima,
                 sublayers:{ rgb in
                     guard rgb.count==3 else {
                         throw Failure.invalid("Synthetic 3x3 test density missing")
                     }
                     return (0..<3).flatMap { sl in
                         (0..<3).map {ch in
-                            let total=max[ch]+max[3+ch]+max[6+ch]
-                            return rgb[ch]*max[sl*3+ch]/total
+                            let total=maxima[ch]+maxima[3+ch]+maxima[6+ch]
+                            return rgb[ch]*maxima[sl*3+ch]/total
                         }
                     }
                 }
