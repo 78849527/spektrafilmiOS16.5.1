@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - port/build77-source-contract-01-05
+      - port/build78-input-06-08
     paths:
       - "ios/scripts/build77_source_contract.py"
       - "ios/scripts/build77_candidate_tape_selftest.py"
