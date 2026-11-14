@@ -134,6 +134,7 @@ enum SourcePhysicalImageParity {
             throw Failure.invalid("Wrong Python original physical fixture scope")
         }
         var total=0
+        var checkedProductionGlare=false
         for fixture in manifest.cases {
             guard fixture.width>0 && fixture.height>0,
                   fixture.width<=8192,fixture.height<=8192,
@@ -219,9 +220,99 @@ enum SourcePhysicalImageParity {
                     }
                 }
             }
+            // v1.8.46: exercise actual production developInPlace on an
+            // original 2D negative image, not just the isolated glare
+            // module from v1.8.45. Never alter the no-glare fixture.
+            if !checkedProductionGlare &&
+               !SpectralPhysics.isPositiveFilm(fixture.film) {
+                var experimental=params
+                experimental.scannerGlare = .init(
+                    active:true,percent:0.03,roughness:0.7,blur:0.5
+                )
+                experimental.scannerGlareSeed=8888
+                var glareTraces=[String:[Double]]()
+                let glared=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:experimental,
+                    stageDoubleObserver: { stage,pixels in
+                        glareTraces[stage]=pixels
+                    }
+                )
+                let repeated=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:experimental
+                )
+                guard glared.rgb==repeated.rgb, glared.rgb != actual.rgb,
+                      let observedXYZ=glareTraces["scannerGlareXYZ"],
+                      let observedLinear=glareTraces["scannerGlareLinearRGB"],
+                      let observedDensity=traces["density"],
+                      observedXYZ.count==fixture.width*fixture.height*3,
+                      observedLinear.count==observedXYZ.count else {
+                    throw Failure.invalid(
+                        "Original source glare production did not run or seeded output was nondeterministic"
+                    )
+                }
+                let engine=try experimental.createEngine()
+                let lamp=try engine.sourceSpatialScannerIlluminantXYZ()
+                let field=try OriginalSourceScannerGlare.computeAmount(
+                    width:fixture.width,height:fixture.height,
+                    settings:experimental.scannerGlare,
+                    controlledSeed:experimental.scannerGlareSeed
+                )
+                var maxXYZ=0.0,maxLinear=0.0,maxEncoded=0.0
+                for pixel in 0..<(fixture.width*fixture.height) {
+                    let k=pixel*3
+                    let paperXYZ=try engine.sourceSpatialScanXYZ(
+                        filmDensity:Array(observedDensity[k..<(k+3)]),
+                        paperEV:fixture.paperEV
+                    )
+                    let expectedXYZ=(0..<3).map {
+                        paperXYZ[$0]+field[pixel]*lamp[$0]
+                    }
+                    let expectedLinear=try engine.sourceSpatialXYZToLinearRGB(
+                        expectedXYZ
+                    )
+                    for ch in 0..<3 {
+                        let deltaXYZ=abs(observedXYZ[k+ch]-expectedXYZ[ch])
+                        let deltaLinear=abs(observedLinear[k+ch]-expectedLinear[ch])
+                        let expectedEncoded=OriginalScannerMath.encodeSRGB(
+                            expectedLinear[ch]
+                        )
+                        let deltaEncoded=abs(glared.rgb[k+ch]-expectedEncoded)
+                        maxXYZ=max(maxXYZ,deltaXYZ)
+                        maxLinear=max(maxLinear,deltaLinear)
+                        maxEncoded=max(maxEncoded,deltaEncoded)
+                        guard deltaXYZ<1e-11,deltaLinear<1e-11,
+                              deltaEncoded<1e-11 else {
+                            throw Failure.invalid(
+                                "Production scanner glare wrong stage order " +
+                                "p=\\(pixel) c=\\(ch) XYZ=\\(deltaXYZ) " +
+                                "linear=\\(deltaLinear) encoded=\\(deltaEncoded)"
+                            )
+                        }
+                    }
+                }
+                var withoutSeed=experimental
+                withoutSeed.scannerGlareSeed=nil
+                do {
+                    _=try OriginalSourcePhysicalImage.develop(
+                        frame,parameters:withoutSeed
+                    )
+                    throw Failure.invalid("Source scanner glare accepted implicit random seed")
+                } catch OriginalSourcePhysicalImage.Failure.invalid {}
+                checkedProductionGlare=true
+                print(
+                    "PASS v1.8.46 production 2D source glare " +
+                    "paperXYZ→glareXYZ→ACESlinear→sRGB, " +
+                    "\\(observedXYZ.count) XYZ channels max=\\(maxXYZ), " +
+                    "linearMax=\\(maxLinear), sRGBMax=\\(maxEncoded); " +
+                    "seed reproducible, seed-missing rejection PASS"
+                )
+            }
             total+=fixture.width*fixture.height*3
             print("PASS original nonlinear whole-frame stock " +
                   fixture.film + " → " + fixture.paper)
+        }
+        guard checkedProductionGlare else {
+            throw Failure.invalid("No negative print fixture exercised source production scanner glare")
         }
         // Explicit memory guard: cannot silently scale the image, nor
         // downgrade to a Float32 optical 3D LUT when original is requested.
