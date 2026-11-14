@@ -104,6 +104,7 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalPreview.swift \
             ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
             ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
+            ios/tests/Build81OriginalInputValidation.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/Build78FloatTIFFValidation.swift \
@@ -118,6 +119,8 @@ jobs:
       - name: Compile and self-test the independent harness
         run: |
           python -m py_compile ios/scripts/build77_source_contract.py
+          python -m py_compile ios/scripts/build81_original_input_oracle.py
+          python -m py_compile ios/scripts/build81_generate_source_locus.py
           python ios/scripts/build77_source_contract.py self-test
       - name: Verify pinned upstream blobs and emit JSON evidence
         run: |
