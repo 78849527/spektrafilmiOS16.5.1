@@ -323,7 +323,12 @@ jobs:
           python3 ios/scripts/generate_original_scipy_rng.py
           python3 ios/scripts/generate_source_replay.py
           python3 ios/scripts/generate_source_microstructure.py
-          NUMBA_NUM_THREADS=1 NUMBA_THREADING_LAYER=workqueue \
+          # Other generators import source modules through transient shims.
+          # Numba disk caches from those shims contain <dynamic> module IDs.
+          # Use a NEW cache for this independently imported actual grain.py;
+          # never edit the upstream algorithm to work around the cache.
+          NUMBA_CACHE_DIR="$(mktemp -d)" \
+            NUMBA_NUM_THREADS=1 NUMBA_THREADING_LAYER=workqueue \
             python3 ios/scripts/generate_source_physical_grain.py
           test -s ios/verification/generated-source-grain-v1.8.48/manifest.json
           python3 ios/scripts/generate_source_rgb_parity.py
