@@ -65,6 +65,10 @@ jobs:
       - name: Fast static Swift parse of changed production stage boundaries
         run: |
           swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build77OneShotEvidence.swift \
+            ios/SpektraFilmPort/Build77ReferenceInput.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
             ios/SpektraFilmPort/Build78HighBitDepthIngress.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
