@@ -130,11 +130,16 @@ enum Build79RAWSignature {
             try require(header.count>=16 && Array(header.prefix(16))==sig,
                         "RAF 扩展名与 Fujifilm RAW 原文件头不符")
         case .cr3:
+            // ISO-BMFF ftyp box uses a big-endian length. A plausible
+            // brand by itself is insufficient: reject truncated boxes
+            // and invalid sizes before the Apple RAW decoder is invoked.
             let head=Array(header.prefix(12))
-            try require(head.count==12 &&
+            let boxSize=u32(header,0,false) ?? 0
+            try require(head.count==12 && boxSize>=16 &&
+                        boxSize<=header.count &&
                         Array(head[4..<8])==Array("ftyp".utf8) &&
                         Array(head[8..<12])==Array("crx ".utf8),
-                        "CR3 缺少 Canon crx ISO-BMFF RAW 品牌，不能取代为容器预览")
+                        "CR3 缺少完整 Canon crx ISO-BMFF ftyp Box，不能取代为容器预览")
         case .dng:
             let tags=try tiffIFD(header)
             // DNGVersion (0xC612) is a four-byte, INLINE TIFF BYTE value.
@@ -172,6 +177,9 @@ enum Build79RAWSignature {
                     "CR2 缺少 Canon CR 2.0 文件标记或有效 IFD 指针"
                 )
             }
+            // The marker is not enough; real CR2 has a readable IFD0.
+            // The later RAW IFD may lie beyond the bounded probe header.
+            _=try tiffIFD(header)
         case .nef,.arw:
             let tags=try tiffIFD(header)
             guard let maker=tags.first(where:{$0.tag==0x010f}),
