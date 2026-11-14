@@ -363,6 +363,8 @@ struct SpectralPhysics {
     private let defaultCAM16Gamut: Bool
     private let viewingStock: String
     private let viewingNormalization: Double
+    // Python scanning.py illuminant XYZ; separate from medium white density.
+    private let scannerIlluminantXYZ: [Double]
     private let scannedReferenceYBlack: Double
     private let scannedReferenceYWhite: Double
 
@@ -533,6 +535,23 @@ struct SpectralPhysics {
             source:GeneratedOriginalOptics.sourceF64_cie1931,
             count:81*3,original:sourceMeasuredFloat64
         )
+        // Source ScanningStage computes illuminant XYZ from ALL 81 CMFs
+        // (not the dye-mask-limited transmission weights). This XYZ is
+        // added to the developed *paper* scan BEFORE XYZ→linear sRGB.
+        let scanNorm = GeneratedScannerReference.xyzYNormalization[stock] ?? 1
+        guard scanNorm.isFinite, scanNorm > 1e-15 else {
+            throw PhysicsError.invalid("原版扫描器光源 Y 归一化无效")
+        }
+        var scanIlluminant = [Double](repeating:0,count:3)
+        for i in 0..<81 {
+            for ch in 0..<3 {
+                scanIlluminant[ch] += viewing[i] * cie[i*3+ch]
+            }
+        }
+        scannerIlluminantXYZ = scanIlluminant.map { $0 / scanNorm }
+        guard scannerIlluminantXYZ.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版扫描器光源 XYZ 包含 NaN/Inf")
+        }
         // Original print balance database selects filter CC values per
         // film + printing-stock pair; do not reuse one neutral spectrum.
         let printKey = filmID + "|" + paperID
@@ -1111,7 +1130,8 @@ struct SpectralPhysics {
     /// enabled), apply the original substrate-specific printing/scanning
     /// pipeline. A reversal film bypasses printing.
     func scanFilmDensity(_ filmDensity: [Double], paperEV: Double,
-                         sourceLinearOutput: Bool = false) -> [Double] {
+                         sourceLinearOutput: Bool = false,
+                         sourceXYZOutput: Bool = false) -> [Double] {
         let resultDensity: [Double]
         let substrate: Profile
         if isPositive {
@@ -1131,7 +1151,8 @@ struct SpectralPhysics {
         }
         return scanDevelopedSubstrateDensity(
             resultDensity, substrate:substrate,
-            sourceLinearOutput:sourceLinearOutput
+            sourceLinearOutput:sourceLinearOutput,
+            sourceXYZOutput:sourceXYZOutput
         )
     }
 
@@ -1139,7 +1160,8 @@ struct SpectralPhysics {
     /// same calculation, avoiding a duplicated CAM16/ACES/XYZ path.
     private func scanDevelopedSubstrateDensity(
         _ resultDensity:[Double],substrate:Profile,
-        sourceLinearOutput:Bool=false
+        sourceLinearOutput:Bool=false,
+        sourceXYZOutput:Bool=false
     ) -> [Double] {
         if useOriginalScanner {
             var xyz = Self.scanPhysicalXYZ(
@@ -1153,6 +1175,10 @@ struct SpectralPhysics {
                     yWhite: correctedReferenceWhite ?? scannedReferenceYWhite
                 )
             }
+            // In the opt-in controlled scanner glare production path the
+            // entire 2D paper XYZ image is assembled first, then the true
+            // source field is added before any RGB/gamut conversion.
+            if sourceXYZOutput { return xyz }
             let linear = OriginalScannerMath.linearSRGB(
                 xyz: xyz, viewing: viewingStock
             )
@@ -1352,7 +1378,8 @@ struct SpectralPhysics {
     ///   paper log10 photons -> fitted source CDF H-D -> ORIGINAL
     ///   scanner XYZ/ACES without a second reprint or LUT interpolation.
     func sourceSpatialScanPrintedPhoton(
-        _ photon:[Double],sourceLinearOutput:Bool=false
+        _ photon:[Double],sourceLinearOutput:Bool=false,
+        sourceXYZOutput:Bool=false
     ) throws -> [Double] {
         guard !isPositive,useOriginalPrintOptics,
               let sourcePaperHDCurve,
@@ -1368,7 +1395,9 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("原版印相扩散后相纸 H-D 非有限")
         }
         let output=scanDevelopedSubstrateDensity(
-            density,substrate:paper,sourceLinearOutput:sourceLinearOutput
+            density,substrate:paper,
+            sourceLinearOutput:sourceLinearOutput,
+            sourceXYZOutput:sourceXYZOutput
         )
         guard output.count==3,output.allSatisfy({$0.isFinite}) else {
             throw PhysicsError.invalid("原版印相扩散扫描输出非法")
@@ -1390,6 +1419,59 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("原版相纸 H-D 或光谱扫描输出非有限")
         }
         return output
+    }
+
+    /// Paper/film density→original corrected XYZ BEFORE glare and gamut.
+    /// Uses the EXACT scanFilmDensity printing path; only the return
+    /// boundary changes. In source physical mode B/W reference and CAM16
+    /// LUT are explicitly forbidden rather than silently approximated.
+    func sourceSpatialScanXYZ(
+        filmDensity:[Double],paperEV:Double
+    ) throws -> [Double] {
+        guard useOriginalScanner, !useReferenceBlackWhite,
+              !defaultCAM16Gamut,
+              filmDensity.count==3,
+              filmDensity.allSatisfy({ $0.isFinite }),
+              paperEV.isFinite, abs(paperEV)<=4 else {
+            throw PhysicsError.invalid(
+                "源扫描眩光只支持有效的原版光谱 XYZ，关闭 CAM16／黑白校准"
+            )
+        }
+        let xyz=scanFilmDensity(
+            filmDensity,paperEV:paperEV,sourceXYZOutput:true
+        )
+        guard xyz.count==3,xyz.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版光谱 XYZ 生成失败")
+        }
+        return xyz
+    }
+
+    /// True Python normalized scanner lamp XYZ, NEVER medium base white.
+    func sourceSpatialScannerIlluminantXYZ() throws -> [Double] {
+        guard useOriginalScanner,!useReferenceBlackWhite,
+              !defaultCAM16Gamut,
+              scannerIlluminantXYZ.count==3,
+              scannerIlluminantXYZ.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版扫描器光源 XYZ 未就绪")
+        }
+        return scannerIlluminantXYZ
+    }
+
+    /// RGB is intentionally computed AFTER the *whole image* gets the
+    /// source glare field in XYZ, before source scanner lens FIR/YVV.
+    func sourceSpatialXYZToLinearRGB(_ xyz:[Double]) throws -> [Double] {
+        guard useOriginalScanner,!useReferenceBlackWhite,
+              !defaultCAM16Gamut,xyz.count==3,
+              xyz.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("源扫描 XYZ→RGB 输入无效或色域模式未实现")
+        }
+        let rgb=OriginalScannerMath.compressACESRGC(
+            OriginalScannerMath.linearSRGB(xyz:xyz,viewing:viewingStock)
+        )
+        guard rgb.count==3,rgb.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("源扫描 XYZ→ACES 线性 RGB 输出非有限")
+        }
+        return rgb
     }
 
     /// True original linear RGB before scanner lens Gaussian and unsharp.
