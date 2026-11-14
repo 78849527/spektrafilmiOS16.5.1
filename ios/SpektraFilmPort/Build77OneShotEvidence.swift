@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import UIKit
+import CryptoKit
 
 /// ONE device operation for all Build77 source stage tape branches.
 /// Three actual production runs receive the exact same 6×4×3 source
@@ -33,6 +34,21 @@ enum Build77OneShotEvidence {
                 Build77ReferenceInput.width*Build77ReferenceInput.height*3
         else {
             throw Failure.invalid("Build77 原版测试输入数据损坏")
+        }
+        var sourceBytes=Data()
+        for bit in Build77ReferenceInput.bits {
+            var little=bit.littleEndian
+            withUnsafeBytes(of:&little) {
+                sourceBytes.append(contentsOf:$0)
+            }
+        }
+        let actualInputSHA=SHA256.hash(data:sourceBytes)
+            .map { String(format:"%02x",$0) }.joined()
+        guard actualInputSHA ==
+                Build77ReferenceInput.originalSourceInputSHA256 else {
+            throw Failure.invalid(
+                "Build77 真实 iPhone 输入 Float64 SHA 与原版 NumPy 不一致，禁止采集"
+            )
         }
         let frame=OriginalSourcePixelIO.Frame(
             width:Build77ReferenceInput.width,
@@ -119,6 +135,11 @@ enum Build77OneShotEvidence {
                     test.name+"/candidate-source-tap-mapping.json"
             ])
         }
+        #if targetEnvironment(simulator)
+        let isSimulator=true
+        #else
+        let isSimulator=false
+        #endif
         let manifest:[String:Any]=[
             "status":"REAL_IPHONE_STAGED_EVIDENCE_NOT_PYTHON_CERTIFIED",
             "source_sha":"3bb2c2d2801ff68b92019cf1dbcbb133d60832bc",
@@ -129,6 +150,7 @@ enum Build77OneShotEvidence {
             "app_build":Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
             "app_version":Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
             "device_model":deviceModel,
+            "actual_hardware_device":!isSimulator,
             "system_version":systemVersion,
             "cases":results,
             "certification_note":
