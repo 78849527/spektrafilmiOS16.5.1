@@ -997,7 +997,7 @@ jobs:
           assert "static func preflightExport(" in pixelIO
           assert "static func validatePixelDimensions(" in pixelIO
           assert "try preflightExport(" in pixelIO
-          assert "maximumAllowedPixels: sourcePhysicalDirectEnabled" in model
+          assert "sourcePhysicalDirectEnabled && resolution == .original" in model
           assert "width:3888,height:2592,maximumAllowedPixels:2_000_000" in Path("ios/tests/SpatialDIRValidation.swift").read_text()
 
           assert "maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels" in physical
