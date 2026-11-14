@@ -1,4 +1,4 @@
-name: Build77-80 original source verification and Build80 requested unsigned IPA
+name: Build77-81 original source verification and Build80 requested unsigned IPA
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
       - port/build78-input-06-08
       - port/build79-raw-identify-09
       - port/build80-raw-wb-lens-10-12
+      - port/build81-crop-resize-preview-gamut-13-16
     paths:
       - "ios/scripts/build77_source_contract.py"
       - "ios/scripts/certify_build77_oneshot.py"
@@ -50,6 +51,9 @@ on:
       - "ios/scripts/build80_raw_wb_original_oracle.py"
       - "ios/SpektraFilmPort/Build80OriginalRAWWhiteBalance.swift"
       - "ios/tests/Build80OriginalRAWWhiteBalanceValidation.swift"
+      - "ios/SpektraFilmPort/Build81OriginalCrop.swift"
+      - "ios/tests/Build81OriginalCropValidation.swift"
+      - "ios/scripts/build81_original_crop_oracle.py"
       - "ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
@@ -92,6 +96,7 @@ jobs:
             ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift \
             ios/SpektraFilmPort/Build80OriginalRAWTint.swift \
             ios/SpektraFilmPort/Build80OriginalRAWWhiteBalance.swift \
+            ios/SpektraFilmPort/Build81OriginalCrop.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/Build78FloatTIFFValidation.swift \
@@ -377,6 +382,11 @@ jobs:
           python ios/scripts/build80_raw_wb_original_oracle.py \
             --output build77-evidence/build80-original-raw-whitebalance.json
           test -s build77-evidence/build80-original-raw-whitebalance.json
+      - name: Generate pinned original Python crop/NumPy rounding oracle
+        run: |
+          python ios/scripts/build81_original_crop_oracle.py \
+            --output build77-evidence/build81-source-crop.json
+          test -s build77-evidence/build81-source-crop.json
       - name: "Build77: native full original source spectral numerical suite"
         run: |
           xcrun swiftc -Onone -parse-as-library -D BUILD77_HOST_TAPE \
@@ -393,6 +403,7 @@ jobs:
             ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift \
             ios/SpektraFilmPort/Build80OriginalRAWTint.swift \
             ios/SpektraFilmPort/Build80OriginalRAWWhiteBalance.swift \
+            ios/SpektraFilmPort/Build81OriginalCrop.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
@@ -455,6 +466,7 @@ jobs:
             ios/tests/Build80AppleRAWDevelopmentValidation.swift \
             ios/tests/Build80OriginalRAWTintValidation.swift \
             ios/tests/Build80OriginalRAWWhiteBalanceValidation.swift \
+            ios/tests/Build81OriginalCropValidation.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Validate actual in-production optical paper stage taps
@@ -465,6 +477,7 @@ jobs:
           BUILD77_HOST_ONESHOT_OUTPUT="$PWD/build77-evidence/host-original-physical-tapes" \
           BUILD80_RAW_TINT_ORACLE="$PWD/build77-evidence/build80-original-raw-tint.json" \
           BUILD80_RAW_WB_ORACLE="$PWD/build77-evidence/build80-original-raw-whitebalance.json" \
+          BUILD81_CROP_ORACLE="$PWD/build77-evidence/build81-source-crop.json" \
             /tmp/SpektrafilmSpectralValidation
           test "$(find build77-evidence/host-original-physical-tapes -name one-shot-manifest.json | wc -l | tr -d ' ')" -eq 1
           echo "Actual macOS production code exercised all three diagnostic topologies; not device certification."
@@ -491,10 +504,10 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.55
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 80
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.56
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 81
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
-          echo "Build80 unsigned test app 1.8.55(80) compiled; upstream scientific parity NOT certified"
+          echo "Build81 unsigned test app 1.8.56(81) compiled; upstream scientific parity NOT certified"
       - name: Package requested Build80 v1.8.55 unsigned diagnostic IPA
         if: github.ref == 'refs/heads/port/build80-raw-wb-lens-10-12'
         run: |
