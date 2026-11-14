@@ -157,7 +157,7 @@ enum Build78HighBitDepthIngress {
                     }
                     let index=(dy*outW+dx)*3
                     for c in 0..<3 {
-                        result[index+c]=
+                        result[index+c] =
                             Double(read16(offset+(channel0+c)*2))/65535.0
                     }
                 }
