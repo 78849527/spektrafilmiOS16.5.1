@@ -44,6 +44,9 @@ on:
       - "ios/SpektraFilmPort/Build79NativeRAWBackend.swift"
       - "ios/tests/Build79RAWSignatureValidation.swift"
       - "ios/tests/Build80AppleRAWDevelopmentValidation.swift"
+      - "ios/tests/Build80OriginalRAWTintValidation.swift"
+      - "ios/SpektraFilmPort/Build80OriginalRAWTint.swift"
+      - "ios/scripts/build80_original_raw_tint_oracle.py"
       - "ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
@@ -84,6 +87,7 @@ jobs:
             ios/SpektraFilmPort/Build78FloatTIFFIngress.swift \
             ios/SpektraFilmPort/Build79NativeRAWBackend.swift \
             ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift \
+            ios/SpektraFilmPort/Build80OriginalRAWTint.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/Build78FloatTIFFValidation.swift \
@@ -355,6 +359,11 @@ jobs:
           python ios/scripts/generate_source_scanner_glare.py
           test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
+      - name: Generate pinned Python original RAW tint Float32 oracle
+        run: |
+          python ios/scripts/build80_original_raw_tint_oracle.py \
+            --output build77-evidence/build80-original-raw-tint.json
+          test -s build77-evidence/build80-original-raw-tint.json
       - name: "Build77: native full original source spectral numerical suite"
         run: |
           xcrun swiftc -Onone -parse-as-library -D BUILD77_HOST_TAPE \
@@ -369,6 +378,7 @@ jobs:
             ios/SpektraFilmPort/Build79RAWStorage.swift \
             ios/SpektraFilmPort/Build79NativeRAWBackend.swift \
             ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift \
+            ios/SpektraFilmPort/Build80OriginalRAWTint.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
@@ -429,6 +439,7 @@ jobs:
             ios/tests/Build78FloatTIFFValidation.swift \
             ios/tests/Build79RAWSignatureValidation.swift \
             ios/tests/Build80AppleRAWDevelopmentValidation.swift \
+            ios/tests/Build80OriginalRAWTintValidation.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Validate actual in-production optical paper stage taps
@@ -437,6 +448,7 @@ jobs:
           test -s ios/verification/generated-physical-v1.8.22/kodak_neutral_fir.rgbPre.f64le
           mkdir -p build77-evidence/host-original-physical-tapes
           BUILD77_HOST_ONESHOT_OUTPUT="$PWD/build77-evidence/host-original-physical-tapes" \
+          BUILD80_RAW_TINT_ORACLE="$PWD/build77-evidence/build80-original-raw-tint.json" \
             /tmp/SpektrafilmSpectralValidation
           test "$(find build77-evidence/host-original-physical-tapes -name one-shot-manifest.json | wc -l | tr -d ' ')" -eq 1
           echo "Actual macOS production code exercised all three diagnostic topologies; not device certification."
