@@ -73,7 +73,7 @@ jobs:
       - name: Verify all menu switches have identical dimensions and preserve iOS16 gestures
         run: |
           python3 ios/scripts/validate_unified_switches.py
-          test -f docs/v1.8.45-unified-switches.md
+          test -f docs/v1.8.44-unified-switches.md
       - name: Verify diagnostic strip, top-aligned preview and bottom menu
         run: |
           python3 - <<'PY'
