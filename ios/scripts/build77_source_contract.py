@@ -254,6 +254,12 @@ def emit_taps(args: argparse.Namespace) -> None:
     require(image.dtype.kind in "fiu", "Input must be numeric")
     params = init_params(film_profile=args.film, print_profile=args.paper)
     params.io.scan_film = args.scan_film
+    if args.print_diffusion:
+        require(not args.scan_film,
+                "Paper diffusion cannot be tested on a direct film scan")
+        # Exact upstream PrintingStage.expose branch. These are the
+        # source's OWN settings; we do not substitute any iOS algorithm.
+        params.enlarger.diffusion_filter.active = True
     params = digest_params(params)
     pipeline = SimulationPipeline(params)
     output = Path(args.output)
@@ -283,6 +289,7 @@ def emit_taps(args: argparse.Namespace) -> None:
         "source_sha": UPSTREAM_SHA,
         "mode": "PYTHON_SOURCE_DEFAULT_RNG_NO_FIXED_SEED",
         "scan_film": args.scan_film,
+        "print_diffusion": args.print_diffusion,
         "film": args.film, "print": args.paper,
         "taps": rows, "total_seconds": time.perf_counter() - start,
         "note": "Separate tap file dumps are not proof of iOS parity.",
@@ -355,6 +362,8 @@ def main() -> int:
     e.add_argument("--film", default="kodak_portra_400")
     e.add_argument("--paper", default="kodak_portra_endura")
     e.add_argument("--scan-film", action="store_true")
+    e.add_argument("--print-diffusion", action="store_true",
+                   help="Run the original optical paper PSF, not an iOS simulation")
     c = sub.add_parser("compare-taps")
     c.add_argument("--reference", required=True)
     c.add_argument("--candidate", required=True)
