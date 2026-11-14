@@ -372,7 +372,7 @@ jobs:
         run: |
           # The previous setup-python switches to Python 3.13; its environment
           # does not inherit colour-science from the 3.11 fixture generator.
-          python -m pip install --disable-pip-version-check --no-deps \
+          python -m pip install --disable-pip-version-check \
             'colour-science==0.4.6'
           python ios/scripts/build80_raw_wb_original_oracle.py \
             --output build77-evidence/build80-original-raw-whitebalance.json
