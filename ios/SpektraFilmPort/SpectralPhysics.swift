@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// iOS 16.5.1 measured-spectra photo simulation.
 /// Ported ORIGINAL Spektrafilm components: Hanatos2025 colour-to-raw LUT,
@@ -122,6 +123,11 @@ struct SpectralPhysics {
                 record.sourceDensityCurvesLayersF64, count:2304,
                 enabled:sourceMeasuredFloat64, allowEmpty:true
             )
+            if sourceMeasuredFloat64 {
+                // Build77: verify that the exact production buffers still have
+                // the source JSON Float64 bytes. Fail closed on corruption.
+                try Self.verifySourceProfileSHA(record, id: id)
+            }
             if let dir = GeneratedDIRData.records[id] {
                 dirCorrectedCurves = try Self.decode(dir.correctedCurves, count: 768)
                 sourceCorrectedCurvesF64 = try Self.decodeOptionalSource(
@@ -168,6 +174,53 @@ struct SpectralPhysics {
                 materialMinima[channel] = channelMin
             }
             minimumDensity = materialMinima
+        }
+
+        /// Strict production-time source data integrity, including the
+        /// original 20 film-only 3×3 measured sublayers. This is a DATA
+        /// contract, not certification of every optical algorithm branch.
+        private static func verifySourceProfileSHA(
+            _ record: GeneratedSpectralData.Record, id: String
+        ) throws {
+            let fields: [(String, String, Int)] = [
+                ("log_sensitivity", record.sourceLogSensitivityF64, 243),
+                ("channel_density", record.sourceChannelDensityF64, 243),
+                ("base_density", record.sourceBaseDensityF64, 81),
+                ("log_exposure", record.sourceLogExposureF64, 256),
+                ("density_curves", record.sourceDensityCurvesF64, 768)
+            ]
+            var payload = Data()
+            for (label, encoded, count) in fields {
+                guard let bytes = Data(base64Encoded: encoded),
+                      bytes.count == count * 8 else {
+                    throw PhysicsError.invalid(
+                        "原版测量 Float64 数据缺失或损坏：" + id + "/" + label
+                    )
+                }
+                payload.append(bytes)
+            }
+            if record.stage == "filming" {
+                guard let layers = Data(
+                    base64Encoded: record.sourceDensityCurvesLayersF64
+                ), layers.count == 2304 * 8 else {
+                    throw PhysicsError.invalid(
+                        "原版九亚层 Float64 数据缺失或损坏：" + id
+                    )
+                }
+                payload.append(layers)
+            } else if !record.sourceDensityCurvesLayersF64.isEmpty {
+                throw PhysicsError.invalid(
+                    "原版印相材料存在非预期乳剂数据：" + id
+                )
+            }
+            let actual = SHA256.hash(data: payload).map {
+                String(format: "%02x", $0)
+            }.joined()
+            guard actual == record.sourceFloat64SHA256 else {
+                throw PhysicsError.invalid(
+                    "原版 Float64 SHA256 不匹配，拒绝静默降级：" + id
+                )
+            }
         }
 
         /// Explicit little-endian decode avoids unaligned Float pointers on
