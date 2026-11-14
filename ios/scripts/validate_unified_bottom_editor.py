@@ -12,8 +12,8 @@ ui=(ROOT/"ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
 parent=(ROOT/"ios/SpektraFilmPort/ContentView.swift").read_text()
 project=(ROOT/"ios/project.yml").read_text()
 
-assert 'MARKETING_VERSION: "1.8.49"' in project
-assert 'CURRENT_PROJECT_VERSION: "74"' in project
+assert 'MARKETING_VERSION: "1.8.50"' in project
+assert 'CURRENT_PROJECT_VERSION: "75"' in project
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 
 def between(start,stop):
