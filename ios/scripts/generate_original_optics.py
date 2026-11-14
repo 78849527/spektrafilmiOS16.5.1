@@ -85,6 +85,13 @@ def main() -> None:
         .align(SHAPE).values, dtype=np.float64
     )
     d55 = illuminant("D55")
+    # Upstream standard_illuminant("T") uses the colour-science
+    # Incandescent light source, aligned to 380-780nm / 5nm.
+    tungsten = np.asarray(
+        colour.SDS_LIGHT_SOURCES["Incandescent"].copy()
+        .align(SHAPE).values, dtype=np.float64
+    )
+    tungsten /= np.mean(tungsten)
     d50 = illuminant("D50")
     # Upstream film-printing stocks Kodak 2383/2393 view under K75P.
     k75 = np.asarray(
@@ -135,6 +142,7 @@ def main() -> None:
     names = {
         "mallettBasis": basis,
         "d55": d55,
+        "t": tungsten,
         "d50": d50,
         "k75p": k75,
         "cie1931": cie,
@@ -145,6 +153,14 @@ def main() -> None:
     }
     assert basis.shape == (81, 3) and cie.shape == (81, 3)
     assert np.isclose(np.mean(d55), 1, rtol=1e-10)
+    assert np.isclose(np.mean(tungsten), 1, rtol=1e-10)
+    # Daylight and tungsten film stocks require distinct illuminants for
+    # source Mallett 2019; do not accidentally reuse the D55 matrix.
+    refs = {
+        info["reference_illuminant"] for info in all_infos
+        if info["stage"] == "filming"
+    }
+    assert refs == {"D55", "T"}, refs
     assert np.isclose(np.mean(d50), 1, rtol=1e-10)
     assert np.all((print_illuminant >= 0) & np.isfinite(print_illuminant))
 

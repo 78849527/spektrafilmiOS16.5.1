@@ -99,6 +99,10 @@ enum OriginalSourcePhysicalImage {
         var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
         var cameraOptics: OriginalSourceCameraOptics.Settings = .init()
         var filmHalation: OriginalSourceFilmHalation.Settings = .init()
+        // Upstream SettingsParams.rgb_to_raw_method plus camera UV/IR
+        // spectral bandpass; all stages remain per-pixel Double.
+        var cameraRawMethod: SpectralPhysics.CameraRawMethod = .hanatos2025
+        var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
 
         func validate() throws {
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -114,6 +118,13 @@ enum OriginalSourcePhysicalImage {
             try scannerOptics.validate()
             try cameraOptics.validate()
             try filmHalation.validate()
+            try cameraBandpass.validate()
+            guard cameraRawMethod == .mallett2019 || !cameraBandpass.active else {
+                throw Failure.invalid(
+                    "Hanatos 2025 需要按 UV/IR 重新生成光谱 TC LUT；" +
+                    "请选 Mallett 2019 或关闭 UV/IR，不能忽略原版滤镜"
+                )
+            }
             if !SpectralPhysics.isPositiveFilm(filmID) && !print.enabled {
                 throw Failure.invalid(
                     "负片逐像素物理模式需要启用原版放大机光学印相和相纸 H-D"
@@ -133,7 +144,9 @@ enum OriginalSourcePhysicalImage {
                 printOptics: print,
                 cameraExposureEV: cameraEV,
                 hanatosPrecision: .originalFloat64,
-                sourceMeasuredFloat64: true
+                sourceMeasuredFloat64: true,
+                cameraRawMethod: cameraRawMethod,
+                cameraBandpass: cameraBandpass
             )
         }
     }

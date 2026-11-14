@@ -1290,6 +1290,10 @@ struct FloatingEditorWorkspace: View {
                     if model.sourcePixelIOEnabled {
                         sourceModeControl("逐像素全光学（实验）", mode: .physical)
                         if model.sourcePhysicalDirectEnabled {
+                            // Explicit type-erasure boundary: this optional
+                            // source spectroscopy panel must NOT reintroduce
+                            // v1.8.36 Swift runtime generic stack overflow.
+                            sourceCameraSpectralSettings
                             resetToggle("原版摄影曝光前处理（Double｜三模块）",
                                         value:$model.sourceCameraPreFilmEnabled,
                                         enabled:model.hasPhoto && !model.busy,
@@ -1413,6 +1417,72 @@ struct FloatingEditorWorkspace: View {
                     .foregroundColor(.secondary)
             }
         }
+    }
+
+    /// Upstream CameraParams.filter_uv / filter_ir and
+    /// SettingsParams.rgb_to_raw_method. The full-physical source stage
+    /// consumes the same data; no mobile LUT approximation.
+    /// Keep this heavy view erased at a separate boundary on iOS 16.
+    private var sourceCameraSpectralSettings: AnyView {
+        AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                Picker("相机原版光谱重建", selection: $model.sourceCameraRawMethod) {
+                    if !model.sourceCameraUVEnabled &&
+                       !model.sourceCameraIREnabled {
+                        Text("Hanatos 2025（默认）")
+                            .tag(SpectralPhysics.CameraRawMethod.hanatos2025)
+                    }
+                    Text("Mallett 2019（81 波长积分）")
+                        .tag(SpectralPhysics.CameraRawMethod.mallett2019)
+                }
+                .pickerStyle(.menu)
+                .onChange(of: model.sourceCameraRawMethod) { _ in
+                    model.queueSpectralPreview()
+                }
+                Text("Python 原版的两条光谱重建路径。UV/IR 滤镜只在" +
+                     " Mallett 2019 精确重算感光度时开放；Hanatos TC LUT" +
+                     " 尚不能带着滤镜直接复用。不会忽略或模拟滤镜。")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                if model.sourceCameraRawMethod == .mallett2019 {
+                    resetToggle("相机 UV 光谱截止", value: $model.sourceCameraUVEnabled,
+                                enabled: model.hasPhoto && !model.busy,
+                                resetTo: false)
+                        .onChange(of: model.sourceCameraUVEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    if model.sourceCameraUVEnabled {
+                        morphSlider("UV 截止强度",
+                                    value:$model.sourceCameraUVAmount,
+                                    range:0...1,resetTo:1)
+                        morphSlider("UV 截止波长 nm",
+                                    value:$model.sourceCameraUVCutoffNM,
+                                    range:380...780,resetTo:410)
+                        morphSlider("UV 过渡宽度 nm",
+                                    value:$model.sourceCameraUVWidthNM,
+                                    range:0.1...100,resetTo:8)
+                    }
+                    resetToggle("相机 IR 光谱截止", value: $model.sourceCameraIREnabled,
+                                enabled: model.hasPhoto && !model.busy,
+                                resetTo: false)
+                        .onChange(of: model.sourceCameraIREnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    if model.sourceCameraIREnabled {
+                        morphSlider("IR 截止强度",
+                                    value:$model.sourceCameraIRAmount,
+                                    range:0...1,resetTo:1)
+                        morphSlider("IR 截止波长 nm",
+                                    value:$model.sourceCameraIRCutoffNM,
+                                    range:380...780,resetTo:675)
+                        morphSlider("IR 过渡宽度 nm",
+                                    value:$model.sourceCameraIRWidthNM,
+                                    range:0.1...100,resetTo:15)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        )
     }
 
     private var grainSettings: some View {

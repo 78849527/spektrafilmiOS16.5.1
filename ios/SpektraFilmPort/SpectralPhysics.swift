@@ -14,6 +14,21 @@ import Foundation
 /// identical to a full original Spektrafilm render.
 /// The per-pixel calculation is accelerated through a dynamic CIColorCube.
 struct SpectralPhysics {
+    // Original runtime SettingsParams.rgb_to_raw_method choices.
+    // Default source Hanatos LUT is unchanged; Mallett operates directly
+    // on measured film Float64 spectral sensitivities.
+    enum CameraRawMethod: String, CaseIterable, Hashable {
+        case hanatos2025 = "hanatos2025"
+        case mallett2019 = "mallett2019"
+
+        var displayName: String {
+            switch self {
+            case .hanatos2025: return "Hanatos 2025（默认）"
+            case .mallett2019: return "Mallett 2019（光谱积分）"
+            }
+        }
+    }
+
     enum PhysicsError: LocalizedError {
         case invalid(String)
         var errorDescription: String? {
@@ -46,6 +61,7 @@ struct SpectralPhysics {
         let sourceDensityCurvesLayersF64: [Double]?
         let sourceCorrectedCurvesF64: [Double]?
         let polarity: String
+        let referenceIlluminant: String
         let viewingIlluminant: String
         let id: String
 
@@ -122,6 +138,7 @@ struct SpectralPhysics {
                 densityMaximum = Array(repeating: 0.0, count: 3)
             }
             polarity = record.polarity
+            referenceIlluminant = record.referenceIlluminant
             viewingIlluminant = record.viewingIlluminant
             guard logExposure[0] < logExposure[255] else {
                 throw PhysicsError.invalid("光谱数据的曝光曲线无效：" + id)
@@ -323,6 +340,7 @@ struct SpectralPhysics {
     private let paper: Profile
     private let isPositive: Bool
     private let hanatos: OriginalHanatosResponse
+    private let cameraRawMethod: CameraRawMethod
     private let filmMatrix: [[Double]]    // film channel -> source linear RGB
     private let paperWeights: [[Double]]  // wavelength -> paper channel
     private let opticalPreflashRaw: [Double]
@@ -412,7 +430,9 @@ struct SpectralPhysics {
          printOptics: OriginalPrintOptics.Settings = .init(),
          cameraExposureEV: Double = 0,
          hanatosPrecision: OriginalHanatosResponse.Precision = .originalFloat64,
-         sourceMeasuredFloat64: Bool = false) throws {
+         sourceMeasuredFloat64: Bool = false,
+         cameraRawMethod: CameraRawMethod = .hanatos2025,
+         cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
@@ -423,6 +443,13 @@ struct SpectralPhysics {
         let originalPaper = try Profile(
             id:paperID,sourceMeasuredFloat64:sourceMeasuredFloat64
         )
+        try cameraBandpass.validate()
+        guard !cameraBandpass.active || cameraRawMethod == .mallett2019 else {
+            throw PhysicsError.invalid(
+                "原版 Hanatos 光谱 TC LUT 尚未按 UV/IR 滤镜重新生成；" +
+                "请选择 Mallett 2019 光谱积分，禁止忽略所选滤镜"
+            )
+        }
         let originalHanatos = try OriginalHanatosResponse(
             filmID: filmID, precision: hanatosPrecision
         )
@@ -435,6 +462,7 @@ struct SpectralPhysics {
         film = originalFilm
         paper = originalPaper
         hanatos = originalHanatos
+        self.cameraRawMethod = cameraRawMethod
         isPositive = positive
         useOriginalScanner = sourceScanner
         useReferenceBlackWhite = scannerBlackWhite
@@ -463,9 +491,22 @@ struct SpectralPhysics {
             source:GeneratedOriginalOptics.sourceF64_mallettBasis,
             count:81*3, original:sourceMeasuredFloat64
         )
-        let d55 = try Self.readOriginalOptics(
-            fast:GeneratedOriginalOptics.d55,
-            source:GeneratedOriginalOptics.sourceF64_d55,
+        // Python FilmingStage reads EACH film's reference illuminant.
+        // Tungsten stock "T" is the measured Incandescent source,
+        // not D55. Never silently relight tungsten cinema film as daylight.
+        let sourceIlluminantName = originalFilm.referenceIlluminant
+        guard sourceIlluminantName == "D55" ||
+              sourceIlluminantName == "T" else {
+            throw PhysicsError.invalid(
+                "Mallett 原版相机参考光源暂不支持：" + sourceIlluminantName
+            )
+        }
+        let mallettIlluminant = try Self.readOriginalOptics(
+            fast: sourceIlluminantName == "T" ?
+                GeneratedOriginalOptics.t : GeneratedOriginalOptics.d55,
+            source: sourceIlluminantName == "T" ?
+                GeneratedOriginalOptics.sourceF64_t :
+                GeneratedOriginalOptics.sourceF64_d55,
             count:81, original:sourceMeasuredFloat64
         )
         let stock = viewed.viewingIlluminant == "K75P" ? "K75P" : "D50"
@@ -524,20 +565,50 @@ struct SpectralPhysics {
         var xyzWeights = Array(repeating: Array(repeating: 0.0, count: 3), count: 81)
         var white = Array(repeating: 0.0, count: 3)
 
-        // Exact original rgb_to_raw_mallett2019 einsum:
-        // raw = sum(RGB[3] * basis[wl,3] * D55[wl] * sensitivity[wl,3])
-        // and scalar normalisation against the green channel at 18.4% gray.
+        // Original model.color_filters.compute_band_pass_filter:
+        // each wavelength gets an independent UV/IR erf transmission.
+        // Original FilmingStage normalizes S[wl,ch] separately for each
+        // emulsion against the stock-specific viewing reference light.
+        let bandpass = (0..<81).map { index in
+            OriginalSourceCameraBandpass.transmission(
+                wavelengthNM: Double(380 + index * 5),
+                settings: cameraBandpass
+            )
+        }
+        var bandpassNormalization = [Double](repeating:1.0,count:3)
+        if cameraBandpass.active {
+            for ch in 0..<3 {
+                var originalSum = 0.0
+                var filteredSum = 0.0
+                for index in 0..<81 {
+                    let exposure = originalFilm.sensitivity(index,ch) *
+                        mallettIlluminant[index]
+                    originalSum += exposure
+                    filteredSum += exposure * bandpass[index]
+                }
+                guard originalSum > 1e-12, filteredSum > 1e-12,
+                      originalSum.isFinite, filteredSum.isFinite else {
+                    throw PhysicsError.invalid(
+                        "原版相机 UV/IR 逐通道曝光归一化失败：" + filmID
+                    )
+                }
+                bandpassNormalization[ch] = filteredSum / originalSum
+            }
+        }
+        // Exact source rgb_to_raw_mallett2019 einsum and green-midgray
+        // denominator, with optional source bandpass-normalized sensitivity.
         var midgrayGreen = 0.0
         for i in 0..<81 {
-            let light = d55[i]
-            midgrayGreen += light * 0.184 * originalFilm.sensitivity(i, 1)
+            let light = mallettIlluminant[i]
             for ch in 0..<3 {
+                let sensitivity = originalFilm.sensitivity(i,ch) *
+                    bandpass[i] / bandpassNormalization[ch]
+                if ch == 1 { midgrayGreen += light * 0.184 * sensitivity }
                 for rgb in 0..<3 {
-                    matrix[ch][rgb] += basis[i * 3 + rgb] * light *
-                        originalFilm.sensitivity(i, ch)
+                    matrix[ch][rgb] += basis[i*3+rgb] * light * sensitivity
                 }
                 pWeights[i][ch] = enlarger[i] *
-                    originalPaper.sensitivity(i, ch)
+                    originalPaper.sensitivity(i,ch)
             }
             // Original scanning density-to-light and spectral integration
             // uses the 1931 2-degree CMFs and D50 viewing illumination.
@@ -1132,7 +1203,13 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("原版自动测光后的相机 RGB 或曝光无效")
         }
         let linear=encodedRGB.map { Self.decodeSRGB($0) }
-        let raw=hanatos.raw(linearRGB:linear)
+        let raw: [Double]
+        switch cameraRawMethod {
+        case .hanatos2025:
+            raw = hanatos.raw(linearRGB:linear)
+        case .mallett2019:
+            raw = sourceMallettRaw(linearRGB:linear)
+        }
         let mult=pow(2.0,cameraEV)
         let irradiance=raw.map { $0*mult }
         guard irradiance.count==3,
@@ -1171,9 +1248,15 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("源逐像素 Hanatos 输入或曝光无效")
         }
         let linear = encodedRGB.map { Self.decodeSRGB($0) }
-        let raw = hanatos.raw(linearRGB: linear)
+        let raw: [Double]
+        switch cameraRawMethod {
+        case .hanatos2025:
+            raw = hanatos.raw(linearRGB: linear)
+        case .mallett2019:
+            raw = sourceMallettRaw(linearRGB: linear)
+        }
         guard raw.count == 3 && raw.allSatisfy({ $0.isFinite }) else {
-            throw PhysicsError.invalid("源 Hanatos 响应非有限")
+            throw PhysicsError.invalid("原版相机光谱重建响应非有限")
         }
         let logE = Self.filmLogExposure(raw: raw, exposureEV: cameraEV)
         let initial = (0..<3).map {
@@ -1704,8 +1787,20 @@ struct SpectralPhysics {
         }
     }
 
-    /// Diagnostic: numerically compare this Swift port's Mallett 2019 input
-    /// against exact reference vectors produced by the original Python einsum.
+    /// Production original Mallett 2019 raw response. The source einsum
+    /// does NOT clamp negative channels here; the following film log10
+    /// exposure uses max(raw,0)+1e-10. Keep that operation order intact.
+    private func sourceMallettRaw(linearRGB: [Double]) -> [Double] {
+        guard linearRGB.count == 3 else { return [] }
+        return (0..<3).map { channel in
+            (0..<3).reduce(0.0) {
+                $0 + filmMatrix[channel][$1] * linearRGB[$1]
+            }
+        }
+    }
+
+    /// Legacy clipped diagnostic only. Actual source production uses the
+    /// original *unclipped* response method directly above.
     func mallettRaw(linearRGB: [Double]) -> [Double] {
         guard linearRGB.count == 3 else { return [] }
         return (0..<3).map { channel in

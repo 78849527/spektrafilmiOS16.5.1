@@ -88,6 +88,21 @@ final class PhotoEditorModel: ObservableObject {
     @Published var sourceCameraHighlightBoostRange = 0.3
     @Published var sourceCameraHighlightProtectEV = 4.0
     @Published var sourceCameraLensBlurUM = 0.0
+    // Original Python SettingsParams.rgb_to_raw_method.
+    // Hanatos remains the default; Mallett is a real source-Double
+    // photon-input alternate, not a preview LUT approximation.
+    @Published var sourceCameraRawMethod:
+        SpectralPhysics.CameraRawMethod = .hanatos2025
+    // Original Python CameraParams.filter_uv/ir tuples. Only used
+    // inside source physical mode; off preserves the existing baseline.
+    @Published var sourceCameraUVEnabled = false
+    @Published var sourceCameraUVAmount = 1.0
+    @Published var sourceCameraUVCutoffNM = 410.0
+    @Published var sourceCameraUVWidthNM = 8.0
+    @Published var sourceCameraIREnabled = false
+    @Published var sourceCameraIRAmount = 1.0
+    @Published var sourceCameraIRCutoffNM = 675.0
+    @Published var sourceCameraIRWidthNM = 15.0
     @Published var sourceFilmHalationEnabled = false
     @Published var sourceFilmScatterAmount = 1.0
     @Published var sourceFilmScatterScale = 1.0
@@ -262,6 +277,27 @@ final class PhotoEditorModel: ObservableObject {
             : OriginalSourceCameraOptics.Settings()
         // In source-physical mode BOTH locations in the adjustment panel
         // enter this source Double optic, never the old SpatialOptics CI.
+        let sourceBandpass=OriginalSourceCameraBandpass.Settings(
+            uv:.init(
+                amount:sourceCameraUVEnabled ? sourceCameraUVAmount : 0,
+                centerNM:sourceCameraUVCutoffNM,
+                widthNM:sourceCameraUVWidthNM
+            ),
+            ir:.init(
+                amount:sourceCameraIREnabled ? sourceCameraIRAmount : 0,
+                centerNM:sourceCameraIRCutoffNM,
+                widthNM:sourceCameraIRWidthNM
+            )
+        )
+        // Do not silently ignore a selected filter: the precomputed
+        // Hanatos TC spectral LUT cannot be used for modified sensitivities.
+        guard sourceCameraRawMethod == .mallett2019 ||
+              !sourceBandpass.active else {
+            throw ImageProcessingError.invalid(
+                "UV/IR 需要按新感光度重建 Hanatos 光谱 LUT；" +
+                "请选择原版 Mallett 2019 或关闭滤镜，不允许静默忽略"
+            )
+        }
         let sourceHalation=OriginalSourceFilmHalation.routedSettings(
             combinedEnabled:sourceFilmHalationEnabled,
             scatterToggle:scatterEnabled,
@@ -277,7 +313,9 @@ final class PhotoEditorModel: ObservableObject {
             cameraEV:filmExposureEV,paperEV:printExposureEV,
             dir:spatialDIRSettings,print:print,morph:morph,
             scannerOptics:sourceScan,cameraOptics:preCamera,
-            filmHalation:sourceHalation
+            filmHalation:sourceHalation,
+            cameraRawMethod:sourceCameraRawMethod,
+            cameraBandpass:sourceBandpass
         )
         try p.validate()
         return p
