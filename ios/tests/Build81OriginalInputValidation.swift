@@ -178,8 +178,7 @@ enum Build81OriginalInputValidation {
               cieCount==66,
               cieSHA==Build81GeneratedSpectralLocus.float64SHA256,
               Build81GeneratedSpectralLocus.points.count==66,
-              Build81GeneratedSpectralLocus.sourceBlob==
-                "9783e7fcfc2909c4acdf2da53595c5404645dde9" else {
+              Build81GeneratedSpectralLocus.sourceBlob == "9783e7fcfc2909c4acdf2da53595c5404645dde9" else {
             throw Failure.invalid(
                 "Build81 generated true CIE 1931 default locus source/digest mismatch"
             )
