@@ -5,8 +5,17 @@ import Foundation
 /// The preflash is additional paper *irradiance*, before log exposure
 /// and before the paper H-D development curve; it is not an RGB lift.
 enum OriginalPrintOptics {
+    // Original model.illuminants.standard_illuminant() alternatives.
+    // TH-KG3-L multiplies the measured Schott KG3 illuminant by the
+    // Canon lens-transmission spectrum before mean normalization.
+    enum Illuminant: String, CaseIterable, Hashable {
+        case thKG3 = "TH-KG3"
+        case thKG3L = "TH-KG3-L"
+    }
+
     struct Settings {
         var enabled = false
+        var illuminant: Illuminant = .thKG3
         var normalizePrintExposure = true
         var printExposureCompensation = true
         var cyanShift = 0.0

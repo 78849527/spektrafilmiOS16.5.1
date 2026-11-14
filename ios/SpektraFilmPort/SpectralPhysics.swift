@@ -543,9 +543,19 @@ struct SpectralPhysics {
                ?? GeneratedOriginalOptics.enlargerNeutral)
         let opticalLighting: OriginalPrintOptics.Prepared?
         if useOriginalPrintOptics {
+            // Upstream standard_illuminant("TH-KG3-L") applies the
+            // original measured Canon 24mm lens transmission to the
+            // 3400K+Schott KG3 lamp before illuminant normalization.
+            // The neutral-print database is keyed by illuminant name;
+            // TH-KG3-L does not reuse TH-KG3 stock-specific CC values.
+            let useLensLight = printOptics.illuminant == .thKG3L
             let unfiltered = try Self.readOriginalOptics(
-                fast:GeneratedOriginalOptics.enlargerSource,
-                source:GeneratedOriginalOptics.sourceF64_enlargerSource,
+                fast:useLensLight ?
+                    GeneratedOriginalOptics.enlargerSourceLens :
+                    GeneratedOriginalOptics.enlargerSource,
+                source:useLensLight ?
+                    GeneratedOriginalOptics.sourceF64_enlargerSourceLens :
+                    GeneratedOriginalOptics.sourceF64_enlargerSource,
                 count:81,original:sourceMeasuredFloat64
             )
             let mediaSensitivities = (0..<81).map { index in
@@ -553,8 +563,9 @@ struct SpectralPhysics {
             }
             opticalLighting = OriginalPrintOptics.prepare(
                 source: unfiltered,
-                neutralCC: GeneratedOriginalOptics.neutralCMYByPair[printKey]
-                    ?? [0, 65, 55],
+                neutralCC: useLensLight ? [0, 65, 55] :
+                    (GeneratedOriginalOptics.neutralCMYByPair[printKey]
+                     ?? [0, 65, 55]),
                 settings: printOptics,
                 filmBase: (0..<81).map { originalFilm.base($0) },
                 filmBaseValid: originalFilm.baseWavelengthValid,

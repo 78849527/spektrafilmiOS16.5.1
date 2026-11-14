@@ -50,6 +50,8 @@ final class PhotoEditorModel: ObservableObject {
     @Published var printDeveloperExhaustion = 0.0
     // Opt-in original spectral enlarger path; default stays v1.3.
     @Published var originalPrintOpticsEnabled = false
+    // Source TH-KG3 default; optional TH-KG3-L measured Canon lens.
+    @Published var printIlluminant: OriginalPrintOptics.Illuminant = .thKG3
     @Published var normalizePrintExposure = true
     @Published var printExposureCompensation = true
     @Published var printCyanShift = 0.0
@@ -242,6 +244,7 @@ final class PhotoEditorModel: ObservableObject {
             ?? "kodak_portra_endura"
         let print=OriginalPrintOptics.Settings(
             enabled:originalPrintOpticsEnabled,
+            illuminant:printIlluminant,
             normalizePrintExposure:normalizePrintExposure,
             printExposureCompensation:printExposureCompensation,
             cyanShift:printCyanShift,
@@ -460,6 +463,7 @@ final class PhotoEditorModel: ObservableObject {
         let useExposureReference = exposureReferenceEnabled
         let printOptics = OriginalPrintOptics.Settings(
             enabled: originalPrintOpticsEnabled,
+            illuminant: printIlluminant,
             normalizePrintExposure: normalizePrintExposure,
             printExposureCompensation: printExposureCompensation,
             cyanShift: printCyanShift,

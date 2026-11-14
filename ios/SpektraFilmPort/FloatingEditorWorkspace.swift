@@ -1203,6 +1203,16 @@ struct FloatingEditorWorkspace: View {
     private var enlargerSettings: some View {
         VStack(alignment: .leading, spacing: 7) {
             if model.originalPrintOpticsEnabled && !isReversal {
+                Picker("放大机原版光源", selection: $model.printIlluminant) {
+                    Text("TH-KG3（默认）")
+                        .tag(OriginalPrintOptics.Illuminant.thKG3)
+                    Text("TH-KG3-L（原版镜头透射谱）")
+                        .tag(OriginalPrintOptics.Illuminant.thKG3L)
+                }
+                .pickerStyle(.menu)
+                .onChange(of: model.printIlluminant) { _ in
+                    model.queueSpectralPreview()
+                }
                 Text("胶片 → 二色滤色光谱 → 相纸曝光")
                     .font(.caption2)
                     .foregroundColor(.secondary)

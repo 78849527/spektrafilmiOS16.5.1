@@ -54,6 +54,24 @@ def kg3_filter() -> np.ndarray:
         values[unique, 0], values[unique, 1])(WL), dtype=np.float64)
 
 
+def canon_lens_transmission() -> np.ndarray:
+    # Original GenericFilter(name='canon_24_f28_is',
+    #   type='lens_transmission', brand='canon',
+    #   data_in_percentage=True) as used by TH-KG3-L.
+    source_file = (
+        ROOT / "src/spektrafilm/data/filters/lens_transmission/"
+        "canon/canon_24_f28_is.csv"
+    )
+    values = np.loadtxt(source_file, delimiter=",", dtype=np.float64)
+    unique = np.unique(values[:, 0], return_index=True)[1]
+    transmission = Akima1DInterpolator(
+        values[unique, 0], values[unique, 1] / 100.0
+    )(WL)
+    assert transmission.shape == (81,)
+    assert np.isfinite(transmission).all()
+    return transmission
+
+
 def default_dichroic(cc_values=(0.0, 65.0, 55.0)) -> np.ndarray:
     # Exact original create_combined_dichroic_filter defaults, CMY order.
     dic = np.zeros((81, 3), dtype=np.float64)
@@ -127,6 +145,10 @@ def main() -> None:
     )
     source = bbr * kg3_filter()
     source /= np.mean(source)
+    # Source standard_illuminant('TH-KG3-L'): measured Canon lens
+    # transmission acts BEFORE mean-normalizing the illuminant.
+    source_with_lens = source * canon_lens_transmission()
+    source_with_lens /= np.mean(source_with_lens)
     print_illuminant = source * default_dichroic()
 
     # Original params_builder.apply_database_neutral_print_filters uses
@@ -164,6 +186,7 @@ def main() -> None:
         "cie1931": cie,
         "enlargerNeutral": print_illuminant,
         "enlargerSource": source,
+        "enlargerSourceLens": source_with_lens,
         "schottKG3": kg3_filter(),
         "dichroicCMYNeutral": default_dichroic(),
     }
@@ -179,6 +202,8 @@ def main() -> None:
     assert refs == {"D55", "T"}, refs
     assert np.isclose(np.mean(d50), 1, rtol=1e-10)
     assert np.all((print_illuminant >= 0) & np.isfinite(print_illuminant))
+    assert np.isclose(np.mean(source_with_lens), 1, rtol=1e-13)
+    assert not np.allclose(source, source_with_lens, atol=1e-9)
 
     # Source-fidelity reference checks from the original Mallett2019 einsum.
     validation = []
