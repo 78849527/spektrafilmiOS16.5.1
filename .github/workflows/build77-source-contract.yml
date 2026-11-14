@@ -154,6 +154,61 @@ jobs:
           assert ev.shape==(1,) and ev[0]==1.25
           print("PASS: unmodified Swift Double NPY encoding and NumPy readback")
           PY
+      - name: Configure original v1.8.51 fixture generation toolchain
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install baseline pinned fixture generator dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
+            'matplotlib==3.10.7' 'numba==0.61.2' 'opt_einsum==3.4.0' \
+            'scikit-image==0.25.2'
+      - name: Materialize all original Build76 generated Swift data before Xcode
+        run: |
+          set -euo pipefail
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_camera_batch.py
+          python ios/scripts/generate_compact_catalog.py
+          python ios/scripts/generate_spectral_data.py
+          python ios/scripts/generate_original_optics.py
+          python ios/scripts/generate_hanatos.py
+          python ios/scripts/generate_dir.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_hd_interpolation_reference.py
+          python ios/scripts/generate_dir_spatial.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_spatial_dir_2d.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_full_frame.py
+          python ios/scripts/generate_sublayer_grain.py
+          python ios/scripts/generate_original_metal_grain.py
+          python ios/scripts/generate_original_source_rng.py
+          python ios/scripts/generate_source_iir.py
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_original_scipy_rng.py
+          python ios/scripts/generate_source_replay.py
+          python ios/scripts/generate_source_microstructure.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
+            NUMBA_THREADING_LAYER=workqueue \
+            python ios/scripts/generate_source_physical_grain.py
+          python ios/scripts/generate_source_rgb_parity.py
+          python ios/scripts/generate_source_print_scanner_parity.py
+          python ios/scripts/generate_source_negative_print_chain.py
+          python ios/scripts/generate_source_film_dir_print_chain.py
+          python ios/scripts/generate_source_camera_film_print_chain.py
+          python ios/scripts/validate_source_float64_original.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
+            NUMBA_THREADING_LAYER=workqueue \
+            python ios/scripts/generate_source_physical_frame.py
+          python ios/scripts/generate_scanner_reference.py
+          python ios/scripts/generate_cam16_gamut.py
+          python ios/scripts/generate_print_morph.py
+          python ios/scripts/generate_print_optics.py
+          test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
+          test -s ios/SpektraFilmPort/GeneratedOriginalOptics.swift
+          test -s ios/SpektraFilmPort/GeneratedDIRData.swift
+          test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceCameraReference.swift
+          echo "Original source fixture generation complete; no algorithm substitutions"
       - name: Generate and compile unsigned iPhoneOS 16.5.1 app (no IPA)
         run: |
           brew install xcodegen
