@@ -561,8 +561,7 @@ final class PhotoEditorModel: ObservableObject {
                     "不代表 Python rawpy/ACES/Lensfun 数值等价。"
                 ].joined()
             } catch {
-                status="Build80 RAW 实际解码或参数诊断失败："
-                    +error.localizedDescription
+                status = "Build80 RAW 实际解码或参数诊断失败：" + error.localizedDescription
             }
         }
     }
