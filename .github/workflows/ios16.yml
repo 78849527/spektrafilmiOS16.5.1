@@ -1380,7 +1380,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP/Info.plist" | grep -qx 'SpektraFilmPort'
           /usr/libexec/PlistBuddy -c "Print CFBundlePackageType" "$APP/Info.plist" | grep -qx 'APPL'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -Eq '^16\.5(\.0)?$'
-          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.46'
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Info.plist" | grep -qx '1.8.47'
           test ! -e "$APP/Resources/profiles/index.json"
           /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '72'
           echo "PASS: device bundle 1.8.47 Build72, iOS16.5 minimum and original metal library"
@@ -1388,13 +1388,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print NSPhotoLibraryAddUsageDescription" "$APP/Info.plist" | grep -q '相册'
           /usr/libexec/PlistBuddy -c "Print NSCameraUsageDescription" "$APP/Info.plist" | grep -q '拍照'
           /usr/libexec/PlistBuddy -c "Print UIFileSharingEnabled" "$APP/Info.plist" | grep -qx 'true'
-      - name: Package v1.8.46 unsigned IPA
+      - name: Package v1.8.47 unsigned IPA
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app ios/build/package/Payload/
           cd ios/build/package
           zip -q -r ../SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned.ipa Payload
-      - name: Upload v1.8.46 IPA build artifact
+      - name: Upload v1.8.47 IPA build artifact
         uses: actions/upload-artifact@v4
         with:
           name: SpektraFilmPort-iOS16.5.1-v1.8.47-original-metal-unsigned
