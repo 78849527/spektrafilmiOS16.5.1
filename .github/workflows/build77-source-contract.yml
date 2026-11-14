@@ -399,7 +399,10 @@ jobs:
           test -s ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift
       - name: Generate pinned Python Build81 crop preview and xy gamut oracle
         run: |
-          python -m pip install --disable-pip-version-check 'scikit-image==0.25.2'
+          # Upstream pyproject pins scipy~=1.17 and scikit-image~=0.26.
+          # Earlier Build76 fixture generation uses its own legacy pins.
+          python -m pip install --disable-pip-version-check \
+            'scipy==1.17.0' 'scikit-image==0.26.0'
           python ios/scripts/build81_original_input_oracle.py \
             --output build77-evidence/build81-original-input.json
           test -s build77-evidence/build81-original-input.json
