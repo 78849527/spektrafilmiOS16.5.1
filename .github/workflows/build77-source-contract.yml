@@ -225,6 +225,73 @@ jobs:
           python ios/scripts/generate_source_scanner_glare.py
           test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
           test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
+      - name: Build77: native full original source spectral numerical suite
+        run: |
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/OriginalSourceCameraBandpass.swift \
+            ios/SpektraFilmPort/OriginalSourceFilmHalation.swift \
+            ios/SpektraFilmPort/GeneratedSourceCameraReference.swift \
+            ios/tests/OriginalSourceCameraBatchValidation.swift \
+            ios/tests/SourcePhysicalImageParity.swift \
+            ios/SpektraFilmPort/OriginalSourceRGBParity.swift \
+            ios/SpektraFilmPort/GeneratedSourceRGBReference.swift \
+            ios/SpektraFilmPort/OriginalPrintScannerParity.swift \
+            ios/SpektraFilmPort/GeneratedSourcePrintScannerReference.swift \
+            ios/SpektraFilmPort/OriginalNegativePrintChainParity.swift \
+            ios/SpektraFilmPort/GeneratedSourceNegativePrintChainReference.swift \
+            ios/SpektraFilmPort/OriginalFilmDIRPrintParity.swift \
+            ios/SpektraFilmPort/GeneratedSourceFilmDIRPrintReference.swift \
+            ios/SpektraFilmPort/OriginalCameraFilmPrintParity.swift \
+            ios/SpektraFilmPort/GeneratedSourceCameraFilmPrintReference.swift \
+            ios/SpektraFilmPort/SpatialDIR.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerOptics.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/DensityGrain.swift \
+            ios/SpektraFilmPort/OriginalSublayerGrain.swift \
+            ios/SpektraFilmPort/OriginalDiscreteGrain.swift \
+            ios/SpektraFilmPort/OriginalMetalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/SpektraFilmPort/GeneratedSourceReplayReference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            ios/SpektraFilmPort/OriginalMetalIIR.swift \
+            ios/SpektraFilmPort/GeneratedSourceIIRReference.swift \
+            ios/SpektraFilmPort/OriginalPrintOptics.swift \
+            ios/SpektraFilmPort/OriginalPrintMorph.swift \
+            ios/SpektraFilmPort/OriginalPrintReference.swift \
+            ios/SpektraFilmPort/GeneratedPrintMorphData.swift \
+            ios/SpektraFilmPort/OriginalHanatosResponse.swift \
+            ios/SpektraFilmPort/OriginalScannerMath.swift \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/OriginalCAM16Gamut.swift \
+            ios/SpektraFilmPort/GeneratedCAM16Gamut.swift \
+            ios/SpektraFilmPort/GeneratedSpectralData.swift \
+            ios/SpektraFilmPort/GeneratedOriginalOptics.swift \
+            ios/SpektraFilmPort/GeneratedHanatosData.swift \
+            ios/SpektraFilmPort/GeneratedHanatosPreciseData.swift \
+            ios/SpektraFilmPort/GeneratedDIRData.swift \
+            ios/SpektraFilmPort/GeneratedSourceHDInterpolationReference.swift \
+            ios/SpektraFilmPort/GeneratedSublayerGrainReference.swift \
+            ios/tests/SourceFloat64ProfileValidation.swift \
+            ios/tests/SourceHDInterpolationValidation.swift \
+            ios/tests/SpectralValidation.swift \
+            -o /tmp/SpektrafilmSpectralValidation
+      - name: Validate actual in-production optical paper stage taps
+        run: |
+          test -s ios/verification/generated-physical-v1.8.22/manifest.json
+          /tmp/SpektrafilmSpectralValidation
       - name: Generate and compile unsigned iPhoneOS 16.5.1 Build77 app
         run: |
           brew install xcodegen
