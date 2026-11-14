@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'validation/source-diffusion-invariants-20261114'
+      - 'ios16.5.1/source-print-diffusion-v1.8.41'
     paths:
       - 'ios/scripts/validate_source_diffusion.py'
       - 'ios/tests/SourceDiffusionNumericValidation.swift'
