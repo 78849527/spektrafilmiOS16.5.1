@@ -24,11 +24,11 @@ enum OriginalSourcePhysicalImage {
         }
     }
 
-    /// 12 MP is a provisional experimental entry cap, NOT a device promise.
+    /// 13 MP is a metadata ceiling, NOT a promise of enough device memory.
     /// Unlike v1.8.23, actual process and physical memory budgets are checked
     /// before any full-size ImageIO decode. This includes the user's
     /// 3888x2592 (10.08MP) only when measured available memory permits.
-    static let maximumPixels = 12_000_000
+    static let maximumPixels = 13_000_000
     static let estimatedPeakBytesPerPixel: UInt64 = 120
     // Full-size scanner finish requires an additional 3-channel Double
     // filtered result and two 1-channel Double Gaussian workspaces.
@@ -51,7 +51,7 @@ enum OriginalSourcePhysicalImage {
         guard width>0,height>0,width<=8192,height<=8192,
               width<=maximumPixels/height else {
             throw Failure.invalid(
-                "逐像素全光学（实验）：当前最大 1200 万像素，单边不超过 8192。" +
+                "逐像素全光学（实验）：当前最大 1300 万像素，单边不超过 8192。" +
                 "禁止自动缩图或切换快速算法。"
             )
         }
@@ -546,12 +546,17 @@ extension OriginalSourcePixelIO {
     #endif
 
     static func exportPhysicalJPEG(
-        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters,
+        resizedTo: (width:Int,height:Int)? = nil
     ) throws -> URL {
-        // The exact same original-file full-size limit and device memory
-        // guard run BEFORE allocating the CGImage/Double RGBA transport.
+        // Original-sized rendering still uses the 13 MP guard.
+        // Explicitly confirmed safe/economy rendering may accept source
+        // metadata up to 16 MP, but ALL original physical equations run
+        // at the confirmed reduced geometry; no fallback to fast/CI.
+        let originalLimit = resizedTo == nil
+            ? OriginalSourcePhysicalImage.maximumPixels : 16_000_000
         try preflightExport(
-            data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+            data,maximumAllowedPixels:originalLimit
         )
         guard let imageSource=CGImageSourceCreateWithData(
             data as CFData,
@@ -563,8 +568,10 @@ extension OriginalSourcePixelIO {
         let h=metadata[kCGImagePropertyPixelHeight] as? NSNumber else {
             throw Failure.invalid("原版全光学导出前无法确认原图尺寸")
         }
+        let targetW=resizedTo?.width ?? w.intValue
+        let targetH=resizedTo?.height ?? h.intValue
         try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width:w.intValue,height:h.intValue,
+            width:targetW,height:targetH,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
@@ -580,8 +587,13 @@ extension OriginalSourcePixelIO {
                     ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
         )
         var frame=try decode(
-            data,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+            data,maximumAllowedPixels:originalLimit,resizedTo:resizedTo
         )
+        guard frame.width==targetW,frame.height==targetH else {
+            throw Failure.invalid(
+                "逐像素全光学：实际 ImageIO 降采样尺寸与用户确认尺寸不一致"
+            )
+        }
         try OriginalSourcePhysicalImage.developInPlace(
             &frame,parameters:parameters
         )
