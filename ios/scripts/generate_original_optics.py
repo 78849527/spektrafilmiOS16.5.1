@@ -153,8 +153,12 @@ def main() -> None:
 
     # Original params_builder.apply_database_neutral_print_filters uses
     # print stock / TH-KG3 / film stock specific CMY Kodak CC balancing.
-    # Bake the *actual* neutral filter for each 16 negatives x 8 media:
-    # colour_enlarger(light_source, filter_cc_values=stock_cc).
+    # Original digest_params applies the CMY neutral database to ALL
+    # 20 filming stocks, including 4 positive/reversal films. Although
+    # positive direct-scan has no paper stage, its original parameter
+    # digest can still contain per-paper filter settings. Omitting those
+    # four stocks silently substituted the fallback [0,65,55] in iOS.
+    # Keep the source's missing-row fallback, not a borrowed neighbor.
     filter_db = json.loads((
         ROOT / "src/spektrafilm/data/filters/neutral_print_filters.json"
     ).read_text())
@@ -162,19 +166,19 @@ def main() -> None:
         json.loads(path.read_bytes())["info"]
         for path in sorted((ROOT / "src/spektrafilm/data/profiles").glob("*.json"))
     ]
-    negatives = [x["stock"] for x in all_infos
-                 if x["stage"] == "filming" and x["type"] == "negative"]
+    filming_stocks = [x["stock"] for x in all_infos
+                      if x["stage"] == "filming"]
     media = [x["stock"] for x in all_infos if x["stage"] == "printing"]
-    assert len(negatives) == 16 and len(media) == 8
+    assert len(filming_stocks) == 20 and len(media) == 8
     print_illuminants = {}
     neutral_cc_by_pair = {}
     for medium in media:
-        for stock in negatives:
+        for stock in filming_stocks:
             cc = (filter_db.get(medium, {}).get("TH-KG3", {})
                   .get(stock, (0.0, 65.0, 55.0)))
             print_illuminants[stock + "|" + medium] = source * default_dichroic(cc)
             neutral_cc_by_pair[stock + "|" + medium] = [float(x) for x in cc]
-    assert len(print_illuminants) == 128
+    assert len(print_illuminants) == 160
 
     names = {
         "mallettSRGBConversion": mallett_srgb_conversion,
@@ -258,8 +262,8 @@ def main() -> None:
     lines.append("}")
     DEST.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("PASS: Mallett2019 basis, D55/D50, CIE1931, KG3, default CMY filter")
-    print("PASS: 128 original film×print neutral CMY database filter spectra")
-    print("PASS: independent Float64 CIE/illuminants/basis/KG3/128 pair spectra " +
+    print("PASS: 160 original 20-film×8-print neutral CMY database filter spectra")
+    print("PASS: independent Float64 CIE/illuminants/basis/KG3/160 pair spectra " +
           "preserved alongside unchanged mobile Float32")
     print(f"PASS: {len(validation)} Python reference Mallett response samples")
     print(f"Generated: {DEST.stat().st_size} bytes")
