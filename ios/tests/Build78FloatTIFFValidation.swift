@@ -76,6 +76,13 @@ enum Build78FloatTIFFValidation {
                 "ImageIO encoded TIFF lost its Float32 channel precision"
             )
         }
+        FileHandle.standardError.write(Data(
+            ("Build78 Float TIFF diagnostic: name="
+                + String(describing:actual.colorSpace?.name)
+                + " bpc=\(actual.bitsPerComponent)"
+                + " float=\(actual.bitmapInfo.contains(.floatComponents))\n"
+            ).utf8
+        ))
         let frame=try OriginalSourcePixelIO.decode(bytes)
         guard frame.width==3,frame.height==2,
               frame.rgb.count==18 else {
