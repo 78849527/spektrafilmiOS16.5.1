@@ -425,6 +425,33 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 77
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
           echo "Build77 unsigned test app 1.8.52(77) compiled; upstream scientific parity NOT certified"
+      - name: Package ONE actual-device-evidence IPA only on Build78 diagnostic branch
+        if: github.ref == 'refs/heads/port/build78-input-06-08'
+        run: |
+          set -euo pipefail
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -f "$APP/SpektraFilmPort"
+          test -f "$APP/Info.plist"
+          grep -Fq 'Build77-ONE-SHOT' ios/SpektraFilmPort/Build77OneShotEvidence.swift
+          mkdir -p ios/build/one-shot/Payload
+          cp -R "$APP" ios/build/one-shot/Payload/
+          cd ios/build/one-shot
+          zip -q -r Build77-ONE-SHOT-DEVICE-EVIDENCE-UNSIGNED-NOT-CERTIFIED.ipa Payload
+          shasum -a 256 Build77-ONE-SHOT-DEVICE-EVIDENCE-UNSIGNED-NOT-CERTIFIED.ipa > ipa-sha256.txt
+          echo "$GITHUB_SHA" > source-commit.txt
+          echo "EXPERIMENTAL UNSIGNED: requires user signing before installation." > UNVERIFIED.txt
+          echo "This is a one-time source tape CAPTURE utility, NOT Python/iPhone numerical certification." >> UNVERIFIED.txt
+      - name: Upload ONE whole-device certification evidence acquisition IPA (unverified unsigned)
+        if: github.ref == 'refs/heads/port/build78-input-06-08'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build77-one-shot-iphone-evidence-collector-UNSIGNED
+          path: |
+            ios/build/one-shot/Build77-ONE-SHOT-DEVICE-EVIDENCE-UNSIGNED-NOT-CERTIFIED.ipa
+            ios/build/one-shot/ipa-sha256.txt
+            ios/build/one-shot/source-commit.txt
+            ios/build/one-shot/UNVERIFIED.txt
+          if-no-files-found: error
       - name: Preserve host-generated Swift diagnostic tape
         if: always()
         uses: actions/upload-artifact@v4
