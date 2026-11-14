@@ -1,0 +1,65 @@
+name: SpektraFilm v1.8.31 Linux source halation numerical parity
+
+on:
+  push:
+    branches:
+      - 'ios16.5.1/source-film-halation-v1.8.31'
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios16-source-parity-linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  numerical-source-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout actual source commit
+        uses: actions/checkout@v4
+      - name: Print source identity and Swift toolchain
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+          git hash-object ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift
+          git hash-object ios/SpektraFilmPort/OriginalSourceFilmHalation.swift
+      - name: Parse actual production Swift sources
+        run: |
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/OriginalSourceFilmHalation.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+      - name: Set up original Python numerical dependencies
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install reference math dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
+            'numba==0.61.2' 'scikit-image==0.25.2' 'matplotlib==3.10.7'
+      - name: Generate genuine Python source reference fixtures
+        run: |
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_camera_batch.py
+          test -s ios/SpektraFilmPort/GeneratedSourceCameraReference.swift
+      - name: Compile actual Swift source Gaussian and production halation
+        run: |
+          python ios/scripts/extract_source_filter_core_for_linux.py /tmp/SourceSpatialDoubleCore.swift
+          swiftc -O -parse-as-library \
+            /tmp/SourceSpatialDoubleCore.swift \
+            ios/SpektraFilmPort/OriginalSourceFilmHalation.swift \
+            ios/SpektraFilmPort/GeneratedSourceCameraReference.swift \
+            ios/tests/OriginalSourceFilmHalationLinuxParity.swift \
+            -o /tmp/SpektraFilmSourceHalationParity
+      - name: Test all original Python full-frame scatter and halation samples
+        run: |
+          /tmp/SpektraFilmSourceHalationParity
+      - name: Upload Python source fixtures for independent review
+        uses: actions/upload-artifact@v4
+        with:
+          name: v1.8.31-original-python-film-halation-vectors
+          path: ios/SpektraFilmPort/GeneratedSourceCameraReference.swift
