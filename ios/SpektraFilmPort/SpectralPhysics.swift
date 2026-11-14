@@ -342,6 +342,9 @@ struct SpectralPhysics {
     private let hanatos: OriginalHanatosResponse
     private let cameraRawMethod: CameraRawMethod
     private let filmMatrix: [[Double]]    // film channel -> source linear RGB
+    // Exact upstream colour.RGB_to_RGB(sRGB→sRGB) row-transform,
+    // retained even for nominal identity to avoid 5e-5 source mismatch.
+    private let mallettSRGBConversion: [Double]
     private let paperWeights: [[Double]]  // wavelength -> paper channel
     private let opticalPreflashRaw: [Double]
     private let useOriginalPrintOptics: Bool
@@ -490,6 +493,11 @@ struct SpectralPhysics {
             fast:GeneratedOriginalOptics.mallettBasis,
             source:GeneratedOriginalOptics.sourceF64_mallettBasis,
             count:81*3, original:sourceMeasuredFloat64
+        )
+        mallettSRGBConversion = try Self.readOriginalOptics(
+            fast:GeneratedOriginalOptics.mallettSRGBConversion,
+            source:GeneratedOriginalOptics.sourceF64_mallettSRGBConversion,
+            count:9, original:sourceMeasuredFloat64
         )
         // Python FilmingStage reads EACH film's reference illuminant.
         // Tungsten stock "T" is the measured Incandescent source,
@@ -1792,9 +1800,20 @@ struct SpectralPhysics {
     /// exposure uses max(raw,0)+1e-10. Keep that operation order intact.
     private func sourceMallettRaw(linearRGB: [Double]) -> [Double] {
         guard linearRGB.count == 3 else { return [] }
+        // Original rgb_to_raw_mallett2019 explicitly calls
+        // colour.RGB_to_RGB(... 'sRGB' → 'sRGB') before its spectral
+        // einsum. Use its source Float64 conversion matrix from colour;
+        // even same-space round trips differ from identity at ~1e-4.
+        // Row-vector output order matches colour's 3×3 evaluation.
+        let sourceRGB=(0..<3).map { output in
+            (0..<3).reduce(0.0) { result, input in
+                result + linearRGB[input] *
+                    mallettSRGBConversion[input*3+output]
+            }
+        }
         return (0..<3).map { channel in
             (0..<3).reduce(0.0) {
-                $0 + filmMatrix[channel][$1] * linearRGB[$1]
+                $0 + filmMatrix[channel][$1] * sourceRGB[$1]
             }
         }
     }

@@ -126,6 +126,17 @@ def validate_source_mallett() -> None:
             films.append((p.name,raw["info"],raw["data"]))
     assert len(films)==20,len(films)
     assert {x[1]["reference_illuminant"] for x in films} == {"D55","T"}
+    # The upstream Mallett method explicitly calls colour.RGB_to_RGB
+    # BEFORE its spectral einsum. This same-space operation is not
+    # guaranteed bitwise identity under the colour-science matrices.
+    # Validate the generated matrix used in native Swift production.
+    source_input_conversion=np.asarray(
+        colour.RGB_to_RGB(
+            np.eye(3,dtype=np.float64),"sRGB","sRGB",
+            apply_cctf_decoding=False,apply_cctf_encoding=False
+        ),dtype=np.float64
+    )
+    assert source_input_conversion.shape==(3,3)
     colors=np.array([
         [0.184,0.184,0.184],
         [0.65,0.10,0.04],
@@ -151,7 +162,12 @@ def validate_source_mallett() -> None:
             mid=np.einsum("k,km->m",illum*0.184,effective)
             matrix/=mid[1]
             for color in colors:
-                predicted=matrix@color
+                transformed=color@source_input_conversion
+                assert np.max(np.abs(transformed-colour.RGB_to_RGB(
+                    color,"sRGB","sRGB",apply_cctf_decoding=False,
+                    apply_cctf_encoding=False
+                ))) < 1e-12
+                predicted=matrix@transformed
                 source=rgb_to_raw_mallett2019(
                     color[None,None,:], effective,
                     color_space="sRGB",

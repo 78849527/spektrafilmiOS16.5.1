@@ -380,6 +380,10 @@ jobs:
               "switch cameraRawMethod",
           ): assert k in swift,k
           assert "static let sourceF64_t" in generated
+          assert "static let sourceF64_mallettSRGBConversion" in generated
+          assert "mallettSRGBConversion" in swift
+          assert "mallettSRGBConversion[input*3+output]" in swift
+          assert "colour.RGB_to_RGB(" in generator
           assert 'refs == {"D55", "T"}' in generator
           assert "cameraRawMethod: cameraRawMethod" in source
           assert "cameraBandpass: cameraBandpass" in source

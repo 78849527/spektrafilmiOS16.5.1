@@ -84,6 +84,21 @@ def main() -> None:
         colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019.copy()
         .align(SHAPE).values, dtype=np.float64
     )
+    # The actual upstream rgb_to_raw_mallett2019 first evaluates
+    # colour.RGB_to_RGB(RGB, 'sRGB', 'sRGB',
+    #   apply_cctf_decoding=False, apply_cctf_encoding=False).
+    # Even a same-colourspace conversion is NOT necessarily exactly
+    # the identity under colour-science reference matrices.
+    # Preserve the evaluated Float64 3x3 row-vector transform so native
+    # production reproduces the precise original operation order.
+    mallett_srgb_conversion = np.asarray(
+        colour.RGB_to_RGB(
+            np.eye(3, dtype=np.float64), "sRGB", "sRGB",
+            apply_cctf_decoding=False, apply_cctf_encoding=False
+        ), dtype=np.float64
+    )
+    assert mallett_srgb_conversion.shape == (3, 3)
+    assert np.isfinite(mallett_srgb_conversion).all()
     d55 = illuminant("D55")
     # Upstream standard_illuminant("T") uses the colour-science
     # Incandescent light source, aligned to 380-780nm / 5nm.
@@ -140,6 +155,7 @@ def main() -> None:
     assert len(print_illuminants) == 128
 
     names = {
+        "mallettSRGBConversion": mallett_srgb_conversion,
         "mallettBasis": basis,
         "d55": d55,
         "t": tungsten,
