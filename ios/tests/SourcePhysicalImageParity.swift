@@ -152,6 +152,7 @@ enum SourcePhysicalImageParity {
         var total=0
         var checkedProductionGlare=false
         var checkedProductionGrain=false
+        var checkedProductionPaperStages=false
         var activeMicroCases=0
         var fullGrainRGBChannels=0
         for fixture in manifest.cases {
@@ -441,9 +442,76 @@ enum SourcePhysicalImageParity {
                     "optical RGB discrepancy max=\\(worst), no seed rejected"
                 )
             }
+            // Build77 02: ACTUAL 2D optical print production must expose
+            // paper raw-photon→log exposure→H-D without recomputation or
+            // modifying final rendered RGB. This is scoped to the active
+            // original print-diffusion branch, not generic seven-tap parity.
+            if !SpectralPhysics.isPositiveFilm(fixture.film) &&
+                !checkedProductionPaperStages {
+                var paperParams=params
+                paperParams.printDiffusion.active=true
+                paperParams.printDiffusion.strength=0.5
+                var paperTraces=[String:[Double]]()
+                let withTaps=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:paperParams,
+                    stageDoubleObserver: { key,values in
+                        paperTraces[key]=values
+                    }
+                )
+                let withoutTaps=try OriginalSourcePhysicalImage.develop(
+                    frame,parameters:paperParams
+                )
+                let count=fixture.width*fixture.height*3
+                guard withTaps.rgb == withoutTaps.rgb,
+                      let raw=paperTraces["printDiffusion"],
+                      let log=paperTraces["paperLogExposure"],
+                      let density=paperTraces["paperDevelopedDensity"],
+                      raw.count==count,log.count==count,density.count==count
+                else {
+                    throw Failure.invalid(
+                        "Build77 source print stages missing or changed pixel RGB"
+                    )
+                }
+                let engine=try paperParams.createEngine()
+                for k in stride(from:0,to:count,by:3) {
+                    let photon=[raw[k],raw[k+1],raw[k+2]]
+                    var returnedLog=[Double]()
+                    var returnedDensity=[Double]()
+                    let output=try engine.sourceSpatialScanPrintedPhoton(
+                        photon,
+                        paperStageObserver:{ values,valuesDensity in
+                            returnedLog=values
+                            returnedDensity=valuesDensity
+                        }
+                    )
+                    guard returnedLog.count==3,
+                          returnedDensity.count==3 else {
+                        throw Failure.invalid("Build77 print callback missing")
+                    }
+                    for c in 0..<3 {
+                        let expectedLog=log10(max(0,photon[c])+1e-10)
+                        guard log[k+c].bitPattern==expectedLog.bitPattern,
+                              returnedLog[c].bitPattern==log[k+c].bitPattern,
+                              returnedDensity[c].bitPattern==density[k+c].bitPattern,
+                              output[c].bitPattern==withTaps.rgb[k+c].bitPattern
+                        else {
+                            throw Failure.invalid(
+                                "Build77 actual paper tap drift at k=\(k) c=\(c)"
+                            )
+                        }
+                    }
+                }
+                checkedProductionPaperStages=true
+                print("PASS Build77 paper source photon→actual log exposure→"
+                      + "original H-D→scan output; \(count) channels; "
+                      + "stage observer bit-exact, final RGB unchanged")
+            }
             total+=fixture.width*fixture.height*3
             print("PASS original nonlinear whole-frame stock " +
                   fixture.film + " → " + fixture.paper)
+        }
+        guard checkedProductionPaperStages else {
+            throw Failure.invalid("No production print-diffusion source stage evidence")
         }
         guard checkedProductionGlare else {
             throw Failure.invalid("No negative print fixture exercised source production scanner glare")
