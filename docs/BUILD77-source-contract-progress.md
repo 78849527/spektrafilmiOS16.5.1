@@ -241,3 +241,34 @@ unlocked. No new IPA is requested or emitted for these host-verifiable changes.
   stochastic full-frame parity, complete seven-tap iOS equivalence
   or an iPhone device acceptance. Build77 is still IN PROGRESS.
   CI performs no IPA packaging or publication.
+
+### Build77/02 rgb_pre original-to-production exact Float64 CI evidence
+
+- Verified [GitHub Actions run #43609040729](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43609040729)
+  at tested source commit `265e2726083aa3d5aee039b54528598134894ead`:
+  **all five CI jobs PASS**, including original Python source contract,
+  28-stock native profile byte audit, upstream three-branch tape
+  generation, strict native Swift 360-case parameter digest parity,
+  host numerical source physics and real iPhoneOS ARM64 compilation.
+- Direct independently executed original Python
+  `SimulationPipeline._preprocess` produced the 19×13×3
+  Float64 source stage with SHA256
+  `4712578bc7c42771b9caa1bcd4eb310385a3771ad8dcf5261ab8a798ee2c1a11`.
+  Original source auto-exposure OFF identity gate also passed.
+- Real production `OriginalSourcePhysicalImage.developInPlace`
+  `rgbPre` observer compared all **741 channels**:
+  **MAE 1.075587081538683e-16**,
+  **RMSE 1.2675798405688714e-16**,
+  **max abs 2.220446049250313e-16**, **0 above
+  5e-11 tolerance**. Observer-off end RGB was bit-identical.
+- Xcode iPhoneOS Release build: **BUILD SUCCEEDED**, verified
+  bundle identity `1.8.52 (77)`, iOS min 16.5.
+- **Certified scope ONLY:** no-crop/no-upscale 8-bit sRGB,
+  source `input_cctf_decoding=true`, center-weighted camera
+  metering with the tested image. Default upstream ProPhoto RGB,
+  arbitrary image resize/crop, high-bit-depth/RAW, source unseeded
+  RNG, and complete seven-tap end-to-end production/device
+  parity remain outstanding. This does **not** close Build77 01–05.
+- This CI is a **no-IPA batch**. No new Test Release or IPA was
+  packaged or published; the previously user-tested Build77 IPA
+  remains unchanged.
