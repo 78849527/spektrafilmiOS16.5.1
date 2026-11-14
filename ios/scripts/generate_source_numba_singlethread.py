@@ -27,7 +27,7 @@ GRAIN_BLOB = "f2d2b23e3eab4f4a1d919f69bcb4aceb714e024d"
 def git_blob(path: Path) -> str:
     raw = path.read_bytes()
     return hashlib.sha1(
-        b"blob " + str(len(raw)).encode("ascii") + b"\\0" + raw
+        b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw
     ).hexdigest()
 
 
@@ -107,7 +107,7 @@ def main():
             f"seed={seed}, n={count}, 1 thread, max abs={err:.3g}"
         )
     lines.extend(["    ]", "}"])
-    DEST.write_text("\\n".join(lines) + "\\n", encoding="utf8")
+    DEST.write_text("\n".join(lines) + "\n", encoding="utf8")
     print("NOT CERTIFIED: Numba parallel prange threads, on-device GPU, full RGB image")
 
 
