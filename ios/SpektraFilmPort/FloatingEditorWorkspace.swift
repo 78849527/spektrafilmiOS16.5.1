@@ -27,6 +27,11 @@ struct FloatingEditorWorkspace: View {
     @State private var controlsVisible = false
     @State private var wheelExpanded = false
     @State private var adjustmentExpanded = false
+    // iOS 16.5.1: split opening into a light shell, control rows,
+    // then the current parameter page to avoid a full AttributeGraph
+    // replacement during the same edge-button tap transaction.
+    @State private var adjustmentRowsReady = false
+    @State private var adjustmentDetailReady = false
     // Last opened panel always overlays the older panel.
     @State private var frontDrawer: DrawerSide = .film
     @State private var selectedFeature: AdjustmentFeature? = .basic
@@ -256,13 +261,40 @@ struct FloatingEditorWorkspace: View {
         withAnimation(.easeOut(duration: 0.22)) { wheelExpanded = false }
     }
     private func openAdjustmentDrawer() {
-        withAnimation(.easeOut(duration: 0.22)) {
-            adjustmentExpanded = true
+        guard !adjustmentExpanded else {
             frontDrawer = .adjustment
+            return
+        }
+        // Do not animate replacement of a large SwiftUI view hierarchy.
+        // It used to be inserted in the same transaction as both @State
+        // mutations; user reported a real-device crash on opening.
+        var tx = Transaction()
+        tx.disablesAnimations = true
+        withTransaction(tx) {
+            adjustmentRowsReady = false
+            adjustmentDetailReady = false
+            frontDrawer = .adjustment
+            adjustmentExpanded = true
+        }
+        // Each stage is scheduled only while the drawer is still open,
+        // so closing quickly cannot mount a detached control tree.
+        DispatchQueue.main.async {
+            guard adjustmentExpanded else { return }
+            adjustmentRowsReady = true
+            DispatchQueue.main.async {
+                guard adjustmentExpanded && adjustmentRowsReady else { return }
+                adjustmentDetailReady = true
+            }
         }
     }
     private func closeAdjustmentDrawer() {
-        withAnimation(.easeOut(duration: 0.22)) { adjustmentExpanded = false }
+        var tx = Transaction()
+        tx.disablesAnimations = true
+        withTransaction(tx) {
+            adjustmentDetailReady = false
+            adjustmentRowsReady = false
+            adjustmentExpanded = false
+        }
     }
 
     private var films: [MeasuredStock] {
@@ -355,8 +387,6 @@ struct FloatingEditorWorkspace: View {
                     .padding(.bottom, 63)
                     .animation(.easeInOut(duration: 0.22),
                                value: wheelExpanded)
-                    .animation(.easeInOut(duration: 0.22),
-                               value: adjustmentExpanded)
                 }
             }
             .sheet(isPresented: $statusReportPresented) {
@@ -778,8 +808,14 @@ struct FloatingEditorWorkspace: View {
             .contentShape(Rectangle())
             if adjustmentExpanded {
                 Divider()
-                adjustmentControls
-                    .frame(height: maxHeight)
+                if adjustmentRowsReady {
+                    adjustmentControls
+                        .frame(height: maxHeight)
+                } else {
+                    Color.clear
+                        .frame(height: maxHeight)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .frame(width: width, height: maxHeight + 38, alignment: .top)
@@ -798,7 +834,7 @@ struct FloatingEditorWorkspace: View {
     // switch turns it OFF and removes its parameters immediately.
     private var featureRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
+            LazyHStack(spacing: 5) {
                 Button { selectedFeature = .basic } label: {
                     Text("基础")
                         .font(.system(size: 11, weight: .semibold))
@@ -918,7 +954,7 @@ struct FloatingEditorWorkspace: View {
     // parent's detailed page to preserve the original dependencies.
     private var simpleSwitchRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
+            LazyHStack(spacing: 5) {
                 simpleToggle("64位", value: $model.hanatosOriginalPrecisionEnabled) {
                     model.queueSpectralPreview()
                 }
@@ -1011,13 +1047,19 @@ struct FloatingEditorWorkspace: View {
             featureRow
             simpleSwitchRow
             Divider().padding(.horizontal, 8)
-            ScrollView(.vertical) {
-                activeSettings
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if adjustmentDetailReady {
+                ScrollView(.vertical) {
+                    activeSettings
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                Color.clear
+                    .frame(maxHeight: .infinity)
+                    .accessibilityHidden(true)
             }
-            .frame(maxHeight: .infinity)
         }
     }
 
