@@ -92,6 +92,19 @@ enum Build81OriginalInputGamut {
         return nearest
     }
 
+    /// Production-default Python XY gamut with the *actual* CIE 1931
+    /// measured locus, generated from pinned source Python/colour-science.
+    /// Oklch remains explicitly unsupported; no default substitution.
+    static func compressUsingOriginalSpectralLocus(
+        _ xy:[Point],white:Point,knee:Knee = .originalDefault,
+        active:Bool=true,algorithm:Algorithm = .xy
+    ) throws -> [Point] {
+        try compress(
+            xy,white:white,knee:knee,active:active,algorithm:algorithm,
+            locus:Build81GeneratedSpectralLocus.points
+        )
+    }
+
     static func compress(
         _ xy:[Point],white:Point,knee:Knee = .originalDefault,
         active:Bool=true,algorithm:Algorithm = .xy,locus:[Point]
