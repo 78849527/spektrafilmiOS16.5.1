@@ -57,5 +57,85 @@ struct SourceDiffusionNumericValidation {
                 print("PRINT,\(caseIndex),\(k),\(String(format:"%.17g",printLog))")
             }
         }
+
+        // Never conflate disabled source physics with approximate fallback:
+        // upstream Python returns the input unchanged when the filter is off.
+        try verifySourceBypassAndFailureGuards()
+    }
+
+    private static func verifySourceBypassAndFailureGuards() throws {
+        let w = 5, h = 4
+        let photonFrame = (0..<(w*h*3)).map { Double($0 % 19)/19.0 }
+        var settings = OriginalSourceDiffusion.Settings()
+        settings.active = false
+        settings.strength = 2
+        settings.spatialScale = 1
+        let disabled = try OriginalSourceDiffusion.apply(
+            photonFrame,width:w,height:h,pixelUM:10,settings:settings
+        )
+        guard disabled == photonFrame else {
+            fatalError("Source disabled diffusion must preserve all photons bit-for-bit")
+        }
+        settings.active = true
+        settings.strength = 0
+        let zeroStrength = try OriginalSourceDiffusion.apply(
+            photonFrame,width:w,height:h,pixelUM:10,settings:settings
+        )
+        guard zeroStrength == photonFrame else {
+            fatalError("Source zero-strength diffusion must preserve all photons")
+        }
+        settings.strength = 0.5
+        settings.spatialScale = 0
+        let zeroScale = try OriginalSourceDiffusion.apply(
+            photonFrame,width:w,height:h,pixelUM:10,settings:settings
+        )
+        guard zeroScale == photonFrame else {
+            fatalError("Source zero-scale diffusion must preserve all photons")
+        }
+        settings.spatialScale = 1
+
+        func expectSourceError(
+            _ label: String,
+            _ operation: () throws -> [Double]
+        ) {
+            do {
+                _ = try operation()
+            } catch {
+                guard (error as? OriginalSourceDiffusion.Failure) != nil else {
+                    fatalError("\(label): unexpected non-source error: \(error)")
+                }
+                return
+            }
+            fatalError("\(label): source precision failure must not silently fallback")
+        }
+
+        expectSourceError("invalid photon frame length") {
+            try OriginalSourceDiffusion.apply(
+                Array(photonFrame.dropLast()),width:w,height:h,
+                pixelUM:10,settings:settings
+            )
+        }
+        expectSourceError("nonfinite photon input") {
+            var invalid = photonFrame
+            invalid[0] = .nan
+            return try OriginalSourceDiffusion.apply(
+                invalid,width:w,height:h,pixelUM:10,settings:settings
+            )
+        }
+        expectSourceError("nonfinite original filter setting") {
+            var invalid = settings
+            invalid.haloWarmth = .infinity
+            return try OriginalSourceDiffusion.apply(
+                photonFrame,width:w,height:h,pixelUM:10,settings:invalid
+            )
+        }
+        expectSourceError("unrepresentable Float64 source PSF") {
+            try OriginalSourceDiffusion.apply(
+                photonFrame,width:w,height:h,
+                pixelUM:Double.leastNonzeroMagnitude,
+                settings:settings
+            )
+        }
+        print("SOURCE_GUARDS_PASS")
     }
 }
