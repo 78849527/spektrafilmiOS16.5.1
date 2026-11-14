@@ -24,8 +24,10 @@ enum Build78FloatTIFFValidation {
         4.0, 0.9375, -0.5, 1.0,
     ]
 
-    private static func originalImage() throws -> CGImage {
-        guard let srgb=CGColorSpace(name:CGColorSpace.sRGB) else {
+    private static func originalImage(
+        colorSpace:CGColorSpace?=CGColorSpace(name:CGColorSpace.sRGB)
+    ) throws -> CGImage {
+        guard let srgb=colorSpace else {
             throw Failure.invalid("Could not find sRGB ICC profile")
         }
         var data=Data()
@@ -125,10 +127,23 @@ enum Build78FloatTIFFValidation {
                 "Float32 TIFF cannot use unverified Quartz export resampling"
             )
         }
+        guard let p3=CGColorSpace(name:CGColorSpace.displayP3) else {
+            throw Failure.invalid("Build78 P3 profile unavailable")
+        }
+        let p3File=try encodedTIFF(try originalImage(colorSpace:p3))
+        var rejectedP3=false
+        do { _=try OriginalSourcePixelIO.decode(p3File) }
+        catch { rejectedP3=true }
+        guard rejectedP3 else {
+            throw Failure.invalid(
+                "Build78 wrong: Float32 P3 TIFF silently passed as extended sRGB"
+            )
+        }
         print(
             "PASS Build78 actual Float32 TIFF 3x2 provider: 18/18 samples "
             + "equal Double(Float32), negative and >1 preserved, TIFF ICC "
-            + "and packing checked, resized export explicitly rejected; "
+            + "and packing checked, float P3 rejected, "
+            + "resized export explicitly rejected; "
             + "does NOT establish ProPhoto, EXR, Float16 or full-frame parity."
         )
     }
