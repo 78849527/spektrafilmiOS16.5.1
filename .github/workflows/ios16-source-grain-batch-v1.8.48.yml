@@ -50,7 +50,7 @@ jobs:
         run: |
           xcrun swiftc -Onone -parse-as-library \
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
-            ios/SpektraFilmPort/GeneratedOriginalMT19937Reference.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
             ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
             ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
