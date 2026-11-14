@@ -99,7 +99,7 @@ jobs:
               'private func openAdjustmentDrawer()',
               'private func closeAdjustmentDrawer()',
               'edgeDrawerTab',
-              'if g.translation.width > 28',
+              'g.translation.width > 28',
               'g.translation.width < -28',
               'if g.translation.width < -32',
               'if g.translation.width > 32',
