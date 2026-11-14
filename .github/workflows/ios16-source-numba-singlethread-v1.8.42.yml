@@ -1,0 +1,59 @@
+name: SpektraFilm source single-thread Numba RNG parity v1.8.42
+
+on:
+  push:
+    branches:
+      - 'ios16.5.1/source-numba-singlethread-gaussian-v1.8.42'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift'
+      - 'ios/scripts/generate_source_numba_singlethread.py'
+      - 'ios/tests/SourceNumbaSingleThreadValidation.swift'
+      - '.github/workflows/ios16-source-numba-singlethread-v1.8.42.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-source-numba-single-thread:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout pinned upstream source and candidate
+        uses: actions/checkout@v4
+      - name: Identify upstream and candidate SHA
+        run: |
+          git rev-parse HEAD
+          test "$(git hash-object src/spektrafilm/utils/fast_stats.py)" = 9e80d29ce6b9f7820ae70f5c09da15edfaa70a0d
+          test "$(git hash-object src/spektrafilm/model/grain.py)" = f2d2b23e3eab4f4a1d919f69bcb4aceb714e024d
+      - name: Install pinned upstream Python toolchain
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install original NumPy and Numba dependency versions
+        run: |
+          python -m pip install --disable-pip-version-check 'numpy==2.4.0' 'numba==0.64.0'
+          python -c "import numpy,numba; print('NumPy',numpy.__version__,'Numba',numba.__version__)"
+      - name: Execute pinned original Numba source and generate reference
+        run: python ios/scripts/generate_source_numba_singlethread.py
+      - name: Generate upstream NumPy MT and microstructure reference dependencies
+        run: |
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_source_microstructure.py
+      - name: Compile actual Swift single-thread normal and source transform
+        run: |
+          swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/GeneratedSourceNumbaSingleThreadReference.swift \
+            ios/tests/SourceNumbaSingleThreadValidation.swift \
+            -o /tmp/SourceNumbaSingleThreadValidation
+      - name: Compare 192 upstream Numba samples, Gaussian cache and lognormal
+        run: /tmp/SourceNumbaSingleThreadValidation
+      - name: Explicit original certification boundary
+        run: |
+          echo "VALIDATED: controlled 1-thread seeded source Numba Gaussian/MT19937 path and deterministic lognormal."
+          echo "NOT VALIDATED: Numba prange worker-state/schedule, production GPU stream, full RGB, real device."
