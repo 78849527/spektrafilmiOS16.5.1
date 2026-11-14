@@ -1548,7 +1548,8 @@ struct SpectralPhysics {
     ///   scanner XYZ/ACES without a second reprint or LUT interpolation.
     func sourceSpatialScanPrintedPhoton(
         _ photon:[Double],sourceLinearOutput:Bool=false,
-        sourceXYZOutput:Bool=false
+        sourceXYZOutput:Bool=false,
+        paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
         guard !isPositive,useOriginalPrintOptics,
               let sourcePaperHDCurve,
@@ -1563,6 +1564,10 @@ struct SpectralPhysics {
         guard density.allSatisfy({$0.isFinite}) else {
             throw PhysicsError.invalid("原版印相扩散后相纸 H-D 非有限")
         }
+        // Actual production PrintingStage boundaries, not synthetic taps:
+        // source log10-photon exposure and its exact 256-node H-D output.
+        // This observer never recomputes or substitutes either computation.
+        paperStageObserver?(rawLog,density)
         let output=scanDevelopedSubstrateDensity(
             density,substrate:paper,
             sourceLinearOutput:sourceLinearOutput,
