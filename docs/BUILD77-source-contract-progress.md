@@ -76,3 +76,14 @@ The default zero absolute tolerance means this tool does not silently certify ap
 - Added independent original JSON source 28-stock manifest and native Swift stock data-byte audit, including original 256x3x3 measurements in film and paper profiles. The independent F64/F32 source-byte audit job passed in CI #43601771176. This is data integrity, not device pixel parity.
 - iPhoneOS compilation initially FAILED in CI #43601324457 because missing source-generated Swift data caused unresolved Generated* names. The job now materializes original baseline generated references before compiling; a later build result is required before any claim of success.
 - Source version is still v1.8.51 Build76. Build77 remains unaccepted; no new version, IPA or Release. Complete digest and canonical seven-tap iOS scientific parity remain open.
+
+## Build77 28-stock host cross-language byte evidence (2026-11-14)
+
+- Production SpectralPhysics.Profile now rejects a source-mode material unless the ORIGINAL six concatenated little-endian Float64 data arrays match the generated source SHA-256. Legacy mobile Float32 and the Build76 app identity remain unchanged.
+- Source JSON inspection confirmed that all 28 stock files, including eight print media, contain 256×3×3 density_curves_layers measurements. An initial validator incorrectly restricted this to filming stocks; all source checks and the production guard were corrected to preserve all 28.
+- ios/scripts/build77_measured_manifest.py computes source JSON identity, independent original Float64 and mobile Float32 per-field SHA-256, all three null-mask digests, and the concatenated original payload SHA, without reading generated Swift.
+- ios/tests/Build77MeasuredProfileAudit.swift compiles as a standalone native macOS consumer of the production Swift generated material data and fails CI on any field or mask mismatch.
+- [Actions #43601775221](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43601775221): the independent 28-material Swift byte audit, locked upstream source contract, and original Python pipeline fixture jobs passed. This does not certify iPhone device profile loading or optical, colour, stochastic or seven-tap numerical equivalence.
+- The Build77StageTapeRecorder preserves actual iOS callback labels, not fabricated Python tap names. A host NPY test is not a full matching iPhoneOS tap observation.
+
+Remaining Build77 work: device execution of the production material loader, mapping and live observation of all original Python taps, original RuntimePhotoParams/digest/UI binding parity, and full device numerical acceptance. No new IPA is certified or released.
