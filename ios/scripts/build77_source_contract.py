@@ -308,12 +308,22 @@ def compare_taps(args: argparse.Namespace) -> None:
         require(path.is_file(), f"Missing iOS stage: {tap}")
         ref = np.load(refdir / (tap + ".npy"), allow_pickle=False)
         got = np.load(path, allow_pickle=False)
+        # STRICT: a Float32 candidate must not be accepted via implicit
+        # upcast, even if it happens to fall inside an absolute tolerance.
+        require(ref.dtype == np.dtype("<f8") and got.dtype == np.dtype("<f8"),
+                f"{tap} requires original little-endian Float64, not {got.dtype}")
         require(ref.shape == got.shape, f"{tap} dimensions differ")
-        require(np.array_equal(np.isfinite(ref), np.isfinite(got)),
-                f"{tap} non-finite mask differs")
+        require(hashlib.sha256(np.ascontiguousarray(ref).tobytes()).hexdigest()
+                == reference["taps"][tap]["data_sha256"],
+                f"{tap} reference payload SHA256 mismatch")
+        for kind, classify in (
+            ("finite", np.isfinite), ("NaN", np.isnan),
+            ("+Infinity", np.isposinf), ("-Infinity", np.isneginf),
+        ):
+            require(np.array_equal(classify(ref), classify(got)),
+                    f"{tap} {kind} mask differs")
         mismatch = np.isfinite(ref)
-        d = np.abs(ref[mismatch].astype(np.float64) -
-                   got[mismatch].astype(np.float64))
+        d = np.abs(ref[mismatch] - got[mismatch])
         mae = float(d.mean()) if d.size else 0.0
         rmse = float(np.sqrt(np.mean(d * d))) if d.size else 0.0
         maximum = float(d.max()) if d.size else 0.0
