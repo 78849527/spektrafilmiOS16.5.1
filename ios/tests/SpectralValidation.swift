@@ -31,6 +31,7 @@ struct SpectralValidation {
         try Build80AppleRAWDevelopmentValidation.evaluate()
         try Build80OriginalRAWTintValidation.evaluate()
         try Build80OriginalRAWWhiteBalanceValidation.evaluate()
+        try Build81OriginalInputValidation.evaluate()
         try SourceFloat64ProfileValidation.evaluate()
         try SourceHDInterpolationValidation.evaluate()
         try OriginalSourceCameraBatchValidation.evaluate()
