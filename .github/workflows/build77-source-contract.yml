@@ -837,7 +837,7 @@ jobs:
           path: build80-ipa
       - name: Verify package SHA256 and publish one clearly unverified prerelease
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd build80-ipa
