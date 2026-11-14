@@ -199,20 +199,16 @@ struct SpectralPhysics {
                 }
                 payload.append(bytes)
             }
-            if record.stage == "filming" {
-                guard let layers = Data(
-                    base64Encoded: record.sourceDensityCurvesLayersF64
-                ), layers.count == 2304 * 8 else {
-                    throw PhysicsError.invalid(
-                        "原版九亚层 Float64 数据缺失或损坏：" + id
-                    )
-                }
-                payload.append(layers)
-            } else if !record.sourceDensityCurvesLayersF64.isEmpty {
+            // Source JSON carries 256×3×3 measured layers for all
+            // 28 materials, including 8 print media. Never drop them.
+            guard let layers = Data(
+                base64Encoded: record.sourceDensityCurvesLayersF64
+            ), layers.count == 2304 * 8 else {
                 throw PhysicsError.invalid(
-                    "原版印相材料存在非预期乳剂数据：" + id
+                    "原版 256×3×3 Float64 曲线缺失或损坏：" + id
                 )
             }
+            payload.append(layers)
             let actual = SHA256.hash(data: payload).map {
                 String(format: "%02x", $0)
             }.joined()
