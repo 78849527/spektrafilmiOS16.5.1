@@ -96,6 +96,13 @@ jobs:
             --input build77-evidence/input.npy \
             --output build77-evidence/direct-scan \
             --film fujifilm_provia_100f --paper kodak_portra_endura --scan-film
+      - name: Execute upstream Python source 2D optical paper diffusion branch
+        run: |
+          python ios/scripts/build77_source_contract.py emit-taps \
+            --input build77-evidence/input.npy \
+            --output build77-evidence/negative-print-diffusion \
+            --film kodak_portra_400 --paper kodak_portra_endura \
+            --print-diffusion
       - name: Verify reference tape serialization and comparator
         run: |
           python ios/scripts/build77_source_contract.py compare-taps \
@@ -104,6 +111,9 @@ jobs:
           python ios/scripts/build77_source_contract.py compare-taps \
             --reference build77-evidence/direct-scan \
             --candidate build77-evidence/direct-scan --atol 0
+          python ios/scripts/build77_source_contract.py compare-taps \
+            --reference build77-evidence/negative-print-diffusion \
+            --candidate build77-evidence/negative-print-diffusion --atol 0
       - name: Capture exact upstream Python RuntimePhotoParams digest (360 cases)
         run: |
           python ios/scripts/build77_params_digest_reference.py \
