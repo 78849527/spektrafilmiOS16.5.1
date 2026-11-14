@@ -498,7 +498,7 @@ jobs:
           scan=render.index('engine.sourceSpatialScanPrintedPhoton(')
           scanner=render.index('OriginalSourceScannerOptics.applyInPlace(')
           assert photons < stage < post < scan < scanner
-          assert 'if !isPositive' in engine
+          assert 'guard !isPositive' in engine
           assert 'sourcePaperHDCurve' in engine
           assert 'raw = apply_diffusion_filter_um(' in source
           assert 'return np.log10(np.fmax(raw, 0.0) + 1e-10)' in source
