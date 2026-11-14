@@ -87,3 +87,40 @@ The default zero absolute tolerance means this tool does not silently certify ap
 - The Build77StageTapeRecorder preserves actual iOS callback labels, not fabricated Python tap names. A host NPY test is not a full matching iPhoneOS tap observation.
 
 Remaining Build77 work: device execution of the production material loader, mapping and live observation of all original Python taps, original RuntimePhotoParams/digest/UI binding parity, and full device numerical acceptance. No new IPA is certified or released.
+
+
+## Build77/03 source RuntimePhotoParams digest batch (2026-11-14)
+
+- Added **ios/scripts/build77_params_digest_reference.py**: executes the ORIGINAL upstream
+  \`init_params\` and \`digest_params\` functions, without changing the upstream
+  Python tree. Its 360-case reference set covers every 20 filming × 8 printing
+  pair, plus all 20 film stocks against the default print stock with preview,
+  LUT, deactivated spatial/stochastic, neutral filter database off, source
+  stock-specific preset opt-out, combined debug modes, and deliberately
+  non-default spatial settings.
+- Added **ios/SpektraFilmPort/Build77OriginalParameterDigest.swift**: a
+  strict, source-ordered scalar/nested-parameter digest mirror (database neutral
+  CMY, preview, film-specific DIR gamma / halation presets, LUT, spatial and
+  stochastic switches). A missing field throws instead of silently applying an
+  invented default. This module is compiled in the actual iPhone app, but it is
+  **not yet connected to the live UI/renderer**.
+- Added **ios/tests/Build77OriginalParameterDigestValidation.swift**: runs all
+  360 source *inputs* through actual native Swift digest code, exports its own
+  results. CI reopens the original Python fixture separately and requires that
+  every parameter key, bool, numeric scalar, array and map agree (no skipped
+  fields). It does not compare a fixture against itself.
+- Expanded **build77-source-contract.yml**: original Python fixture generation,
+  independent native Swift host test and strict recursive Python comparison.
+  The pipeline includes an iPhoneOS arm64 compile but **NO new IPA packaging
+  or Release**. Removed redundant push+PR double runs to reduce CI contention.
+- The earlier, explicitly marked experimental **v1.8.52 Build77** IPA remains
+  a user-tested baseline. User reports its UI/import/export behavior passed.
+  This report is not substituted for original Python vs iPhone numerical proof.
+
+**Current certification boundary:** The source scalar digest mirror can only be
+marked as a verified *subtree* on successfully passing its native CI matrix.
+It is not a claim of complete RuntimePhotoParams mapping: the iOS production
+parameters, UI bindings, user defaults, original seven canonical iPhone taps,
+full-graph RNG, scanner gamut, RAW and whole-frame device equivalence still
+require implementation and test. Build77 01–05 remains open. Build78 is not
+unlocked. No new IPA is requested or emitted for these host-verifiable changes.
