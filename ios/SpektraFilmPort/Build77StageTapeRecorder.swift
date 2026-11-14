@@ -109,6 +109,97 @@ final class Build77StageTapeRecorder {
         }
     }
 
+    /// One-to-one *candidate* mapping to the original Python source tap
+    /// names, using values observed in real Swift production computations.
+    /// A matching name/shape/order is necessary but NOT sufficient for
+    /// numerical equality: the manifest explicitly refuses certification.
+    func candidateSourceTapMapping(
+        positiveFilm: Bool, sourceGrainApplied: Bool
+    ) throws -> [String: String] {
+        try requirePhysicalSourceTopology(positiveFilm: positiveFilm)
+        let names=samples.map { $0.name }
+        let filmDensityName=sourceGrainApplied ? "grainDensity" : "density"
+        guard let filmIndex=names.firstIndex(of:filmDensityName),
+              let initialDensityIndex=names.firstIndex(of:"density"),
+              let outputIndex=names.firstIndex(of:"printed"),
+              filmIndex>=initialDensityIndex && filmIndex<outputIndex,
+              samples[filmIndex].values.count==width*height*3 else {
+            throw TapeError.invalid(
+                "Build77 cmy_film 候选阶段不完整或错误："
+                + filmDensityName
+            )
+        }
+        if sourceGrainApplied && filmIndex==initialDensityIndex {
+            throw TapeError.invalid(
+                "Build77 原版颗粒已启用，但没有观察到后颗粒真实 CMY"
+            )
+        }
+        let common: [String:String] = [
+            "rgb_in":"iosInput",
+            "rgb_pre":"rgbPre",
+            "log_e_film":"logRaw",
+            "cmy_film":filmDensityName,
+            "rgb_out":"iosOutput"
+        ]
+        if positiveFilm { return common }
+        guard let paperIndex=names.firstIndex(of:"paperLogExposure"),
+              filmIndex<paperIndex else {
+            throw TapeError.invalid(
+                "Build77 负片印相的真实相纸曝光必须晚于胶片 CMY"
+            )
+        }
+        return common.merging([
+            "log_e_print":"paperLogExposure",
+            "cmy_print":"paperDevelopedDensity"
+        ]) { _, new in new }
+    }
+
+    /// Only writes a source-to-iOS *lookup manifest*, never renamed/rewritten
+    /// canonical .npy files and never implies source/iOS Float64 equivalence.
+    /// No image pixel values or production calculations are altered.
+    func writeCandidateSourceTapMapping(
+        to folder: URL, positiveFilm: Bool, sourceGrainApplied: Bool
+    ) throws {
+        let mappings=try candidateSourceTapMapping(
+            positiveFilm:positiveFilm, sourceGrainApplied:sourceGrainApplied
+        )
+        let expected=positiveFilm
+            ? ["rgb_in","rgb_pre","log_e_film","cmy_film","rgb_out"]
+            : ["rgb_in","rgb_pre","log_e_film","cmy_film",
+               "log_e_print","cmy_print","rgb_out"]
+        guard Set(mappings.keys)==Set(expected),
+              Set(mappings.values).count==mappings.count else {
+            throw TapeError.invalid(
+                "Build77 候选映射缺少原版阶段或错误重复使用采样缓冲区"
+            )
+        }
+        let report:[String:Any]=[
+            "status":"IOS_CANDIDATE_MAPPING_NOT_PYTHON_NUMERIC_PARITY",
+            "source_tap_order":expected,
+            "source_to_ios_actual_observer":mappings,
+            "film_branch":positiveFilm ? "direct_scan" : "negative_print",
+            "grain_active_during_capture":sourceGrainApplied,
+            "source_sha":"3bb2c2d2801ff68b92019cf1dbcbb133d60832bc",
+            "float_storage":"<f8",
+            "width":width, "height":height,
+            "source_input_caveat":
+                "iOS input may be sRGB/8bit; Python default is ProPhoto RGB. "
+                + "No certification of the same image input, defaults, "
+                + "full random state, source pixel calculations or iPhone.",
+            "numerically_certified":false
+        ]
+        let data=try JSONSerialization.data(
+            withJSONObject:report,options:[.prettyPrinted,.sortedKeys]
+        )
+        try FileManager.default.createDirectory(
+            at:folder,withIntermediateDirectories:true,attributes:nil
+        )
+        try data.write(
+            to:folder.appendingPathComponent("candidate-source-tap-mapping.json"),
+            options:.atomic
+        )
+    }
+
     private static func npy(_ sample: Sample) throws -> Data {
         let dimensions = sample.shape.map(String.init).joined(separator: ", ")
         let tuple = sample.shape.count == 1 ? "(\(dimensions),)" : "(\(dimensions))"
@@ -203,6 +294,11 @@ extension Build77StageTapeRecorder {
         recorder.observe("iosOutput", output.rgb)
         try recorder.requirePhysicalSourceTopology(
             positiveFilm:SpectralPhysics.isPositiveFilm(parameters.filmID)
+        )
+        try recorder.writeCandidateSourceTapMapping(
+            to:folder,
+            positiveFilm:SpectralPhysics.isPositiveFilm(parameters.filmID),
+            sourceGrainApplied:parameters.sourceGrain.active
         )
         try recorder.write(to: folder)
         return output
