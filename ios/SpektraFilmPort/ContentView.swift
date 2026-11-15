@@ -1022,6 +1022,22 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // Build88 separate source scanner append-only diagnosis:
+                // original reference→XYZ glare→ACES→FIR/YVV→CCTF,
+                // including positive-film bypass and true linear RGB.
+                // Never count in the existing 8/8 Metal certification.
+                do {
+                    let scan = try Build88ScannerCombinedProductionDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build88 原版扫描 XYZ／黑白参考／眩光／锐化｜生产链自检】\n" +
+                        scan
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build88 原版扫描生产链｜失败／未认证】\n" +
+                        error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
