@@ -52,7 +52,8 @@ enum Build84RealProfileAndSpatialValidation {
         guard let root=try JSONSerialization.jsonObject(with:data) as? [String:Any],
               let profiles=root["stocks"] as? [[String:Any]],
               let spatial=root["spatial"] as? [[String:Any]],
-              profiles.count==20,spatial.count==40 else {
+              let dirStages=root["dirStages"] as? [[String:Any]],
+              profiles.count==20,spatial.count==40,dirStages.count==12 else {
             throw Failure.mismatch("Expected all 20 real stocks and 40 spatial fixtures")
         }
         var profileWorst=0.0
@@ -126,10 +127,57 @@ enum Build84RealProfileAndSpatialValidation {
                 limit:3e-9
             ))
         }
+        var dirWorst=0.0
+        for (index,stage) in dirStages.enumerated() {
+            let width=try number(stage,"width")
+            let height=try number(stage,"height")
+            guard let positive=stage["positive"] as? Bool,
+                  let core=(stage["core"] as? NSNumber)?.doubleValue,
+                  let tail=(stage["tail"] as? NSNumber)?.doubleValue,
+                  let weight=(stage["weight"] as? NSNumber)?.doubleValue else {
+                throw Failure.mismatch("Missing source DIR frame parameters")
+            }
+            let density=try vector(stage,"density")
+            let maximum=try vector(stage,"maximum")
+            let matrix=try vector(stage,"matrix")
+            let raw=try vector(stage,"rawLog")
+            let expected=try vector(stage,"corrected")
+            guard density.count==width*height*3,
+                  raw.count==density.count else {
+                throw Failure.mismatch("Invalid original DIR stage image size")
+            }
+            var inhibitors=[Double](repeating:0,count:density.count)
+            for p in 0..<(width*height) {
+                let k=p*3
+                let source=try Build84OriginalFilmDIR.inhibitors(
+                    density:Array(density[k..<(k+3)]),
+                    maximum:maximum,matrix:matrix,
+                    positive:positive
+                )
+                for ch in 0..<3 { inhibitors[k+ch]=source[ch] }
+            }
+            // The original source explicitly skips FIR/YVV whenever
+            // diffusion_size_pixel==0; the DIR chemical inhibition remains.
+            let diffused=try core>0
+                ? SourceSpatialDIRConvolution.diffuseMemoryBounded(
+                    inhibitors,width:width,height:height,
+                    coreSigma:core,tailSigma:tail,
+                    tailWeight:weight
+                  )
+                : inhibitors
+            let corrected=raw.indices.map { raw[$0]-diffused[$0] }
+            dirWorst=max(dirWorst,try compare(
+                "complete original DIR #\(index) positive=\(positive) " +
+                "\(width)x\(height) core=\(core) tail=\(tail) weight=\(weight)",
+                corrected,expected,limit:3e-9
+            ))
+        }
         print("BUILD84 BATCH2 ORIGINAL SOURCE PASS: " +
               "\(profiles.count) real stock profiles, " +
               "\(profiles.count*256*3) corrected H-D nodes, " +
-              "\(spatial.count) FIR/YVV/2-3 Gaussian fixture frames. " +
-              "maxHD=\(profileWorst) maxSpatial=\(spatialWorst)")
+              "\(spatial.count) FIR/YVV/2-3 Gaussian fixture frames, " +
+              "\(dirStages.count) complete DIR frames. " +
+              "maxHD=\(profileWorst) maxSpatial=\(spatialWorst) " +
+              "maxDIR=\(dirWorst)")
     }
 }
