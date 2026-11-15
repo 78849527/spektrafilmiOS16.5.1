@@ -137,8 +137,8 @@ enum Build89OriginalCAM16 {
         let numerator=(50000.0/13.0)*c.nbb*et*hypot(a,b)
         let denominator=adapted[0]+adapted[1]+21*adapted[2]/20.0
         let t=denominator==0 ? 0.0:numerator/denominator
-        let C=spow(t,0.9)*spow(J/100.0,0.5)*
-              pow(1.64-pow(0.29,c.n),0.73)
+        let chromaBase=pow(1.64-pow(0.29,c.n),0.73)
+        let C=spow(t,0.9)*spow(J/100.0,0.5)*chromaBase
         let M=C*pow(c.fl,0.25)
         // Li2017 CAM16-UCS c1=.007 c2=.0228
         let jp=1.7*J/(1.0+0.007*J)
@@ -163,8 +163,8 @@ enum Build89OriginalCAM16 {
         let M=expm1(0.0228*mp)/0.0228
         let C=M/pow(c.fl,0.25)
         let effectiveJ=max(J,Double.ulpOfOne)
-        let chromaScale=sqrt(effectiveJ/100)*
-            pow(1.64-pow(0.29,c.n),0.73)
+        let chromaBase=pow(1.64-pow(0.29,c.n),0.73)
+        let chromaScale=sqrt(effectiveJ/100)*chromaBase
         let t=spow(C/chromaScale,1/0.9)
         let et=0.25*(cos(2+h)+3.8)
         let A=c.aw*spow(J/100,1/(0.69*c.z))
