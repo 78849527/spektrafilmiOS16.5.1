@@ -1574,7 +1574,8 @@ struct SpectralPhysics {
     }
 
     func sourceSpatialFilmParameters() throws -> SourceSpatialFilmParams {
-        guard useOriginalScanner && !useReferenceBlackWhite &&
+        guard useOriginalScanner &&
+              (!useReferenceBlackWhite || sourceReferencePrepared != nil) &&
               !defaultCAM16Gamut,
               (isPositive || (useOriginalPrintOptics && sourcePaperHDCurve != nil)),
               film.dirCorrectedCurves.count == 768,
