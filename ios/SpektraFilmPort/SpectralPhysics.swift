@@ -940,45 +940,87 @@ struct SpectralPhysics {
             // the film->enlarger->paper H-D response and then through the
             // CIE viewing scanner. It also inverts the H-D midgray response
             // to obtain the source-style print exposure compensation.
-            let filmBlack = [-0.03,-0.03,-0.03]
-            let filmWhite = (0..<3).map { ch -> Double in
-                (0..<256).map {
-                    Double(originalFilm.densityCurves[$0*3+ch])
-                }.max() ?? 0
+            let filmBlack=sourceFilmDensityMin.map { -$0 }
+            let filmWhite=(0..<3).map { ch in
+                (0..<256).map { originalFilm.densityAt($0*3+ch) }
+                    .filter({$0.isFinite}).max() ?? Double.nan
             }
-            let paperBlack = Self.paperDensities(
-                filmBlack, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0,
-                preflashRaw: opticalPreflashRaw,
-                opticalPrint: useOriginalPrintOptics,
-                sourceHD: sourcePaperHDCurve
-            )
-            let paperWhite = Self.paperDensities(
-                filmWhite, film: originalFilm, paper: originalPaper,
-                weights: pWeights, reference: printReference, printEV: 0,
-                preflashRaw: opticalPreflashRaw,
-                opticalPrint: useOriginalPrintOptics,
-                sourceHD: sourcePaperHDCurve
-            )
-            let measuredBlack = Self.scanPhysicalXYZ(
-                densities: paperBlack, paper: originalPaper,
-                weights: xyzWeights, normalization: viewingNormalization
+            let paperBlack:[Double]
+            let paperWhite:[Double]
+            if let sourceColorReference,sourceColorReference.enabled {
+                // Upstream ColorReferenceService._update_cmy_black_white_references
+                // deliberately invokes develop_simple on ORIGINAL MEASURED
+                // paper.data.density_curves — NOT creative s023 morph.
+                // It first samples the full spectral optical paper exposure
+                // from film-black (-grain.density_min) and maximum film CMY.
+                func sourcePaperReference(
+                    _ filmDensity:[Double]
+                ) throws -> [Double] {
+                    let raw=Self.printRaw(
+                        filmDensities:filmDensity,film:originalFilm,
+                        weights:pWeights,clampDensity:false
+                    )
+                    let logRaw=OriginalPrintOptics.paperLogExposure(
+                        raw:raw,reference:printReference,
+                        preflash:opticalPreflashRaw,printEV:0
+                    )
+                    return try Build87OriginalColorReference.referencePaperDensity(
+                        rawLog:logRaw,
+                        logExposure:originalPaper.sourceExposureAxis,
+                        densityCurves:originalPaper.sourceDensityCurvesF64!
+                    )
+                }
+                paperBlack=try sourcePaperReference(filmBlack)
+                paperWhite=try sourcePaperReference(filmWhite)
+            } else {
+                // Unchanged legacy approximate correction for callers
+                // that explicitly select it without source calibration.
+                paperBlack=Self.paperDensities(
+                    filmBlack, film:originalFilm,paper:originalPaper,
+                    weights:pWeights,reference:printReference,printEV:0,
+                    preflashRaw:opticalPreflashRaw,
+                    opticalPrint:useOriginalPrintOptics,
+                    sourceHD:sourcePaperHDCurve
+                )
+                paperWhite=Self.paperDensities(
+                    filmWhite,film:originalFilm,paper:originalPaper,
+                    weights:pWeights,reference:printReference,printEV:0,
+                    preflashRaw:opticalPreflashRaw,
+                    opticalPrint:useOriginalPrintOptics,
+                    sourceHD:sourcePaperHDCurve
+                )
+            }
+            let measuredBlack=Self.scanPhysicalXYZ(
+                densities:paperBlack,paper:originalPaper,
+                weights:xyzWeights,normalization:viewingNormalization
             )[1]
-            let measuredWhite = Self.scanPhysicalXYZ(
-                densities: paperWhite, paper: originalPaper,
-                weights: xyzWeights, normalization: viewingNormalization
+            let measuredWhite=Self.scanPhysicalXYZ(
+                densities:paperWhite,paper:originalPaper,
+                weights:xyzWeights,normalization:viewingNormalization
             )[1]
-            // Original reference ordering is the printing path's
-            // film-black -> dark print; film-white -> bright print.
-            if let correction = OriginalPrintReference.apply(
-                yBlack: measuredBlack, yWhite: measuredWhite,
-                logExposure: originalPaper.logExposure,
-                rawCurves: originalPaper.densityCurves,
-                spectralBase: originalPaper.baseDensity
+            if let sourceColorReference,sourceColorReference.enabled {
+                let prepared=try Build87OriginalColorReference.prepare(
+                    settings:sourceColorReference,
+                    yBlack:measuredBlack,yWhite:measuredWhite
+                )
+                let factor=try prepared.printExposureFactor(
+                    logExposure:originalPaper.sourceExposureAxis,
+                    densityCurves:originalPaper.sourceDensityCurvesF64!,
+                    spectralBase:originalPaper.sourceBaseDensityF64!
+                )
+                sourceReferencePrepared=prepared
+                correctedPrintExposureEV=log2(factor)
+                correctedReferenceBlack=measuredBlack
+                correctedReferenceWhite=measuredWhite
+            } else if let correction=OriginalPrintReference.apply(
+                yBlack:measuredBlack,yWhite:measuredWhite,
+                logExposure:originalPaper.logExposure,
+                rawCurves:originalPaper.densityCurves,
+                spectralBase:originalPaper.baseDensity
             ) {
-                correctedPrintExposureEV = correction.exposureEV
-                correctedReferenceBlack = correction.yBlack
-                correctedReferenceWhite = correction.yWhite
+                correctedPrintExposureEV=correction.exposureEV
+                correctedReferenceBlack=correction.yBlack
+                correctedReferenceWhite=correction.yWhite
             }
         }
     }
