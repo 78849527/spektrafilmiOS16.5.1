@@ -110,6 +110,45 @@ enum Build90OriginalLUTSourceValidation {
                 }
             }
         }
+        // Keep actual original LUT sample identity in the cache key.
+        // Same revision and same source Float64 values must be reused,
+        // while a silent content change with the SAME revision must
+        // create another Prepared, never serve stale film/paper samples.
+        let cache=Build90OriginalLUTCache.shared
+        cache.invalidateAll()
+        let source=records.first(where:{$0["size"] as? Int==5})!
+        let value=try array(source,"samples")
+        let lo=try array(source,"minimum")
+        let hi=try array(source,"maximum")
+        let baseline=try cache.prepare(
+            size:5,samples:value,revision:"filmA-paperB",
+            minimum:lo,maximum:hi
+        )
+        let reused=try cache.prepare(
+            size:5,samples:value,revision:"filmA-paperB",
+            minimum:lo,maximum:hi
+        )
+        guard baseline.values==reused.values,
+              cache.residentCount()==1 else {
+            throw Failure.invalid("Original source LUT cache did not reuse")
+        }
+        let changed=value.map{$0+0.005}
+        let refreshed=try cache.prepare(
+            size:5,samples:changed,revision:"filmA-paperB",
+            minimum:lo,maximum:hi
+        )
+        let point=try shape(source,"input")[7]
+        let oldRGB=try baseline.sample(point)
+        let updatedRGB=try refreshed.sample(point)
+        guard cache.residentCount()==2,oldRGB != updatedRGB else {
+            throw Failure.invalid(
+                "Original LUT reused STALE samples after source changed"
+            )
+        }
+        cache.invalidateAll()
+        guard cache.residentCount()==0 else {
+            throw Failure.invalid("Source preview LUT cache invalidation failed")
+        }
         guard total==672,oneNode==2,nonmono==4,overshoot==8 else {
             throw Failure.invalid("Original 672 certified LUT channels missing")
         }
@@ -118,6 +157,6 @@ enum Build90OriginalLUTSourceValidation {
               "domains+overshoot+reflect bounds, 672 Float64 " +
               "channel checks; PCHIP max \(worstPCHIP), " +
               "Mitchell max \(worstMitchell), tol 4e-12; " +
-              "explicit cache-revision rebuild verified.")
+              "explicit source-value/domain/revision cache invalidation verified.")
     }
 }
