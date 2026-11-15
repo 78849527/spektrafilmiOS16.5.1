@@ -15,6 +15,70 @@ enum OriginalMetalIIR {
         }
     }
 
+    // Build91 (#43): Metal Float32 FAST-mode setup only.
+    // Cache actual compiled GPU pipelines, never the numerical pixels,
+    // source Gaussian coefficients or mutable FFT/density textures.
+    // Key includes DEVICE identity + LIBRARY identity + kernel name,
+    // so a different Metal device/library cannot reuse stale shaders.
+    private struct CachedPipeline {
+        let device:MTLDevice
+        let library:MTLLibrary
+        let name:String
+        let pipeline:MTLComputePipelineState
+    }
+    private final class PipelinePool: @unchecked Sendable {
+        let lock=NSLock()
+        var entries=[CachedPipeline]()
+        var hits=0
+        var compilations=0
+    }
+    private static let pool=PipelinePool()
+    private static func pipeline(
+        _ name:String,device:MTLDevice,library:MTLLibrary
+    ) throws->MTLComputePipelineState {
+        let cache=pool
+        cache.lock.lock()
+        if let index=cache.entries.firstIndex(where:{
+            ($0.device as AnyObject) === (device as AnyObject) &&
+            ($0.library as AnyObject) === (library as AnyObject) &&
+            $0.name==name
+        }) {
+            let item=cache.entries.remove(at:index)
+            cache.entries.append(item)
+            cache.hits+=1
+            cache.lock.unlock()
+            return item.pipeline
+        }
+        cache.lock.unlock()
+        guard let function=library.makeFunction(name:name) else {
+            throw Error.invalid("原版 Metal FIR/YVV 缺少内核 " + name)
+        }
+        let compiled=try device.makeComputePipelineState(function:function)
+        cache.lock.lock()
+        if let exists=cache.entries.first(where:{
+            ($0.device as AnyObject) === (device as AnyObject) &&
+            ($0.library as AnyObject) === (library as AnyObject) &&
+            $0.name==name
+        }) {
+            cache.hits+=1
+            cache.lock.unlock()
+            return exists.pipeline
+        }
+        if cache.entries.count>=12 {cache.entries.removeFirst()}
+        cache.entries.append(
+            CachedPipeline(device:device,library:library,
+                           name:name,pipeline:compiled)
+        )
+        cache.compilations+=1
+        cache.lock.unlock()
+        return compiled
+    }
+    static func cachedPipelineStats()->(hits:Int,compilations:Int) {
+        pool.lock.lock()
+        defer{pool.lock.unlock()}
+        return (pool.hits,pool.compilations)
+    }
+
     struct Parameters {
         var b: SIMD4<Float>
         var b1: SIMD4<Float>
@@ -110,10 +174,9 @@ enum OriginalMetalIIR {
             ("originalFilmIIRVerticalBackward",scratchA,result,source.width)
         ]
         for (name, input, output, count) in passes {
-            guard let f = library.makeFunction(name:name) else {
-                throw Error.invalid("原版 IIR：缺少 Metal 内核 " + name)
-            }
-            let pipeline = try device.makeComputePipelineState(function:f)
+            let pipeline=try self.pipeline(
+                name,device:device,library:library
+            )
             guard let encoder = command.makeComputeCommandEncoder() else {
                 throw Error.invalid("原版 IIR：GPU 编码器创建失败")
             }
@@ -178,10 +241,9 @@ enum OriginalMetalIIR {
             ("originalFilmIIRVerticalBackwardInPlace", texture.width)
         ]
         for (name, count) in sweeps {
-            guard let function = library.makeFunction(name: name) else {
-                throw Error.invalid("原版 IIR：缺少全图原地 Metal 内核 " + name)
-            }
-            let pipeline = try device.makeComputePipelineState(function: function)
+            let pipeline=try self.pipeline(
+                name,device:device,library:library
+            )
             guard let encoder = command.makeComputeCommandEncoder() else {
                 throw Error.invalid("原版 IIR：全图原地 GPU 编码器创建失败")
             }
@@ -296,6 +358,13 @@ enum OriginalMetalIIR {
                     }
                 }
             }
+        }
+        let cached=cachedPipelineStats()
+        guard cached.compilations>=8,cached.hits>=8 else {
+            throw Error.invalid(
+                "Build91 Metal IIR 8 内核缓存未重用：" +
+                "compilations=\(cached.compilations) hits=\(cached.hits)"
+            )
         }
         let count = fixtures.reduce(0) { $0 + $1.expected.count }
         return "原版 YVV IIR（独立与生产原地内核）两组图 / 三通道对照 PASS，" +
