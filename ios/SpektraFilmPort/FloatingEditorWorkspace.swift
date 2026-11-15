@@ -23,6 +23,8 @@ struct FloatingEditorWorkspace: View {
     let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
     let onShareBuild100Readiness: () -> Void
+    let onRunBuild101DeviceParity: () -> Void
+    let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
     @State private var originalHeld = false
@@ -484,7 +486,8 @@ struct FloatingEditorWorkspace: View {
                         .padding(.bottom, 63)
                 }
             }
-            .sheet(isPresented: $statusReportPresented) {
+            .sheet(isPresented: $statusReportPresented,
+                   onDismiss: onDiagnosticSheetDismissed) {
                 statusReportSheet
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
@@ -795,6 +798,18 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
                     Text("记录 App 版本、iOS 版本和当前处理状态。所有尚未实际执行的真机、Python 整图和随机统计测试均明确写为 not_run；此文件不是合格证书。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild101DeviceParity()
+                    } label: {
+                        Label("执行原版 Python → 本机 Swift 阶段数值对照",
+                              systemImage:"checkmark.shield")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("使用已打包的 Build92 Python 原版参考图，让当前设备实际运行 Swift 冲印处理链并比较。PASS 仅代表受控样本，不代表完整原版、默认随机数、RAW 或高位深全链认证。无论通过或失败都生成本机 JSON 证据。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
