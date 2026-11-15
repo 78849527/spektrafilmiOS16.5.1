@@ -376,6 +376,52 @@ enum SourceSpatialDIRConvolution {
         )
     }
 
+    /// Source utils/fast_gaussian_filter.py::fast_exponential_filter
+    /// supports n_gaussians=2 and n_gaussians=3. Keep the legacy 3-pass
+    /// production code stable; expose both verified branches explicitly.
+    /// This function accepts per-channel decay constants exactly as source.
+    static func exponentialFitted(
+        _ input:[Double],width:Int,height:Int,
+        decay:[Double],nGaussians:Int
+    ) throws -> [Double] {
+        guard (nGaussians == 2 || nGaussians == 3),
+              decay.count == 3,
+              decay.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+            throw Failure.invalid(
+                "源指数扩散仅支持 2 或 3 个高斯拟合项和三通道非负尺度"
+            )
+        }
+        // Default 3-Gaussian path is the original, previously verified
+        // low-memory implementation. No approximation or substitution.
+        if nGaussians == 3 {
+            return try exponentialPerChannelMemoryBounded(
+                input,width:width,height:height,decay:decay
+            )
+        }
+        let twoFits:[(Double,Double)] = [
+            (0.6235,0.9401),
+            (0.3765,2.5177)
+        ]
+        var result:[Double]? = nil
+        for (amplitude,ratio) in twoFits {
+            let blurred=try gaussianPerChannelMemoryBounded(
+                input,width:width,height:height,
+                sigmas:decay.map { $0*ratio }
+            )
+            if result == nil {
+                result=blurred.map { amplitude*$0 }
+            } else {
+                for i in blurred.indices {
+                    result![i]+=amplitude*blurred[i]
+                }
+            }
+        }
+        guard let output=result,output.allSatisfy({ $0.isFinite }) else {
+            throw Failure.invalid("源指数 FIR/YVV 结果无效")
+        }
+        return output
+    }
+
     /// Convert the Core Image inhibitor buffer to Float32 RGBA only at
     /// the CI boundary. Perform all original FIR/YVV operations in Double
     /// before converting to Float32 CIImage; NO silent CoreImage fallback.
