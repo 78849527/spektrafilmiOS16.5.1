@@ -6,6 +6,7 @@ on:
       - 'port/build90-file-output-icc-lut-40-41-bulk'
     paths:
       - 'ios/SpektraFilmPort/Build90OriginalLUT.swift'
+      - 'ios/SpektraFilmPort/Build90OriginalLUTCache.swift'
       - 'ios/tests/Build90OriginalLUTSourceValidation.swift'
       - 'ios/scripts/build90_original_lut_oracle.py'
       - '.github/workflows/build90-real-lut-parity.yml'
@@ -39,6 +40,7 @@ jobs:
         run: |
           swiftc -O -parse-as-library \
             ios/SpektraFilmPort/Build90OriginalLUT.swift \
+            ios/SpektraFilmPort/Build90OriginalLUTCache.swift \
             ios/tests/Build90OriginalLUTSourceValidation.swift \
             -o /tmp/Build90OriginalLUTValidation
           /tmp/Build90OriginalLUTValidation \
