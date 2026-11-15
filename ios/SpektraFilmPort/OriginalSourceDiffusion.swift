@@ -124,6 +124,16 @@ enum OriginalSourceDiffusion {
         for i in updated.indices { updated[i] *= target/total }
         return updated
     }
+    /// Python _resolve_family_cfg drops ALL user group multipliers,
+    /// including size overrides, if the three intensities sum to zero.
+    /// That fallback is shared by both kernel radius and per-pixel PSF.
+    private static func sourceDefaultGroupGeometry(_ s:Settings) -> Bool {
+        let sh=shape(s.family)
+        return sh.wc*max(s.coreIntensity,0) +
+               sh.wh*max(s.haloIntensity,0) +
+               sh.wb*max(s.bloomIntensity,0) <= 0
+    }
+
     private static func groupWeights(_ s: Settings,_ sh: Shape) -> [Double] {
         let c=sh.wc*max(s.coreIntensity,0)
         let h=sh.wh*max(s.haloIntensity,0)
@@ -141,7 +151,9 @@ enum OriginalSourceDiffusion {
             throw Failure.invalid("原版扩散 PSF 需要有效图像与像素尺寸")
         }
         let sh=shape(settings.family)
-        let lambdaMax=sh.bloom.center*max(settings.bloomSize,1e-6) *
+        let bloomSize=sourceDefaultGroupGeometry(settings)
+            ? 1.0 : settings.bloomSize
+        let lambdaMax=sh.bloom.center*max(bloomSize,1e-6) *
                       sh.bloom.spread*settings.spatialScale/pixelUM
         guard lambdaMax.isFinite,lambdaMax>=0,
               lambdaMax < Double(Int.max)/16 else {
@@ -156,9 +168,19 @@ enum OriginalSourceDiffusion {
         let r=try radius(width:width,height:height,pixelUM:pixelUM,settings:settings)
         let sh=shape(settings.family)
         let cw=groupWeights(settings,sh)
-        let core=expanded(sh.core,size:settings.coreSize,bloom:false)
-        let halo=expanded(sh.halo,size:settings.haloSize,bloom:false)
-        let bloom=expanded(sh.bloom,size:settings.bloomSize,bloom:true)
+        let geometryDefaults=sourceDefaultGroupGeometry(settings)
+        let core=expanded(
+            sh.core,size:geometryDefaults ? 1 : settings.coreSize,
+            bloom:false
+        )
+        let halo=expanded(
+            sh.halo,size:geometryDefaults ? 1 : settings.haloSize,
+            bloom:false
+        )
+        let bloom=expanded(
+            sh.bloom,size:geometryDefaults ? 1 : settings.bloomSize,
+            bloom:true
+        )
         let warmth=sh.baseWarmth+settings.haloWarmth
         let haloChannel=(0..<3).map { haloWeights(halo.weights,warmth:warmth,channel:$0) }
         let n=2*r+1
@@ -171,7 +193,10 @@ enum OriginalSourceDiffusion {
                 func radialSum(_ scales:[Double],_ weights:[Double]) -> Double {
                     var value=0.0
                     for j in scales.indices {
-                        let lambda=max(scales[j]*settings.spatialScale/pixelUM,1e-6)
+                        let lambda=max(
+                            scales[j]*max(settings.spatialScale,1e-6)/pixelUM,
+                            1e-6
+                        )
                         value += weights[j] * exp(-radial/lambda) /
                                  (2*Double.pi*lambda*lambda)
                     }
