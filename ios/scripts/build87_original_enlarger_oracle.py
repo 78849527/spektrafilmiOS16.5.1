@@ -95,6 +95,7 @@ def main(destination):
                             preflash_filtered_illuminant=lambda _:prelight
                         )
                         params=NS(
+                            illuminant="TH-KG3",
                             c_filter_neutral=neutral[0],m_filter_neutral=neutral[1],
                             y_filter_neutral=neutral[2],
                             c_filter_shift=4.0,m_filter_shift=-9.0,
