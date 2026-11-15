@@ -1816,6 +1816,35 @@ final class PhotoEditorModel: ObservableObject {
         return result.url
     }
 
+    /// Export a truthful MACHINE-READABLE checklist. Runtime metadata is
+    /// observed here; all manual true-device/source parity gates remain
+    /// not_run until verifiable signed evidence is supplied.
+    func exportBuild100Readiness() throws -> URL {
+        let bundle=Bundle.main
+        let version=bundle.object(
+            forInfoDictionaryKey:"CFBundleShortVersionString"
+        ) as? String ?? "unknown"
+        let build=bundle.object(
+            forInfoDictionaryKey:"CFBundleVersion"
+        ) as? String ?? "unknown"
+        let report=Build100Readiness.capture(
+            version:version, build:build, date:Date(),
+            platform:UIDevice.current.model,
+            osVersion:UIDevice.current.systemVersion,
+            sourceLoaded:hasPhoto,
+            processedPreviewAvailable:processedPreview != nil,
+            selectedMaterialPending:simulationAwaitingCurrentSettings,
+            runtimeDiagnosticReportExists:hardwareDiagnosticReport != nil,
+            sourcePixelMode:sourcePixelIOEnabled,
+            fullPhysicalMode:sourcePhysicalDirectEnabled &&
+                             sourcePixelIOEnabled
+        )
+        let documents=FileManager.default.urls(
+            for:.documentDirectory,in:.userDomainMask
+        ).first!
+        return try Build100Readiness.write(report,documents:documents)
+    }
+
 }
 
 struct ContentView: View {
@@ -1898,6 +1927,23 @@ struct ContentView: View {
                     proposeExport(saveToPhotos: true, resolution: resolution)
                 },
                 onRefresh: { refresh() },
+                onShareBuild100Readiness: {
+                    guard !model.busy else { return }
+                    do {
+                        let url=try model.exportBuild100Readiness()
+                        model.status="Build100 验收清单已存入文件；未测试项目保持 not_run"
+                        // The report sheet must be fully dismissed before
+                        // the same activeSheet binding presents share UI.
+                        Task { @MainActor in
+                            try? await Task.sleep(
+                                nanoseconds:350_000_000
+                            )
+                            activeSheet = .share(url)
+                        }
+                    } catch {
+                        message="验收报告导出失败："+error.localizedDescription
+                    }
+                },
                 onCaptureBuild77Evidence: {
                     guard !model.busy else { return }
                     let hardwareName=UIDevice.current.model
