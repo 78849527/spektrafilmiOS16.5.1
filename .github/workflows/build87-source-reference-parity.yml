@@ -1,0 +1,51 @@
+name: Build87 source black-white color reference and paper exposure parity
+
+on:
+  push:
+    branches:
+      - 'port/build87-print-optics-reference-29-34-bulk'
+    paths:
+      - 'ios/SpektraFilmPort/Build87OriginalColorReference.swift'
+      - 'ios/tests/Build87SourceColorReferenceValidation.swift'
+      - 'ios/scripts/build87_original_color_reference_oracle.py'
+      - '.github/workflows/build87-source-reference-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-color-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain and source SHA
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+          python3 --version
+      - name: Install pinned Python source numpy
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check 'numpy==2.3.5'
+      - name: Execute REAL original ColorReferenceService AST on source stock profiles
+        run: |
+          python3 ios/scripts/build87_original_color_reference_oracle.py \
+            /tmp/build87-real-reference.json
+          test -s /tmp/build87-real-reference.json
+      - name: Parse entire original app Swift sources
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Compile native source Float64 reference code and test
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalScannerMath.swift \
+            ios/SpektraFilmPort/Build87OriginalColorReference.swift \
+            ios/tests/Build87SourceColorReferenceValidation.swift \
+            -o /tmp/Build87OriginalReference
+          /tmp/Build87OriginalReference /tmp/build87-real-reference.json
+      - name: Preserve source 256-node evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: build87-original-colorreference-paper-positive-source
+          path: /tmp/build87-real-reference.json
