@@ -58,7 +58,7 @@ class NumPyNumbaShim:
     prange = range
 
 
-def main(output):
+def main(output_path):
     verify_fixed_source()
     ns = {
         "np": np, "contract": contract, "dataclass": dataclass,
@@ -113,7 +113,7 @@ def main(output):
             )
             output["inhibitors_" + label + suffix] = (
                 -corrected).reshape(-1).tolist()
-    pathlib.Path(output).write_text(
+    pathlib.Path(output_path).write_text(
         json.dumps(output, separators=(",", ":"), allow_nan=False),
         encoding="utf-8")
     print("SOURCE PYTHON AST PASS: 2 film polarities, 2 shift modes, "
