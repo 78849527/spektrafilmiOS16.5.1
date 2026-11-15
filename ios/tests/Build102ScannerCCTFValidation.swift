@@ -6,7 +6,7 @@ func assertTrue(_ value: @autoclosure () -> Bool,_ why:String) {
 let matrix=GeneratedScannerReference.sourceLinearIdentityRGBMatrix
 assertTrue(matrix.count==9,"Python original source colour RGB_to_RGB 3x3 missing")
 let identity:[Double]=[1,0,0,0,1,0,0,0,1]
-let offIdentity=zip(matrix,identity).map { abs($0-$1) }.max()!
+let offIdentity=zip(matrix,identity).map { abs($0.0-$0.1) }.max() ?? 0.0
 assertTrue(offIdentity>1e-12,
            "Original colour-science same-space matrix unexpectedly identity; recheck source generator")
 let vectors:[[Double]]=[
