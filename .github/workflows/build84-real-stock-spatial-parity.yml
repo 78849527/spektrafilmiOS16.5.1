@@ -1,0 +1,61 @@
+name: Build84 batch2 source real-stock H-D and spatial parity
+
+on:
+  push:
+    branches:
+      - 'port/build84-hd-dir-spatial-21-22-batch2'
+    paths:
+      - 'ios/SpektraFilmPort/Build84OriginalFilmDIR.swift'
+      - 'ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift'
+      - 'ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift'
+      - 'ios/scripts/build84_real_stock_spatial_oracle.py'
+      - 'ios/tests/Build84RealProfileAndSpatialValidation.swift'
+      - '.github/workflows/build84-real-stock-spatial-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stock-and-spatial-numerical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout locked original Python and production Swift
+        uses: actions/checkout@v4
+      - name: Print actual commit and toolchains
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+          python3 --version
+      - name: Install small source scientific dependency set
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet \
+            'numpy==2.3.5' 'opt_einsum==3.4.0'
+      - name: Generate measured profiles and spatial source AST oracle
+        run: |
+          python3 ios/scripts/build84_real_stock_spatial_oracle.py \
+            /tmp/build84-real-stock-spatial.json
+          test -s /tmp/build84-real-stock-spatial.json
+      - name: Parse complete iOS Swift without removing prior functions
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Extract exact production source Float64 FIR YVV core
+        run: |
+          python3 ios/scripts/extract_source_filter_core_for_linux.py \
+            /tmp/Build84ProductionFIRYVV.swift
+      - name: Compile actual Swift CPU Double chemistry and spatial source
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build84OriginalFilmDIR.swift \
+            /tmp/Build84ProductionFIRYVV.swift \
+            ios/tests/Build84RealProfileAndSpatialValidation.swift \
+            -o /tmp/Build84RealStockSpatial
+      - name: Validate 20 real films and 40 FIR YVV branch fixtures
+        run: |
+          /tmp/Build84RealStockSpatial /tmp/build84-real-stock-spatial.json
+      - name: Preserve original numerical reference JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: build84-original-20-real-profiles-and-firyvv
+          path: /tmp/build84-real-stock-spatial.json
