@@ -1,0 +1,37 @@
+name: Build91 original 1 to 13MP source memory and FFT preflight matrix
+
+on:
+  push:
+    branches:
+      - 'port/build91-double-fft-scratch-metal-memory-42-44'
+    paths:
+      - 'ios/SpektraFilmPort/Build91PhysicalMemory.swift'
+      - 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift'
+      - 'ios/tests/Build91PhysicalMemoryMatrixValidation.swift'
+      - '.github/workflows/build91-memory-matrix-1-13mp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-memory-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source SHA and Swift
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - name: Parse complete application source
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Run 1/2/4/7.2/12/13MP source exact geometry without huge allocation
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/Build91PhysicalMemory.swift \
+            ios/tests/Build91PhysicalMemoryMatrixValidation.swift \
+            -o /tmp/Build91MemoryMatrix
+          /tmp/Build91MemoryMatrix
