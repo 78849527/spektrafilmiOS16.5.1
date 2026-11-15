@@ -39,6 +39,4 @@ for rgb in vectors {
 }
 assertTrue(maxOldScalarDifference>1e-11,
            "Former single-channel encoding did not exhibit measured matrix mismatch")
-print("PASS Build102 original colour 3x3+CCTF source-stage regression " +
-      "corrected=\(maxCorrectDifference) oldScalar=\(maxOldScalarDifference) " +
-      "(NOT a physical iPhone result)")
+print("PASS Build102 source 3x3+CCTF, corrected=\(maxCorrectDifference), priorScalarError=\(maxOldScalarDifference); NOT physical iPhone")
