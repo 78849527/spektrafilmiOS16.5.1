@@ -581,7 +581,7 @@ final class PhotoEditorModel: ObservableObject {
     /// lazily evaluated Apple *fast compatibility* development, never source
     /// Python Float64 / X-Trans rawpy parity. Unsupported compression fails.
     func openPreservedRAWWithApple() {
-        guard let url=capturedRAWURL else {
+        guard let url=pendingImportedRAWURL ?? capturedRAWURL else {
             status="没有可打开的原始 RAW 文件"
             return
         }
@@ -598,19 +598,11 @@ final class PhotoEditorModel: ObservableObject {
                     )
                     return (actual,preview)
                 }.value
-                invalidateSimulation()
-                // This explicit choice is the only place where prior source
-                // pixel mode is switched off. It never happens on a failed
-                // decoder or as an automatic precision-mode fallback.
-                sourcePixelIOEnabled=false
-                sourcePhysicalDirectEnabled=false
-                source=decoded.0.image
-                originalPhotoData=nil
-                originalPreview=decoded.1
-                processedPreview=decoded.1
-                rawFastModeActive=true
-                photoDimensions="\(decoded.0.width) × \(decoded.0.height) · RAW Apple 兼容模式"
-                try refresh()
+                try commitDecodedPhoto(
+                    image:decoded.0.image, preview:decoded.1,
+                    data:nil, rawURL:url, rawCompatible:true,
+                    dimensions:"\(decoded.0.width) × \(decoded.0.height) · RAW Apple 兼容模式"
+                )
                 status="已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；" +
                     "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
                     "不是 Python rawpy 原版数值等价。"
@@ -626,7 +618,7 @@ final class PhotoEditorModel: ObservableObject {
     /// This decodes sensor values through LibRaw's X-Trans engine to RGB8;
     /// it is not the Python source Float64/rawpy path.
     func openPreservedRAWWithLibRaw() {
-        guard let url=capturedRAWURL else {
+        guard let url=pendingImportedRAWURL ?? capturedRAWURL else {
             status="请先选择并保存原始富士 RAF 文件"
             return
         }
@@ -643,18 +635,11 @@ final class PhotoEditorModel: ObservableObject {
                     )
                     return (actual,preview)
                 }.value
-                invalidateSimulation()
-                // Changing a selected source-exact mode requires this
-                // explicit user action; never automatically switch on error.
-                sourcePixelIOEnabled=false
-                sourcePhysicalDirectEnabled=false
-                source=decoded.0.image
-                originalPhotoData=nil
-                originalPreview=decoded.1
-                processedPreview=decoded.1
-                rawFastModeActive=true
-                photoDimensions="\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB8"
-                try refresh()
+                try commitDecodedPhoto(
+                    image:decoded.0.image, preview:decoded.1,
+                    data:nil, rawURL:url, rawCompatible:true,
+                    dimensions:"\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB8"
+                )
                 status="富士 RAF 已经由 LibRaw \(decoded.0.librawVersion) 去马赛克；" +
                     "当前为全尺寸 8-bit sRGB 兼容模式，原始 RAF 已无损保存；" +
                     "不代表 Python rawpy / Float64 数值等价。"
@@ -668,7 +653,7 @@ final class PhotoEditorModel: ObservableObject {
     /// Build95: explicit high-depth LibRaw Fujifilm path. The existing
     /// Build93 Apple RAW and Build94 RGB8 routes remain unchanged.
     func openPreservedRAW16Bit() {
-        guard let url = capturedRAWURL else {
+        guard let url = pendingImportedRAWURL ?? capturedRAWURL else {
             status = "请先导入并保存富士 RAF 原始文件"
             return
         }
@@ -685,18 +670,11 @@ final class PhotoEditorModel: ObservableObject {
                     )
                     return (actual, preview)
                 }.value
-                invalidateSimulation()
-                // This user-selected compatibility path is not rawpy
-                // source-exact. Never silently route through source8 IO.
-                sourcePixelIOEnabled = false
-                sourcePhysicalDirectEnabled = false
-                source = decoded.0.image
-                originalPhotoData = nil
-                originalPreview = decoded.1
-                processedPreview = decoded.1
-                rawFastModeActive = true
-                photoDimensions = "\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB16"
-                try refresh()
+                try commitDecodedPhoto(
+                    image:decoded.0.image, preview:decoded.1,
+                    data:nil, rawURL:url, rawCompatible:true,
+                    dimensions:"\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB16"
+                )
                 status = "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；" +
                     "输入为 16-bit sRGB 高位深兼容数据，最终 JPEG 仍为 8-bit；" +
                     "原始 RAF 不变，不代表 Python Float64 原版数值等价。"
