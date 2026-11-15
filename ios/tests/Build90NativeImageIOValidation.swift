@@ -55,7 +55,7 @@ enum Build90RealNativeImageIOValidation {
                 space:space,encoded:encoded
             )
             guard let cs=image.colorSpace,
-                  let embeddedICC=CGColorSpaceCopyICCData(cs) as Data?,
+                  let embeddedICC=cs.copyICCData(),
                   embeddedICC==sourceICC else {
                 throw Failure.invalid(
                     "Actual disk image ICC bytes do not equal source ICC"
