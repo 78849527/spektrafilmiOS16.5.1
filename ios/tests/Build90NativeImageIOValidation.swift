@@ -54,11 +54,14 @@ enum Build90RealNativeImageIOValidation {
             let sourceICC=Build90GeneratedSourceICC.exactProfile(
                 space:space,encoded:encoded
             )
-            guard let cs=image.colorSpace,
-                  let rawICC=cs.copyICCData(),
-                  (rawICC as Data)==sourceICC else {
+            guard image.colorSpace != nil,
+                  let expectedICC=sourceICC,
+                  try Build90OriginalICCContainer.extract(
+                    from:bytes,format:format
+                  ) == expectedICC else {
                 throw Failure.invalid(
-                    "Actual disk image ICC bytes do not equal source ICC"
+                    "Actual disk JPEG APP2 / PNG iCCP / TIFF ICC tag " +
+                    "not byte-exact original source"
                 )
             }
             matchedICC+=1
