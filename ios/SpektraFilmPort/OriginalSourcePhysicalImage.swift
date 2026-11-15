@@ -105,6 +105,9 @@ enum OriginalSourcePhysicalImage {
         /// Original diffusion_size_um=0 runs non-spatial DIR chemistry but
         /// skips FIR/YVV, without dividing by pixel_size_um.
         var sourceSpatialDiffusionEnabled: Bool = true
+        /// Explicit original custom film DIR parameters. nil preserves the
+        /// verified stock-specific original path without recalibration.
+        var sourceDIR: Build84OriginalFilmDIR.RuntimeSettings? = nil
         // Separate opt-in deterministic Python source scan finishing.
         // Defaults preserve all user-validated v1.8.25 RGB and memory paths.
         var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
@@ -147,6 +150,14 @@ enum OriginalSourcePhysicalImage {
                 throw Failure.invalid(
                     "原版逐像素物理模式需要有效胶片/相纸、源 DIR 和原版光学参数"
                 )
+            }
+            if let sourceDIR {
+                try sourceDIR.validate()
+                guard sourceCouplersActive else {
+                    throw Failure.invalid(
+                        "自定义 DIR 与旧版关闭 DIR 开关冲突，请明确选择一种模式"
+                    )
+                }
             }
             try scannerOptics.validate()
             try scannerGlare.validate()
@@ -276,6 +287,19 @@ enum OriginalSourcePhysicalImage {
 
         let engine=try parameters.createEngine()
         let source=try engine.sourceSpatialFilmParameters()
+        let dynamicDIR:Build84OriginalFilmDIR.Prepared?
+        if let custom=parameters.sourceDIR {
+            let measured=try engine.sourceSpatialMeasuredHDCurves()
+            dynamicDIR=try Build84OriginalFilmDIR.prepare(
+                stock:parameters.filmID,positive:source.positive,
+                logExposure:measured.logExposure,
+                normalizedDensityCurves:measured.normalizedDensityCurves,
+                settings:custom
+            )
+        } else {
+            dynamicDIR=nil
+        }
+        let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         let size=w*h*3
         var inhibitors=[Double](repeating:0,count:size)
         var initialObserved:[Double]?=stageDoubleObserver == nil
@@ -384,20 +408,28 @@ enum OriginalSourcePhysicalImage {
                 : engine.sourceSpatialInput(
                     encodedRGB:sample,cameraEV:parameters.cameraEV
                 )
-            let sourceInhibition = parameters.sourceCouplersActive
-                ? try Build84OriginalFilmDIR.inhibitors(
-                    density:initial.initialDensity,
+            let initialDensity=try dynamicDIR?.develop(
+                initial.rawLog,corrected:false
+            ) ?? initial.initialDensity
+            let sourceInhibition:[Double]
+            if !dirOn {
+                sourceInhibition=[0,0,0]
+            } else if let dynamicDIR {
+                sourceInhibition=try dynamicDIR.inhibitor(initialDensity)
+            } else {
+                sourceInhibition=try Build84OriginalFilmDIR.inhibitors(
+                    density:initialDensity,
                     maximum:source.densityMaximum,
                     matrix:source.matrix,
                     positive:source.positive
-                  )
-                : [0.0,0.0,0.0]
+                )
+            }
             for receiver in 0..<3 {
                 inhibitors[k+receiver]=sourceInhibition[receiver]
             }
             for c in 0..<3 {
                 frame.rgb[k+c]=initial.rawLog[c]
-                initialObserved?[k+c]=initial.initialDensity[c]
+                initialObserved?[k+c]=initialDensity[c]
             }
         }
         stageDoubleObserver?("logRaw",frame.rgb)
@@ -413,18 +445,19 @@ enum OriginalSourcePhysicalImage {
             (36_000.0/Double(max(w,h)))
         let radius=parameters.dir.diffusionRadiusScale
         let diffused:[Double]
-        if !parameters.sourceCouplersActive {
+        if !dirOn {
             // Source active=false: no chemistry, no spatial filter.
             diffused=[Double](repeating:0,count:size)
-        } else if !parameters.sourceSpatialDiffusionEnabled {
+        } else if !parameters.sourceSpatialDiffusionEnabled ||
+                    dynamicDIR?.settings.diffusionSizeUM == 0 {
             // Source diffusion_size_um=0: skip filter, retain inhibitors.
             diffused=inhibitors
         } else {
             diffused=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
                 inhibitors,width:w,height:h,
-                coreSigma:20.0*radius/pixelUM,
-                tailSigma:200.0*radius/pixelUM,
-                tailWeight:parameters.dir.tailWeight
+                coreSigma:(dynamicDIR?.settings.diffusionSizeUM ?? 20.0)*radius/pixelUM,
+                tailSigma:(dynamicDIR?.settings.diffusionTailUM ?? 200.0)*radius/pixelUM,
+                tailWeight:dynamicDIR?.settings.diffusionTailWeight ?? parameters.dir.tailWeight
             )
         }
         // Do not keep another full-frame 3-channel inhibitor buffer alive
@@ -459,9 +492,14 @@ enum OriginalSourcePhysicalImage {
             let corrected=(0..<3).map { c in
                 frame.rgb[k+c]-diffused[k+c]
             }
-            let density=try parameters.sourceCouplersActive
-                ? engine.sourceSpatialDevelopCorrectedLog(corrected)
-                : engine.sourceSpatialDevelopInitialLog(corrected)
+            let density:[Double]
+            if let dynamicDIR {
+                density=try dynamicDIR.develop(corrected,corrected:dirOn)
+            } else {
+                density=try dirOn
+                    ? engine.sourceSpatialDevelopCorrectedLog(corrected)
+                    : engine.sourceSpatialDevelopInitialLog(corrected)
+            }
             // PrintingStage source chronology: film CMY -> optical
             // paper raw -> source full-frame diffuser -> log10 -> paper
             // H-D -> original scanner. Never diffuse scanned RGB.
