@@ -1,0 +1,60 @@
+name: Build89 ORIGINAL CAM16-UCS per-pixel source gamut parity
+
+on:
+  push:
+    branches:
+      - 'port/build89-output-gamut-space-38-39-bulk'
+    paths:
+      - 'ios/SpektraFilmPort/Build89OriginalCAM16.swift'
+      - 'ios/scripts/build89_real_cam16_original_oracle.py'
+      - 'ios/scripts/generate_scanner_reference.py'
+      - 'ios/tests/Build89NativeSourceCAM16Validation.swift'
+      - '.github/workflows/build89-real-cam16-source-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-native-cam16:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source/toolchain
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install source RGB and full CAM16-UCS reference stack
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.4.0' 'scipy==1.16.3' \
+            'colour-science==0.4.6' 'matplotlib==3.10.8'
+      - name: Generate full-precision colour-science output RGB matrices
+        run: |
+          python ios/scripts/generate_scanner_reference.py
+          grep -q 'sourceOutputRGBToXYZ' \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift
+      - name: Execute original full 64x720x18 CAM16 Cmax across 3 spaces
+        run: |
+          python ios/scripts/build89_real_cam16_original_oracle.py \
+            /tmp/build89-real-original-cam16.json
+          test -s /tmp/build89-real-original-cam16.json
+      - name: Parse complete Swift app source including CAM16
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Compile exact native original CAM16-UCS and compare all 216
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/Build89OriginalCAM16.swift \
+            ios/tests/Build89NativeSourceCAM16Validation.swift \
+            -o /tmp/Build89TrueCAM16
+          /tmp/Build89TrueCAM16 /tmp/build89-real-original-cam16.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build89-true-original-python-full-216-cam16-3-spaces
+          path: /tmp/build89-real-original-cam16.json
