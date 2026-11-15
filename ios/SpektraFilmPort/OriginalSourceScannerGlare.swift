@@ -28,16 +28,24 @@ enum OriginalSourceScannerGlare {
         var roughness: Double = 0.7
         var blur: Double = 0.5
 
+        /// Original fast_stats.fast_lognormal skips np.random.randn()
+        /// completely if sigma=sqrt(log(1+(s/m)^2)) < 1e-6.
+        /// This includes roughness=0 and near-zero roughness.
+        var consumesNumbaRandomness:Bool {
+            guard active,percent>0 else{return false}
+            let sigma2=log(1.0+roughness*roughness)
+            return sqrt(sigma2)>=1e-6
+        }
+
         func validate() throws {
             guard percent.isFinite, percent >= 0,
                   roughness.isFinite, roughness >= 0,
-                  blur.isFinite, blur >= 0,
-                  // Resource guards are explicit experimental limits,
-                  // never a silent blur or sigma downgrade.
-                  percent <= 100, roughness <= 100,
-                  blur <= 100 else {
+                  blur.isFinite, blur >= 0 else {
+                // Original GlareParams declares no arbitrary percent≤100,
+                // roughness≤100 or blur≤100 parameter restriction.
+                // Keep native numeric/resource overflow checks explicit.
                 throw Failure.invalid(
-                    "原版 scanner glare 参数非有限、负数或超过明确实验安全上限"
+                    "原版 scanner glare 参数必须有限且非负"
                 )
             }
         }
@@ -63,11 +71,6 @@ enum OriginalSourceScannerGlare {
         if !settings.active || settings.percent <= 0 {
             return [Double](repeating: 0, count: count)
         }
-        guard (controlledSeed != nil) != (sourceNormals != nil) else {
-            throw Failure.invalid(
-                "原版眩光：必须且只能提供单线程显式种子或源 Numba 原始正态场"
-            )
-        }
         if let sourceNormals {
             guard sourceNormals.count == count,
                   sourceNormals.allSatisfy({ $0.isFinite }) else {
@@ -85,6 +88,17 @@ enum OriginalSourceScannerGlare {
         let mu = log(mean) - sigmaSquared / 2.0
         guard sigma.isFinite, mu.isFinite else {
             throw Failure.invalid("原版眩光：对数正态参数超出 Float64 范围")
+        }
+        if sigma>=1e-6 {
+            guard (controlledSeed != nil) != (sourceNormals != nil) else {
+                throw Failure.invalid(
+                    "源 Numba 实际消耗正态随机流时，必须且只能使用单线程种子或原版正态场"
+                )
+            }
+        } else if controlledSeed != nil && sourceNormals != nil {
+            throw Failure.invalid(
+                "原版不抽样的 sigma<1e-6 分支不能指定两个矛盾随机来源"
+            )
         }
         var rng = controlledSeed.map {
             OriginalSourceNumbaSingleThreadNormal(seed: $0)
