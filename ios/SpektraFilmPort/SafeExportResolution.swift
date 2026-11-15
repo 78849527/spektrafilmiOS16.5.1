@@ -179,23 +179,46 @@ enum SafeExportResolution {
         )
     }
 
-    /// Do NOT reduce the previously confirmed size if memory headroom fell;
-    /// report the change and let the user explicitly pick another mode.
-    static func validateBeforeRender(_ plan: Plan) throws {
-        guard plan.mode != .original else { return }
-        if let current = currentProcessHeadroom() {
+    /// Build97: ORIGINAL has the same physical/real-headroom admission
+    /// as explicit reduced-resolution requests. This is not a RAM
+    /// reservation and never changes selected dimensions or image algorithms.
+    /// Pure helper permits deterministic small-memory tests.
+    static func validateForHeadroom(
+        _ plan: Plan, processAvailableMemory current: UInt64?
+    ) throws {
+        guard plan.estimatedPeakBytes <= plan.allocationAllowanceBytes else {
+            throw Failure.invalid(
+                "导出预检：已选 \(plan.dimensions.width)×\(plan.dimensions.height) " +
+                "预计使用 \(plan.estimatedPeakBytes / 1_000_000) MB，" +
+                "超过本档安全预算 \(plan.allocationAllowanceBytes / 1_000_000) MB。" +
+                "请明确选择较低分辨率，原图不会自动缩小。"
+            )
+        }
+        if let current {
+            let fraction: UInt64
+            switch plan.mode {
+            case .original: fraction = 70
+            case .safe: fraction = intelligentBudgetPercent
+            case .economy: fraction = economyBudgetPercent
+            }
             guard current > 0,
-                  plan.estimatedPeakBytes <= current / 100 * (
-                    plan.mode == .safe ?
-                    intelligentBudgetPercent : economyBudgetPercent
-                  ) else {
+                  plan.estimatedPeakBytes <= (current / 100) * fraction else {
                 throw Failure.invalid(
-                    "安全输出：当前可分配内存已减少，无法按确认的 " +
-                    "\(plan.dimensions.width)×\(plan.dimensions.height) 导出。" +
-                    "请重新选择安全分辨率；不会静默缩图。"
+                    "导出预检：当前可分配内存仅 " +
+                    "\(current / 1_000_000) MB，" +
+                    "\(plan.dimensions.width)×\(plan.dimensions.height) " +
+                    "预估峰值 \(plan.estimatedPeakBytes / 1_000_000) MB。" +
+                    "请明确选择安全或省内存分辨率，不会静默缩图。"
                 )
             }
         }
+    }
+
+    /// Repeat the live check when the confirmed render actually starts.
+    static func validateBeforeRender(_ plan: Plan) throws {
+        try validateForHeadroom(
+            plan, processAvailableMemory: currentProcessHeadroom()
+        )
     }
 
     /// Backwards-compatibility for old tests; .safe is adaptive and capped.
