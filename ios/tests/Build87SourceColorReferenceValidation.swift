@@ -114,7 +114,7 @@ enum Build87SourceColorReferenceValidation {
                 "source print/positive exposure \(stock) #\(index)"
             ))
         }
-        guard positives>0,prints>0,off==pins.count else {
+        guard positives>0,prints>0,off==pins.count*2 else {
             throw Failure.invalid("No positive/printing source topology")
         }
         do {
