@@ -446,6 +446,10 @@ struct SpectralPhysics {
     private var correctedPrintExposureEV = 0.0
     private var correctedReferenceBlack: Double?
     private var correctedReferenceWhite: Double?
+    /// Build87 true source ColorReferenceService from printing or direct scan
+    /// spectral Y endpoints. nil keeps legacy scanner behavior unchanged.
+    private var sourceReferencePrepared: Build87OriginalColorReference.Prepared? = nil
+    private var sourceFilmingExposureFactor: Double = 1.0
     private let defaultCAM16Gamut: Bool
     private let viewingStock: String
     private let viewingNormalization: Double
@@ -525,10 +529,22 @@ struct SpectralPhysics {
          cameraRawMethod: CameraRawMethod = .hanatos2025,
          cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB,
          cameraBandpass: OriginalSourceCameraBandpass.Settings = .init(),
-         hanatosSourceRecompute: Bool = false) throws {
+         hanatosSourceRecompute: Bool = false,
+         sourceColorReference: Build87OriginalColorReference.Settings? = nil,
+         sourceFilmDensityMin: [Double] = [0.03,0.03,0.03]) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
+        }
+        if let sourceColorReference,sourceColorReference.enabled {
+            try sourceColorReference.validate()
+            guard sourceMeasuredFloat64,sourceScanner,
+                  sourceFilmDensityMin.count==3,
+                  sourceFilmDensityMin.allSatisfy({$0.isFinite && $0>=0}) else {
+                throw PhysicsError.invalid(
+                    "Build87 原版黑白曝光校准只能运行在完整 Float64 原版扫描／胶片实测曲线"
+                )
+            }
         }
         let originalFilm = try Profile(
             id:filmID,sourceMeasuredFloat64:sourceMeasuredFloat64
@@ -593,10 +609,14 @@ struct SpectralPhysics {
         self.cameraInputColorSpace = cameraInputColorSpace
         isPositive = positive
         useOriginalScanner = sourceScanner
-        useReferenceBlackWhite = scannerBlackWhite
+        useReferenceBlackWhite = scannerBlackWhite ||
+            (sourceColorReference?.enabled ?? false)
         defaultCAM16Gamut = cam16Gamut
         useExposureCorrectedPrintReference = !positive &&
-            sourceScanner && scannerBlackWhite && printReferenceCorrection
+            sourceScanner && (
+                (sourceColorReference?.enabled ?? false) ||
+                (scannerBlackWhite && printReferenceCorrection)
+            )
         printMorphCurve = positive ? nil : OriginalPrintMorph.prepare(
             stock: paperID, logExposure: originalPaper.logExposure,
             settings: printMorph, positive: originalPaper.polarity == "positive"
@@ -882,6 +902,36 @@ struct SpectralPhysics {
         )[1]
         scannedReferenceYBlack = min(y0, y1)
         scannedReferenceYWhite = max(y0, y1)
+
+        // Original positive scan bypasses the enlarger. The source
+        // corrects its *FILMING photon exposure*, then scans directly.
+        if positive,let sourceColorReference,sourceColorReference.enabled {
+            let maximum=(0..<3).map { ch in
+                (0..<256).map { originalFilm.densityAt($0*3+ch) }
+                    .filter({$0.isFinite}).max() ?? Double.nan
+            }
+            let yBlack=Self.scanPhysicalXYZ(
+                densities:maximum,paper:originalFilm,
+                weights:xyzWeights,normalization:viewingNormalization
+            )[1]
+            let yWhite=Self.scanPhysicalXYZ(
+                densities:[0,0,0],paper:originalFilm,
+                weights:xyzWeights,normalization:viewingNormalization
+            )[1]
+            let prepared=try Build87OriginalColorReference.prepare(
+                settings:sourceColorReference,
+                yBlack:yBlack,yWhite:yWhite
+            )
+            let factor=try prepared.filmingExposureFactor(
+                logExposure:originalFilm.sourceExposureAxis,
+                densityCurves:originalFilm.sourceDensityCurvesF64!,
+                spectralBase:originalFilm.sourceBaseDensityF64!
+            )
+            sourceReferencePrepared=prepared
+            sourceFilmingExposureFactor=factor
+            correctedReferenceBlack=yBlack
+            correctedReferenceWhite=yWhite
+        }
 
         if useExposureCorrectedPrintReference {
             // Source PrintingStage.expose: film black = -grain density_min,
