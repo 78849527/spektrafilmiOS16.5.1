@@ -162,10 +162,7 @@ enum Build83OriginalCameraOpticsValidation {
               noChange[3]==-10 else {
             throw Failure.invalid("Build83 source negative/zero photon log10 floor drift")
         }
-        print("PASS Build83 Python original camera RAW exposure/boost/log: "
-            +"6 vectors / \(rawSamples) channel checks maxAbs=\(expMax). "
-            +"Four source 2D diffraction families \(psfSamples) PSF taps "
-            +"maxAbs=\(psfMax), \(imageSamples) original reflect FFT output "
-            +"maxAbs=\(imageMax). No hardware/RAW decoder certification.")
+        let report="PASS Build83 source camera 6 RAW photon vectors / \(rawSamples) checks max=\(expMax); 4 original diffusion families / \(psfSamples) PSF taps max=\(psfMax); \(imageSamples) FFT output channels max=\(imageMax). Not device certified."
+        print(report)
     }
 }
