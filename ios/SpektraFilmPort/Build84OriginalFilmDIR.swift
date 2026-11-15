@@ -230,4 +230,104 @@ enum Build84OriginalFilmDIR {
         }
         return result
     }
+
+    /// Full source DirCouplersParams plus FilmRenderingParams gamma. Off by
+    /// default in the production image pipeline; opt-in is explicit.
+    struct RuntimeSettings {
+        var active = true
+        var amount = 1.0
+        var inhibitionSameLayer = 1.0
+        var inhibitionInterlayer = 1.0
+        var gammaRGB: [Double] = [1.0,1.0,1.0]
+        var diffusionSizeUM = 20.0
+        var diffusionTailUM = 200.0
+        var diffusionTailWeight = 0.06
+        // Lower-level compute_exposure_correction_dir_couplers argument.
+        // The upstream high-level default is zero.
+        var highExposureShift = 0.0
+
+        func validate() throws {
+            guard gammaRGB.count == 3,
+                  gammaRGB.allSatisfy({ $0.isFinite && $0 > 0 }),
+                  [amount,inhibitionSameLayer,inhibitionInterlayer,
+                   diffusionSizeUM,diffusionTailUM,diffusionTailWeight,
+                   highExposureShift].allSatisfy({ $0.isFinite }),
+                  diffusionSizeUM >= 0,diffusionTailUM >= 0,
+                  diffusionTailWeight >= 0,diffusionTailWeight <= 1 else {
+                throw Failure.invalid("Build84 动态 DIR/逐通道 H-D Gamma 配置无效")
+            }
+        }
+    }
+
+    /// Keep source 256×3 measured Float64 knots, not a re-baked 3D RGB LUT.
+    /// Pre-DIR inversion is performed once per image, after settings digest.
+    struct Prepared {
+        let settings: RuntimeSettings
+        let positive: Bool
+        let logExposure: [Double]
+        let densityCurves: [Double]
+        let beforeDIR: [Double]
+        let matrix: [Double]
+        let maximum: [Double]
+
+        func develop(_ logRaw:[Double], corrected:Bool) throws -> [Double] {
+            guard logRaw.count==3,
+                  logRaw.allSatisfy({ $0.isFinite }) else {
+                throw Failure.invalid("Build84 原版 H-D 光子曝光无效")
+            }
+            let lookup = corrected ? beforeDIR : densityCurves
+            var result=[Double](repeating:0,count:3)
+            for ch in 0..<3 {
+                let gamma=settings.gammaRGB[ch]
+                // Corresponds exactly to source x_axis = log_exposure/gamma.
+                let x=logExposure.map { $0/gamma }
+                let y=(0..<logExposure.count).map { lookup[$0*3+ch] }
+                result[ch]=Build84OriginalFilmDIR.npInterp(
+                    logRaw[ch],axis:x,values:y
+                )
+            }
+            return result
+        }
+
+        func inhibitor(_ initialDensity:[Double]) throws -> [Double] {
+            try Build84OriginalFilmDIR.inhibitors(
+                density:initialDensity,maximum:maximum,matrix:matrix,
+                positive:positive,
+                highExposureShift:settings.highExposureShift
+            )
+        }
+    }
+
+    static func prepare(
+        stock:String,positive:Bool,
+        logExposure:[Double],normalizedDensityCurves:[Double],
+        settings:RuntimeSettings
+    ) throws -> Prepared {
+        try settings.validate()
+        let n=logExposure.count
+        guard n==256,normalizedDensityCurves.count==n*3,
+              (logExposure+normalizedDensityCurves).allSatisfy({$0.isFinite})
+        else {
+            throw Failure.invalid("动态 DIR 需要真实 256×3 原版 Float64 胶片测量")
+        }
+        let matrix=try stockMatrix(
+            stock:stock,positive:positive,amount:settings.amount,
+            inhibitionSameLayer:settings.inhibitionSameLayer,
+            inhibitionInterlayer:settings.inhibitionInterlayer
+        )
+        let maxDensity=(0..<3).map { ch in
+            (0..<n).reduce(-Double.infinity) {
+                max($0,normalizedDensityCurves[$1*3+ch])
+            }
+        }
+        let corrected=try curvesBeforeDIR(
+            logExposure:logExposure,densityCurves:normalizedDensityCurves,
+            matrix:matrix,positive:positive
+        )
+        return Prepared(
+            settings:settings,positive:positive,
+            logExposure:logExposure,densityCurves:normalizedDensityCurves,
+            beforeDIR:corrected,matrix:matrix,maximum:maxDensity
+        )
+    }
 }
