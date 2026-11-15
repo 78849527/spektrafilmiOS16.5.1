@@ -906,6 +906,420 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
+    // C workflow: visually meaningful daily adjustments, literal process
+    // stages, plus the existing untouched algorithm laboratory. These views
+    // bind existing production state; no synthetic 'warmth' sliders or
+    // approximate algorithms are introduced by the redesign.
+    private var currentMaterialSummary: some View {
+        let filmName=films.first(where: {$0.id == selectedFilmID})
+            .map { shortName($0) } ?? selectedFilmID
+        let paperName=media.first(where: {$0.id == selectedPaperID})
+            .map { shortName($0) } ?? selectedPaperID
+        let processing=fullPhysicalMode
+            ? "精细冲印 · 实验"
+            : (directPixelMode ? "兼容处理" : "快速冲印")
+        return HStack(spacing: 4) {
+            Text(filmName)
+            if !isReversal {
+                Text("·")
+                Text(paperName)
+            }
+            Text("·")
+            Text(processing)
+        }
+        .font(.system(size: 10,weight:.medium))
+        .lineLimit(1)
+        .minimumScaleFactor(0.76)
+        .foregroundColor(.secondary)
+        .padding(.horizontal, 11)
+        .padding(.top, 4)
+        .accessibilityLabel("当前材料与处理路线："
+                            + filmName + "，" + processing)
+    }
+
+    private func dailyCategoryTab(_ category: DailyCategory) -> some View {
+        Button { selectedDailyCategory = category } label: {
+            Text(category.rawValue)
+                .font(.system(size: 12,weight:.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 31)
+                .foregroundColor(selectedDailyCategory == category
+                                 ? .accentColor : .primary)
+                .background(selectedDailyCategory == category
+                            ? Color.accentColor.opacity(0.15)
+                            : Color.primary.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(category.rawValue + "调整")
+    }
+
+    private var dailyAdjustmentControls: AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:5) {
+                currentMaterialSummary
+                HStack(spacing: 5) {
+                    ForEach(DailyCategory.allCases,id:\.self) { category in
+                        dailyCategoryTab(category)
+                    }
+                }
+                .padding(.horizontal, 8)
+                Divider().padding(.horizontal, 8)
+                if adjustmentDetailReady {
+                    ScrollView(.vertical) {
+                        dailySettings
+                            .padding(.horizontal, 11)
+                            .padding(.bottom, 13)
+                            .frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                    .frame(maxHeight:.infinity)
+                }
+            }
+        )
+    }
+
+    private var dailySettings: AnyView {
+        switch selectedDailyCategory {
+        case .light: return AnyView(exposureSettings)
+        case .color: return AnyView(dailyColorSettings)
+        case .texture: return AnyView(dailyTextureSettings)
+        case .detail: return AnyView(dailyDetailSettings)
+        }
+    }
+
+    private var dailyColorSettings: some View {
+        VStack(alignment:.leading,spacing:6) {
+            Text("冲印色调")
+                .font(.caption).fontWeight(.semibold)
+            if isReversal {
+                Text("反转片直接扫描，不经过相纸滤色。色域算法的高级参数保留在实验室。")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else if model.originalPrintOpticsEnabled {
+                Text("在相纸曝光阶段调节滤色，不是简单的 RGB 颜色叠加。")
+                    .font(.caption2).foregroundColor(.secondary)
+                morphSlider("青色滤光",value:$model.printCyanShift,range:-40...40)
+                morphSlider("洋红滤光",value:$model.printMagentaShift,range:-40...40)
+                morphSlider("黄色滤光",value:$model.printYellowShift,range:-40...40)
+            } else {
+                Text("当前路线未启用光学放大机。前往「工艺 → 相纸」启用后可调整真实冲印滤色。")
+                    .font(.caption2).foregroundColor(.secondary)
+                Button("前往相纸设置") {
+                    selectedProcessStage = .paper
+                    selectEditorPage(.workflow)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var dailyTextureSettings: some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text("胶片质感")
+                .font(.caption).fontWeight(.semibold)
+            resetToggle("胶片颗粒",value:$model.grainEnabled,
+                        enabled:model.hasPhoto && !model.busy && !directPixelMode,
+                        resetTo:false)
+                .onChange(of:model.grainEnabled) { _ in onRefresh() }
+            if model.grainEnabled && !directPixelMode {
+                strengthControl("颗粒强度",value:$model.grainAmount,
+                                range:0...2,suffix:"×",resetTo:1)
+            }
+            resetToggle("背反射光晕",value:$model.halationEnabled,
+                        enabled:model.hasPhoto && !model.busy &&
+                                (!directPixelMode || fullPhysicalMode),resetTo:false)
+                .onChange(of:model.halationEnabled) { _ in onRefresh() }
+            if model.halationEnabled {
+                strengthControl("光晕强度",value:$model.halationAmount,
+                                range:0...3,suffix:"×",resetTo:1)
+            }
+            if fullPhysicalMode {
+                resetToggle("摄影柔化",value:$model.sourceCameraDiffusionEnabled,
+                            enabled:model.hasPhoto && !model.busy &&
+                                    model.sourceCameraPreFilmEnabled,resetTo:false)
+                    .onChange(of:model.sourceCameraDiffusionEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                Text("柔化需要先在「工艺 → 拍摄」启用镜头处理。三亚层颗粒的实验参数位于实验室。")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else if directPixelMode {
+                Text("兼容处理不支持旧版随机颗粒；请在工艺中选择可用模式。")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else {
+                Text("当前使用快速质感效果。精细光子扩散请切换至精细冲印。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var dailyDetailSettings: some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text("清晰度")
+                .font(.caption).fontWeight(.semibold)
+            if fullPhysicalMode {
+                Text("精细冲印的锐化发生在扫描阶段，保持原版计算顺序。")
+                    .font(.caption2).foregroundColor(.secondary)
+                Button("前往扫描设置") {
+                    selectedProcessStage = .scanner
+                    selectEditorPage(.workflow)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                resetToggle("扫描锐化",value:$model.scannerFinishingEnabled,
+                            enabled:model.hasPhoto && !model.busy && !directPixelMode,
+                            resetTo:false)
+                    .onChange(of:model.scannerFinishingEnabled) { _ in onRefresh() }
+                if model.scannerFinishingEnabled && !directPixelMode {
+                    strengthControl("锐化强度",value:$model.scannerSharpenAmount,
+                                    range:0...1.5,suffix:"×",resetTo:0.7)
+                }
+                if directPixelMode {
+                    Text("兼容处理不支持旧版扫描锐化；可在工艺中选择精细冲印。")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var processingModeBar: some View {
+        VStack(alignment:.leading,spacing:4) {
+            HStack(spacing:6) {
+                Button {
+                    if directPixelMode { requestSourceMode(.disablePixel) }
+                } label: {
+                    Text("快速冲印")
+                        .font(.system(size:12,weight:.semibold))
+                        .frame(maxWidth:.infinity,minHeight:30)
+                        .foregroundColor(!directPixelMode ? .accentColor : .primary)
+                        .background(!directPixelMode
+                            ? Color.accentColor.opacity(0.15)
+                            : Color.primary.opacity(0.06),
+                            in:RoundedRectangle(cornerRadius:8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("快速冲印；沿用当前已验证的移动处理通道")
+                Button {
+                    if !fullPhysicalMode { requestSourceMode(.physical) }
+                } label: {
+                    Text("精细冲印 · 实验")
+                        .font(.system(size:12,weight:.semibold))
+                        .frame(maxWidth:.infinity,minHeight:30)
+                        .foregroundColor(fullPhysicalMode ? .accentColor : .primary)
+                        .background(fullPhysicalMode
+                            ? Color.accentColor.opacity(0.15)
+                            : Color.primary.opacity(0.06),
+                            in:RoundedRectangle(cornerRadius:8))
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.hasPhoto || model.busy || model.lut == nil)
+                .accessibilityHint("检查源 DIR、像素通道、扫描及放大机依赖；变更前逐项确认")
+            }
+            if directPixelMode && !fullPhysicalMode {
+                Text("当前为兼容处理。可切换快速冲印，或确认启用精细冲印依赖。")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else if fullPhysicalMode {
+                Text("Float64 光学实验路径：尚未完成真机整图原版等价认证。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func processTab(_ stage: ProcessStage) -> some View {
+        let active=(selectedProcessStage == stage) ||
+                   (isReversal && selectedProcessStage == .paper &&
+                    stage == .scanner)
+        return Button { selectedProcessStage = stage } label: {
+            Text(stage.rawValue)
+                .font(.system(size:12,weight:.semibold))
+                .frame(maxWidth:.infinity,minHeight:30)
+                .foregroundColor(active ? .accentColor : .primary)
+                .background(active ? Color.accentColor.opacity(0.15)
+                                   : Color.primary.opacity(0.06),
+                            in:RoundedRectangle(cornerRadius:8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(stage.rawValue + "处理阶段")
+    }
+
+    private var processControls: AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:5) {
+                currentMaterialSummary
+                processingModeBar.padding(.horizontal,10)
+                HStack(spacing:5) {
+                    processTab(.camera)
+                    processTab(.film)
+                    if !isReversal { processTab(.paper) }
+                    processTab(.scanner)
+                }
+                .padding(.horizontal,8)
+                Divider().padding(.horizontal,8)
+                if adjustmentDetailReady {
+                    ScrollView(.vertical) {
+                        processSettings
+                            .padding(.horizontal,11)
+                            .padding(.bottom,13)
+                            .frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                    .frame(maxHeight:.infinity)
+                }
+            }
+        )
+    }
+
+    private var processSettings: AnyView {
+        if isReversal && selectedProcessStage == .paper {
+            return AnyView(processScannerSettings)
+        }
+        switch selectedProcessStage {
+        case .camera: return AnyView(processCameraSettings)
+        case .film: return AnyView(processFilmSettings)
+        case .paper: return AnyView(processPaperSettings)
+        case .scanner: return AnyView(processScannerSettings)
+        }
+    }
+
+    private var processCameraSettings: some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text("拍摄阶段 · 光线进入胶片之前")
+                .font(.caption).fontWeight(.semibold)
+            if fullPhysicalMode {
+                resetToggle("测光与镜头处理",value:$model.sourceCameraPreFilmEnabled,
+                            enabled:model.hasPhoto && !model.busy,resetTo:false)
+                    .onChange(of:model.sourceCameraPreFilmEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.sourceCameraPreFilmEnabled {
+                    Picker("自动测光",selection:$model.sourceCameraMeteringMethod) {
+                        ForEach(OriginalSourceCameraOptics.Metering.allCases,
+                                id:\.self) { method in
+                            Text(method.displayName).tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of:model.sourceCameraMeteringMethod) { _ in
+                        model.queueSpectralPreview()
+                    }
+                    morphSlider("高光恢复 EV",value:$model.sourceCameraHighlightBoostEV,
+                                range:0...5)
+                    resetToggle("摄影柔化",value:$model.sourceCameraDiffusionEnabled,
+                                enabled:model.hasPhoto && !model.busy,resetTo:false)
+                        .onChange(of:model.sourceCameraDiffusionEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                }
+            } else {
+                Text("快速冲印保留现有的相机曝光与色彩预处理，不会自动启用实验光谱算法。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            Text("光谱重建方法、紫外／红外截止等参数在实验室配置。")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    private var processFilmSettings: some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text("胶片显影 · 乳剂密度与空间作用")
+                .font(.caption).fontWeight(.semibold)
+            resetToggle("胶片层间扩散",value:$model.spatialDIREnabled,
+                        enabled:model.hasPhoto && !model.busy && !directPixelMode,
+                        resetTo:true)
+                .onChange(of:model.spatialDIREnabled) { _ in
+                    model.queueSpectralPreview()
+                }
+            resetToggle("背反射光晕",value:$model.halationEnabled,
+                        enabled:model.hasPhoto && !model.busy &&
+                                (!directPixelMode || fullPhysicalMode),resetTo:false)
+                .onChange(of:model.halationEnabled) { _ in onRefresh() }
+            if fullPhysicalMode {
+                resetToggle("乳剂散射与背反射联动",
+                            value:$model.sourceFilmHalationEnabled,
+                            enabled:model.hasPhoto && !model.busy,resetTo:false)
+                    .onChange(of:model.sourceFilmHalationEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+            }
+            Text("DIR、FIR/YVV、三亚层颗粒与随机显影的原始参数保留在实验室。")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    private var processPaperSettings: some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text("相纸印相 · 仅适用于彩色负片")
+                .font(.caption).fontWeight(.semibold)
+            if !isReversal {
+                resetToggle("光学放大机",value:$model.originalPrintOpticsEnabled,
+                            enabled:model.hasPhoto && !model.busy &&
+                                    !fullPhysicalMode,resetTo:false)
+                    .onChange(of:model.originalPrintOpticsEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.originalPrintOpticsEnabled {
+                    exposureControl("相纸曝光",value:$model.printExposureEV,
+                                    enabled:model.hasPhoto && !model.busy,
+                                    onCommit:{model.queueSpectralPreview()})
+                    resetToggle("预闪光",value:$model.preflashEnabled,
+                                enabled:model.hasPhoto && !model.busy,resetTo:false)
+                        .onChange(of:model.preflashEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    if model.preflashEnabled {
+                        morphSlider("预闪强度",value:$model.preflashExposure,
+                                    range:0...0.2)
+                    }
+                    if fullPhysicalMode {
+                        resetToggle("印相柔化",value:$model.printSourceDiffusionEnabled,
+                                    enabled:model.hasPhoto && !model.busy,
+                                    resetTo:false)
+                            .onChange(of:model.printSourceDiffusionEnabled) { _ in
+                                model.queueSpectralPreview()
+                            }
+                    }
+                }
+                Text("滤色与相纸显影曲线可在「调整 → 色彩」及实验室中设置。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var processScannerSettings: some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text(isReversal ? "反转片 → 直接扫描" : "相纸显影 → 扫描输出")
+                .font(.caption).fontWeight(.semibold)
+            resetToggle("光谱扫描",value:$model.originalScannerEnabled,
+                        enabled:model.hasPhoto && !model.busy && !fullPhysicalMode,
+                        resetTo:false)
+                .onChange(of:model.originalScannerEnabled) { _ in
+                    model.queueSpectralPreview()
+                }
+            if fullPhysicalMode {
+                resetToggle("扫描镜头与锐化",
+                            value:$model.sourceScannerOpticalEnabled,
+                            enabled:model.hasPhoto && !model.busy,resetTo:false)
+                    .onChange(of:model.sourceScannerOpticalEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.sourceScannerOpticalEnabled {
+                    morphSlider("扫描锐化强度",
+                                value:$model.sourceScannerUnsharpAmount,
+                                range:0...2,resetTo:0.7)
+                }
+            } else if !directPixelMode {
+                resetToggle("扫描锐化",value:$model.scannerFinishingEnabled,
+                            enabled:model.hasPhoto && !model.busy,resetTo:false)
+                    .onChange(of:model.scannerFinishingEnabled) { _ in
+                        onRefresh()
+                    }
+                if model.scannerFinishingEnabled {
+                    strengthControl("锐化强度",value:$model.scannerSharpenAmount,
+                                    range:0...1.5,suffix:"×",resetTo:0.7)
+                }
+            }
+            Text("色域边界、扫描眩光与 Float64 校准等算法选项在实验室。")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
     // First row: only features with parameter panels. Basic is a
     // direct editor, not a master switch. Tapping a disabled feature
     // activates it AND opens its own parameters below; tapping its
