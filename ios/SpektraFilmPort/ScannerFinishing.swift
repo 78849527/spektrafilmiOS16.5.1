@@ -51,34 +51,41 @@ enum ScannerFinishing {
         }
         """)
 
-    static func apply(to image: CIImage, settings: ScannerFinishSettings) -> CIImage {
+    static func apply(to image: CIImage, settings: ScannerFinishSettings) throws -> CIImage {
         guard settings.enabled, !image.extent.isEmpty else { return image }
         var linear = image.applyingFilter("CISRGBToneCurveToLinear")
-        if settings.applyGlare && settings.glarePercent > 0,
-           let kernel = printGlareKernel,
-           let raw = kernel.apply(
-                extent: linear.extent,
-                arguments: [linear, Float(settings.glarePercent), Float(settings.seed)]
-           ) {
-            // Upstream glare is blurred with sigma=.5 pixel in XYZ.
+        if settings.applyGlare && settings.glarePercent > 0 {
+            let raw = try Build97FilterContract.required(
+                printGlareKernel?.apply(
+                    extent: linear.extent,
+                    arguments: [linear, Float(settings.glarePercent), Float(settings.seed)]
+                ),
+                stage: "扫描器眩光随机场"
+            )
+            // Existing compatibility path intentionally remains CI RGB
+            // approximation, distinct from the original XYZ source mode.
             let f = CIFilter.gaussianBlur()
             f.inputImage = raw.clampedToExtent()
             f.radius = 0.5
-            linear = (f.outputImage ?? raw).cropped(to: linear.extent)
+            linear = try Build97FilterContract.required(
+                f.outputImage, stage: "扫描器眩光 GaussianBlur"
+            ).cropped(to: linear.extent)
         }
         let amount = min(2.0,max(0,settings.unsharpAmount))
         if amount > 0.0001 {
             let blur = CIFilter.gaussianBlur()
             blur.inputImage = linear.clampedToExtent()
             blur.radius = 0.7
-            let softened = (blur.outputImage ?? linear).cropped(to: linear.extent)
-            if let kernel = unsharpKernel,
-               let sharp = kernel.apply(
+            let softened = try Build97FilterContract.required(
+                blur.outputImage, stage: "扫描器锐化低通滤镜"
+            ).cropped(to: linear.extent)
+            linear = try Build97FilterContract.required(
+                unsharpKernel?.apply(
                     extent: linear.extent,
                     arguments: [linear, softened, Float(amount)]
-               ) {
-                linear = sharp
-            }
+                ),
+                stage: "扫描器非锐化掩模"
+            )
         }
         return linear.applyingFilter("CILinearToSRGBToneCurve")
             .cropped(to: image.extent)
