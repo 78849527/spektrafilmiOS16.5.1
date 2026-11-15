@@ -58,6 +58,23 @@ enum OriginalScannerMath {
         return xyz.map { $0*multiplier }
     }
 
+    /// Exact original ScanningStage._apply_cctf_encoding:
+    /// colour.RGB_to_RGB(rgb, sRGB, sRGB, decoding=False, encoding=True).
+    /// Colour-science's 3x3 roundtrip is NOT identity at Float64;
+    /// it must precede the sRGB transfer curve. Never silently replace
+    /// this with three independent encodeSRGB() calls in source mode.
+    static func sourceCCTFEncoding(_ linear:[Double]) -> [Double] {
+        precondition(linear.count==3)
+        let matrix=GeneratedScannerReference.sourceLinearIdentityRGBMatrix
+        precondition(matrix.count==9)
+        let converted=(0..<3).map { out in
+            (0..<3).reduce(0.0) { value,input in
+                value+linear[input]*matrix[input*3+out]
+            }
+        }
+        return converted.map { encodeSRGB($0) }
+    }
+
     static func decodeSRGB(_ x: Double) -> Double {
         x <= 0.04045 ? x/12.92 : pow((x+0.055)/1.055,2.4)
     }
