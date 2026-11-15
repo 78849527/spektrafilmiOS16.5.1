@@ -587,8 +587,10 @@ struct FloatingEditorWorkspace: View {
                 Image(systemName: "photo")
             }
             .accessibilityLabel("从相册导入照片")
+            .disabled(model.busy)
 
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
+                .disabled(model.busy)
             toolButton("crop.rotate", name: "Build81 原版裁剪与预览数值诊断（需小于 2MP sRGB）") {
                 model.probeBuild81OriginalGeometry()
             }
