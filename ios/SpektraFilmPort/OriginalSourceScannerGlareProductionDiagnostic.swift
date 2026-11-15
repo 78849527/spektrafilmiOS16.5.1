@@ -79,12 +79,14 @@ enum OriginalSourceScannerGlareProductionDiagnostic {
             let expectedLinear=try engine.sourceSpatialXYZToLinearRGB(
                 expectedXYZ
             )
+            let expectedEncoded=OriginalScannerMath.sourceCCTFEncoding(
+                expectedLinear
+            )
             for ch in 0..<3 {
                 let a=abs(expectedXYZ[ch]-xyz[k+ch])
                 let b=abs(expectedLinear[ch]-linear[k+ch])
                 let cc=abs(
-                    OriginalScannerMath.encodeSRGB(expectedLinear[ch])
-                    - actual.rgb[k+ch]
+                    expectedEncoded[ch] - actual.rgb[k+ch]
                 )
                 maximumXYZ=max(maximumXYZ,a)
                 maximumLinear=max(maximumLinear,b)
