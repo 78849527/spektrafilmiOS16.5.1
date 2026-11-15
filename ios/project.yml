@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.58"
-    CURRENT_PROJECT_VERSION: "83"
+    MARKETING_VERSION: "1.8.59"
+    CURRENT_PROJECT_VERSION: "92"
 packages:
   NextLevel:
     path: Vendor/NextLevel
@@ -25,6 +25,14 @@ targets:
           - Info.plist
       - path: ../src/spektrafilm/data/luts/spectral_upsampling/irradiance_xy_tc.npy
         buildPhase: resources
+      # Build92: verified original Python 12-stage source tapes packed as
+      # a named folder reference and evaluated by the REAL iPhone app.
+      # Recreated from original upstream Python by the CI BEFORE XcodeGen.
+      - path: verification/generated-physical-v1.8.22
+        type: folder
+        buildPhase: resources
+      - path: tests/SourcePhysicalImageParity.swift
+        buildPhase: sources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.twogou.spektrafilmport
