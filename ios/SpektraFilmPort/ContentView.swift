@@ -1958,6 +1958,12 @@ struct ContentView: View {
                     let build=bundle.object(
                         forInfoDictionaryKey:"CFBundleVersion"
                     ) as? String ?? "unknown"
+                    // Embedded at the exact tested CI git revision. Old
+                    // unsigned/manual builds without a valid SHA cannot be
+                    // promoted to a measured identity-bound device PASS.
+                    let gitCommit=bundle.object(
+                        forInfoDictionaryKey:"SFSourceCommit"
+                    ) as? String ?? "missing"
                     let modelName=UIDevice.current.model
                     let os=UIDevice.current.systemVersion
                     #if targetEnvironment(simulator)
@@ -1974,6 +1980,7 @@ struct ContentView: View {
                         let proof=await Task.detached(priority:.userInitiated) {
                             Build101DeviceParityEvidence.capture(
                                 version:version,build:build,
+                                binarySourceCommit:gitCommit,
                                 deviceModel:modelName,osVersion:os,
                                 physicalDevice:hardware,now:Date(),
                                 referenceManifest:reference,
