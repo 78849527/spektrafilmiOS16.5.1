@@ -1423,6 +1423,12 @@ struct SpectralPhysics {
             // LINEAR RGB, and encodes CCTF only after the full-frame filter.
             // All existing call sites preserve their exact old encoding.
             if sourceLinearOutput { return compressed }
+            if sourceOriginalXYZLogEpsilon {
+                // True source Colour RGB_to_RGB same-space Float64 roundtrip
+                // before sRGB CCTF; never clamp already-source gamut output.
+                return OriginalScannerMath.sourceCCTFEncoding(compressed)
+            }
+            // Untouched legacy optical/mobile encoded output.
             return compressed.map {
                 OriginalScannerMath.encodeSRGB(Self.clamp($0))
             }
