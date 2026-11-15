@@ -1008,6 +1008,20 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // Build87: true calibrated source film/print black/white
+                // topology, separately scoped from the existing 8/8 Metal.
+                do {
+                    let printScan = try Build87PrintScanProductionDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build87 负片冲印及正片直扫黑白参考校准｜正式链路自检】\n" +
+                        printScan
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build87 负片／正片原版校准｜未通过／未认证】\n" +
+                        error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
