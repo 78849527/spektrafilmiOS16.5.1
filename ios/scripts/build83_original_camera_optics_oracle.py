@@ -12,6 +12,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +20,17 @@ import numpy as np
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/"src"))
+# Import the *real pinned module files* without executing the top-level
+# spektrafilm/__init__.py, which eagerly imports unrelated exiv2/LibRaw.
+# This retains the actual upstream diffusion and Numba boost algorithms.
+for pkg,path in [
+    ("spektrafilm","src/spektrafilm"),
+    ("spektrafilm.utils","src/spektrafilm/utils"),
+    ("spektrafilm.model","src/spektrafilm/model"),
+]:
+    wrapper=types.ModuleType(pkg)
+    wrapper.__path__=[str(ROOT/path)]
+    sys.modules[pkg]=wrapper
 BLOBS={
     "src/spektrafilm/runtime/stages/filming.py":"b58759160dfa9dd45b5528b09b24ffafb5493b66",
     "src/spektrafilm/utils/numba_boost_hightlights.py":"61cb5ca89163762335674279a9743801e13e0e8f",
