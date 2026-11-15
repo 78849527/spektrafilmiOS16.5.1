@@ -59,20 +59,34 @@ def main(output):
                 import warnings
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore",RuntimeWarning)
-                    pchip=mod.apply_lut_3d(
-                        lut,probes.reshape(1,-1,3)
-                    )[0]
+                    if size == 1:
+                        try:
+                            mod.apply_lut_3d(
+                                lut,probes.reshape(1,-1,3)
+                            )
+                        except ValueError as exc:
+                            assert "zero-size array" in str(exc),str(exc)
+                        else:
+                            raise AssertionError(
+                                "Original source 1-node PCHIP no longer raises"
+                            )
+                        pchip=np.empty((0,3),dtype=np.float64)
+                    else:
+                        pchip=mod.apply_lut_3d(
+                            lut,probes.reshape(1,-1,3)
+                        )[0]
                     mitchell=mod.apply_lut_3d(
                         lut,probes.reshape(1,-1,3),method="mitchell"
                     )[0]
             assert np.isfinite(pchip).all() and np.isfinite(mitchell).all()
             records.append(dict(size=size,kind=kind,
+                pchipUnsupported=size==1,
                 minimum=mi.tolist(),maximum=ma.tolist(),
                 samples=lut.flatten().tolist(),
                 input=source_points.tolist(),
                 pchip=pchip.tolist(),mitchell=mitchell.tolist()))
     assert len(records)==8
-    n=8*16*2*3
+    n=(8+6)*16*3
     Path(output).write_text(json.dumps(dict(
         sourceBlob=PIN,records=records,
         checkedRGBChannels=n,methods=["pchip","mitchell"]),
@@ -80,7 +94,7 @@ def main(output):
     ),encoding="utf8")
     print("PASS SOURCE original Numba PCHIP+Mitchell",
           len(records),"source LUT tables,",
-          8*16,"RGB pixels/method,",
+          "8 Mitchell + 6 PCHIP source tables,",
           n,"total compared channels expected.")
 if __name__=="__main__":
     main(sys.argv[1])
