@@ -82,6 +82,27 @@ enum Build89bOriginalJzAzBzValidation {
             outputMax=max(outputMax,try compare(
                 result,expected,"original 64×720×18 Jz gamut \(space) #\(i)"
             ))
+            // The real application must be able to select source
+            // JzAzBz via the SAME dispatcher as CAM16/ACES/OkLch.
+            var settings=Build89OriginalOutputGamut.Settings()
+            settings.algorithm = .jzazbz
+            guard let target=Build89OriginalOutputGamut.OutputSpace(
+                rawValue:space
+            ) else {
+                throw Failure.invalid("Unknown Jz output RGB space")
+            }
+            settings.outputSpace=target
+            settings.knee=Build89OriginalOutputGamut.Knee(
+                threshold:knee[0],limit:knee[1],power:knee[2]
+            )
+            settings.lightness=light
+            let dispatched=try Build89OriginalOutputGamut.compress(
+                rgb,settings:settings
+            )
+            outputMax=max(outputMax,try compare(
+                dispatched,expected,
+                "actual app Jz dispatcher \(space) #\(i)"
+            ))
             if space != "sRGB" {wide+=1}
         }
         guard wide==48,withoutLight==36 else {
