@@ -37,6 +37,13 @@ struct OriginalSourceNumbaFastCounts {
         return copy.nextUniform()
     }
 
+    /// Numba's fast_lognormal_from_mean_std runs after fast_poisson
+    /// and fast_binomial in the SAME one-worker RNG state. Do not
+    /// reseed here: that silently breaks the source continuous stream.
+    mutating func nextMicrostructureNormal() throws -> Double {
+        try rng.nextNormal()
+    }
+
     mutating func fastPoisson(_ lambda: Double) throws -> Int64 {
         guard lambda.isFinite else {
             throw Failure.invalid("Numba fast_poisson: non-finite lambda")
