@@ -71,6 +71,13 @@ def main(dest):
             invxyz=np.asarray(colour.CAM16UCS_to_XYZ(
                 originalJab,XYZ_w=white,L_A=64.0,Y_b=20.0
             ),dtype=np.float64)
+            # The native inverse returns source OUTPUT RGB (not XYZ).
+            # Colour's RGB↔XYZ matrices are NOT exact algebraic inverses;
+            # never compare a second roundtrip to raw source XYZ.
+            inverseRGB=np.asarray(colour.XYZ_to_RGB(
+                invxyz,colourspace=space,illuminant=cs.whitepoint,
+                apply_cctf_encoding=False
+            ),dtype=np.float64)
         assert originalJab.shape==(len(rgb_samples),3)
         # Source reference table per output primaries (64x720x18
         # original CAM16UCS inverse bisections).
@@ -111,6 +118,7 @@ def main(dest):
                     knee=knee,light=light,
                     sourceJab=originalJab[idx].tolist(),
                     roundtripXYZ=invxyz[idx].tolist(),
+                    sourceInverseRGB=inverseRGB[idx].tolist(),
                     result=got[idx].tolist(),unsupported=False
                 ))
     assert len(all_cases)==3*4*len(rgb_samples)
