@@ -23,8 +23,8 @@ targets:
       - path: SpektraFilmPort
         excludes:
           - Info.plist
-    resources:
       - path: ../src/spektrafilm/data/luts/spectral_upsampling/irradiance_xy_tc.npy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.twogou.spektrafilmport
