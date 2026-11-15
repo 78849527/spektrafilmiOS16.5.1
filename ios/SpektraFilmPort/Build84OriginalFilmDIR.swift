@@ -44,6 +44,56 @@ enum Build84OriginalFilmDIR {
         ].map { $0 * amount }
     }
 
+    /// Exact original runtime/params_builder.py::_apply_film_specifics
+    /// film-stock DIR presets, including the two distinct reversal films.
+    /// This is used for full 256-node source validation; production's
+    /// existing GeneratedDIRData presets remain unchanged until certified.
+    static func stockMatrix(
+        stock: String, positive: Bool,
+        amount: Double = 1,
+        inhibitionSameLayer: Double = 1,
+        inhibitionInterlayer: Double = 1
+    ) throws -> [Double] {
+        let same: [Double]
+        let rg: [Double]
+        let gr: [Double]
+        let br: [Double]
+        if stock == "fujifilm_velvia_100" {
+            guard positive else {
+                throw Failure.invalid("Velvia DIR 胶片类型与原版信息冲突")
+            }
+            same=[0.108,0.072,0.054]
+            rg=[0.108,0.054]
+            gr=[0.072,0.054]
+            br=[0.054,0.054]
+        } else if stock == "fujifilm_provia_100f" {
+            guard positive else {
+                throw Failure.invalid("Provia DIR 胶片类型与原版信息冲突")
+            }
+            same=[0.156,0.104,0.078]
+            rg=[0.156,0.078]
+            gr=[0.104,0.078]
+            br=[0.078,0.078]
+        } else if positive {
+            same=[0.12,0.08,0.06]
+            rg=[0.12,0.06]
+            gr=[0.08,0.06]
+            br=[0.06,0.06]
+        } else {
+            same=[0.336,0.319,0.273]
+            rg=[0.353,0.302]
+            gr=[0.154,0.353]
+            br=[0.168,0.226]
+        }
+        return try matrix(
+            amount:amount,
+            inhibitionSameLayer:inhibitionSameLayer,
+            inhibitionInterlayer:inhibitionInterlayer,
+            gammaSameLayer:same, gammaRtoGB:rg,
+            gammaGtoRB:gr, gammaBtoRG:br
+        )
+    }
+
     /// Equivalent to the source normalized_density_curves =
     /// density_curves - np.nanmin(density_curves, axis=0) for finite input.
     static func normalize(_ curves: [Double]) throws -> [Double] {
