@@ -19,7 +19,7 @@ PINS={
     "model/color_filters.py":"73849be82f7e32e21cd9bf3e116ba244a931188b",
     "runtime/stages/printing.py":"93859d705507276638653850338086dc64c6157c",
     "utils/conversions.py":"2ca9cfc6138278a9fb8c32c0ca191e384b2cff6e",
-    "model/develop.py":None,
+    "model/develop.py":"938ff7045c87ca77c0182f7608b66093ae87f421",
 }
 
 def git_sha(path):
