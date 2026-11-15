@@ -23,12 +23,31 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
         _height = height;
         _decoder = [decoder copy];
     }
+    _bitsPerComponent = 8;
+    return self;
+}
+- (instancetype)initWithPixels:(NSData *)pixels
+               bitsPerComponent:(NSInteger)bits
+                          width:(NSInteger)width
+                         height:(NSInteger)height
+                        decoder:(NSString *)decoder {
+    self = [self initWithRGB8:pixels width:width height:height decoder:decoder];
+    if (self) _bitsPerComponent = bits;
     return self;
 }
 @end
 
 @implementation SFBuild94LibRaw
 + (SFBuild94RawResult *)decodeURL:(NSURL *)url error:(NSError **)error {
+    return [self decodeURL:url bitsPerComponent:8 error:error];
+}
++ (SFBuild94RawResult *)decodeURL:(NSURL *)url
+                 bitsPerComponent:(NSInteger)bits
+                            error:(NSError **)error {
+    if (bits != 8 && bits != 16) {
+        SFBuild94Fail(error, 6, @"LibRaw 解码位深仅支持显式 8 或 16 bit");
+        return nil;
+    }
     // Fail closed: caller has already verified RAF signature and preserved
     // the original bytes; no embedded thumbnail, no Apple/JPEG fallback.
     if (url == nil || !url.isFileURL) {
@@ -58,9 +77,10 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
                 @"LibRaw 源图超出目前 4500 万像素解码上限；原始 RAF 已保留");
             break;
         }
-        // Fast compatibility path: full-res RGB8, camera WB, sRGB.
-        // Unlike rawpy NumPy processing, this is LibRaw's own dcraw pipeline.
-        libraw_set_output_bps(raw, 8);
+        // Explicit LibRaw output precision. This is LibRaw's post-demosaic
+        // sRGB curve, NOT the source rawpy/ACES Float64 sensor input.
+        // UInt16 output is native-endian on iPhoneOS arm64 (little-endian).
+        libraw_set_output_bps(raw, (int)bits);
         libraw_set_output_color(raw, 1);
         libraw_set_no_auto_bright(raw, 1);
         raw->params.use_camera_wb = 1;
@@ -84,12 +104,15 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
             SFBuild94Fail(error, memError, @"LibRaw 传感器 RGB 数据导出失败");
             break;
         }
-        if (image->type != LIBRAW_IMAGE_BITMAP || image->bits != 8 ||
+        const uint64_t required = (uint64_t)image->width *
+            (uint64_t)image->height * 3u * (uint64_t)(bits / 8);
+        if (image->type != LIBRAW_IMAGE_BITMAP ||
+            image->bits != (unsigned)bits ||
             image->colors != 3 || image->width == 0 || image->height == 0 ||
             (uint64_t)image->width * (uint64_t)image->height > 45000000 ||
-            (uint64_t)image->width * image->height * 3 != image->data_size) {
+            required != (uint64_t)image->data_size) {
             SFBuild94Fail(error, 4,
-                @"LibRaw 返回的不是完整的 8-bit RGB 传感器显影图，禁止替代");
+                @"LibRaw 返回位深/通道/字节数与实际请求不一致，拒绝静默量化");
             break;
         }
         NSData *bytes = [NSData dataWithBytes:image->data
@@ -98,10 +121,11 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
             SFBuild94Fail(error, 5, @"LibRaw RGB 数据复制失败，可能内存不足");
             break;
         }
-        result = [[SFBuild94RawResult alloc] initWithRGB8:bytes
-                                                    width:image->width
-                                                   height:image->height
-                                                  decoder:[NSString stringWithUTF8String:libraw_version()]];
+        result = [[SFBuild94RawResult alloc] initWithPixels:bytes
+                                          bitsPerComponent:bits
+                                                     width:image->width
+                                                    height:image->height
+                                                   decoder:[NSString stringWithUTF8String:libraw_version()]];
     } while (false);
     if (image) libraw_dcraw_clear_mem(image);
     libraw_close(raw);
