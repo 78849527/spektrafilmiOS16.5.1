@@ -139,6 +139,7 @@ final class PhotoEditorModel: ObservableObject {
         SpectralPhysics.CameraRawMethod = .hanatos2025
     // Original Python CameraParams.filter_uv/ir tuples. Only used
     // inside source physical mode; off preserves the existing baseline.
+    @Published var sourceHanatosFullRecompute = false
     @Published var sourceCameraUVEnabled = false
     @Published var sourceCameraUVAmount = 1.0
     @Published var sourceCameraUVCutoffNM = 410.0
@@ -348,15 +349,8 @@ final class PhotoEditorModel: ObservableObject {
                 widthNM:sourceCameraIRWidthNM
             )
         )
-        // Do not silently ignore a selected filter: the precomputed
-        // Hanatos TC spectral LUT cannot be used for modified sensitivities.
-        guard sourceCameraRawMethod == .mallett2019 ||
-              !sourceBandpass.active else {
-            throw ImageProcessingError.invalid(
-                "UV/IR 需要按新感光度重建 Hanatos 光谱 LUT；" +
-                "请选择原版 Mallett 2019 或关闭滤镜，不允许静默忽略"
-            )
-        }
+        // Build82 Hanatos UV/IR rebuilds the original spectral TC LUT
+        // from 81 wavelengths; any missing dataset reports a hard error.
         // Build77/03: source-physical mode must use the Python original
         // per-film antihalation/use metadata and source halation presets.
         // The familiar UI scatter/halation amount sliders remain multipliers;
@@ -398,6 +392,7 @@ final class PhotoEditorModel: ObservableObject {
             filmHalation:sourceHalation,
             cameraRawMethod:sourceCameraRawMethod,
             cameraBandpass:sourceBandpass,
+            hanatosSourceRecompute:sourceHanatosFullRecompute,
             printDiffusion:OriginalSourceDiffusion.Settings(
                 active:printSourceDiffusionEnabled,
                 family:printSourceDiffusionFamily,
