@@ -59,7 +59,7 @@ def main(destination):
     light=np.exp(-0.5*((wavelengths-590.0)/155.0)**2)+0.18
     light/=light.mean()
     films=("kodak_portra_400","fujifilm_pro_400h",
-           "kodak_vision3_500t","fujifilm_provia_100f")
+           "kodak_vision3_500t","kodak_ektar_100")
     papers=("kodak_portra_endura","kodak_2383")
     cases=[]
     for film_name in films:
