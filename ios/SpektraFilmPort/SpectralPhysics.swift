@@ -1389,7 +1389,9 @@ struct SpectralPhysics {
                 densities: resultDensity, paper: substrate,
                 weights: scanWeights, normalization: viewingNormalization
             )
-            if useReferenceBlackWhite {
+            if let reference=sourceReferencePrepared {
+                xyz=reference.correctXYZAfterValidatedSpectralScan(xyz)
+            } else if useReferenceBlackWhite {
                 xyz = OriginalScannerMath.correctBlackWhiteXYZ(
                     xyz,
                     yBlack: correctedReferenceBlack ?? scannedReferenceYBlack,
@@ -1638,7 +1640,8 @@ struct SpectralPhysics {
             throw PhysicsError.invalid("原版相机镜头后曝光数据无效")
         }
         let logRaw=try Build83OriginalCameraPhoton.logExposure(
-            photons:raw,filmingReferenceScale:filmingReferenceScale
+            photons:raw,
+            filmingReferenceScale:filmingReferenceScale*sourceFilmingExposureFactor
         )
         let initial=(0..<3).map {
             film.curve(logRaw[$0],channel:$0)
@@ -1674,7 +1677,10 @@ struct SpectralPhysics {
         guard raw.count == 3 && raw.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相机光谱重建响应非有限")
         }
-        let logE = Self.filmLogExposure(raw: raw, exposureEV: cameraEV)
+        let logE = Self.filmLogExposure(
+            raw:raw,
+            exposureEV:cameraEV+log2(sourceFilmingExposureFactor)
+        )
         let initial = (0..<3).map {
             film.curve(logE[$0],channel:$0)
         }
