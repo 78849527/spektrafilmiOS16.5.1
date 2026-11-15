@@ -32,11 +32,12 @@ enum Build94LibRawIngress {
         // process; never calls an embedded JPEG thumbnail decoder.
         let raw = try SFBuild94LibRaw.decode(url)
         let width = raw.width, height = raw.height
+        let pixels = raw.rgb8 as Data
         guard width > 0, height > 0,
               width <= 10000, height <= 10000,
               width <= 45_000_000 / height,
-              raw.rgb8.length == width * height * 3,
-              let provider = CGDataProvider(data: raw.rgb8 as CFData),
+              pixels.count == width * height * 3,
+              let provider = CGDataProvider(data: pixels as CFData),
               let space = CGColorSpace(name: CGColorSpace.sRGB) else {
             throw Failure.invalid(
                 "LibRaw 输出尺寸/通道无效或超出 4500 万像素；不回退内嵌 JPEG"
