@@ -150,6 +150,45 @@ enum Build89OutputGamutProductionDiagnostic {
             }
         }
 
+        // Build89b: all 3 restored perceptual output gamuts are real
+        // native full-image optics routes, not stand-alone kernels.
+        // Re-run the SAME original paper/XYZ photon pipeline with
+        // source Oklch, Oklrab, JzAzBz (all three independently
+        // validated against original Python in source CI).
+        p.sourceOutputCCTFEncoding=false
+        for algorithm in [
+            Build89OriginalOutputGamut.Algorithm.oklch,
+            .oklrab,.jzazbz
+        ] {
+            var perceptual=Build89OriginalOutputGamut.Settings()
+            perceptual.algorithm=algorithm
+            p.sourceOutputGamut=perceptual
+            let developed=try render(p)
+            let reported=try fetch(taps,"sourceGamutLinear",count)
+            guard developed.rgb == reported else {
+                throw Failure.invalid(
+                    "Build89b \(algorithm.rawValue) 流程混入 sRGB CCTF"
+                )
+            }
+            for pix in 0..<(width*height) {
+                let k=pix*3
+                let expected=try Build89OriginalOutputGamut.compress(
+                    Array(offLinear[k..<k+3]),settings:perceptual
+                )
+                for ch in 0..<3 {
+                    let delta=abs(expected[ch]-reported[k+ch])
+                    worst=max(worst,delta)
+                    guard delta<=2e-11 else {
+                        throw Failure.invalid(
+                            "Build89b \(algorithm.rawValue) 未在真实原版 XYZ→线性 RGB 之后执行"
+                        )
+                    }
+                }
+            }
+        }
+        p.sourceOutputGamut=cam
+        p.sourceOutputCCTFEncoding=true
+
         // 4. Source lightness + B/W reference + true XYZ glare must
         // be before output gamut and scanner Gaussian, not on sRGB.
         p.sourceColorReference.blackCorrection=true
@@ -204,7 +243,7 @@ enum Build89OutputGamutProductionDiagnostic {
             )
         } catch OriginalSourcePhysicalImage.Failure.invalid(_) {}
 
-        return "Build89 真实全图光谱处理 \(width)×\(height)：" +
+        return "Build89b 真实全图光谱处理 \(width)×\(height)：" +
             "胶片→原版印相 XYZ→Raw Linear RGB→OFF／自定义 ACES／" +
             "默认 CAM16-UCS Float64 原生逐像素→原版矩阵 CCTF；" +
             "组合 B/W→受控 XYZ glare→CAM16→镜头 FIR/YVV 顺序通过，" +
