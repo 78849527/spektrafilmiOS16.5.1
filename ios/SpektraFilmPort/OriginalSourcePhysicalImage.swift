@@ -119,6 +119,10 @@ enum OriginalSourcePhysicalImage {
         /// Default false/false preserves the v1.8.58 imaging baseline;
         /// opt-in executes source per-stock Y calibration in true XYZ.
         var sourceColorReference: Build87OriginalColorReference.Settings = .init()
+        /// Exact io.output_cctf_encoding. true is the existing default
+        /// (encoded display sRGB); false preserves source LINEAR RGB
+        /// after gamut compression and optional scan-lens filtering.
+        var sourceOutputCCTFEncoding = true
         // Original grain.py 3x3 sublayer SciPy counts + dye clouds +
         // controlled one-worker Numba microstructure + final blur.
         // OFF by default, separate from Gaussian/Metal fast grain.
@@ -164,12 +168,10 @@ enum OriginalSourcePhysicalImage {
                 }
             }
             try sourceColorReference.validate()
-            if sourceColorReference.enabled &&
-                scannerGlare.active && scannerGlare.percent>0 {
-                throw Failure.invalid(
-                    "Build87 黑白参考与受控扫描眩光尚无同图逐阶段认证，禁止静默组合"
-                )
-            }
+            // Source scanning.py order is:
+            // measured XYZ -> B/W Y transform -> stochastic XYZ glare
+            // -> XYZ_to_RGB -> gamut -> FIR/YVV -> output CCTF.
+            // Build88 source-stage tests cover the combined operations.
             try scannerOptics.validate()
             try scannerGlare.validate()
             try sourceGrain.validate()
@@ -535,7 +537,8 @@ enum OriginalSourcePhysicalImage {
                     paperStageObserver:recordPaper(k)
                 )
             } else {
-                rgb=try parameters.scannerOptics.active
+                rgb=try (parameters.scannerOptics.active ||
+                           !parameters.sourceOutputCCTFEncoding)
                     ? engine.sourceSpatialScanLinear(
                         filmDensity:density,paperEV:parameters.paperEV,
                         paperStageObserver:recordPaper(k)
@@ -593,7 +596,8 @@ enum OriginalSourcePhysicalImage {
                         paperStageObserver:recordPaper(k)
                     )
                 } else {
-                    printed=try parameters.scannerOptics.active
+                    printed=try (parameters.scannerOptics.active ||
+                           !parameters.sourceOutputCCTFEncoding)
                         ? engine.sourceSpatialScanLinear(
                             filmDensity:density,paperEV:parameters.paperEV,
                             paperStageObserver:recordPaper(k)
@@ -620,7 +624,8 @@ enum OriginalSourcePhysicalImage {
                 let k=p*3
                 let output=try engine.sourceSpatialScanPrintedPhoton(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
-                    sourceLinearOutput:parameters.scannerOptics.active,
+                    sourceLinearOutput:parameters.scannerOptics.active ||
+                        !parameters.sourceOutputCCTFEncoding,
                     sourceXYZOutput:controlledScannerGlare,
                     paperStageObserver:recordPaper(k)
                 )
@@ -666,7 +671,8 @@ enum OriginalSourcePhysicalImage {
                 stageDoubleObserver:stageDoubleObserver
             )
         }
-        if parameters.scannerOptics.active || controlledScannerGlare {
+        if parameters.sourceOutputCCTFEncoding &&
+           (parameters.scannerOptics.active || controlledScannerGlare) {
             for k in frame.rgb.indices {
                 frame.rgb[k]=OriginalScannerMath.encodeSRGB(frame.rgb[k])
             }
