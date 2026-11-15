@@ -66,13 +66,16 @@ checks={
 raw=(P/"SpektraFilmPort/Build93AppleRAWImport.swift").read_text()
 storage=(P/"SpektraFilmPort/Build79RAWStorage.swift").read_text()
 signature=(P/"SpektraFilmPort/Build79RAWSignature.swift").read_text()
+# A forbidden API named in a warning COMMENT is not executable code.
+raw_code="\n".join(line for line in raw.splitlines()
+                   if not line.lstrip().startswith("//"))
 checks.update({
     "xt5_raf_signature":"FUJIFILMCCD-RAW " in signature and "case dng,raf,cr3,nef,cr2,arw" in signature,
     "raw_preserved_with_sha":"SHA256()" in storage and "copied.hash==source.hash" in storage,
     "raw_picker_all_files":"forOpeningContentTypes: [.item]" in main,
     "raw_requires_explicit_mode_choice":'rawNeedsChoice=true' in main and 'isPresented: $model.rawNeedsChoice' in main,
     "raw_apple_compat_preview":"Build93AppleRAWImport.open(url)" in main and "PhotoProcessor.preview(" in main,
-    "raw_decoder_not_embedded_jpeg":"CIRAWFilter(imageURL: url)" in raw and "CIImage(contentsOf:" not in raw and "CIImage(data:" not in raw,
+    "raw_decoder_not_embedded_jpeg":"CIRAWFilter(imageURL: url)" in raw_code and "CIImage(contentsOf:" not in raw_code and "CIImage(data:" not in raw_code,
     "raw_actual_float32_pixel_proof":"format: .RGBAf" in raw and "values.allSatisfy" in raw,
     "raw_fast_only_explicit_mode":"sourcePixelIOEnabled=false" in main and "rawFastModeActive=true" in main and "originalPhotoData=nil" in main,
     "raw_full_original_retained":"capturedRAWURL=saved.url" in main,
