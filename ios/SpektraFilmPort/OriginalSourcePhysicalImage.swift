@@ -115,6 +115,10 @@ enum OriginalSourcePhysicalImage {
         // glare. This is NOT unseeded original prange equivalence.
         var scannerGlare: OriginalSourceScannerGlare.Settings = .init(active:false)
         var scannerGlareSeed: UInt32? = nil
+        /// Source ScannerParams black_correction / white_correction.
+        /// Default false/false preserves the v1.8.58 imaging baseline;
+        /// opt-in executes source per-stock Y calibration in true XYZ.
+        var sourceColorReference: Build87OriginalColorReference.Settings = .init()
         // Original grain.py 3x3 sublayer SciPy counts + dye clouds +
         // controlled one-worker Numba microstructure + final blur.
         // OFF by default, separate from Gaussian/Metal fast grain.
@@ -158,6 +162,13 @@ enum OriginalSourcePhysicalImage {
                         "自定义 DIR 与旧版关闭 DIR 开关冲突，请明确选择一种模式"
                     )
                 }
+            }
+            try sourceColorReference.validate()
+            if sourceColorReference.enabled &&
+                scannerGlare.active && scannerGlare.percent>0 {
+                throw Failure.invalid(
+                    "Build87 黑白参考与受控扫描眩光尚无同图逐阶段认证，禁止静默组合"
+                )
             }
             try scannerOptics.validate()
             try scannerGlare.validate()
@@ -221,7 +232,10 @@ enum OriginalSourcePhysicalImage {
                 cameraRawMethod: cameraRawMethod,
                 cameraInputColorSpace:cameraInputColorSpace,
                 cameraBandpass: cameraBandpass,
-                hanatosSourceRecompute: hanatosSourceRecompute
+                hanatosSourceRecompute: hanatosSourceRecompute,
+                sourceColorReference: sourceColorReference.enabled
+                    ? sourceColorReference : nil,
+                sourceFilmDensityMin: sourceGrain.densityMin
             )
         }
     }
