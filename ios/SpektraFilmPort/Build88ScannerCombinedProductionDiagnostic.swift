@@ -83,13 +83,18 @@ enum Build88ScannerCombinedProductionDiagnostic {
                 "Build88 output_cctf_encoding=false 未输出原版线性 RGB"
             )
         }
-        for i in 0..<channels {
-            let expected=OriginalScannerMath.encodeSRGB(linearOutput.rgb[i])
-            guard expected.isFinite,
-                  abs(expected-encoded.rgb[i])<=2e-12 else {
-                throw Failure.invalid(
-                    "Build88 扫描输出 CCTF 开关顺序不等价 \(i)"
-                )
+        for p in 0..<(width*height) {
+            let k=p*3
+            let expected=OriginalScannerMath.sourceCCTFEncoding(
+                Array(linearOutput.rgb[k..<k+3])
+            )
+            for ch in 0..<3 {
+                guard expected[ch].isFinite,
+                      abs(expected[ch]-encoded.rgb[k+ch])<=2e-12 else {
+                    throw Failure.invalid(
+                        "Build88 扫描源矩阵→CCTF 开关顺序不等价 p\(p)c\(ch)"
+                    )
+                }
             }
         }
 
