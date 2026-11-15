@@ -178,9 +178,8 @@ enum Build82OriginalHanatosValidation {
                 for ch in 0..<3 {
                     let actual=native[(x*192+y)*3+ch]
                     let expected=refs[k][ch].doubleValue
-                    try check(actual:actual,expected:expected,
-                              name:"source Hanatos LUT #\(caseID) "
-                                   +"cell \(x),\(y) ch \(ch)")
+                    let location="source Hanatos LUT #\(caseID) cell \(x),\(y) ch \(ch)"
+                    try check(actual:actual,expected:expected,name:location)
                     maxError=max(maxError,abs(actual-expected))
                     fullSamples+=1
                 }
@@ -203,11 +202,7 @@ enum Build82OriginalHanatosValidation {
         } catch Build82OriginalSpectralRuntime.Failure.invalid {
             // Expected fail-closed.
         }
-        print("PASS Build82 source AST Hanatos "
-            +"\(cases.count) full 192×192×81 TC recomputes "
-            +"with original UV/IR, \(fullSamples) real source channels "
-            +"maxAbs=\(maxError); poly4/warp \(surfaceSamples), "
-            +"81 erf4, 81 SciPy reflect Gaussian samples. "
-            +"Not certified full input-gamut remap, logiflex8, RAW or device.")
+        let report="PASS Build82 Hanatos \(cases.count) full 192x192x81 TC recomputes; \(fullSamples) channels maxAbs=\(maxError); poly4/warp \(surfaceSamples), erf4 81, scipy Gaussian 81; default gamut remap not independently certified."
+        print(report)
     }
 }
