@@ -118,6 +118,7 @@ jobs:
             ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
             ios/SpektraFilmPort/Build83OriginalCameraPhoton.swift \
             ios/tests/Build81OriginalInputValidation.swift \
+            ios/tests/Build83OriginalCameraOpticsValidation.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
             ios/tests/Build78FloatTIFFValidation.swift \
