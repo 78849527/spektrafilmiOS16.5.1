@@ -223,6 +223,27 @@ enum Build87OriginalColorReference {
             midgrayBeforeCorrection:gray)
     }
 
+    /// Original PrintingStage._film_cmy_to_print_log_raw: this reference
+    /// is sampled BEFORE print_exposure/diffusion. The upstream function
+    /// has ONE +1e-10 floor; unlike expose() it must NOT add the second
+    /// floor used after print_exposure.
+    static func referencePaperLogExposure(
+        raw:[Double],reference:Double,preflash:[Double]
+    ) throws -> [Double] {
+        guard raw.count==3,preflash.count==3,
+              reference.isFinite,reference>0,
+              (raw+preflash).allSatisfy({$0.isFinite}) else {
+            throw Failure.invalid("源独立印相曝光参考缺少三通道光子数据")
+        }
+        let logRaw=(0..<3).map { c in
+            log10(max(0.0,raw[c]/reference+preflash[c])+1e-10)
+        }
+        guard logRaw.allSatisfy({$0.isFinite}) else {
+            throw Failure.invalid("源印相曝光参考 log10 非有限")
+        }
+        return logRaw
+    }
+
     /// develop_simple for reference ONLY. No creative morph, pre-DIR
     /// correction or normalized stock H-D. Source print uses the
     /// original paper.data.density_curves sampled on its original axis.
