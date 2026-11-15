@@ -166,9 +166,22 @@ enum Build90NativeOutputWriter {
                     "原版文件编码失败；不能将目标格式偷换为 JPEG"
                 )
             }
-            // Verify that this is a genuine native file of the
-            // REQUESTED depth and the REQUESTED SOURCE ICC.
-            let data=try Data(contentsOf:url)
+            // ImageIO/ColorSync REPACKS the ICC profile even though
+            // CGColorSpace(iccData:) receives the correct original.
+            // Correct the on-disk APP2/iCCP/TIFF ICC tag to the actual
+            // exact upstream bytes, then independently re-parse it.
+            let nativeFile=try Data(contentsOf:url)
+            let data=try Build90OriginalICCContainer.embed(
+                sourceICC:icc,inEncoded:nativeFile,format:options.format
+            )
+            try data.write(to:url,options:.atomic)
+            guard try Build90OriginalICCContainer.extract(
+                from:Data(contentsOf:url),format:options.format
+            ) == icc else {
+                throw Failure.invalid(
+                    "文件保存后原版 ICC 容器级字节比对失败"
+                )
+            }
             guard let src=CGImageSourceCreateWithData(data as CFData,nil),
                   let saved=CGImageSourceCreateImageAtIndex(src,0,nil),
                   saved.width==w,saved.height==h,
@@ -183,25 +196,11 @@ enum Build90NativeOutputWriter {
                     "TIFF F32 在 ImageIO 往返中被转换为整数/半精度"
                 )
             }
-            guard let embeddedSpace=saved.colorSpace,
-                  let rawICC=embeddedSpace.copyICCData() else {
-                throw Failure.invalid("编码文件缺少可读取的 ICC")
+            guard saved.colorSpace != nil else {
+                throw Failure.invalid("ImageIO 解码文件缺少 ICC 色彩空间")
             }
-            let savedICC=rawICC as Data
-            if savedICC != icc {
-                let created=cs.copyICCData() as Data?
-                let count=min(savedICC.count,icc.count)
-                let first=(0..<count).first(where:{
-                    savedICC[$0] != icc[$0]
-                }) ?? count
-                let createdEqual=(created==icc)
-                throw Failure.invalid(
-                    "实际文件 ICC 字节变化：source=\(icc.count) " +
-                    "read=\(savedICC.count) " +
-                    "firstDiff=\(first) sourceColorSpacePreserved=\(createdEqual); " +
-                    "不能宣称原始 ICC 完全一致"
-                )
-            }
+            // ICC raw bytes are checked above from JPEG/PNG/TIFF
+            // ACTUAL FILE, not from ColorSync canonicalized copies.
             return url
         } catch {
             try? FileManager.default.removeItem(at:url)
