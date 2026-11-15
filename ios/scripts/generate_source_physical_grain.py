@@ -33,9 +33,13 @@ BLOBS={
 CASES=(
     # name, width, height, pixel um, dye blur parameter, final blur,
     # micro blur um, micro std nm
-    ("fir_micro_below_threshold",9,7,1.8,1.0,0.65,0.2,30.0),
-    ("yvv_micro_active",12,10,0.35,3.2,3.2,0.2,30.0),
-    ("no_cloud_no_final_blur",7,6,1.2,0.0,0.0,0.2,30.0),
+    ("fir_micro_below_threshold",9,7,1.8,1.0,0.65,0.2,30.0,False),
+    ("yvv_micro_active",12,10,0.35,3.2,3.2,0.2,30.0,False),
+    ("no_cloud_no_final_blur",7,6,1.2,0.0,0.0,0.2,30.0,False),
+    # Source Numba fast_poisson/fast_binomial must consume a continuous
+    # one-worker MT19937 stream; only the >0.05 micro branch needs it too.
+    ("fast_stats_no_micro",8,6,1.8,1.0,0.65,0.2,30.0,True),
+    ("fast_stats_micro_active",8,6,0.35,1.0,0.65,0.2,30.0,True),
 )
 MAXIMA=np.array([[0.55,0.65,0.75],
                  [0.75,0.85,0.95],
@@ -113,13 +117,26 @@ def main():
     original_micro(
         np.full((2,2,3),0.15,dtype=np.float64), (0.0,30.0), 0.3
     )
+    # Compile the ORIGINAL fast_stats Poisson/Binomial kernels as well.
+    # JIT warm-up is not a user-visible random draw or a source edit.
+    grain.apply_grain_to_density_layers(
+        np.full((2,2,3,3),0.2,dtype=np.float64),
+        density_max_layers=MAXIMA.copy(),pixel_size_um=2.0,
+        grain_blur=0.0,grain_blur_dye_clouds_um=0.0,
+        grain_micro_structure=(0.0,0.0),
+        particle_scale=(1.6,1.6,3.2),
+        particle_scale_layers=(2.0,1.0,0.5),
+        density_min=(0.03,0.03,0.03),
+        grain_uniformity=(0.97,0.99,0.97),
+        use_fast_stats=True,
+    )
     seed_numba_one_worker(8888)
 
     OUT.mkdir(parents=True,exist_ok=True)
     manifest={"scope":"ACTUAL unmodified original grain.py: 9 SciPy layers + dye cloud Gaussian + single worker Numba micro + final blur",
               "source_sha":BLOBS,"numba_seed":8888,
               "cases":[]}
-    for name,w,h,pixel_um,dye,final,micro_um,micro_nm in CASES:
+    for name,w,h,pixel_um,dye,final,micro_um,micro_nm,fast_stats in CASES:
         density=np.empty((h,w,3),dtype=np.float64)
         for y in range(h):
             for x in range(w):
@@ -149,7 +166,7 @@ def main():
             grain_blur=final,
             grain_blur_dye_clouds_um=dye,
             grain_micro_structure=(micro_um,micro_nm),
-            use_fast_stats=False,
+            use_fast_stats=fast_stats,
         )
         grain.add_micro_structure=original_micro
         assert "dyeClouds" in stages and "microstructure" in stages
@@ -164,14 +181,16 @@ def main():
             "name":name,"width":w,"height":h,"pixelUM":pixel_um,
             "dyeBlur":dye,"finalBlur":final,"microUM":micro_um,
             "microNM":micro_nm,"maxima":MAXIMA.ravel().tolist(),
-            "microEnabled":enabled,"sha256":stage_sha,
+            "microEnabled":enabled,"useFastStats":fast_stats,
+            "sha256":stage_sha,
         })
         print(f"UPSTREAM {name} {w}x{h} {w*h*3} CMY: "
-              f"micro={enabled} dye+micro+final source SHA {stage_sha['final']}")
+              f"micro={enabled} fast_stats={fast_stats} "
+              f"dye+micro+final source SHA {stage_sha['final']}")
     (OUT/"manifest.json").write_text(
         json.dumps(manifest,indent=2,ensure_ascii=False)+"\n",encoding="utf-8"
     )
-    print("PASS: three Python grain.py whole-image numeric source cases, pinned blobs, explicit 1-worker seed")
+    print("PASS: five Python grain.py whole-image numeric source cases (3 SciPy + 2 fast_stats), pinned blobs, explicit 1-worker seed")
     print("NOT CERTIFIED: default unseeded Numba prange, RAW or complete RGB photo")
 
 if __name__=="__main__":

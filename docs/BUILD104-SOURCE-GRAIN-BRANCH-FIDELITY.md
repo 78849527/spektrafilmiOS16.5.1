@@ -21,3 +21,9 @@
 这是一批**实际生产源算法分支修正及验收测试更新**，不是完整颗粒链新认证。尚未得到本批独立 CI/Xcode iPhoneOS 构建、iOS16.5.1 真机数字证据，不发布 IPA、不调整版本号。下一步合并更多源缺口后统一编译，并从用户上传的 Build103 真机 JSON 修第一个超过源门限的阶段。
 
 原版 3×3 多线程无种子 `prange`、完整 13MP 内存与 RAW 全链路仍未认证。不得因本次条件分支修复将模块升级到“数值等价”。
+
+## 追加批量验证（Build104 同批）
+
+- 修复 `sublayers_active=true, use_fast_stats=true, microStd <= 0.05`：仅必须提供 `fastStatsSeed`，不应强制微结构 `numbaSeed`。当 `microStd > 0.05` 时，须在采样前验证两者同种子、连续流；禁止先抽样后发现种子错误。
+- 原版 `grain.py` 的 3 个 SciPy 小图基准不变，新增 2 个调用未修改原版 `grain.py` + `fast_stats.py` 的 Numba 单线程受控源码基准（微结构关闭 / 启用）；对 4 个颗粒中间阶段分别进行 Float64 全元素对照。
+- 新增 GitHub Actions Build104 独立 macOS Source Grain 5 图数值检测 + Linux 原版 36 张单层 SciPy 数值检测，及 Swift 解析检查。流程完成前仍不宣称本批 CI PASS、iPhoneOS 完整应用构建 PASS 或发新 IPA。

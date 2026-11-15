@@ -22,6 +22,7 @@ enum SourcePhysicalGrainValidation {
         let microNM:Double
         let maxima:[Double]
         let microEnabled:Bool
+        let useFastStats:Bool?
         let sha256:[String:String]
     }
     enum Failure: LocalizedError {
@@ -61,7 +62,7 @@ enum SourcePhysicalGrainValidation {
         let manifest=try JSONDecoder().decode(
             Manifest.self,from:Data(contentsOf:directory.appendingPathComponent("manifest.json"))
         )
-        guard manifest.cases.count==3,manifest.numba_seed==8888,
+        guard manifest.cases.count==5,manifest.numba_seed==8888,
               manifest.scope.contains("unmodified original grain.py") else {
             throw Failure.invalid("No original Python grain.py full-frame reference")
         }
@@ -70,7 +71,8 @@ enum SourcePhysicalGrainValidation {
         for sample in manifest.cases {
             let w=sample.width,h=sample.height
             let maxima=sample.maxima
-            guard maxima.count==9 else {
+            guard maxima.count==9,
+                  (sample.microNM*0.001/sample.pixelUM>0.05)==sample.microEnabled else {
                 throw Failure.invalid("3x3 source maxima absent")
             }
             var density=[Double](repeating:0,count:w*h*3)
@@ -99,6 +101,8 @@ enum SourcePhysicalGrainValidation {
             settings.dyeCloudBlurUM=sample.dyeBlur
             settings.microstructureUM=sample.microUM
             settings.microstructureNM=sample.microNM
+            settings.useFastStats=sample.useFastStats ?? false
+            settings.fastStatsSeed=settings.useFastStats ? manifest.numba_seed : nil
             settings.numbaSeed=manifest.numba_seed
             var trace=[String:[Double]]()
             let actual=try OriginalSourcePhysicalGrain.apply(
@@ -146,6 +150,17 @@ enum SourcePhysicalGrainValidation {
                 throw Failure.invalid("Controlled seeded source grain not deterministic")
             }
             settings.numbaSeed=nil
+            if settings.useFastStats {
+                var missingCountsSeed=settings
+                missingCountsSeed.fastStatsSeed=nil
+                do {
+                    _=try OriginalSourcePhysicalGrain.apply(
+                        density,width:w,height:h,pixelUM:sample.pixelUM,
+                        measured:measured,settings:missingCountsSeed
+                    )
+                    throw Failure.invalid("Missing Numba fast_counts seed silently accepted")
+                } catch OriginalSourcePhysicalGrain.Failure.invalid {}
+            }
             if sample.microEnabled {
                 // Source active lognormal needs an explicit controlled
                 // worker seed; never invent a production random stream.
@@ -168,7 +183,7 @@ enum SourcePhysicalGrainValidation {
                 }
             }
         }
-        print("PASS original Python grain.py source 3x3 production DENSITY: \(manifest.cases.count) real whole-frame fixtures, \(checked) stage channels, max Float64 discrepancy=\(worst), controlled seed 8888 reproducibility, inactive-micro seed-free branch and active-micro missing-seed rejection.")
+        print("PASS original Python grain.py source 3x3 production DENSITY: \(manifest.cases.count) whole-frame fixtures (including original fast_stats both micro branches), \(checked) stage channels, max Float64 discrepancy=\(worst), controlled seed 8888 reproducibility, seed-free inactive-micro and missing-seed fail-closed.")
         print("NOT CERTIFIED: unseeded prange multiworker RNG, RAW, real iPhone full-display RGB original matching.")
     }
 }

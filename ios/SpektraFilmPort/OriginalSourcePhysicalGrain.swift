@@ -64,14 +64,13 @@ enum OriginalSourcePhysicalGrain {
             // threshold depends on pixelUM and is enforced in apply().
             // When sublayers_active=false, Python ignores use_fast_stats and
             // always uses seeded SciPy Poisson/Binomial.
-            if active && sublayersActive && useFastStats {
-                guard fastStatsSeed != nil, numbaSeed != nil,
-                      fastStatsSeed == numbaSeed else {
-                    throw Failure.invalid(
-                        "源三亚层 Numba fast_stats 与后续 lognormal 必须共用同一个单线程 RNG 种子／状态"
-                    )
-                }
+            if active && sublayersActive && useFastStats && fastStatsSeed == nil {
+                throw Failure.invalid(
+                    "源三亚层 Numba fast_stats 必须提供受控单线程 RNG 种子"
+                )
             }
+            // The microstructure seed is conditional on pixelUM and
+            // validated in apply(), not required for inactive lognormal.
         }
     }
 
@@ -108,6 +107,19 @@ enum OriginalSourcePhysicalGrain {
             throw Failure.invalid("原版 3×3 颗粒需要有限的整图 CMY、有效亚层最大值和像素 μm")
         }
         if !settings.active { return densityCMY }
+        // Fail before consuming ANY SciPy/Numba draws or delivering
+        // intermediate stages. Python only calls lognormal when > 0.05.
+        let requestedMicroStd=settings.microstructureNM*0.001/pixelUM
+        if requestedMicroStd>0.05 {
+            guard let microSeed=settings.numbaSeed else {
+                throw Failure.invalid("原版 Numba 微结构随机线程未定义")
+            }
+            if settings.useFastStats && settings.fastStatsSeed != microSeed {
+                throw Failure.invalid(
+                    "原版 fast_stats 与微结构必须接续同一 Numba 单线程 RNG 状态"
+                )
+            }
+        }
         let pixels=width*height
         let maxLayers=measured.maxima
         var fractions=[Double](repeating:0,count:9)

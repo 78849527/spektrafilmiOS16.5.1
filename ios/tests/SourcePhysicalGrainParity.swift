@@ -24,6 +24,7 @@ struct SourcePhysicalGrainParity {
         let microNM: Double
         let maxima: [Double]
         let microEnabled: Bool
+        let useFastStats: Bool?
         let sha256: [String:String]
     }
 
@@ -73,7 +74,7 @@ struct SourcePhysicalGrainParity {
         let directory=URL(fileURLWithPath:"ios/verification/generated-source-grain-v1.8.48")
         let json=try Data(contentsOf:directory.appendingPathComponent("manifest.json"))
         let manifest=try JSONDecoder().decode(Manifest.self,from:json)
-        guard manifest.cases.count==3,manifest.numba_seed==8888,
+        guard manifest.cases.count==5,manifest.numba_seed==8888,
               manifest.scope.contains("original grain.py") else {
             fatalError("Expected three independent source grain.py Python images")
         }
@@ -103,7 +104,10 @@ struct SourcePhysicalGrainParity {
             }
             var snapshots=[String:[Double]]()
             let settings=OriginalSourcePhysicalGrain.Settings(
-                active:true,grainBlur:fixture.finalBlur,
+                active:true,
+                useFastStats:fixture.useFastStats ?? false,
+                fastStatsSeed:(fixture.useFastStats ?? false) ? manifest.numba_seed : nil,
+                grainBlur:fixture.finalBlur,
                 dyeCloudBlurUM:fixture.dyeBlur,
                 microstructureUM:fixture.microUM,
                 microstructureNM:fixture.microNM,
@@ -173,7 +177,7 @@ struct SourcePhysicalGrainParity {
         } catch OriginalSourcePhysicalGrain.Failure.invalid {
             print("PASS original grain fail-closed: active microstructure missing Numba seed rejected")
         }
-        print("PASS: 3 original-source full-field 9-sublayer numeric fixtures, controlled seeded Numba and SciPy, independent stage checks")
+        print("PASS: 5 original-source full-field 9-sublayer numeric fixtures, SciPy and original fast_stats with/without active microstructure, independent stage checks")
         print("NOT CERTIFIED: unseeded multi-thread Numba prange, arbitrary RAW/JPEG, original source full RGB photo parity")
     }
 }
