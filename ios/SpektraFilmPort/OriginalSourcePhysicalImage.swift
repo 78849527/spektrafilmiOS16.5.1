@@ -176,11 +176,13 @@ enum OriginalSourcePhysicalImage {
             try scannerGlare.validate()
             try sourceGrain.validate()
             if scannerGlare.active && scannerGlare.percent > 0 {
-                guard scannerGlareSeed != nil,
-                      !SpectralPhysics.isPositiveFilm(filmID) else {
+                guard !SpectralPhysics.isPositiveFilm(filmID),
+                      (!scannerGlare.consumesNumbaRandomness ||
+                       scannerGlareSeed != nil) else {
                     throw Failure.invalid(
-                        "源扫描随机眩光只允许负片相纸扫描，" +
-                        "必须明确提供受控单线程种子；禁止随机哈希降级"
+                        "源扫描眩光仅用于负片相纸；实际 Numba 正态抽样" +
+                        "必须提供受控单线程种子；sigma<1e-6 的原版" +
+                        "无随机抽样路径允许省略 seed"
                     )
                 }
             }
