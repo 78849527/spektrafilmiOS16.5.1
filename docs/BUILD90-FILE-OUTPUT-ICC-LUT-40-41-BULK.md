@@ -36,3 +36,13 @@
 ## 编译/认证门槛
 
 本批真实 iPhoneOS Xcode 16.4 Release arm64+default.metallib 批量编译仍单独记录 CI SHA。真正 iOS 16.5.1 真机媒体库授权、写入相册、Files 分享、EXIF/XMP 全标签、真实 EXR、全部宽色域 source scanner 完整 XYZ→RGB、13MP 峰值未验证；不得提供假 IPA。路线推进工作位置为 **41／47**，**不表示第40–41项所有科学分支完整认证**。
+
+## 本批最终可追溯验证（2026-11-15）
+
+- **最终完整 iPhoneOS Release arm64 合并编译 PASS**：[Actions run 43689500500](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43689500500)。精确受测 Swift/Metal 工程源码 SHA：`20cb39daf08f3f117820a98231720adba8c875d9`，Xcode 16.4，日志 `BUILD SUCCEEDED`，`default.metallib`、arm64 二进制验证通过，应用版本仍 `1.8.58 / Build83`。
+- [原版 3D LUT/PCHIP/Mitchell + 缓存失效 run 43689375517](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43689375517)：**PASS**，672 个独立源 Float64 通道，最大 PCHIP `3.219646771412954e-15`、Mitchell `4.440892098500626e-15`；新增 48MiB 缓存的源内容、domain、revision 变化与强制失效均实际运行。
+- [原版 io.py AST 960 通道 run 43688207358](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43688207358)：**PASS**，整数精确、二进制 Float32 位模式一致，JPEG/PNG U8，TIFF U8/U16/F32，EXR F16/F32 **仅数值数据**。
+- [8 个真实 JPEG／PNG／TIFF 文件与原始 ICC run 43689053728](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43689053728)：**PASS**，原版 sRGB、Display P3、ITU-R BT.2020 的已覆盖组合实际编码，源 ICC 经 JPEG APP2、PNG iCCP、TIFF tag34675 容器嵌入后字节精确，保存文件重新解析的通道位深吻合。此为 macOS ImageIO 测试，不能伪称 iPhone 16.5.1 真机完成。
+- 实际源码范围：相对 Build89b 基线，43 次提交、18 个变更文件、约 2271 行新增代码（以受测 SHA 为准）；此文档尾部只追加最终结果，不修改已编译 Swift 算法。
+- **认证余项**：原版真实 EXR 16/32 文件编码器未移植／iOS 未接入；原版 pyexiv2 XMP/IPTC 所有细节复制未完成；高位深真实 iOS 文件完整回归、保存相册／Files 分享、8–13MP 整图/RAW/广色域扫描成像、真机内存与全阶段 Python 数值证据仍需继续。
+- **禁止虚报 IPA**：当前是 `CODE_SIGNING_ALLOWED=NO` 的 Xcode 编译通过，没有 Build90 IPA、无签名、无 Release。路线工作位置 `41/47`（约 87.2%）不等于原版科学认证 87.2%，第40–41项的残留工程与实机验证如上。
