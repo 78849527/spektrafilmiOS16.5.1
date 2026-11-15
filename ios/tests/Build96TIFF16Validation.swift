@@ -16,7 +16,7 @@ let flat = CIImage(color: CIColor(red: 0.27, green: 0.56,
 let url = try Build96TIFF16Writer.write(flat)
 defer { try? FileManager.default.removeItem(at:url) }
 assertOrFail(url.pathExtension == "tiff", "real TIFF suffix")
-assertOrFail((try? Data(contentsOf:url).count) ?? 0 > 128, "encoded file bytes")
+assertOrFail(((try? Data(contentsOf:url).count) ?? 0) > 128, "encoded file bytes")
 try Build96TIFF16Writer.verifyFile(url,width:16,height:12)
 guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
       let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
