@@ -96,6 +96,22 @@ def main():
         xyz=colour.xy_to_XYZ(xy)
         lines.append(f'        "{cs_name}": {fmt(xyz)},')
     lines.append("    ]")
+    # Original colour.models.oklab.py uses *these exact* source
+    # matrices and their NumPy inverses, not rounded web constants.
+    # This enables a native Float64 pixelwise OkLch/Oklrab port with
+    # the source's original 64x720 Cmax 18-step bisections.
+    from colour.models.oklab import (
+        MATRIX_1_XYZ_TO_LMS,MATRIX_1_LMS_TO_XYZ,
+        MATRIX_2_LMS_TO_LAB,MATRIX_2_LAB_TO_LMS
+    )
+    for swift_name,source_matrix in (
+        ("sourceOklabXYZToLMS",MATRIX_1_XYZ_TO_LMS),
+        ("sourceOklabLMSToXYZ",MATRIX_1_LMS_TO_XYZ),
+        ("sourceOklabLMSToLAB",MATRIX_2_LMS_TO_LAB),
+        ("sourceOklabLABToLMS",MATRIX_2_LAB_TO_LMS),
+    ):
+        lines.append(f"    static let {swift_name}: [Double] = "
+                     + fmt(source_matrix))
     # The original ScanningStage._apply_cctf_encoding calls
     # colour.RGB_to_RGB(sRGB,sRGB,decoding=False,encoding=True).
     # Its colourspace→same-colourspace 3x3 roundtrip is NOT bit-identity;
