@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Darwin
 
 /// Build82/17-18 original 81-wavelength Hanatos TC LUT recomputation.
@@ -51,6 +52,12 @@ enum Build82OriginalSpectralRuntime {
     static func loadOriginalNPY(_ url:URL,expectedSide:Int=192)
         throws -> Grid {
         let data=try Data(contentsOf:url,options:.mappedIfSafe)
+        let digest=SHA256.hash(data:data).map {
+            String(format:"%02x",$0)
+        }.joined()
+        guard digest==Build82GeneratedHanatosProfiles.sourceSHA256 else {
+            throw Failure.invalid("Hanatos 原版光谱文件 SHA256 不匹配")
+        }
         let bytes=[UInt8](data)
         guard bytes.count>12,
               Array(bytes[0..<6])==[0x93,78,85,77,80,89],
@@ -99,7 +106,7 @@ enum Build82OriginalSpectralRuntime {
             throw Failure.invalid("Hanatos 原始光谱包含 NaN/Inf")
         }
         return Grid(side:expectedSide,
-                    sourceSHA:"7b81b9d23f8f4c599c6b2ae3d949e9a2d6f3c38a",
+                    sourceSHA:digest,
                     values:values)
     }
 
