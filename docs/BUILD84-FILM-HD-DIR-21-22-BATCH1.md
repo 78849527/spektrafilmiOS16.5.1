@@ -30,8 +30,8 @@
 
 | 子项 | 状态 | 条件 |
 |---|---|---|
-| 源 DIR 参数矩阵、256 节点 H-D 数学 | 待数值等价证据 | CI Swift/Python 逐节点门限 `2e-12`，当前有限参考样本 |
-| 正负片银密度、非空间 DIR、禁用 DIR | 待数值等价证据 | 真实生产分支已接线，尚无 iOS 真机整图认证 |
+| 源 DIR 矩阵、H-D 插值与校正前曲线 | 数值等价（有限样本） | Ubuntu 24.04、Swift 6.4.2 / NumPy 2.3.5；5×3 曲线、2 种片型；门限 `2e-12`，实测最大误差 `4.44e-16` |
+| 正负片银密度、非空间 DIR | 数值等价（有限样本） | Python AST 与 Swift 对照最大误差 `3.33e-16`；生产分支已接线，尚无 iOS 真机整图认证 |
 | 原本已存在的全帧 FIR/YVV | 保留原状态 | 本批没有替换核或悄悄切换 CI 近似 |
 | 全原版功能闭环 | 尚未完成 | 所有 256 节点真实胶片曲线、多种 sigma、相纸/随机颗粒整图、UI 显示与 iPhoneOS 构建仍需独立验收 |
 
@@ -39,6 +39,6 @@
 
 ## CI 与发布
 
-- 单项源验证工作流：`https://github.com/78849527/spektrafilmiOS16.5.1/actions/workflows/build84-film-hd-dir-parity.yml`
+- 数值 CI **PASS**：`https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43672703876`，对应已验代码提交 `28d56e3b9f2adaefa6ab4812b9de131568fbe694`。本文件仅新增说明，不改变该次已验代码。
 - 本批**不构建 IPA**。需要等后续 Build84 功能组一起通过 iPhoneOS、真机及 Release 认证才可能发布。
 - Build83 C-R1 完整保留，未覆盖或合并到 `main`。
