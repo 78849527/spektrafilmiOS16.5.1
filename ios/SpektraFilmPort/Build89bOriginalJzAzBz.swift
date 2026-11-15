@@ -84,8 +84,8 @@ enum Build89bOriginalJzAzBz {
         guard jzab.count==3,jzab.allSatisfy({$0.isFinite}) else {
             throw Failure.invalid("原版 JzAzBz 感知坐标无效")
         }
-        let iz=(jzab[0]+D0)/
-            (1+D-D*(jzab[0]+D0))
+        let inverseDenominator=1.0+D-D*(jzab[0]+D0)
+        let iz=(jzab[0]+D0)/inverseDenominator
         let lmsEncoded=matvec(
             GeneratedScannerReference.sourceJzIzToLMS,
             [iz,jzab[1],jzab[2]]
