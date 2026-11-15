@@ -1,3 +1,5 @@
+# Build97 P0 retry: non-LUT identity is intentional; enabled grain without
+# a prepared density stage is now rejected in preview/JPEG/TIFF.
 name: Build97 P0 fail-closed image filters, RAW import transaction and JPEG memory / iOS16.5.1 IPA
 
 on:
