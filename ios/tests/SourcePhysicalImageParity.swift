@@ -550,8 +550,8 @@ enum SourcePhysicalImageParity {
                     "PASS v1.8.50 ACTUAL full physical grain " +
                     "9 SciPy layers→dye cloud→Numba controlled micro→FIR/YVV" +
                     "→original enlarger/paper/scanner; " +
-                    "\\(after.count) CMY channels, source-order " +
-                    "optical RGB discrepancy max=\\(worst), no seed rejected"
+                    "\(after.count) CMY channels, source-order " +
+                    "optical RGB discrepancy max=\(worst), no seed rejected"
                 )
             }
             // Build77 02: ACTUAL 2D optical print production must expose
