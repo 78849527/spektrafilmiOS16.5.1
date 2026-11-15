@@ -128,8 +128,9 @@ enum Build90OriginalLUT {
                 return (0..<3).map{values[index(0,0,0,$0)]}
             }
             let coordinate=(0..<3).map {ch in
-                (point[ch]-minDomain[ch])/
-                (maxDomain[ch]-minDomain[ch])*Double(n-1)
+                let range=maxDomain[ch]-minDomain[ch]
+                let unit=(point[ch]-minDomain[ch])/range
+                return unit*Double(n-1)
             }
             let c=coordinate.map{Build90OriginalLUT.cell($0,n)}
             switch method {
@@ -241,8 +242,9 @@ enum Build90OriginalLUT {
                 for b in 0..<steps {
                     let p=[r,g,b]
                     let x=(0..<3).map {ch in
-                        minimum[ch]+(maximum[ch]-minimum[ch])*
-                          Double(p[ch])/Double(max(1,steps-1))
+                        let range=maximum[ch]-minimum[ch]
+                        let unit=Double(p[ch])/Double(max(1,steps-1))
+                        return minimum[ch]+range*unit
                     }
                     let sample=try transform(x)
                     guard sample.count==3,
@@ -294,14 +296,18 @@ enum Build90OriginalLUT {
     }
     static func weight(_ t:Double)->Double {
         let x=abs(t),B=1.0/3.0,C=1.0/3.0
+        let cubic=x*x*x
+        let square=x*x
         if x<1 {
-            return (1.0/6.0)*
-                ((12-9*B-6*C)*x*x*x+(-18+12*B+6*C)*x*x+6-2*B)
+            let a=(12-9*B-6*C)*cubic
+            let b=(-18+12*B+6*C)*square
+            return (a+b+6-2*B)/6.0
         }
         if x<2 {
-            return (1.0/6.0)*
-                ((-B-6*C)*x*x*x+(6*B+30*C)*x*x+
-                 (-12*B-48*C)*x+(8*B+24*C))
+            let a=(-B-6*C)*cubic
+            let b=(6*B+30*C)*square
+            let c=(-12*B-48*C)*x
+            return (a+b+c+8*B+24*C)/6.0
         }
         return 0
     }
