@@ -1068,6 +1068,23 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // Build92 #45 source tapes: bundled 4 real-Python whole
+                // optical images and seeded Numba grain source stages,
+                // evaluated by the production Swift pixel pipeline only
+                // on the user's device. Never count as a 9th 8/8 item.
+                // The result distinguishes iOS16.5.1 from other iOS.
+                do {
+                    let tape=try Build92DeviceSourceStageDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build92 Python 12 阶段整图数值对照｜本机执行，不计入 8/8】\n" +
+                        tape
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build92 Python→Swift 原版整图对照｜失败／未认证】\n" +
+                        error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
