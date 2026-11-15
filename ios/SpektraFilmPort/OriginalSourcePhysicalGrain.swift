@@ -56,7 +56,7 @@ enum OriginalSourcePhysicalGrain {
                   dyeCloudBlurUM.isFinite,dyeCloudBlurUM>=0,
                   microstructureUM.isFinite,microstructureUM>=0,
                   microstructureNM.isFinite,microstructureNM>=0,
-                  nSubLayers>=1,nSubLayers<=128 else {
+                  nSubLayers>=1,nSubLayers<=Int(UInt32.max/10) else {
                 throw Failure.invalid("源颗粒参数必须严格使用合法的原版数量、面积、模糊及 3×3 亚层")
             }
             if active && sublayersActive && numbaSeed == nil {
