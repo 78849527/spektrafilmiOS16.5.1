@@ -32,3 +32,12 @@
 ## iPhoneOS arm64 发行边界
 
 本分支必须通过一次所有新增真实 Swift 模块合并 `xcodebuild` iPhoneOS Release、arm64、Metal 检查才能声明“编译通过”；只能从关联 SHA 的真实 GitHub Actions 记录确认。即使通过也是 unsigned app，不是 Build89b IPA，不得提供旧版 IPA 冒充新一轮。
+
+## 最终 CI 复核与 iPhoneOS 合并编译（2026-11-15）
+
+- [Oklch + Oklrab 六算法完整分发器 CI run 43686624833](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43686624833)：**PASS**。前一轮在新增 Jz 后忘记加入 Jz 编译依赖，产生`cannot find Build89bOriginalJzAzBz in scope` 的**测试构建依赖缺口**，已补齐并真实重跑通过，不能以之前的失败当作正确状态。
+- [JzAzBz 全六算法分发器 CI run 43686483465](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43686483465)：**PASS**。72 组原版 Colour/Python 输入，直接测原生 Jz forward+inverse 并通过源 `Build89OriginalOutputGamut.compress` 正式分发器逐像素输出；前向误差最大 `3.0142555118573e-14`，绝对 XYZ 反向最大 `5.8690829973784275e-12`，RGB 输出最大 `1.6364687382974807e-13`。
+- [Build89b 六算法 iPhoneOS arm64 Release 构建 run 43686643675](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43686643675)：**PASS / BUILD SUCCEEDED**，精确受测源码提交 `e7db8d93d69a295019d413201454919bcf0aab2a`。
+- 编译包括 `Build89bOriginalOklabGamut.swift`、`Build89bOriginalJzAzBz.swift`、新六算法 `Build89OriginalOutputGamut.swift`、App 真实生产诊断 `Build89OutputGamutProductionDiagnostic.swift`；Xcode16.4、iPhoneOS Release、`CODE_SIGNING_ALLOWED=NO`、`arm64`、`default.metallib` 存在均验证。
+- `CFBundleShortVersionString=1.8.58`、`CFBundleVersion=83` 没有冒充新的已发布 Build89b IPA；本批 **未签名、无 IPA、无 GitHub Release**。
+- 这次完成第38项中 **全部六个输出色域数学算法的指定测试范围**；路线位置仍是 **39/47**。Build90 的真实 JPEG/PNG/TIFF/EXR 位深/ICC/EXIF/XMP 输出和 PCHIP/mitchell LUT 缓存仍属后续，不能把数值矩阵支持推断为广色域可正确导出。
