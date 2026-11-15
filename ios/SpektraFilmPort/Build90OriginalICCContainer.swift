@@ -23,8 +23,9 @@ enum Build90OriginalICCContainer {
         guard i>=0,i<=b.count-4 else {
             throw Failure.invalid("Malformed PNG/ICC binary length")
         }
-        return Int(b[i])<<24|Int(b[i+1])<<16|
-               Int(b[i+2])<<8|Int(b[i+3])
+        let a=(Int(b[i])<<24)|(Int(b[i+1])<<16)
+        let z=(Int(b[i+2])<<8)|Int(b[i+3])
+        return a|z
     }
     private static func append32BE(_ n:UInt32,_ out:inout [UInt8]) {
         out.append(UInt8((n>>24)&255))
@@ -54,7 +55,7 @@ enum Build90OriginalICCContainer {
             out.append(isFinal ? 1:0)
             out.append(UInt8(n&255))
             out.append(UInt8(n>>8))
-            let inverted=~n
+            let inverted = ~n
             out.append(UInt8(inverted&255))
             out.append(UInt8(inverted>>8))
             out.append(contentsOf:content[start..<start+amount])
@@ -88,7 +89,7 @@ enum Build90OriginalICCContainer {
             let n=Int(compressed[at])|Int(compressed[at+1])<<8
             let inv=Int(compressed[at+2])|Int(compressed[at+3])<<8
             at+=4
-            guard n ^ inv == 65535,at+n<=compressed.count-4 else {
+            guard (n ^ inv)==65535,at+n<=compressed.count-4 else {
                 throw Failure.invalid("Actual PNG source ICC block length mismatch")
             }
             out.append(contentsOf:compressed[at..<at+n])
@@ -293,14 +294,18 @@ enum Build90OriginalICCContainer {
             self.little=le
             self.bytes=bytes
             func r16(_ pos:Int)->Int {
-                le ? Int(bytes[pos])|Int(bytes[pos+1])<<8 :
-                Int(bytes[pos])<<8|Int(bytes[pos+1])
+                if le {return Int(bytes[pos])|(Int(bytes[pos+1])<<8)}
+                return (Int(bytes[pos])<<8)|Int(bytes[pos+1])
             }
             func r32(_ pos:Int)->Int {
-                le ? Int(bytes[pos])|Int(bytes[pos+1])<<8|
-                     Int(bytes[pos+2])<<16|Int(bytes[pos+3])<<24 :
-                Int(bytes[pos])<<24|Int(bytes[pos+1])<<16|
-                     Int(bytes[pos+2])<<8|Int(bytes[pos+3])
+                if le {
+                    let a=Int(bytes[pos])|(Int(bytes[pos+1])<<8)
+                    let z=(Int(bytes[pos+2])<<16)|(Int(bytes[pos+3])<<24)
+                    return a|z
+                }
+                let a=(Int(bytes[pos])<<24)|(Int(bytes[pos+1])<<16)
+                let z=(Int(bytes[pos+2])<<8)|Int(bytes[pos+3])
+                return a|z
             }
             guard r16(2)==42 else {
                 throw Failure.invalid(
@@ -332,14 +337,18 @@ enum Build90OriginalICCContainer {
             self.iccEntry=entry
         }
         func r16(_ i:Int)->Int {
-            little ? Int(bytes[i])|Int(bytes[i+1])<<8 :
-                Int(bytes[i])<<8|Int(bytes[i+1])
+            if little {return Int(bytes[i])|(Int(bytes[i+1])<<8)}
+            return (Int(bytes[i])<<8)|Int(bytes[i+1])
         }
         func r32(_ i:Int)->Int {
-            little ? Int(bytes[i])|Int(bytes[i+1])<<8|
-                Int(bytes[i+2])<<16|Int(bytes[i+3])<<24 :
-                Int(bytes[i])<<24|Int(bytes[i+1])<<16|
-                Int(bytes[i+2])<<8|Int(bytes[i+3])
+            if little {
+                let a=Int(bytes[i])|(Int(bytes[i+1])<<8)
+                let z=(Int(bytes[i+2])<<16)|(Int(bytes[i+3])<<24)
+                return a|z
+            }
+            let a=(Int(bytes[i])<<24)|(Int(bytes[i+1])<<16)
+            let z=(Int(bytes[i+2])<<8)|Int(bytes[i+3])
+            return a|z
         }
         func write32(_ val:Int,_ out:inout [UInt8],_ at:Int)throws {
             guard val>=0,val<=Int(UInt32.max),
