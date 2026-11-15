@@ -21,10 +21,11 @@ enum Build87OriginalColorReference {
         var whiteLevel=0.98
 
         func validate() throws {
-            guard blackLevel.isFinite,whiteLevel.isFinite,
-                  (0...1).contains(blackLevel),
-                  (0...1).contains(whiteLevel) else {
-                throw Failure.invalid("源扫描黑白参考档位必须是有限 sRGB [0,1]")
+            // Upstream ScannerParams does not clamp black_level /
+            // white_level to [0,1] before its sRGB decoding. Do not
+            // invent a source range; reject only non-finite values.
+            guard blackLevel.isFinite,whiteLevel.isFinite else {
+                throw Failure.invalid("源扫描黑白参考档位必须是有限 sRGB 值")
             }
         }
         var enabled:Bool { blackCorrection || whiteCorrection }
