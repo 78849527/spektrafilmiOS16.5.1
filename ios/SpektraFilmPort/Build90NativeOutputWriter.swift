@@ -137,8 +137,8 @@ enum Build90NativeOutputWriter {
         if options.format == .jpeg {
             properties[kCGImageDestinationLossyCompressionQuality as String]=0.98
         }
-        let profileName=options.outputSpace+
-            (options.cctfEncoded ? "":" (linear)")
+        let suffix=options.cctfEncoded ? "":" (linear)"
+        let profileName=options.outputSpace+suffix
         properties[kCGImagePropertyProfileName as String]=profileName
         let type:CFString
         switch options.format {
@@ -184,8 +184,7 @@ enum Build90NativeOutputWriter {
                 )
             }
             guard let embeddedSpace=saved.colorSpace,
-                  let savedICC=CGColorSpaceCopyICCData(embeddedSpace)
-                    as Data?,
+                  let savedICC=embeddedSpace.copyICCData(),
                   savedICC==icc else {
                 throw Failure.invalid(
                     "实际文件 ICC 不等于原版 ICC 原字节；拒绝错误色彩标记"
