@@ -24,7 +24,9 @@ enum Build90SourceOutputQuantization {
         }
     }
     enum Storage:String {
-        case uint8,uint16,float16,float32
+        case uint8,uint16
+        case float16="half"
+        case float32="float"
         var bitsPerChannel:Int {
             switch self {
             case .uint8:return 8
