@@ -206,8 +206,9 @@ enum Build82OriginalSpectralRuntime {
             let cameraNorm=after/before
             var windowBefore=0.0,windowAfter=0.0
             for wl in 0..<81 {
-                let source=profile.sensitivity[wl*3+c]*
-                    camera[wl]/cameraNorm*profile.illuminant[wl]
+                let source=(
+                    profile.sensitivity[wl*3+c] * camera[wl] / cameraNorm
+                ) * profile.illuminant[wl]
                 windowBefore+=source
                 windowAfter+=source*window[wl]
             }
@@ -216,9 +217,10 @@ enum Build82OriginalSpectralRuntime {
             }
             let windowNorm=windowAfter/windowBefore
             for wl in 0..<81 {
-                filtered[wl*3+c] =
-                    profile.sensitivity[wl*3+c]*camera[wl]/cameraNorm*
-                    window[wl]/windowNorm
+                let filteredSource=profile.sensitivity[wl*3+c] *
+                    camera[wl] / cameraNorm
+                filtered[wl*3+c] = filteredSource *
+                    window[wl] / windowNorm
             }
         }
         // Source contraction: einsum('ijl,lm->ijm', spectra_lut,
