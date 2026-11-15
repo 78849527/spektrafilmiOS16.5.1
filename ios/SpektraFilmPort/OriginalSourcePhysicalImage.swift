@@ -303,18 +303,33 @@ enum OriginalSourcePhysicalImage {
         let paperFFT:(settings:OriginalSourceDiffusion.Settings,
                       pixelUM:Double)? = activePrintDiffusion
             ? (parameters.printDiffusion,pixelUMForFFT) : nil
+        // Source Float64 peak-budget components; keeping each term
+        // typed avoids Swift's large-expression typecheck timeout.
+        var extraPeakBytesPerPixel:UInt64=0
+        if parameters.scannerOptics.active {
+            extraPeakBytesPerPixel+=scannerFinishExtraBytesPerPixel
+        }
+        if controlledScannerGlare {
+            extraPeakBytesPerPixel+=scannerGlareExtraBytesPerPixel
+        }
+        if controlledFilmGrain {
+            extraPeakBytesPerPixel+=OriginalSourcePhysicalGrain.extraBytesPerPixel
+        }
+        if parameters.cameraOptics.needsWholeImageBlur {
+            extraPeakBytesPerPixel+=cameraLensExtraBytesPerPixel
+        }
+        if parameters.filmHalation.active {
+            extraPeakBytesPerPixel+=filmHalationExtraBytesPerPixel
+        }
+        if parameters.printDiffusion.active {
+            extraPeakBytesPerPixel+=printDiffusionExtraBytesPerPixel
+        }
+        if capturePaperStages {extraPeakBytesPerPixel+=48}
+        if stageDoubleObserver != nil {extraPeakBytesPerPixel+=24}
         try validateMemoryBudget(
             width:w,height:h,
-            cameraDiffusion:cameraFFT,paperDiffusion:paperFFT,
-            additionalBytesPerPixel:
-                (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
-                (controlledScannerGlare ? scannerGlareExtraBytesPerPixel : 0) +
-                (controlledFilmGrain ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
-                (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
-                (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
-                (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0) +
-                (capturePaperStages ? 48 : 0) +
-                (stageDoubleObserver != nil ? 24 : 0)
+            additionalBytesPerPixel:extraPeakBytesPerPixel,
+            cameraDiffusion:cameraFFT,paperDiffusion:paperFFT
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -808,22 +823,29 @@ extension OriginalSourcePixelIO {
         let preflightPaper:(settings:OriginalSourceDiffusion.Settings,
                             pixelUM:Double)?=paperEnabled
             ? (parameters.printDiffusion,sourcePixelsUM):nil
+        var preflightAdditional:UInt64=0
+        if parameters.scannerOptics.active {
+            preflightAdditional+=OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
+        }
+        if parameters.scannerGlare.active && parameters.scannerGlare.percent>0 {
+            preflightAdditional+=OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel
+        }
+        if parameters.sourceGrain.active {
+            preflightAdditional+=OriginalSourcePhysicalGrain.extraBytesPerPixel
+        }
+        if parameters.cameraOptics.needsWholeImageBlur {
+            preflightAdditional+=OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel
+        }
+        if parameters.filmHalation.active {
+            preflightAdditional+=OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel
+        }
+        if parameters.printDiffusion.active {
+            preflightAdditional+=OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel
+        }
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:targetW,height:targetH,
-            cameraDiffusion:preflightCamera,paperDiffusion:preflightPaper,
-            additionalBytesPerPixel:
-                (parameters.scannerOptics.active
-                    ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
-                (parameters.scannerGlare.active && parameters.scannerGlare.percent>0
-                    ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
-                (parameters.sourceGrain.active
-                    ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
-                (parameters.cameraOptics.needsWholeImageBlur
-                    ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
-                (parameters.filmHalation.active
-                    ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
-                (parameters.printDiffusion.active
-                    ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
+            additionalBytesPerPixel:preflightAdditional,
+            cameraDiffusion:preflightCamera,paperDiffusion:preflightPaper
         )
         var frame=try decode(
             data,maximumAllowedPixels:originalLimit,resizedTo:resizedTo
