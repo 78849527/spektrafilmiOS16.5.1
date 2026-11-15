@@ -18,6 +18,26 @@ from opt_einsum import contract
 
 ROOT = pathlib.Path(__file__).resolve().parents[2] / "src/spektrafilm"
 
+import subprocess
+
+SOURCE_BLOBS = {
+    "model/couplers.py": "148570aea33b77b57a14efca7577121631e4d2bc",
+    "model/density_curves.py": "84256f303f2fb898071a5c09593b870df16b80e9",
+    "runtime/params_schema.py": "bbbc257024906b30162c5151c1a293c31c8f8098",
+    "utils/fast_interp.py": "bddcef872b1280fab2d9b9a1157ecc943d990fb2",
+}
+
+
+def verify_fixed_source():
+    for path, expected in SOURCE_BLOBS.items():
+        actual = subprocess.check_output(
+            ["git", "hash-object", str(ROOT / path)],
+            text=True
+        ).strip()
+        assert actual == expected, (
+            "Original source changed, explicitly rebaseline: " + path
+        )
+
 
 def load_original(path, names, namespace):
     tree = ast.parse((ROOT / path).read_text(encoding="utf-8"), filename=path)
@@ -39,6 +59,7 @@ class NumPyNumbaShim:
 
 
 def main(output):
+    verify_fixed_source()
     ns = {
         "np": np, "contract": contract, "dataclass": dataclass,
         "numba": NumPyNumbaShim(),
