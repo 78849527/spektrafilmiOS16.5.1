@@ -62,7 +62,14 @@ enum Build90SourceIOQuantizationValidation {
             let expectedBitPattern=sourceBits.flatMap{$0.map{$0.uint32Value}}
             for ch in expected.indices {
                 let delta=abs(encoded[ch]-expected[ch])
-                guard delta.isFinite,delta==0 else {
+                let isFloat=(spec.storage == .float16 ||
+                             spec.storage == .float32)
+                // Python JSON shortest-decimal of binary32 is not
+                // necessarily a bit-exact Double string. The UINT
+                // path is integer-exact; for floats the authoritative
+                // comparison immediately below is the binary32 BIT PATTERN.
+                let numericTolerance=isFloat ? 2e-12 : 0.0
+                guard delta.isFinite,delta<=numericTolerance else {
                     throw Failure.invalid(
                         "Actual original \(fileExtension)-\(bits) " +
                         "case \(index) channel \(ch): Swift \(encoded[ch]) " +
@@ -100,7 +107,8 @@ enum Build90SourceIOQuantizationValidation {
             }catch Build90SourceOutputQuantization.Failure.invalid(_){}
         }
         print("PASS BUILD90 real original io.py AST: 960/960 " +
-              "float/int output channels EXACT zero error, JPEG+PNG " +
+              "float/int output channels EXACT Float32 bit patterns " +
+              "(integers exact, Float JSON decimal tol 2e-12), JPEG+PNG " +
               "forced uint8, TIFF8/16/32, EXRhalf/F32, clipped integer " +
               "and raw HDR; native byte count verified; EXR codec " +
               "availability is NOT inferred from numeric support.")
