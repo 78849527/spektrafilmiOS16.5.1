@@ -41,6 +41,9 @@ def main(destination):
         dict(active=True,percent=0.0,roughness=0.7,blur=0.4),
         dict(active=True,percent=0.035,roughness=0.65,blur=0.4),
         dict(active=True,percent=0.11,roughness=1.4,blur=3.4),
+        # Source permits >100 scanner glare/blur and zero roughness
+        # consumes zero Numba normals. No arbitrary parameter clipping.
+        dict(active=True,percent=120.0,roughness=0.0,blur=110.0),
     ]
     images=((7,5,8888),(4,6,123456))
     output=[]
@@ -86,15 +89,16 @@ def main(destination):
                         afterBlackWhite=corrected.reshape(-1).tolist(),
                         afterGlare=after.reshape(-1).tolist()
                     ))
-    assert len(output)==48
+    assert len(output)==64
     Path(destination).write_text(json.dumps(
         dict(cases=output,blobs=BLOBS,scope="Original independent Python "
              "ColorReferenceService.black_white_xyz_correction followed by "
              "glare.add_glare, controlled single worker ONLY"),
         allow_nan=False,separators=(",",":")),encoding="utf8")
-    print("ORIGINAL PYTHON COMBINED SCAN XYZ PASS: 48 true Python "
+    print("ORIGINAL PYTHON COMBINED SCAN XYZ PASS: 64 true Python "
           "color reference -> stochastic glare frames, 4 black/white "
-          "modes, three glare strengths, seeded one-worker source only.")
+          "modes, four glare strengths including deterministic >100 " +
+          "zero-RNG source branch, seeded only when original draws.")
 
 if __name__=="__main__":
     main(sys.argv[1])
