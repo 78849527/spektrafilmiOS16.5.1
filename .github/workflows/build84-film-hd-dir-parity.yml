@@ -1,0 +1,56 @@
+name: Build84 film H-D and DIR source-numberical batch
+
+on:
+  push:
+    branches:
+      - 'port/build84-hd-dir-chemistry-spatial-21-22-batch1'
+    paths:
+      - 'ios/SpektraFilmPort/Build84OriginalFilmDIR.swift'
+      - 'ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift'
+      - 'ios/SpektraFilmPort/SpectralPhysics.swift'
+      - 'ios/tests/Build84OriginalFilmDIRValidation.swift'
+      - 'ios/scripts/build84_original_film_dir_oracle.py'
+      - '.github/workflows/build84-film-hd-dir-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-numeric-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact branch and original Python sources
+        uses: actions/checkout@v4
+      - name: Print commit identity and toolchain
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+          python3 --version
+      - name: Install oracle numeric dependencies only
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet \
+            'numpy==2.3.5' 'opt_einsum==3.4.0'
+      - name: Execute exact original source Python AST and Git blob pins
+        run: |
+          python3 ios/scripts/build84_original_film_dir_oracle.py \
+            /tmp/build84-source-oracle.json
+          test -s /tmp/build84-source-oracle.json
+      - name: Parse entire existing app Swift source without changing app
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Compile independent native CPU Float64 H-D and DIR test
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build84OriginalFilmDIR.swift \
+            ios/tests/Build84OriginalFilmDIRValidation.swift \
+            -o /tmp/Build84FilmDIRNumerical
+      - name: Verify density, corrected curves, polarity, gamma and off-branch
+        run: |
+          /tmp/Build84FilmDIRNumerical /tmp/build84-source-oracle.json
+      - name: Preserve source reference fixture
+        uses: actions/upload-artifact@v4
+        with:
+          name: build84-source-film-hd-dir-float64-reference
+          path: /tmp/build84-source-oracle.json
