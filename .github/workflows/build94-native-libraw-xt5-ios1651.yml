@@ -184,6 +184,7 @@ jobs:
           test -s ios/SpektraFilmPort/OriginalSourceDiffusion.swift
           test -s ios/SpektraFilmPort/OriginalPrintOptics.swift
           swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      # Retry with Swift Foundation Data/count bridge fix, source commit 834fc74.
       - name: Build pinned LibRaw 0.22 Fuji compressed X-Trans as real iPhoneOS arm64 static library
         run: |
           bash ios/scripts/build94_compile_libraw_ios.sh
