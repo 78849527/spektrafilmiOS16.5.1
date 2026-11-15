@@ -146,8 +146,8 @@ enum Build88ScannerCombinedProductionDiagnostic {
             }
         }
         let repeatMixed=try render(calibrated)
-        guard repeatMixed.rgb==mixed.rgb,
-              mixed.rgb!=encoded.rgb else {
+        guard repeatMixed.rgb == mixed.rgb,
+              mixed.rgb != encoded.rgb else {
             throw Failure.invalid(
                 "Build88 受控 XYZ 眩光与黑白校准未改变输出或不能重放"
             )
