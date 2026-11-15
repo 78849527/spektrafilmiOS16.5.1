@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.60"
-    CURRENT_PROJECT_VERSION: "93"
+    MARKETING_VERSION: "1.8.61"
+    CURRENT_PROJECT_VERSION: "94"
 packages:
   NextLevel:
     path: Vendor/NextLevel
@@ -39,6 +39,20 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         GENERATE_INFOPLIST_FILE: YES
+        # LibRaw 0.22 pinned and built for iPhoneOS arm64 by Build94 CI.
+        # The source is NOT embedded in this repo or replaced with a stub.
+        SWIFT_OBJC_BRIDGING_HEADER: SpektraFilmPort/Build94LibRawBridge.h
+        HEADER_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/build/vendor/LibRaw"
+        LIBRARY_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/build/vendor/LibRaw/lib"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lraw"
+          - "-lz"
+          - "-lc++"
     info:
       path: SpektraFilmPort/Info.plist
       properties:
