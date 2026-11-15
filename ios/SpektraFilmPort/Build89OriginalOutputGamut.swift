@@ -7,8 +7,8 @@ import Foundation
 /// rather than a hard-coded default. CAM16-UCS is the actual CPU Double
 /// per-pixel appearance model; 33^3 Float32 LUT is never called here.
 ///
-/// Oklch/Oklrab/Jzazbz remain named source choices but must fail
-/// visibly until their own exact source colour model and Cmax are ported.
+/// Oklch and Oklrab use the source Colour Float64 Oklab (not a 3D
+/// lookup). JzAzBz remains fail closed pending its separate PQ model.
 enum Build89OriginalOutputGamut {
     enum Failure:LocalizedError {
         case invalid(String)
@@ -62,8 +62,8 @@ enum Build89OriginalOutputGamut {
             try knee.validate()
             try lightness?.validate()
             switch algorithm {
-            case .off,.acesRGC,.cam16UCS:break
-            case .oklch,.oklrab,.jzazbz:
+            case .off,.acesRGC,.cam16UCS,.oklch,.oklrab:break
+            case .jzazbz:
                 throw Failure.invalid(
                     "原版输出色域算法 \(algorithm.rawValue) " +
                     "尚未通过源 Float64 Cmax/感知变换对照；" +
@@ -130,9 +130,19 @@ enum Build89OriginalOutputGamut {
                 knee:settings.knee.tuple,
                 lightness:settings.lightness?.tuple
             )
-        case .oklch,.oklrab,.jzazbz:
+        case .oklch:
+            return try Build89bOriginalOklabGamut.compress(
+                rgb,space:settings.outputSpace.rawValue,rebased:false,
+                knee:settings.knee,lightness:settings.lightness
+            )
+        case .oklrab:
+            return try Build89bOriginalOklabGamut.compress(
+                rgb,space:settings.outputSpace.rawValue,rebased:true,
+                knee:settings.knee,lightness:settings.lightness
+            )
+        case .jzazbz:
             throw Failure.invalid(
-                "\(settings.algorithm.rawValue) 尚未完成源数值认证"
+                "jzazbz 源 PQ + Cmax 未通过单独 Float64 测试，禁止近似替代"
             )
         }
     }
