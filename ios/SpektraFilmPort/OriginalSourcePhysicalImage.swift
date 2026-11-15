@@ -120,6 +120,9 @@ enum OriginalSourcePhysicalImage {
         // until real ICC/raw ingress has passed independent verification.
         var cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB
         var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
+        /// Explicit original 81-wavelength Hanatos TC LUT full recompute,
+        /// exposing the source poly4 surface even when UV/IR is off.
+        var hanatosSourceRecompute: Bool = false
         // Original PrintingStage.expose: optical paper photon domain,
         // after enlarger/preflash/EV and before paper H-D.
         var printDiffusion: OriginalSourceDiffusion.Settings = .init()
@@ -166,12 +169,8 @@ enum OriginalSourcePhysicalImage {
                     "正片绕过原版放大机，禁止静默应用在扫描后"
                 )
             }
-            guard cameraRawMethod == .mallett2019 || !cameraBandpass.active else {
-                throw Failure.invalid(
-                    "Hanatos 2025 需要按 UV/IR 重新生成光谱 TC LUT；" +
-                    "请选 Mallett 2019 或关闭 UV/IR，不能忽略原版滤镜"
-                )
-            }
+            // Build82: UV/IR is supported by a complete source-spectra
+            // recomputation in Hanatos; backend failures remain explicit.
             if !SpectralPhysics.isPositiveFilm(filmID) && !print.enabled {
                 throw Failure.invalid(
                     "负片逐像素物理模式需要启用原版放大机光学印相和相纸 H-D"
@@ -194,7 +193,8 @@ enum OriginalSourcePhysicalImage {
                 sourceMeasuredFloat64: true,
                 cameraRawMethod: cameraRawMethod,
                 cameraInputColorSpace:cameraInputColorSpace,
-                cameraBandpass: cameraBandpass
+                cameraBandpass: cameraBandpass,
+                hanatosSourceRecompute: hanatosSourceRecompute
             )
         }
     }
