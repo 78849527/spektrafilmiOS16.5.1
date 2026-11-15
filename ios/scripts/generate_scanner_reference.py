@@ -54,7 +54,7 @@ def main():
       "    static let transformsXYZToLinearSRGB: [String: [Double]] = [",
     ]
     sources={}
-    for name in ("D50","K75P"):
+    for name in ("D50","K75P","D65"):
         source=illuminant(name)
         norm=float(np.einsum("w,w->",source,CMFS[:,1]))
         source_xyz=np.einsum("w,wc->c",source,CMFS)/norm
@@ -63,6 +63,38 @@ def main():
         assert matrix.shape==(3,3) and np.isfinite(matrix).all()
         sources[name]=(norm,matrix)
         lines.append(f'        "{name}": {fmt(matrix)},')
+    lines.append("    ]")
+    # Source output colourspace RGB primaries: these Float64 matrices
+    # come from the installed colour-science version, never rounded
+    # hardware display/ColorSync transforms. Every output gamut Cmax
+    # bisection uses these exact same matrices.
+    cs_names=("sRGB","Display P3","ITU-R BT.2020")
+    lines.append("    static let sourceOutputRGBToXYZ: [String: [Double]] = [")
+    for cs_name in cs_names:
+        cs=colour.RGB_COLOURSPACES[cs_name]
+        eye=np.eye(3,dtype=np.float64)
+        rgb2xyz=colour.RGB_to_XYZ(
+            eye,colourspace=cs_name,illuminant=cs.whitepoint,
+            apply_cctf_decoding=False
+        )
+        lines.append(f'        "{cs_name}": {fmt(rgb2xyz)},')
+    lines.append("    ]")
+    lines.append("    static let sourceOutputXYZToRGB: [String: [Double]] = [")
+    for cs_name in cs_names:
+        cs=colour.RGB_COLOURSPACES[cs_name]
+        xyz2rgb=colour.XYZ_to_RGB(
+            np.eye(3,dtype=np.float64),
+            colourspace=cs_name,illuminant=cs.whitepoint,
+            apply_cctf_encoding=False
+        )
+        lines.append(f'        "{cs_name}": {fmt(xyz2rgb)},')
+    lines.append("    ]")
+    lines.append("    static let sourceOutputWhiteXYZ: [String: [Double]] = [")
+    for cs_name in cs_names:
+        cs=colour.RGB_COLOURSPACES[cs_name]
+        xy=cs.whitepoint
+        xyz=colour.xy_to_XYZ(xy)
+        lines.append(f'        "{cs_name}": {fmt(xyz)},')
     lines.append("    ]")
     # The original ScanningStage._apply_cctf_encoding calls
     # colour.RGB_to_RGB(sRGB,sRGB,decoding=False,encoding=True).
