@@ -178,6 +178,13 @@ enum Build87OriginalColorReference {
         }
     }
 
+    /// sRGB's linearization from upstream _remove_sRGB_cctf; reference
+    /// code has no dependency on app-generated scanner LUT tables.
+    static func decodeSRGB(_ value:Double) -> Double {
+        value <= 0.04045
+            ? value/12.92 : pow((value+0.055)/1.055,2.4)
+    }
+
     /// Original _correction_fucntion (sic) source:
     /// when only black is active, preserve measured white; vice versa.
     /// Never infer that 'blackCorrection=true' also enables white.
@@ -197,10 +204,10 @@ enum Build87OriginalColorReference {
             throw Failure.invalid("源黑白扫描参考退化，拒绝静默旁路")
         }
         let black=settings.blackCorrection
-            ? OriginalScannerMath.decodeSRGB(settings.blackLevel)
+            ? decodeSRGB(settings.blackLevel)
             : yBlack
         let white=settings.whiteCorrection
-            ? OriginalScannerMath.decodeSRGB(settings.whiteLevel)
+            ? decodeSRGB(settings.whiteLevel)
             : yWhite
         let m=(white-black)/(yWhite-yBlack+1e-10)
         let q=black-m*yBlack
