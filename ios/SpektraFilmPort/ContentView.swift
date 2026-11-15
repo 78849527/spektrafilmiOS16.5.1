@@ -231,6 +231,11 @@ final class PhotoEditorModel: ObservableObject {
     private var renderGeneration = 0
     private var pendingRender: Task<Void, Never>?
     private var originalMetalPreviewVersion = 0
+    // A stale simulation cannot release the busy state of a newer request.
+    private var activeSimulationGeneration: Int?
+    private var photoTransferToken: UInt64 = 0
+    private var photoTransferActive = false
+    private var photoTransferTask: Task<Void, Never>?
 
     func queueSpectralPreview() {
         pendingRender?.cancel()
@@ -335,6 +340,11 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     var hasPhoto: Bool { source != nil }
+    /// RAW-compatible CI images do NOT satisfy direct source pixel input.
+    /// Full high-depth/ICC validation still runs inside the exact pipeline.
+    var originalPixelInputAvailable: Bool {
+        source != nil && originalPhotoData != nil
+    }
 
     /// Explicitly reject all unported combinations in direct source mode.
     /// No silent switch back to Core Image when the user selected precision.
@@ -512,22 +522,42 @@ final class PhotoEditorModel: ObservableObject {
 
     func selectFromPhotos(_ selection: PhotosPickerItem?) {
         guard let selection else { return }
-        guard !busy else {
-            status="当前正在处理，请完成后再次选择照片；旧图未被覆盖"
+        // A new selection supersedes only an in-flight Photos transfer.
+        // Never interrupt optical rendering, save, or RAW decoding.
+        guard !busy || photoTransferActive else {
+            status="正在执行其他处理；照片导入未开始，当前编辑保持不变"
             return
         }
-        busy = true
-        status = "正在读取照片…"
-        Task {
+        photoTransferTask?.cancel()
+        photoTransferToken &+= 1
+        let token=photoTransferToken
+        photoTransferActive=true
+        busy=true
+        status="正在读取相册照片…"
+        photoTransferTask=Task { @MainActor in
+            defer {
+                if token == photoTransferToken {
+                    photoTransferActive=false
+                    busy=false
+                    photoTransferTask=nil
+                }
+            }
             do {
-                guard let data = try await selection.loadTransferable(type: Data.self) else {
+                guard let data=try await selection.loadTransferable(
+                    type: Data.self
+                ) else {
                     throw ImageProcessingError.invalid("相册未提供照片数据")
+                }
+                guard !Task.isCancelled && token == photoTransferToken else {
+                    return
                 }
                 try loadPhoto(data)
             } catch {
-                status = "相册导入失败：" + error.localizedDescription
+                guard !Task.isCancelled && token == photoTransferToken else {
+                    return
+                }
+                status="相册导入失败（原编辑已保留）：" + error.localizedDescription
             }
-            busy = false
         }
     }
 
@@ -890,6 +920,7 @@ final class PhotoEditorModel: ObservableObject {
             ? (filmName + " · 反转片直扫")
             : (filmName + " → " + paperName)
         busy = true
+        activeSimulationGeneration=generation
         status = "正在计算 \(selectionDescription)，原版 Hanatos2025 光谱输入…"
         let cameraExposure = filmExposureEV
         let enlargerExposure = printExposureEV
@@ -993,7 +1024,10 @@ final class PhotoEditorModel: ObservableObject {
                 guard generation == renderGeneration else { return }
                 status = "光谱计算失败：" + error.localizedDescription
             }
-            if generation == renderGeneration { busy = false }
+            if activeSimulationGeneration == generation {
+                activeSimulationGeneration=nil
+                busy=false
+            }
         }
     }
 
