@@ -269,21 +269,20 @@ enum Build84OriginalFilmDIR {
         let beforeDIR: [Double]
         let matrix: [Double]
         let maximum: [Double]
+        let exposureAxes: [[Double]]
+        let initialChannels: [[Double]]
+        let correctedChannels: [[Double]]
 
         func develop(_ logRaw:[Double], corrected:Bool) throws -> [Double] {
             guard logRaw.count==3,
                   logRaw.allSatisfy({ $0.isFinite }) else {
                 throw Failure.invalid("Build84 原版 H-D 光子曝光无效")
             }
-            let lookup = corrected ? beforeDIR : densityCurves
+            let lookup = corrected ? correctedChannels : initialChannels
             var result=[Double](repeating:0,count:3)
             for ch in 0..<3 {
-                let gamma=settings.gammaRGB[ch]
-                // Corresponds exactly to source x_axis = log_exposure/gamma.
-                let x=logExposure.map { $0/gamma }
-                let y=(0..<logExposure.count).map { lookup[$0*3+ch] }
                 result[ch]=Build84OriginalFilmDIR.npInterp(
-                    logRaw[ch],axis:x,values:y
+                    logRaw[ch],axis:exposureAxes[ch],values:lookup[ch]
                 )
             }
             return result
@@ -327,7 +326,16 @@ enum Build84OriginalFilmDIR {
         return Prepared(
             settings:settings,positive:positive,
             logExposure:logExposure,densityCurves:normalizedDensityCurves,
-            beforeDIR:corrected,matrix:matrix,maximum:maxDensity
+            beforeDIR:corrected,matrix:matrix,maximum:maxDensity,
+            exposureAxes:(0..<3).map { ch in
+                logExposure.map { $0/settings.gammaRGB[ch] }
+            },
+            initialChannels:(0..<3).map { ch in
+                (0..<256).map { normalizedDensityCurves[$0*3+ch] }
+            },
+            correctedChannels:(0..<3).map { ch in
+                (0..<256).map { corrected[$0*3+ch] }
+            }
         )
     }
 }
