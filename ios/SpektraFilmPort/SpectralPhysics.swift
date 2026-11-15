@@ -960,10 +960,11 @@ struct SpectralPhysics {
                         filmDensities:filmDensity,film:originalFilm,
                         weights:pWeights,clampDensity:false
                     )
-                    let logRaw=OriginalPrintOptics.paperLogExposure(
-                        raw:raw,reference:printReference,
-                        preflash:opticalPreflashRaw,printEV:0
-                    )
+                    let logRaw=try Build87OriginalColorReference
+                        .referencePaperLogExposure(
+                            raw:raw,reference:printReference,
+                            preflash:opticalPreflashRaw
+                        )
                     return try Build87OriginalColorReference.referencePaperDensity(
                         rawLog:logRaw,
                         logExposure:originalPaper.sourceExposureAxis,
