@@ -39,6 +39,10 @@ struct FloatingEditorWorkspace: View {
     @State private var selectedFeature: AdjustmentFeature? = .basic
     // Confirm before changing any OTHER user-selected settings.
     @State private var pendingSourceMode: SourceModeChange?
+    // The fast/editor configuration is saved only when first entering a
+    // source-pixel mode. Leaving that mode restores the exact user values,
+    // not a hardcoded default set. Never persist a snapshot across images.
+    @State private var savedFastSettings: FastSettingsSnapshot?
     @State private var comparisonEnabled = false
     @State private var statusReportPresented = false
     @State private var compareFraction = 0.5
@@ -89,6 +93,53 @@ struct FloatingEditorWorkspace: View {
             case .disablePixel: return "关闭像素直连并退出关联模式？"
             case .disablePhysical: return "退出逐像素全光学？"
             }
+        }
+    }
+
+    private struct FastSettingsSnapshot {
+        let strength: Double
+        let grain: Bool
+        let scannerFinishing: Bool
+        let scatter: Bool
+        let halation: Bool
+        let dir: Bool
+        let sourceConvolution: Bool
+        let hanatosDouble: Bool
+        let sourceScanner: Bool
+        let printOptics: Bool
+        let cam16: Bool
+        let blackWhite: Bool
+        let exposureReference: Bool
+
+        init(_ model: PhotoEditorModel) {
+            strength=model.strength
+            grain=model.grainEnabled
+            scannerFinishing=model.scannerFinishingEnabled
+            scatter=model.scatterEnabled
+            halation=model.halationEnabled
+            dir=model.spatialDIREnabled
+            sourceConvolution=model.spatialDIRSourceConvolutionEnabled
+            hanatosDouble=model.hanatosOriginalPrecisionEnabled
+            sourceScanner=model.originalScannerEnabled
+            printOptics=model.originalPrintOpticsEnabled
+            cam16=model.scannerCAM16Enabled
+            blackWhite=model.scannerBlackWhiteEnabled
+            exposureReference=model.exposureReferenceEnabled
+        }
+        func restore(_ model: PhotoEditorModel) {
+            model.strength=strength
+            model.grainEnabled=grain
+            model.scannerFinishingEnabled=scannerFinishing
+            model.scatterEnabled=scatter
+            model.halationEnabled=halation
+            model.spatialDIREnabled=dir
+            model.spatialDIRSourceConvolutionEnabled=sourceConvolution
+            model.hanatosOriginalPrecisionEnabled=hanatosDouble
+            model.originalScannerEnabled=sourceScanner
+            model.originalPrintOpticsEnabled=printOptics
+            model.scannerCAM16Enabled=cam16
+            model.scannerBlackWhiteEnabled=blackWhite
+            model.exposureReferenceEnabled=exposureReference
         }
     }
 
@@ -215,7 +266,9 @@ struct FloatingEditorWorkspace: View {
         // prerequisites are not silently fabricated by the UI.
         // Compatibility mode retains existing strict dependencies; full
         // physical mode may prepare prerequisites only after confirmation.
-        guard model.lut != nil else { return }
+        // A source-exact pixel path requires original photo bytes. Decoded
+        // Apple/LibRaw CI images cannot be relabeled as Python Float64.
+        guard model.lut != nil, model.originalPixelInputAvailable else { return }
         if mode == .pixel &&
             (!model.spatialDIREnabled ||
              !model.spatialDIRSourceConvolutionEnabled) { return }
@@ -237,6 +290,10 @@ struct FloatingEditorWorkspace: View {
             }
             model.sourcePixelIOEnabled = false
             model.sourcePhysicalDirectEnabled = false
+            if let savedFastSettings {
+                savedFastSettings.restore(model)
+                self.savedFastSettings=nil
+            }
             model.queueSpectralPreview()
             return
         }
@@ -247,6 +304,9 @@ struct FloatingEditorWorkspace: View {
             model.halationEnabled = false
             model.queueSpectralPreview()
             return
+        }
+        if !model.sourcePixelIOEnabled && savedFastSettings == nil {
+            savedFastSettings=FastSettingsSnapshot(model)
         }
         model.strength = 1.0
         model.grainEnabled = false
@@ -278,7 +338,8 @@ struct FloatingEditorWorkspace: View {
             ? model.sourcePixelIOEnabled : model.sourcePhysicalDirectEnabled
         let prerequisite = model.spatialDIREnabled &&
             model.spatialDIRSourceConvolutionEnabled &&
-            model.lut != nil && (mode == .pixel || model.sourcePixelIOEnabled)
+            model.lut != nil && model.originalPixelInputAvailable &&
+            (mode == .pixel || model.sourcePixelIOEnabled)
         return HStack(spacing: 7) {
             Text(title)
                 .font(.caption2)
@@ -430,6 +491,11 @@ struct FloatingEditorWorkspace: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+            .onChange(of: model.photoDimensions) { _ in
+                // Saved per-photo settings never carry into a newly loaded
+                // photo. The new document is its own state boundary.
+                savedFastSettings=nil
+            }
             .alert(item: $pendingSourceMode) { mode in
                 Alert(
                     title: Text(mode.title),
@@ -555,33 +621,6 @@ struct FloatingEditorWorkspace: View {
             if model.capturedRAWURL != nil {
                 toolButton("doc", name: "分享保留的原始 RAW 文件", action: onShareRaw)
                     .disabled(model.busy)
-                toolButton("checkmark.shield", name: "检测真实 Apple RAW 后端（不改变原片）") {
-                    model.probePreservedRAWBackend()
-                }
-                .disabled(model.busy)
-                Menu {
-                    Button("原片白平衡 / EV 0 / 不校正镜头") {
-                        model.probePreservedRAWDevelopment(.asShot)
-                    }
-                    Button("Apple RAW：6504K / Tint 0（诊断）") {
-                        model.probePreservedRAWDevelopment(.daylightDiagnostic)
-                    }
-                    Button("Apple RAW：2850K / Tint 0（诊断）") {
-                        model.probePreservedRAWDevelopment(.tungstenDiagnostic)
-                    }
-                    Button("Apple RAW：6504K / EV +1 / 镜头校正（诊断）") {
-                        model.probePreservedRAWDevelopment(.init(
-                            whiteBalance: .appleTemperature(
-                                kelvin: 6504, tintOffset: 0),
-                            exposureEV: 1,
-                            appleLensCorrection: true
-                        ))
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-                .accessibilityLabel("Apple RAW 白平衡、曝光和镜头诊断；不等于 Python rawpy")
-                .disabled(model.busy)
             }
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 Image(systemName: "photo")
@@ -591,10 +630,6 @@ struct FloatingEditorWorkspace: View {
 
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
                 .disabled(model.busy)
-            toolButton("crop.rotate", name: "Build81 原版裁剪与预览数值诊断（需小于 2MP sRGB）") {
-                model.probeBuild81OriginalGeometry()
-            }
-            .disabled(model.busy)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
             // original unchanged, adaptive 50% of live memory capped at 12MP, or economy 30% capped at 7.2MP.
@@ -733,6 +768,42 @@ struct FloatingEditorWorkspace: View {
                     Text("仅导出真实 iPhone Float64 阶段数据；本操作不声明 Python 数值等价。结果保存在「文件」App 的本机应用目录。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                    Divider()
+                    Text("开发者诊断 · 不影响当前冲印结果")
+                        .font(.subheadline).fontWeight(.semibold)
+                    Button("Build81 原版裁切/预览数值测试（限 2MP sRGB）") {
+                        model.probeBuild81OriginalGeometry()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy || !model.originalPixelInputAvailable)
+                    if model.capturedRAWURL != nil {
+                        Button("检查 Apple RAW 实际解码器") {
+                            model.probePreservedRAWBackend()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.busy)
+                        Menu("Apple RAW 白平衡 / EV / 镜头专项诊断") {
+                            Button("相机原片白平衡 / EV 0") {
+                                model.probePreservedRAWDevelopment(.asShot)
+                            }
+                            Button("日光 6504K / Tint 0") {
+                                model.probePreservedRAWDevelopment(.daylightDiagnostic)
+                            }
+                            Button("钨灯 2850K / Tint 0") {
+                                model.probePreservedRAWDevelopment(.tungstenDiagnostic)
+                            }
+                            Button("日光 +1EV 与镜头修正") {
+                                model.probePreservedRAWDevelopment(.init(
+                                    whiteBalance:.appleTemperature(
+                                        kelvin:6504,tintOffset:0
+                                    ),
+                                    exposureEV:1,
+                                    appleLensCorrection:true
+                                ))
+                            }
+                        }
+                        .disabled(model.busy)
+                    }
                     Text(model.hardwareDiagnosticReport ?? model.status)
                         .font(.system(size: 14, design: .monospaced))
                         .foregroundColor(.primary)
@@ -1136,10 +1207,14 @@ struct FloatingEditorWorkspace: View {
                             in:RoundedRectangle(cornerRadius:8))
                 }
                 .buttonStyle(.plain)
-                .disabled(!model.hasPhoto || model.busy || model.lut == nil)
-                .accessibilityHint("检查源 DIR、像素通道、扫描及放大机依赖；变更前逐项确认")
+                .disabled(!model.hasPhoto || model.busy ||
+                          model.lut == nil || !model.originalPixelInputAvailable)
+                .accessibilityHint("需要已认证原始照片字节、胶片/相纸与完整 DIR。RAW 兼容图不能进入原版精确模式；变更前确认")
             }
-            if directPixelMode && !fullPhysicalMode {
+            if !model.originalPixelInputAvailable && model.hasPhoto {
+                Text("当前输入无原版像素直连数据；继续使用快速冲印，不会假装为 Float64 精确路径。")
+                    .font(.caption2).foregroundColor(.secondary)
+            } else if directPixelMode && !fullPhysicalMode {
                 Text("当前为兼容处理。可切换快速冲印，或确认启用精细冲印依赖。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if fullPhysicalMode {
