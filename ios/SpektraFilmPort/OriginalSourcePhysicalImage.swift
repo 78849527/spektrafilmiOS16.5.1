@@ -99,6 +99,12 @@ enum OriginalSourcePhysicalImage {
         let dir: SpatialDIRSettings
         let print: OriginalPrintOptics.Settings
         let morph: OriginalPrintMorph.Settings
+        /// Original DirCouplersParams.active=false bypasses BOTH chemistry
+        /// and pre-DIR corrected curves. Default preserves prior production.
+        var sourceCouplersActive: Bool = true
+        /// Original diffusion_size_um=0 runs non-spatial DIR chemistry but
+        /// skips FIR/YVV, without dividing by pixel_size_um.
+        var sourceSpatialDiffusionEnabled: Bool = true
         // Separate opt-in deterministic Python source scan finishing.
         // Defaults preserve all user-validated v1.8.25 RGB and memory paths.
         var scannerOptics: OriginalSourceScannerOptics.Settings = .init()
@@ -378,15 +384,16 @@ enum OriginalSourcePhysicalImage {
                 : engine.sourceSpatialInput(
                     encodedRGB:sample,cameraEV:parameters.cameraEV
                 )
+            let sourceInhibition = parameters.sourceCouplersActive
+                ? try Build84OriginalFilmDIR.inhibitors(
+                    density:initial.initialDensity,
+                    maximum:source.densityMaximum,
+                    matrix:source.matrix,
+                    positive:source.positive
+                  )
+                : [0.0,0.0,0.0]
             for receiver in 0..<3 {
-                var total=0.0
-                for donor in 0..<3 {
-                    let d=initial.initialDensity[donor]
-                    let silver=source.positive
-                        ? source.densityMaximum[donor]-d : d
-                    total+=silver*source.matrix[donor*3+receiver]
-                }
-                inhibitors[k+receiver]=total
+                inhibitors[k+receiver]=sourceInhibition[receiver]
             }
             for c in 0..<3 {
                 frame.rgb[k+c]=initial.rawLog[c]
@@ -405,12 +412,21 @@ enum OriginalSourcePhysicalImage {
         let pixelUM=parameters.dir.referencePixelSizeUM ??
             (36_000.0/Double(max(w,h)))
         let radius=parameters.dir.diffusionRadiusScale
-        let diffused=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-            inhibitors,width:w,height:h,
-            coreSigma:20.0*radius/pixelUM,
-            tailSigma:200.0*radius/pixelUM,
-            tailWeight:parameters.dir.tailWeight
-        )
+        let diffused:[Double]
+        if !parameters.sourceCouplersActive {
+            // Source active=false: no chemistry, no spatial filter.
+            diffused=[Double](repeating:0,count:size)
+        } else if !parameters.sourceSpatialDiffusionEnabled {
+            // Source diffusion_size_um=0: skip filter, retain inhibitors.
+            diffused=inhibitors
+        } else {
+            diffused=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
+                inhibitors,width:w,height:h,
+                coreSigma:20.0*radius/pixelUM,
+                tailSigma:200.0*radius/pixelUM,
+                tailWeight:parameters.dir.tailWeight
+            )
+        }
         // Do not keep another full-frame 3-channel inhibitor buffer alive
         // while computing the real spectral paper/scan output.
         inhibitors.removeAll(keepingCapacity:false)
@@ -443,9 +459,9 @@ enum OriginalSourcePhysicalImage {
             let corrected=(0..<3).map { c in
                 frame.rgb[k+c]-diffused[k+c]
             }
-            let density=try engine.sourceSpatialDevelopCorrectedLog(
-                corrected
-            )
+            let density=try parameters.sourceCouplersActive
+                ? engine.sourceSpatialDevelopCorrectedLog(corrected)
+                : engine.sourceSpatialDevelopInitialLog(corrected)
             // PrintingStage source chronology: film CMY -> optical
             // paper raw -> source full-frame diffuser -> log10 -> paper
             // H-D -> original scanner. Never diffuse scanned RGB.
