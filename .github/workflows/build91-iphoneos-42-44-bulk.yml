@@ -110,6 +110,8 @@ jobs:
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
           test -s ios/tests/Build91DoubleFFTBenchmark.swift
           grep -q 'Build91PhysicalMemory.plan' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'extraPeakBytesPerPixel' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'preflightAdditional' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
           grep -q 'cachedPipelineStats' ios/SpektraFilmPort/OriginalMetalIIR.swift
           grep -q 'Build91MemoryProductionDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
           grep -q 'withUnsafeMutableBufferPointer' ios/SpektraFilmPort/OriginalSourceDiffusion.swift
