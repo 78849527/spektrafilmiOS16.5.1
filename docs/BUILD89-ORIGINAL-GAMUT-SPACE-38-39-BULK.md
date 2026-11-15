@@ -39,3 +39,14 @@
 ## 合并构建
 
 Build89 Xcode 16.4 iPhoneOS arm64 只在此批数值测试和源代码合并后集中执行；真正运行结果单独引用工作流、受测 commit SHA 和结论。
+
+## 2026-11-15 本批最终编译结果
+
+- [Build89 iPhoneOS arm64 合并编译 run 43684039800](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43684039800)：**PASS**，`BUILD SUCCEEDED`。编译时提交 `f8abcad971445270964ccedd8588a0a422b8e91d`。
+- Xcode 16.4、iPhoneOS Release SDK、`generic/platform=iOS`、`CODE_SIGNING_ALLOWED=NO`，完整 App arm64 二进制与 `default.metallib` 检查通过。
+- 版本保持 `CFBundleShortVersionString=1.8.58`、`CFBundleVersion=83`；**没有 Build89 IPA、签名或 GitHub Release**。
+- [CAM16 原版 216 组](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43683821720) **PASS**：源逐像素 CAM16 正向最大 `3.077538224260934e-13`、逆向 RGB 最大 `4.218847493575595e-15`、压缩最终 RGB 最大 `1.8207657603852567e-14`；3 个空间、原版 64×720、18 次 bisection。
+- [ACES/OFF 原版 126 组](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43683561713) **PASS**：最大 `4.440892098500626e-16`。
+- 真实 iPhone 设备执行此时未完成；Xcode 模块编译成功**不能替代**真实 7×5 app 诊断/8–13MP 原版整幅科学对照。
+- 原版 CIECAM/CAM16-UCS 的 Swift Float64 公式参考 Colour Developers colour-science v0.4.6，BSD-3-Clause；许可详见 https://github.com/colour-science/colour/blob/v0.4.6/LICENSE 和上游原项目许可证。
+- GitHub 源码运行与本地 Xcode 生成前，须先执行 `ios/scripts/generate_scanner_reference.py` 与既有生成原版各表的脚本；这些缓存并非全部预先提交到 GitHub。原始 Python 源码校验和改动门槛不变。
