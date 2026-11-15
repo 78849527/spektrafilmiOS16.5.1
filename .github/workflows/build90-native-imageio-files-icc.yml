@@ -1,0 +1,41 @@
+name: Build90 source ICC native ImageIO JPEG PNG TIFF physical files
+
+on:
+  push:
+    branches:
+      - 'port/build90-file-output-icc-lut-40-41-bulk'
+    paths:
+      - 'ios/scripts/build90_generate_original_icc.py'
+      - 'ios/SpektraFilmPort/Build90SourceOutputQuantization.swift'
+      - 'ios/SpektraFilmPort/Build90NativeOutputWriter.swift'
+      - 'ios/tests/Build90NativeImageIOValidation.swift'
+      - '.github/workflows/build90-native-imageio-files-icc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-original-files:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact macOS Swift compiler
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          git rev-parse HEAD
+      - name: Generate pinned source ORIGINAL ICC bytes
+        run: |
+          python3 ios/scripts/build90_generate_original_icc.py
+          test -s ios/SpektraFilmPort/Build90GeneratedSourceICC.swift
+      - name: Compile actual source-ICC ImageIO output writer
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build90GeneratedSourceICC.swift \
+            ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
+            ios/SpektraFilmPort/Build90NativeOutputWriter.swift \
+            ios/tests/Build90NativeImageIOValidation.swift \
+            -o /tmp/Build90OriginalICCImageIO
+          /tmp/Build90OriginalICCImageIO
