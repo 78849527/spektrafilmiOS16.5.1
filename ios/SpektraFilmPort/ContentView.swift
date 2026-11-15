@@ -2,6 +2,9 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
+#if os(iOS)
+import os
+#endif
 
 @MainActor
 final class PhotoEditorModel: ObservableObject {
@@ -2007,6 +2010,84 @@ struct ContentView: View {
                         } catch {
                             model.status="Build101 阶段验证存档失败：" +
                                 error.localizedDescription
+                            message=error.localizedDescription
+                        }
+                    }
+                },
+                onRunBuild103Metrics: {
+                    guard !model.busy else { return }
+                    diagnosticDismissPending=true
+                    model.busy=true
+                    model.status="正在执行 28 核心阶段 Float64 数值、单线程颗粒及内存诊断…"
+                    let bundle=Bundle.main
+                    let ver=bundle.object(
+                        forInfoDictionaryKey:"CFBundleShortVersionString"
+                    ) as? String ?? "unknown"
+                    let build=bundle.object(
+                        forInfoDictionaryKey:"CFBundleVersion"
+                    ) as? String ?? "unknown"
+                    let revision=bundle.object(
+                        forInfoDictionaryKey:"SFSourceCommit"
+                    ) as? String ?? "missing"
+                    let device=UIDevice.current.model
+                    let system=UIDevice.current.systemVersion
+                    #if targetEnvironment(simulator)
+                    let physical=false
+                    #else
+                    let physical=true
+                    #endif
+                    let manifest=bundle.url(
+                        forResource:"manifest",withExtension:"json",
+                        subdirectory:Build101DeviceParityEvidence.fixture
+                    )
+                    Task { @MainActor in
+                        defer { model.busy=false }
+                        let report=await Task.detached(priority:.userInitiated) {
+                            Build103VerificationEvidence.capture(
+                                version:ver,build:build,commit:revision,
+                                device:device,osVersion:system,
+                                physicalDevice:physical,
+                                manifestURL:manifest,
+                                evaluate:{ observe in
+                                    guard let manifest else {
+                                        throw NSError(
+                                            domain:"Build103",code:8,
+                                            userInfo:[NSLocalizedDescriptionKey:
+                                                "源清单缺失，禁止运行无参考路径"])
+                                    }
+                                    try SourcePhysicalImageParity.evaluate(
+                                        fixtures:manifest.deletingLastPathComponent(),
+                                        onBuild103StageMetric:observe
+                                    )
+                                },
+                                rng:{
+                                    try Build103VerificationEvidence.sampleSeededNumba()
+                                },
+                                memory:{
+                                    Build103VerificationEvidence.sampleBoundedMemory(
+                                        physicalBytes:ProcessInfo.processInfo.physicalMemory,
+                                        available:{ UInt64(os_proc_available_memory()) }
+                                    )
+                                }
+                            )
+                        }.value
+                        do {
+                            guard let documents=FileManager.default.urls(
+                                for:.documentDirectory,in:.userDomainMask
+                            ).first else {
+                                throw ImageProcessingError.invalid(
+                                    "无法保存 Build103 报告：本机文档目录不可访问"
+                                )
+                            }
+                            let file=try Build103VerificationEvidence.write(
+                                report,documents:documents
+                            )
+                            model.status=report.controlledCoreStagesPassedOnTarget
+                                ? "Build103 受控 28 核心阶段通过；默认整图、多线程及大图仍未认证"
+                                : "Build103 阶段未全通过；已保留首错及实际误差 JSON"
+                            enqueueDiagnosticShare(file)
+                        } catch {
+                            model.status="Build103 诊断保存失败："+error.localizedDescription
                             message=error.localizedDescription
                         }
                     }
