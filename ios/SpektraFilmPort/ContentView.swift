@@ -1051,7 +1051,9 @@ final class PhotoEditorModel: ObservableObject {
                           ) : nil
                     return (cube, density, spatialDIR)
                 }.value
-                guard generation == renderGeneration else { return }
+                guard Build99InteractionRules.acceptsPreview(
+                    generation:generation, current:renderGeneration
+                ) else { return }
                 // Atomic optical update; old grain and LUT must not be
                 // mixed with a newly selected stock on a failed refresh.
                 let oldLUT=lut
@@ -1096,7 +1098,9 @@ final class PhotoEditorModel: ObservableObject {
                             ? "显影密度颗粒 → 原版印相链路已启用。"
                             : "原版光谱链路已启用。"))
             } catch {
-                guard generation == renderGeneration else { return }
+                guard Build99InteractionRules.acceptsPreview(
+                    generation:generation, current:renderGeneration
+                ) else { return }
                 // Keep dirty state: a stale LUT cannot be exported under
                 // the currently selected film/paper label.
                 processedPreview=nil
@@ -1562,7 +1566,9 @@ final class PhotoEditorModel: ObservableObject {
         guard let src = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
-        guard !simulationAwaitingCurrentSettings else {
+        guard Build99InteractionRules.canExport(
+            pendingSelectedMaterial:simulationAwaitingCurrentSettings
+        ) else {
             throw ImageProcessingError.invalid(
                 "当前胶片/相纸仍在模拟或已失败；禁止使用旧 LUT 导出"
             )
@@ -1660,7 +1666,9 @@ final class PhotoEditorModel: ObservableObject {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
-        guard !simulationAwaitingCurrentSettings else {
+        guard Build99InteractionRules.canExport(
+            pendingSelectedMaterial:simulationAwaitingCurrentSettings
+        ) else {
             throw ImageProcessingError.invalid("胶片/相纸尚未匹配当前选项，无法导出旧效果")
         }
         try requireConfiguredGrain()
@@ -1754,7 +1762,9 @@ final class PhotoEditorModel: ObservableObject {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
-        guard !simulationAwaitingCurrentSettings else {
+        guard Build99InteractionRules.canExport(
+            pendingSelectedMaterial:simulationAwaitingCurrentSettings
+        ) else {
             throw ImageProcessingError.invalid("胶片/相纸尚未匹配当前选项，无法导出旧效果")
         }
         try requireConfiguredGrain()
