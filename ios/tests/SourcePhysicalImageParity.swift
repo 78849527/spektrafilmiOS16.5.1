@@ -85,24 +85,6 @@ enum SourcePhysicalImageParity {
         }
     }
 
-    /// Genuine, independently SHA-verified upstream Python Float64
-    /// reference compared to this same production Swift stage buffer.
-    /// Only the seven standard core taps per fixture are recorded here;
-    /// auxiliary grain/print/XYZ tests still run but are not miscounted.
-    struct Build103StageMetric: Codable {
-        let caseName: String
-        let stageName: String
-        let channelCount: Int
-        let mae: Double
-        let rmse: Double
-        let maximumAbsoluteError: Double
-        let worstPixel: Int
-        let worstChannel: Int
-        let overMaximumTolerance: Int
-        let maximumTolerance: Double
-        let maeTolerance: Double
-        let expectedPythonStageSHA256: String
-    }
     private struct Metrics {
         let mae: Double
         let rmse: Double
@@ -153,7 +135,7 @@ enum SourcePhysicalImageParity {
 
     static func evaluate(
         fixtures: URL,
-        onBuild103StageMetric: ((Build103StageMetric) -> Void)? = nil
+        onBuild103StageMetric: ((Build103VerificationEvidence.StageMetric) -> Void)? = nil
     ) throws {
         let doc=try Data(
             contentsOf:fixtures.appendingPathComponent("manifest.json")
@@ -358,7 +340,7 @@ enum SourcePhysicalImageParity {
                     maeTolerance:meanTolerance,
                     label:fixture.name + "/" + stage
                 )
-                onBuild103StageMetric?(Build103StageMetric(
+                onBuild103StageMetric?(Build103VerificationEvidence.StageMetric(
                     caseName:fixture.name,stageName:stage,
                     channelCount:observed.count,
                     mae:stageMetrics.mae,rmse:stageMetrics.rmse,
