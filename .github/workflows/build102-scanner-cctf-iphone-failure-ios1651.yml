@@ -1,3 +1,4 @@
+# Build102 test compilation retry: single-expression Swift diagnostics (no source algorithm edits).
 # Build101 retry: corrected Swift XCTest-host equality parser newline.
 # Build98 minimal Xcode Swift concurrency fix: @MainActor FastSettingsSnapshot.
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
