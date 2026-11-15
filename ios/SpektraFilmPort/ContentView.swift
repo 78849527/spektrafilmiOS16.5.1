@@ -490,7 +490,7 @@ final class PhotoEditorModel: ObservableObject {
                 status="已无损导入 ."+kind.rawValue.uppercased()
                     + " 原片，SHA256="+String(saved.sha256.prefix(12))
                     + "…，已保存至「文件」/ SpektraFilm RAW Imports。"
-                    + "请选择「Apple RAW 兼容模式」执行真实去马赛克，或仅保存原片。"
+                    + "请选择 Apple RAW / LibRaw 8-bit / LibRaw 16-bit 进行显影，或仅保存。"
                 return
             }
             try loadPhoto(Data(contentsOf: url))
@@ -583,6 +583,48 @@ final class PhotoEditorModel: ObservableObject {
                     "不代表 Python rawpy / Float64 数值等价。"
             } catch {
                 status="LibRaw RAW 解码失败（保留原始 RAF，绝不退回 JPEG）：" +
+                    error.localizedDescription
+            }
+        }
+    }
+
+    /// Build95: explicit high-depth LibRaw Fujifilm path. The existing
+    /// Build93 Apple RAW and Build94 RGB8 routes remain unchanged.
+    func openPreservedRAW16Bit() {
+        guard let url = capturedRAWURL else {
+            status = "请先导入并保存富士 RAF 原始文件"
+            return
+        }
+        guard !busy else { return }
+        busy = true
+        status = "LibRaw 16-bit：正在解包真实 RAF、校验 UInt16 RGB 与内存预算…"
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                let decoded = try await Task.detached(priority: .userInitiated) {
+                    let actual = try Build95LibRaw16Ingress.open(url)
+                    let preview = try PhotoProcessor.preview(
+                        actual.image, lut: nil, strength: 0
+                    )
+                    return (actual, preview)
+                }.value
+                invalidateSimulation()
+                // This user-selected compatibility path is not rawpy
+                // source-exact. Never silently route through source8 IO.
+                sourcePixelIOEnabled = false
+                sourcePhysicalDirectEnabled = false
+                source = decoded.0.image
+                originalPhotoData = nil
+                originalPreview = decoded.1
+                processedPreview = decoded.1
+                rawFastModeActive = true
+                photoDimensions = "\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB16"
+                try refresh()
+                status = "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；" +
+                    "输入为 16-bit sRGB 高位深兼容数据，最终 JPEG 仍为 8-bit；" +
+                    "原始 RAF 不变，不代表 Python Float64 原版数值等价。"
+            } catch {
+                status = "LibRaw 16-bit 失败（未降级，原始 RAF 保留）：" +
                     error.localizedDescription
             }
         }
@@ -1613,12 +1655,15 @@ struct ContentView: View {
                 Button("使用 LibRaw 0.22 富士 RAF 模式打开（8-bit）") {
                     model.openPreservedRAWWithLibRaw()
                 }
+                Button("使用 LibRaw 富士 RAF 16-bit 高位深兼容模式") {
+                    model.openPreservedRAW16Bit()
+                }
                 Button("仅保留原始 RAW", role: .cancel) { }
             } message: {
-                Text("Apple RAW 使用 iOS 系统解码；LibRaw 0.22 支持" +
-                     "富士 X-T5 压缩 RAF，明确以全尺寸 8-bit sRGB 输出。" +
-                     "两者均非原版 Python Float64 精确模式。" +
-                     "RAW 源文件始终保留；不支持的压缩格式直接报错。")
+                Text("Apple RAW 使用系统解码；富士 LibRaw 可选 8-bit 快速" +
+                     "或 16-bit 高位深 sRGB 兼容模式。导入时保持原尺寸，" +
+                     "最终 JPEG 是 8-bit，绝不宣称 Python Float64 等价。" +
+                     "RAW 源文件始终保留，失败不切换为内嵌 JPEG。")
             }
             .sheet(item: $pendingExport) { proposal in
                 NavigationStack {
