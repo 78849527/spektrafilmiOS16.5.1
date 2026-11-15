@@ -193,14 +193,10 @@ struct FloatingEditorWorkspace: View {
     private func requiredChanges(for mode: SourceModeChange) -> [String] {
         var changes: [String] = []
         if mode == .disablePixel {
-            if model.sourcePhysicalDirectEnabled {
-                changes.append("同步关闭依赖像素直连的逐像素全光学")
-                if model.scatterEnabled {
-                    changes.append("关闭源乳剂散射，避免自动落回旧版近似散射")
-                }
-                if model.halationEnabled {
-                    changes.append("关闭源背反射光晕，避免自动落回旧版近似光晕")
-                }
+            if savedFastSettings != nil {
+                changes.append("退出原版像素处理，并恢复进入前的快速冲印设置")
+            } else if model.sourcePhysicalDirectEnabled {
+                changes.append("退出原版像素处理，同时关闭原版散射／光晕，避免静默改用近似算法")
             }
             return changes
         }
