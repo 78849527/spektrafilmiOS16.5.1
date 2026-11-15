@@ -184,8 +184,8 @@ enum Build90NativeOutputWriter {
                 )
             }
             guard let embeddedSpace=saved.colorSpace,
-                  let savedICC=embeddedSpace.copyICCData(),
-                  savedICC==icc else {
+                  let rawICC=embeddedSpace.copyICCData(),
+                  (rawICC as Data)==icc else {
                 throw Failure.invalid(
                     "实际文件 ICC 不等于原版 ICC 原字节；拒绝错误色彩标记"
                 )
