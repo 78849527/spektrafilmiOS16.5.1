@@ -1,0 +1,78 @@
+name: Build84-85 bulk dynamic DIR and real SciPy grain source parity
+
+on:
+  push:
+    branches:
+      - 'port/build84-85-chemistry-grain-bulk-21-25'
+    paths:
+      - 'ios/**'
+      - '.github/workflows/build84-85-bulk-source-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  multi-feature-python-swift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact upstream source and target implementation
+        uses: actions/checkout@v4
+      - name: Report source commit, Swift, Python
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+          python3 --version
+      - name: Install pinned original source random-number dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'opt_einsum==3.4.0'
+      - name: Run ORIGINAL Python real-film dynamic DIR source
+        run: |
+          python3 ios/scripts/build84_dynamic_dir_oracle.py /tmp/bulk-dynamic-dir.json
+          test -s /tmp/bulk-dynamic-dir.json
+      - name: Run ORIGINAL Python grain.py + SciPy real-film source
+        run: |
+          python3 ios/scripts/build85_single_layer_grain_oracle.py /tmp/bulk-scipy-grain.json
+          test -s /tmp/bulk-scipy-grain.json
+      - name: Validate full application Swift syntax
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Compile/verify real Swift dynamic 256-node H-D and chemical DIR
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build84OriginalFilmDIR.swift \
+            ios/tests/Build84DynamicDIR80StockValidation.swift \
+            -o /tmp/BulkDynamicDIR
+          /tmp/BulkDynamicDIR /tmp/bulk-dynamic-dir.json
+      - name: Generate original SciPy and NumPy MT19937 source vectors
+        run: |
+          python3 ios/scripts/generate_source_mt19937.py
+          python3 ios/scripts/generate_original_scipy_rng.py
+          test -s ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift
+      - name: Extract ACTUAL Swift production source, no stochastic mock
+        run: |
+          python3 ios/scripts/extract_source_filter_core_for_linux.py \
+            /tmp/SourceSpatialDoubleCore.swift
+          python3 ios/scripts/extract_build85_grain_single_for_linux.py \
+            /tmp/Build85SingleSource.swift
+      - name: Compile/verify real Swift SciPy RNG and single-layer grain
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            /tmp/SourceSpatialDoubleCore.swift \
+            /tmp/Build85SingleSource.swift \
+            ios/tests/Build85OriginalSingleLayerGrainValidation.swift \
+            -o /tmp/BulkSingleLayerGrain
+          /tmp/BulkSingleLayerGrain /tmp/bulk-scipy-grain.json
+      - name: Preserve exact original source fixtures and scope
+        uses: actions/upload-artifact@v4
+        with:
+          name: build84-85-80-dynamic-dir-and-36-scipy-grain-float64
+          path: |
+            /tmp/bulk-dynamic-dir.json
+            /tmp/bulk-scipy-grain.json
