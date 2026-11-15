@@ -56,33 +56,21 @@ enum Build89NativeSourceCAM16Validation {
             }
             let rgb=try doubles(item,"rgb")
             let input=try Build89OriginalCAM16.forward(rgb,space:space)
-            if i==4 {
-                print("DIAGNOSTIC native Jp'ap'b' ",input.jp,input.ap,input.bp,
-                      " original=",try doubles(item,"sourceJab"))
-            }
             maxJab=max(maxJab,try compare(
                 [input.jp,input.ap,input.bp],
                 try doubles(item,"sourceJab"),
                 "CAM16UCS forward Float64 \(space) #\(i)",
-                limit:1e-2
+                limit:3e-10
             ))
             let outXYZ=try Build89OriginalCAM16.inverse(
                 input,space:space
             )
-            // compare native source CAM16 roundtrip through output XYZ
-            let refXYZ=try doubles(item,"roundtripXYZ")
-            // Identity RGB→XYZ→RGB matrices are generated in Float64
-            // by installed source colour-science v0.4.6.
-            let toXYZ=GeneratedScannerReference.sourceOutputRGBToXYZ[space]!
-            let nXYZ=(0..<3).map {ch in
-                (0..<3).reduce(0.0) {total,v in
-                    total+outXYZ[v]*toXYZ[v*3+ch]
-                }
-            }
+            // Compare the actual source CAM16 inverse XYZ→output RGB,
+            // not an extra nonidentity colourspace roundtrip.
             maxRoundtrip=max(maxRoundtrip,try compare(
-                nXYZ,refXYZ,
-                "CAM16 inverse from roundtrip source \(space) #\(i)",
-                limit:1e-2
+                outXYZ,try doubles(item,"sourceInverseRGB"),
+                "original CAM16 inverse output RGB \(space) #\(i)",
+                limit:3e-10
             ))
             let knee=try doubles(item,"knee")
             let optionalLight=(item["light"] as? [NSNumber])?.map{
@@ -101,7 +89,7 @@ enum Build89NativeSourceCAM16Validation {
             maxCompress=max(maxCompress,try compare(
                 compressed,try doubles(item,"result"),
                 "full ORIGINAL 64×720 18-bisect CAM16-UCS \(space) #\(i)",
-                limit:1e-2
+                limit:3e-10
             ))
             counted+=1
         }
@@ -113,7 +101,7 @@ enum Build89NativeSourceCAM16Validation {
             "\(counted)/216 original source cases, 3 RGB output spaces, " +
             "64×720 Cmax and original 18 Float64 bisections, " +
             "4 knee/lightness modes; source J'a'b' max \(maxJab), " +
-            "inverse XYZ max \(maxRoundtrip), output RGB max \(maxCompress). " +
+            "inverse RGB max \(maxRoundtrip), output RGB max \(maxCompress). " +
             "Unsupported source nonfinite cases \(nonFinite), never fallback."
         )
     }
