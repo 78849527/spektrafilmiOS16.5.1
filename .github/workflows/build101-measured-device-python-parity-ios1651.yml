@@ -1,3 +1,4 @@
+# Build101 retry: corrected Swift XCTest-host equality parser newline.
 # Build98 minimal Xcode Swift concurrency fix: @MainActor FastSettingsSnapshot.
 # Build101 batch: preserve all Build100/99/98/97 original algorithms;
 # ship real iOS Build92 stage parity evidence capture, pinned executable source SHA.
