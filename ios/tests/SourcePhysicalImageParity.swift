@@ -677,9 +677,9 @@ enum SourcePhysicalImageParity {
                 physicalMemory:3_000_000_000,
                 processAvailableMemory:500_000_000
             )
-        } catch OriginalSourcePhysicalImage.Failure.invalid(let reason) {
+        } catch Build91PhysicalMemory.Failure.invalid(let reason) {
             budgetDenied=reason.contains("内存预算不足") &&
-                reason.contains("不会擅自缩图")
+                reason.contains("不会自动缩图")
         }
         guard budgetDenied else {
             throw Failure.invalid(
@@ -707,7 +707,7 @@ enum SourcePhysicalImageParity {
                 physicalMemory:4_000_000_000,
                 processAvailableMemory:1_000_000_000
             )
-        } catch OriginalSourcePhysicalImage.Failure.invalid(let reason) {
+        } catch Build91PhysicalMemory.Failure.invalid(let reason) {
             grainMemoryDenied=reason.contains("内存预算不足")
         }
         guard grainMemoryDenied else {
