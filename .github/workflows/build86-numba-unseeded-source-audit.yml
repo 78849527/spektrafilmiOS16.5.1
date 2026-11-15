@@ -1,0 +1,38 @@
+name: Build86 original unseeded multiworker Numba distribution audit
+
+on:
+  push:
+    branches:
+      - 'port/build86-grain-rng-cloud-endtoend-bulk-26-28'
+    paths:
+      - 'ios/scripts/build86_original_unseeded_numba_audit.py'
+      - '.github/workflows/build86-numba-unseeded-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-multiworker-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NUMBA_NUM_THREADS: '4'
+      NUMBA_THREADING_LAYER: workqueue
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install original pinned upstream worker RNG environment
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.4.0' 'numba==0.64.0'
+      - name: Run original one, two, four-worker unseeded prange source
+        run: |
+          python ios/scripts/build86_original_unseeded_numba_audit.py
+          test -s ios/verification/build86-original-unseeded-numba-statistics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build86-unseeded-python-numba-multiworker-source-statistics-NOT-iOS-PARITY
+          path: ios/verification/build86-original-unseeded-numba-statistics.json
