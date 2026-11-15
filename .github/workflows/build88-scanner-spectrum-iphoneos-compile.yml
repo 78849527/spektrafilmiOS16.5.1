@@ -105,6 +105,7 @@ jobs:
           test -s ios/SpektraFilmPort/OriginalSourceScannerGlare.swift
           test -s ios/SpektraFilmPort/OriginalSourceScannerOptics.swift
           grep -q 'sourceLinearIdentityRGBMatrix' ios/scripts/generate_scanner_reference.py
+          grep -q 'mixed.rgb != encoded.rgb' ios/SpektraFilmPort/Build88ScannerCombinedProductionDiagnostic.swift
           test -s ios/SpektraFilmPort/Build87OriginalColorReference.swift
           test -s ios/SpektraFilmPort/Build87PrintScanProductionDiagnostic.swift
           test -s ios/SpektraFilmPort/OriginalPrintMorph.swift
