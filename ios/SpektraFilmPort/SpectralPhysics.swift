@@ -1865,6 +1865,31 @@ struct SpectralPhysics {
         return scannerIlluminantXYZ
     }
 
+    /// Build89 original ScanningStage: return actual colour-science
+    /// XYZ→LINEAR RGB BEFORE source output gamut compression. This is
+    /// intentionally not the legacy ACES method below; CAM16/Open-off
+    /// must receive untouched negative and overwhite linear channels.
+    func sourceSpatialXYZToRawLinearRGB(_ xyz:[Double]) throws->[Double] {
+        guard useOriginalScanner,!defaultCAM16Gamut,
+              (!useReferenceBlackWhite ||
+               sourceReferencePrepared != nil),
+              xyz.count==3,xyz.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid(
+                "原版扫描色域压缩只能接收通过实测 81 波长的 XYZ"
+            )
+        }
+        let linear=OriginalScannerMath.linearSRGB(
+            xyz:xyz,viewing:viewingStock
+        )
+        guard linear.count==3,
+              linear.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid(
+                "原版扫描 XYZ→线性 RGB 非有限，禁止调用近似色域"
+            )
+        }
+        return linear
+    }
+
     /// RGB is intentionally computed AFTER the *whole image* gets the
     /// source glare field in XYZ, before source scanner lens FIR/YVV.
     func sourceSpatialXYZToLinearRGB(_ xyz:[Double]) throws -> [Double] {
