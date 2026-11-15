@@ -1,0 +1,49 @@
+name: Build90 Python original Numba PCHIP-MITCHELL LUT parity
+
+on:
+  push:
+    branches:
+      - 'port/build90-file-output-icc-lut-40-41-bulk'
+    paths:
+      - 'ios/SpektraFilmPort/Build90OriginalLUT.swift'
+      - 'ios/tests/Build90OriginalLUTSourceValidation.swift'
+      - 'ios/scripts/build90_original_lut_oracle.py'
+      - '.github/workflows/build90-real-lut-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-lut-float64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pinned original source Numba/SciPy
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.4.0' 'scipy==1.16.3' 'numba==0.64.0'
+      - name: Run genuine original Numba original PCHIP Mitchell source
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          git rev-parse HEAD
+          python ios/scripts/build90_original_lut_oracle.py \
+            /tmp/build90-original-numba-lut.json
+      - name: Compile actual Swift per-pixel original LUT and compare 768
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build90OriginalLUT.swift \
+            ios/tests/Build90OriginalLUTSourceValidation.swift \
+            -o /tmp/Build90OriginalLUTValidation
+          /tmp/Build90OriginalLUTValidation \
+            /tmp/build90-original-numba-lut.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build90-original-numba-lut-768-PCHIP-Mitchell
+          path: /tmp/build90-original-numba-lut.json
