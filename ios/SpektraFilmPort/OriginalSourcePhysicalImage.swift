@@ -123,6 +123,11 @@ enum OriginalSourcePhysicalImage {
         /// (encoded display sRGB); false preserves source LINEAR RGB
         /// after gamut compression and optional scan-lens filtering.
         var sourceOutputCCTFEncoding = true
+        /// Opt-in original source output gamut dispatcher. nil preserves
+        /// the existing Build88 ACES and CI image behaviour. A nonnil
+        /// setting receives RAW linear sRGB after true spectral XYZ;
+        /// CAM16-UCS executes Float64 appearance per pixel, NOT 33³ LUT.
+        var sourceOutputGamut: Build89OriginalOutputGamut.Settings? = nil
         // Original grain.py 3x3 sublayer SciPy counts + dye clouds +
         // controlled one-worker Numba microstructure + final blur.
         // OFF by default, separate from Gaussian/Metal fast grain.
@@ -168,6 +173,19 @@ enum OriginalSourcePhysicalImage {
                 }
             }
             try sourceColorReference.validate()
+            if let sourceOutputGamut {
+                try sourceOutputGamut.validate()
+                // Source destination matrices are implemented for wide
+                // output colours, but physical JPEG ICC tagging is NOT.
+                // Avoid exporting P3/BT2020 numeric values as sRGB bytes.
+                guard sourceOutputGamut.outputSpace == .sRGB else {
+                    throw Failure.invalid(
+                        "Build89 Display P3/BT.2020 数值色域算法已单独验证，" +
+                        "但真实图像 ICC 与文件标记未验收，" +
+                        "禁止将广色域线性 RGB 当 sRGB JPEG 导出"
+                    )
+                }
+            }
             // Source scanning.py order is:
             // measured XYZ -> B/W Y transform -> stochastic XYZ glare
             // -> XYZ_to_RGB -> gamut -> FIR/YVV -> output CCTF.
@@ -531,7 +549,8 @@ enum OriginalSourcePhysicalImage {
                 rgb=try engine.sourceSpatialPrintPhoton(
                     filmDensity:density,paperEV:parameters.paperEV
                 )
-            } else if controlledScannerGlare {
+            } else if controlledScannerGlare ||
+                        parameters.sourceOutputGamut != nil {
                 // Store actual developed PAPER XYZ in the reusable Double
                 // frame, not sRGB or post-gamut RGB.
                 rgb=try engine.sourceSpatialScanXYZ(
@@ -592,7 +611,8 @@ enum OriginalSourcePhysicalImage {
                     printed=try engine.sourceSpatialPrintPhoton(
                         filmDensity:density,paperEV:parameters.paperEV
                     )
-                } else if controlledScannerGlare {
+                } else if controlledScannerGlare ||
+                          parameters.sourceOutputGamut != nil {
                     printed=try engine.sourceSpatialScanXYZ(
                         filmDensity:density,paperEV:parameters.paperEV,
                         paperStageObserver:recordPaper(k)
@@ -628,7 +648,8 @@ enum OriginalSourcePhysicalImage {
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
                     sourceLinearOutput:parameters.scannerOptics.active ||
                         !parameters.sourceOutputCCTFEncoding,
-                    sourceXYZOutput:controlledScannerGlare,
+                    sourceXYZOutput:controlledScannerGlare ||
+                        parameters.sourceOutputGamut != nil,
                     paperStageObserver:recordPaper(k)
                 )
                 for c in 0..<3 { frame.rgb[k+c]=output[c] }
@@ -655,12 +676,36 @@ enum OriginalSourcePhysicalImage {
                 controlledSeed:parameters.scannerGlareSeed
             )
             stageDoubleObserver?("scannerGlareXYZ",frame.rgb)
+        }
+        if let exactGamut=parameters.sourceOutputGamut {
+            // Build89 source order: FULL spectral XYZ incl black/white
+            // -> optional stochastic glare in XYZ -> RAW linear RGB
+            // -> user-selected ORIGINAL output gamut (per-pixel CPU Double)
+            // -> scanner FIR/YVV/unsharp -> optional output CCTF.
+            // This NEVER calls a 33³ CAM16 RGB LUT or hidden ACES fallback.
+            for p in 0..<(w*h) {
+                let k=p*3
+                let raw=try engine.sourceSpatialXYZToRawLinearRGB(
+                    [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+                )
+                let compressed=try Build89OriginalOutputGamut.compress(
+                    raw,settings:exactGamut
+                )
+                for ch in 0..<3 {
+                    frame.rgb[k+ch]=compressed[ch]
+                }
+            }
+            stageDoubleObserver?("sourceGamutLinear",frame.rgb)
+            if controlledScannerGlare {
+                stageDoubleObserver?("scannerGlareLinearRGB",frame.rgb)
+            }
+        } else if controlledScannerGlare {
             for p in 0..<(w*h) {
                 let k=p*3
                 let linear=try engine.sourceSpatialXYZToLinearRGB(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
                 )
-                for ch in 0..<3 { frame.rgb[k+ch]=linear[ch] }
+                for ch in 0..<3 {frame.rgb[k+ch]=linear[ch]}
             }
             stageDoubleObserver?("scannerGlareLinearRGB",frame.rgb)
         }
@@ -674,7 +719,8 @@ enum OriginalSourcePhysicalImage {
             )
         }
         if parameters.sourceOutputCCTFEncoding &&
-           (parameters.scannerOptics.active || controlledScannerGlare) {
+           (parameters.sourceOutputGamut != nil ||
+            parameters.scannerOptics.active || controlledScannerGlare) {
             // Original colour.RGB_to_RGB(sRGB→sRGB) performs a Float64
             // 3x3 pass BEFORE its CCTF, even for same-colourspace RGB.
             // Do this over the entire LINEAR scan output only after all
