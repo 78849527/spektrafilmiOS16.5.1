@@ -439,6 +439,9 @@ struct SpectralPhysics {
     private let printReference: Double
     private let neutralOutputRGB: [Double]
     private let useOriginalScanner: Bool
+    /// Original scanning.py 10**log10(max(XYZ,0)+1e-10) is active only
+    /// for the full Float64 measured source scanner, never mobile/legacy.
+    private let sourceOriginalXYZLogEpsilon: Bool
     private let useReferenceBlackWhite: Bool
     private let useExposureCorrectedPrintReference: Bool
     private let printMorphCurve: OriginalPrintMorph.PreparedCurve?
@@ -609,6 +612,7 @@ struct SpectralPhysics {
         self.cameraInputColorSpace = cameraInputColorSpace
         isPositive = positive
         useOriginalScanner = sourceScanner
+        sourceOriginalXYZLogEpsilon=sourceScanner && sourceMeasuredFloat64
         useReferenceBlackWhite = scannerBlackWhite ||
             (sourceColorReference?.enabled ?? false)
         defaultCAM16Gamut = cam16Gamut
@@ -1388,7 +1392,8 @@ struct SpectralPhysics {
         if useOriginalScanner {
             var xyz = Self.scanPhysicalXYZ(
                 densities: resultDensity, paper: substrate,
-                weights: scanWeights, normalization: viewingNormalization
+                weights: scanWeights, normalization: viewingNormalization,
+                sourceLogEpsilon:sourceOriginalXYZLogEpsilon
             )
             if let reference=sourceReferencePrepared {
                 xyz=reference.correctXYZAfterValidatedSpectralScan(xyz)
@@ -2271,7 +2276,7 @@ struct SpectralPhysics {
     /// sum_wl(viewing * CIE1931 Ybar), before output color transforms.
     private static func scanPhysicalXYZ(
         densities: [Double], paper: Profile, weights: [[Double]],
-        normalization: Double
+        normalization: Double,sourceLogEpsilon:Bool=false
     ) -> [Double] {
         var xyz = [0.0, 0.0, 0.0]
         for wl in 0..<81 {
@@ -2285,8 +2290,10 @@ struct SpectralPhysics {
                 xyz[channel] += transmitted*weights[wl][channel]
             }
         }
-        let safe = max(1e-12,normalization)
-        return xyz.map { max(0,$0/safe) }
+        return Build88OriginalScannerSpectrum.finishXYZ(
+            xyz,normalization:normalization,
+            sourceLogEpsilon:sourceLogEpsilon
+        )
     }
 
     private static func scanLinear(_ densities: [Double], paper: Profile,
