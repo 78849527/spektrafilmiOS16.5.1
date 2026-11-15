@@ -1,3 +1,4 @@
+# Build98 minimal Xcode Swift concurrency fix: @MainActor FastSettingsSnapshot.
 # Build98 batch: preserve Build97 fail-closed source algorithms; validate
 # state isolation, diagnostics routing and safe export temporary lifecycle.
 name: Build98 UI/async mode restoration, developer diagnostics and export temp lifecycle / iOS16.5.1 IPA
