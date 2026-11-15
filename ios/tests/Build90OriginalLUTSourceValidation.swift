@@ -44,6 +44,22 @@ enum Build90OriginalLUTSourceValidation {
                 (.mitchell,"mitchell")
             ] {
                 let expected=try shape(row,label)
+                if count==1 && method == .pchip {
+                    // True Python original raises a ValueError before
+                    // its size=1 PCHIP constant special-case.
+                    guard expected.isEmpty else {
+                        throw Failure.invalid(
+                            "Source 1-node PCHIP unexpectedly valid"
+                        )
+                    }
+                    do {
+                        _=try lut.sample(input[0],method:method)
+                        throw Failure.invalid(
+                            "Native 1node PCHIP ignored source ValueError"
+                        )
+                    } catch Build90OriginalLUT.Failure.invalid(_) {}
+                    continue
+                }
                 guard expected.count==input.count else {
                     throw Failure.invalid("Source LUT image dimensions changed")
                 }
@@ -94,12 +110,12 @@ enum Build90OriginalLUTSourceValidation {
                 }
             }
         }
-        guard total==768,oneNode==2,nonmono==4,overshoot==8 else {
-            throw Failure.invalid("Original 768 LUT channels missing")
+        guard total==672,oneNode==2,nonmono==4,overshoot==8 else {
+            throw Failure.invalid("Original 672 certified LUT channels missing")
         }
         print("PASS BUILD90 ACTUAL SOURCE NUMBA LUT: 8 original " +
               "PCHIP/Mitchell tables, sizes 1/2/5/7, custom " +
-              "domains+overshoot+reflect bounds, 768 Float64 " +
+              "domains+overshoot+reflect bounds, 672 Float64 " +
               "channel checks; PCHIP max \(worstPCHIP), " +
               "Mitchell max \(worstMitchell), tol 4e-12; " +
               "explicit cache-revision rebuild verified.")
