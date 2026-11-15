@@ -22,6 +22,7 @@ struct FloatingEditorWorkspace: View {
     let onExportTIFF16: (ExportResolutionMode) -> Void
     let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
+    let onShareBuild100Readiness: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
     @State private var originalHeld = false
@@ -770,9 +771,36 @@ struct FloatingEditorWorkspace: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    Text("Build100｜功能验收状态")
+                        .font(.headline)
+                    Text("当前处理：" +
+                        (fullPhysicalMode ? "原版 Float64 光学（实验、未认证）" :
+                         directPixelMode ? "8-bit 原版 DIR 直连（范围有限）" :
+                         "移动快速兼容处理"))
+                        .font(.subheadline)
+                    Text("源码阶段参考与自动测试 ≠ 真机整图等价认证。当前版本尚未获得完整 Python 原版数值认证。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if model.simulationAwaitingCurrentSettings {
+                        Text("当前胶片/相纸 LUT 待更新或失败：预览／导出尚未就绪。")
+                            .font(.caption)
+                    }
+                    Button {
+                        statusReportPresented = false
+                        onShareBuild100Readiness()
+                    } label: {
+                        Label("导出设备验收清单 JSON（12 项）",
+                              systemImage:"square.and.arrow.up.on.square")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy)
+                    Text("记录 App 版本、iOS 版本和当前处理状态。所有尚未实际执行的真机、Python 整图和随机统计测试均明确写为 not_run；此文件不是合格证书。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Divider()
                     if model.hardwareDiagnosticReport != nil {
-                        Label("检测结果已完整保存，向下滚动查看全部项目",
-                              systemImage: "checklist")
+                        Label("本次运行的诊断日志可查看；不等于正式认证",
+                              systemImage: "doc.text.magnifyingglass")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -833,7 +861,7 @@ struct FloatingEditorWorkspace: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .navigationTitle("完整检测报告")
+            .navigationTitle("验证状态与诊断")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -862,7 +890,27 @@ struct FloatingEditorWorkspace: View {
                 editorTab(.film)
                 editorTab(.adjustment)
                 editorTab(.workflow)
-                editorTab(.laboratory)
+                // The algorithm laboratory is still accessible, but it is
+                // NOT an equal fourth production workflow. Keep the tested
+                // lazy-mount/dismount behavior after selecting its page.
+                Menu {
+                    Button("实验性原版参数（未认证）") {
+                        selectEditorPage(.laboratory)
+                    }
+                    Button("验证状态与诊断") {
+                        statusReportPresented=true
+                    }
+                } label: {
+                    Text(selectedEditorPage == .laboratory ? "实验室" : "高级")
+                        .font(.system(size:12,weight:.semibold))
+                        .foregroundColor(selectedEditorPage == .laboratory
+                                         ? .accentColor : .primary)
+                        .frame(height:34)
+                        .padding(.horizontal,7)
+                        .background(Color.primary.opacity(0.06),
+                                    in:Capsule())
+                }
+                .accessibilityLabel("高级菜单：实验参数和验证状态")
                 Spacer(minLength: 0)
                 if selectedEditorPage == .adjustment {
                     Button {
@@ -1695,10 +1743,10 @@ struct FloatingEditorWorkspace: View {
         AnyView(
             VStack(spacing: 3) {
                 HStack(spacing: 5) {
-                    Text("算法实验室 · 保留所有原版参数")
+                    Text("实验性原版参数 · 保留但未完成全链认证")
                         .font(.caption2).foregroundColor(.secondary)
                     Spacer(minLength: 2)
-                    Text(fullPhysicalMode ? "精细实验" : "快速 / 兼容")
+                    Text(fullPhysicalMode ? "Float64 实验" : "兼容 / 实验")
                         .font(.caption2).foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 11)
