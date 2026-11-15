@@ -41,7 +41,7 @@ enum PhotoProcessor {
         // Spatial optical propagation precedes spectral film colour response.
         // Operate at requested output resolution, not full source resolution,
         // so the effective micrometers/pixel remains consistent.
-        let optical = SpatialOptics.apply(to: source, settings: spatial)
+        let optical = try SpatialOptics.apply(to: source, settings: spatial)
         guard let lut = lut, strength > 0 else { return optical }
         // The source-order Metal path is STRICT: never silently replace
         // it with a fast CoreImage approximation or drop an enabled DIR.
@@ -79,29 +79,29 @@ enum PhotoProcessor {
                 // preceding physical paper print and scanner output.
                 film = output
             } else {
-                if sourceMetal {
-                    throw ImageProcessingError.invalid(
-                        "原版 Metal 颗粒：胶片显影失败，禁止退回快速模式"
-                    )
-                }
-                let cube = CIFilter.colorCube()
-                cube.inputImage = optical
-                cube.cubeDimension = Float(lut.dimension)
-                cube.cubeData = lut.rgbaFloatData
-                guard let output = cube.outputImage else { return optical }
-                film = output
+                // Even the explicitly chosen mobile grain stage must not
+                // quietly degrade to a plain LUT when its CI kernel fails.
+                throw ImageProcessingError.invalid(
+                    sourceMetal
+                    ? "原版 Metal 颗粒：胶片显影失败，禁止退回快速模式"
+                    : "密度颗粒：所选显影效果未生成图像，禁止静默退回普通 LUT"
+                )
             }
         } else {
             let cube = CIFilter.colorCube()
             cube.inputImage = optical
             cube.cubeDimension = Float(lut.dimension)
             cube.cubeData = lut.rgbaFloatData
-            guard let output = cube.outputImage else { return optical }
+            guard let output = cube.outputImage else {
+                throw ImageProcessingError.invalid(
+                    "胶片/相纸 CIColorCube 未产生图像，禁止静默输出原片"
+                )
+            }
             film = output
         }
         let amount = max(0, min(1, strength))
         if amount >= 1 {
-            return ScannerFinishing.apply(
+            return try ScannerFinishing.apply(
                 to: film.cropped(to: optical.extent), settings: scanner
             )
         }
@@ -112,8 +112,10 @@ enum PhotoProcessor {
         let blend = CIFilter.sourceOverCompositing()
         blend.inputImage = alpha.outputImage
         blend.backgroundImage = optical
-        let blended = (blend.outputImage ?? optical).cropped(to: optical.extent)
-        return ScannerFinishing.apply(to: blended, settings: scanner)
+        let blended = try Build97FilterContract.required(
+            blend.outputImage, stage: "胶片效果强度混合 SourceOver"
+        ).cropped(to: optical.extent)
+        return try ScannerFinishing.apply(to: blended, settings: scanner)
     }
 
     static func preview(
