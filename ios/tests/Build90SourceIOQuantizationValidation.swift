@@ -55,8 +55,8 @@ enum Build90SourceIOQuantizationValidation {
                 raw,as:spec
             )
             guard encoded.count==expected.count,
-                  byteData.count==expected.count*
-                    spec.storage.bitsPerChannel/8 else {
+                  byteData.count==(expected.count*
+                    spec.storage.bitsPerChannel/8) else {
                 throw Failure.invalid("Source OIIO buffer size/dtype wrong")
             }
             let expectedBitPattern=sourceBits.flatMap{$0.map{$0.uint32Value}}
