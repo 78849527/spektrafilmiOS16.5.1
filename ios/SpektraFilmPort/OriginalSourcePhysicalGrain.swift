@@ -63,9 +63,10 @@ enum OriginalSourcePhysicalGrain {
                 throw Failure.invalid("原版颗粒受控 Numba RNG 需要显式固定种子，不允许自动近似")
             }
             if active && useFastStats {
-                guard sublayersActive, fastStatsSeed != nil else {
+                guard sublayersActive, fastStatsSeed != nil,
+                      fastStatsSeed == numbaSeed else {
                     throw Failure.invalid(
-                        "原版单层颗粒只执行 SciPy；三亚层 Numba fast_stats 需显式单线程种子"
+                        "源三亚层 Numba fast_stats 与后续 lognormal 必须共用同一个单线程 RNG 种子／状态"
                     )
                 }
             }
@@ -232,11 +233,21 @@ enum OriginalSourcePhysicalGrain {
             guard let seed=settings.numbaSeed else {
                 throw Failure.invalid("原版 Numba 微结构随机线程未定义")
             }
+            // In the original grain.py the nine Numba fast_stats
+            // particle layers and the later lognormal draw share one
+            // continuous prange worker state. Reinitializing from seed
+            // at this boundary changes all sampled microstructure.
             var numba=OriginalSourceNumbaSingleThreadNormal(seed:seed)
             var clump=[Double](repeating:0,count:pixels*3)
             for ix in clump.indices {
+                let normal:Double
+                if settings.useFastStats {
+                    normal=try controlledFastSampler!.nextMicrostructureNormal()
+                } else {
+                    normal=try numba.nextNormal()
+                }
                 clump[ix]=try OriginalSourceMicrostructure.lognormal(
-                    microStd:microStd,z:numba.nextNormal()
+                    microStd:microStd,z:normal
                 )
             }
             if microBlur>0.4 {
