@@ -524,7 +524,8 @@ struct SpectralPhysics {
          sourceMeasuredFloat64: Bool = false,
          cameraRawMethod: CameraRawMethod = .hanatos2025,
          cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB,
-         cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()) throws {
+         cameraBandpass: OriginalSourceCameraBandpass.Settings = .init(),
+         hanatosSourceRecompute: Bool = false) throws {
         guard Self.supportedFilmIDs.contains(filmID),
               Self.supportedPaperIDs.contains(paperID) else {
             throw PhysicsError.invalid("该胶片／相纸组合尚未接入光谱计算")
@@ -536,11 +537,16 @@ struct SpectralPhysics {
             id:paperID,sourceMeasuredFloat64:sourceMeasuredFloat64
         )
         try cameraBandpass.validate()
-        guard !cameraBandpass.active || cameraRawMethod == .mallett2019 else {
-            throw PhysicsError.invalid(
-                "原版 Hanatos 光谱 TC LUT 尚未按 UV/IR 滤镜重新生成；" +
-                "请选择 Mallett 2019 光谱积分，禁止忽略所选滤镜"
-            )
+        // Build82 recomputes original Hanatos spectral TC sensor LUT
+        // rather than silently substituting Mallett or old unfiltered data.
+        let rebuildHanatos = cameraRawMethod == .hanatos2025 &&
+            (cameraBandpass.active || hanatosSourceRecompute)
+        if rebuildHanatos {
+            guard case .originalFloat64 = hanatosPrecision else {
+                throw PhysicsError.invalid(
+                    "Build82 Hanatos UV/IR 和适应曲面需要 CPU Float64"
+                )
+            }
         }
         guard cameraInputColorSpace != .proPhotoLinear ||
                 cameraRawMethod == .hanatos2025 else {
@@ -549,9 +555,30 @@ struct SpectralPhysics {
                 + "只能选择精确 Hanatos，禁止默默当成 sRGB"
             )
         }
+        var recomputedHanatos:[Double]?=nil
+        if rebuildHanatos {
+            let url = Bundle.main.url(
+                forResource:"irradiance_xy_tc",withExtension:"npy"
+            ) ?? ProcessInfo.processInfo.environment[
+                "BUILD82_SOURCE_SPECTRA_NPY"
+            ].map {URL(fileURLWithPath:$0)}
+            guard let url,
+                  let profile=Build82GeneratedHanatosProfiles.all[filmID] else {
+                throw PhysicsError.invalid(
+                    "原版 Hanatos 81 波长 npy 或胶片参数缺失，拒绝旧 LUT 降级"
+                )
+            }
+            let grid=try Build82OriginalSpectralRuntime.loadOriginalNPY(url)
+            recomputedHanatos=try Build82OriginalSpectralRuntime.make(
+                profile:profile,grid:grid,filter:cameraBandpass,
+                spectralGaussianBlur:0,applyWindow:true,applySurface:true,
+                compressInputXY:true
+            )
+        }
         let originalHanatos = try OriginalHanatosResponse(
             filmID: filmID, precision: hanatosPrecision,
-            inputColorSpace:cameraInputColorSpace
+            inputColorSpace:cameraInputColorSpace,
+            sourceRecomputedLUT:recomputedHanatos
         )
         let positive = originalFilm.polarity == "positive"
         guard !printOptics.enabled || printOptics.isValid else {
