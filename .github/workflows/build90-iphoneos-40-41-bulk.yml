@@ -105,6 +105,9 @@ jobs:
           test -s docs/BUILD89B-ALL-SIX-SOURCE-GAMUT-PARITY.md
           test -s docs/BUILD90-FILE-OUTPUT-ICC-LUT-40-41-BULK.md
           test -s ios/SpektraFilmPort/Build90OriginalLUT.swift
+          test -s ios/SpektraFilmPort/Build90OriginalLUTCache.swift
+          grep -q 'applyOriginalSourceLUTPreview' ios/SpektraFilmPort/OriginalSourcePixelIO.swift
+          grep -q 'exportPhysicalOriginalFile' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
           test -s ios/SpektraFilmPort/Build90SourceOutputQuantization.swift
           test -s ios/SpektraFilmPort/Build90NativeOutputWriter.swift
           test -s ios/SpektraFilmPort/Build90OriginalICCContainer.swift
