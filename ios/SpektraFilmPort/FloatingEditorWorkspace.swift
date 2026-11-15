@@ -1735,11 +1735,8 @@ struct FloatingEditorWorkspace: View {
         AnyView(
             VStack(alignment: .leading, spacing: 6) {
                 Picker("相机原版光谱重建", selection: $model.sourceCameraRawMethod) {
-                    if !model.sourceCameraUVEnabled &&
-                       !model.sourceCameraIREnabled {
-                        Text("Hanatos 2025（默认）")
-                            .tag(SpectralPhysics.CameraRawMethod.hanatos2025)
-                    }
+                    Text("Hanatos 2025（原版 TC 重算）")
+                        .tag(SpectralPhysics.CameraRawMethod.hanatos2025)
                     Text("Mallett 2019（81 波长积分）")
                         .tag(SpectralPhysics.CameraRawMethod.mallett2019)
                 }
@@ -1747,12 +1744,22 @@ struct FloatingEditorWorkspace: View {
                 .onChange(of: model.sourceCameraRawMethod) { _ in
                     model.queueSpectralPreview()
                 }
-                Text("Python 原版的两条光谱重建路径。UV/IR 滤镜只在" +
-                     " Mallett 2019 精确重算感光度时开放；Hanatos TC LUT" +
-                     " 尚不能带着滤镜直接复用。不会忽略或模拟滤镜。")
+                Text("Hanatos 原版 81 波长 TC 光谱重算支持 UV/IR；" +
+                     "滤镜变更立即重算，并同时应用原版感光度窗口、" +
+                     "四阶表面校正和输入 xy 色域压缩；不可读取原 LUT 代替。")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                if model.sourceCameraRawMethod == .mallett2019 {
+                if model.sourceCameraRawMethod == .hanatos2025 {
+                    resetToggle("原版 Hanatos 适应曲面与 TC 全重算",
+                                value: $model.sourceHanatosFullRecompute,
+                                enabled: model.hasPhoto && !model.busy,
+                                resetTo: false)
+                        .onChange(of: model.sourceHanatosFullRecompute) { _ in
+                            model.queueSpectralPreview()
+                        }
+                }
+                if model.sourceCameraRawMethod == .mallett2019 ||
+                   model.sourceCameraRawMethod == .hanatos2025 {
                     resetToggle("相机 UV 光谱截止", value: $model.sourceCameraUVEnabled,
                                 enabled: model.hasPhoto && !model.busy,
                                 resetTo: false)
