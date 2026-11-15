@@ -1,0 +1,71 @@
+name: Build86 original Numba fast stats continuous-grain RNG validation
+
+on:
+  push:
+    branches:
+      - 'port/build86-grain-rng-cloud-endtoend-bulk-26-28'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift'
+      - 'ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift'
+      - 'ios/tests/Build86SourceNumbaGrainValidation.swift'
+      - 'ios/scripts/generate_source_faststats_grain_build86.py'
+      - '.github/workflows/build86-grain-rng-fullframe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  genuine-source-5-image-stages:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lock Xcode, source SHA and numerical toolchain
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          git rev-parse HEAD
+          xcrun swiftc --version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original baseline SciPy and Numba source libraries
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==1.26.4' 'scipy==1.15.3' 'numba==0.61.2'
+      - name: Generate actual Python grain.py 5-stage full-frame source
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_original_scipy_rng.py
+          python ios/scripts/generate_source_microstructure.py
+          python ios/scripts/generate_source_faststats_grain_build86.py
+          test -s ios/verification/generated-source-grain-faststats-build86/manifest.json
+          test -s ios/verification/generated-source-grain-faststats-build86/fast_yvv_micro_enabled.final.f64le
+      - name: Compile native production Numba RNG and full 3x3 emulsion
+        run: |
+          xcrun swiftc -Onone -parse-as-library -D SOURCE_GRAIN_STANDALONE \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/tests/Build86SourceNumbaGrainValidation.swift \
+            -o /tmp/Build86OriginalNumbaFullGrain
+      - name: Run full-stage source Python-to-Swift numerical checks
+        run: |
+          /tmp/Build86OriginalNumbaFullGrain
+      - name: Retain independently generated actual Python stage tapes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build86-five-source-faststats-continuous-numba-stage-tapes
+          path: ios/verification/generated-source-grain-faststats-build86/
+          if-no-files-found: warn
