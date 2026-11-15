@@ -8,6 +8,7 @@ on:
       - 'ios/scripts/build90_generate_original_icc.py'
       - 'ios/SpektraFilmPort/Build90SourceOutputQuantization.swift'
       - 'ios/SpektraFilmPort/Build90NativeOutputWriter.swift'
+      - 'ios/SpektraFilmPort/Build90OriginalICCContainer.swift'
       - 'ios/tests/Build90NativeImageIOValidation.swift'
       - '.github/workflows/build90-native-imageio-files-icc.yml'
   workflow_dispatch:
@@ -36,6 +37,7 @@ jobs:
             ios/SpektraFilmPort/Build90GeneratedSourceICC.swift \
             ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
             ios/SpektraFilmPort/Build90NativeOutputWriter.swift \
+            ios/SpektraFilmPort/Build90OriginalICCContainer.swift \
             ios/tests/Build90NativeImageIOValidation.swift \
             -o /tmp/Build90OriginalICCImageIO
           /tmp/Build90OriginalICCImageIO
