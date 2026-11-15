@@ -18,6 +18,8 @@ struct FloatingEditorWorkspace: View {
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
     let onExport: (ExportResolutionMode) -> Void
+    /// Build96: separate actual 16-bit TIFF share destination; Photos stay JPEG.
+    let onExportTIFF16: (ExportResolutionMode) -> Void
     let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
     let onCaptureBuild77Evidence: () -> Void
@@ -622,12 +624,22 @@ struct FloatingEditorWorkspace: View {
                 Button("省内存分辨率（最高 720 万像素）") {
                     onExport(.economy)
                 }
+                Divider()
+                Button("TIFF 16-bit · 原始分辨率（需内存预检）") {
+                    onExportTIFF16(.original)
+                }
+                Button("TIFF 16-bit · 智能安全分辨率") {
+                    onExportTIFF16(.safe)
+                }
+                Button("TIFF 16-bit · 省内存分辨率") {
+                    onExportTIFF16(.economy)
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .frame(width: 33, height: 40)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("分享存储：选择原始、智能安全或省内存分辨率")
+            .accessibilityLabel("分享存储：JPEG 或 TIFF 16-bit，三种明确分辨率选择")
             .disabled(!model.hasPhoto || model.busy)
 
             Spacer(minLength: 2)
