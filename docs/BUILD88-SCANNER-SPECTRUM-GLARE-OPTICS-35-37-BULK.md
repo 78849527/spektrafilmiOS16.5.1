@@ -27,7 +27,7 @@
 
 - [Build88 原版 60 幅扫描镜头滤波](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43680835221)：**PASS**。使用真实 `diffusion.py` 与 `fast_gaussian_filter.py` 原始函数 AST，对比 `OriginalSourceScannerOptics.swift` 生产 Double。
 - [Build88 原版 64 幅扫描黑白→Numba 眩光](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43681488804)：**PASS**。Python `ColorReferenceService.black_white_xyz_correction`、`glare.add_glare`、受控 Numba 单 worker，黑白阶段最大绝对误差 `5.551115123125783e-16`，最终 XYZ 最大 `1.687538997430238e-14`。
-- 原版 81 波长、12 原材质、48 真密度、XYZ→linear sRGB→ACES→CCTF 与原版自带同空间 3×3 矩阵：参照 [本次工作流](https://github.com/78849527/spektrafilmiOS16.5.1/actions/workflows/build88-real-81nm-scanner-parity.yml)。**最终数值结论以 GitHub Actions CI 为准，不提前记 PASS**。
+- [Build88 12 原材质×48组 81nm/XYZ/ACES/CCTF](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43681587759)：**PASS**。真源完整 CIE 波长掩码、D50/K75P、`log10`→`10**`、Colour 同空间 3×3 矩阵；XYZ 最大 `6.661338147750939e-16`、线性 RGB 最大 `1.3322676295501878e-15`、ACES 最大 `1.3322676295501878e-15`、最终 CCTF 最大 `7.771561172376096e-16`。
 - 在开发中定位源色彩差异：源 `colour.RGB_to_RGB(sRGB,sRGB)` 的 identity-roundtrip 并非逐元素精确 1，曾见 sRGB 通道误差约 `2.27e-5`；现已移植源矩阵而非扩大误差容限。
 - 全量 iPhoneOS 编译和 iOS 16.5.1 真机逐 tap 测试是两种不同认证。未生成 IPA、未签名、未发布 Release。
 
