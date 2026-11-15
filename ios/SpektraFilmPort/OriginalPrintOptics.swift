@@ -20,6 +20,11 @@ enum OriginalPrintOptics {
         // controls whether the stock-pair CC values override schema defaults.
         // Original default is true; false must preserve (0,65,55) exactly.
         var neutralPrintFiltersFromDatabase = true
+        /// Original EnlargerParams.c/m/y_filter_neutral, used if database
+        /// switch is false or the paper/illuminant/film row is absent.
+        var cyanNeutral = 0.0
+        var magentaNeutral = 65.0
+        var yellowNeutral = 55.0
         var normalizePrintExposure = true
         var printExposureCompensation = true
         var cyanShift = 0.0
@@ -30,15 +35,13 @@ enum OriginalPrintOptics {
         var preflashYellowShift = 0.0
 
         var isValid: Bool {
-            let values = [cyanShift, magentaShift, yellowShift,
-                          preflashExposure, preflashMagentaShift,
+            let values = [cyanNeutral,magentaNeutral,yellowNeutral,
+                          cyanShift,magentaShift,yellowShift,
+                          preflashExposure,preflashMagentaShift,
                           preflashYellowShift]
-            return values.allSatisfy { $0.isFinite } &&
-                abs(cyanShift) <= 100 && abs(magentaShift) <= 100 &&
-                abs(yellowShift) <= 100 &&
-                abs(preflashMagentaShift) <= 100 &&
-                abs(preflashYellowShift) <= 100 &&
-                preflashExposure >= 0 && preflashExposure <= 1
+            // Upstream EnlargerParams has NO artificial ±100 CC or
+            // preflash<=1 limit. Preserve source finite input behavior.
+            return values.allSatisfy { $0.isFinite } && preflashExposure>=0
         }
     }
 
@@ -56,7 +59,9 @@ enum OriginalPrintOptics {
         filmID:String,paperID:String,settings:Settings,
         neutralByPair:[String:[Double]]
     ) throws -> [Double] {
-        let defaults:[Double]=[0.0,65.0,55.0]
+        let defaults:[Double]=[
+            settings.cyanNeutral,settings.magentaNeutral,settings.yellowNeutral
+        ]
         if !settings.neutralPrintFiltersFromDatabase ||
             settings.illuminant != .thKG3 {
             return defaults
