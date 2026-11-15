@@ -546,13 +546,22 @@ enum OriginalSourcePhysicalImage {
         if controlledFilmGrain {
             let pixelUM=parameters.dir.referencePixelSizeUM ??
                 (parameters.cameraOptics.filmFormatMM * 1000.0 / Double(max(w,h)))
-            frame.rgb=try OriginalSourcePhysicalGrain.apply(
-                frame.rgb,width:w,height:h,
-                pixelUM:pixelUM,
-                measured:engine.sourceSpatialGrainLayers(),
-                settings:parameters.sourceGrain,
-                stageObserver:stageDoubleObserver
-            )
+            if parameters.sourceGrain.sublayersActive {
+                frame.rgb=try OriginalSourcePhysicalGrain.apply(
+                    frame.rgb,width:w,height:h,
+                    pixelUM:pixelUM,
+                    measured:engine.sourceSpatialGrainLayers(),
+                    settings:parameters.sourceGrain,
+                    stageObserver:stageDoubleObserver
+                )
+            } else {
+                frame.rgb=try OriginalSourcePhysicalGrain.applySingleLayer(
+                    frame.rgb,width:w,height:h,pixelUM:pixelUM,
+                    maximum:engine.sourceSpatialGrainSingleLayerMaximum(),
+                    settings:parameters.sourceGrain,
+                    stageObserver:stageDoubleObserver
+                )
+            }
             stageDoubleObserver?("grainDensity",frame.rgb)
             // Original develop.py: apply_grain(DIR-developed film density)
             // THEN print_expose or direct reversal scan; never RGB overlay.
