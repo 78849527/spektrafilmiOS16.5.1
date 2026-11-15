@@ -6,6 +6,7 @@ on:
       - 'port/build89b-perceptual-output-oklch-oklrab-jzazbz'
     paths:
       - 'ios/SpektraFilmPort/Build89bOriginalOklabGamut.swift'
+      - 'ios/SpektraFilmPort/Build89bOriginalJzAzBz.swift'
       - 'ios/SpektraFilmPort/Build89OriginalOutputGamut.swift'
       - 'ios/scripts/build89b_original_oklch_oklrab_oracle.py'
       - 'ios/scripts/generate_scanner_reference.py'
@@ -47,6 +48,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedScannerReference.swift \
             ios/SpektraFilmPort/Build89OriginalCAM16.swift \
             ios/SpektraFilmPort/Build89bOriginalOklabGamut.swift \
+            ios/SpektraFilmPort/Build89bOriginalJzAzBz.swift \
             ios/SpektraFilmPort/Build89OriginalOutputGamut.swift \
             ios/tests/Build89bOriginalOklchOklrabValidation.swift \
             -o /tmp/Build89bOklab
