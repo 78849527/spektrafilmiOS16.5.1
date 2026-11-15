@@ -50,7 +50,7 @@ enum Build88OriginalScanBWGlareValidation {
         guard let root=try JSONSerialization.jsonObject(with:raw)
                 as? [String:Any],
               let cases=root["cases"] as? [[String:Any]],
-              cases.count==48 else {
+              cases.count==64 else {
             throw Failure.invalid("Require 48 true-source reference→glare frames")
         }
         var worstRef=0.0,worstGlare=0.0,off=0,corrected=0,blurYVV=0
@@ -93,6 +93,20 @@ enum Build88OriginalScanBWGlareValidation {
                 blur:try n(item,"blur")
             )
             if glare.percent==0 {off+=1}
+            if glare.percent>100 && glare.roughness==0 {
+                guard !glare.consumesNumbaRandomness else {
+                    throw Failure.invalid(
+                        "Original sigma zero glare incorrectly requests random normals"
+                    )
+                }
+                let noSeed=try OriginalSourceScannerGlare.addToXYZ(
+                    actualRef,illuminantXYZ:lamp,width:w,height:h,
+                    settings:glare,controlledSeed:nil
+                )
+                _=try match(noSeed,pyGlare,
+                    "source scanner deterministic high glare without RNG #(index)"
+                )
+            }
             if black || white {corrected+=1}
             if glare.blur>=3 {blurYVV+=1}
             let actualXYZ=try OriginalSourceScannerGlare.addToXYZ(
@@ -118,10 +132,10 @@ enum Build88OriginalScanBWGlareValidation {
                 }
             }
         }
-        guard off==16,corrected==36,blurYVV==16 else {
+        guard off==16,corrected==48,blurYVV==32 else {
             throw Failure.invalid("Original scanner BW/glare mode coverage drift")
         }
-        print("PASS BUILD88 TRUE ORIGINAL 48 COMBINED SCANNER XYZ: " +
+        print("PASS BUILD88 TRUE ORIGINAL 64 COMBINED SCANNER XYZ: " +
               "ColorReferenceService.black_white_xyz_correction then " +
               "original single-worker Numba glare.add_glare. " +
               "BW max=\(worstRef), glare XYZ max=\(worstGlare), " +
