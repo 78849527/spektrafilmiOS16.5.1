@@ -1739,6 +1739,9 @@ struct ContentView: View {
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
     @State private var pendingExport: ExportProposal?
+    // A generated file is owned by this share operation until the system
+    // activity sheet closes; source RAW from Documents is NEVER deleted.
+    @State private var temporarySharedExport: URL?
 
     private struct ExportProposal: Identifiable {
         let id = UUID()
@@ -1791,6 +1794,7 @@ struct ContentView: View {
                     }
                 },
                 onOpenLUT: {
+                    guard !model.busy else { return }
                     model.status = "请选择 .cube 文件"
                     activeSheet = .lut
                 },
@@ -1862,7 +1866,12 @@ struct ContentView: View {
                     }
                 )
             }
-            .sheet(item: $activeSheet) { selection in
+            .sheet(item: $activeSheet, onDismiss: {
+                if let output=temporarySharedExport {
+                    _ = Build98ExportTemporaryFiles.removeAfterUse(output)
+                    temporarySharedExport=nil
+                }
+            }) { selection in
                 switch selection {
                 case .photo:
                     FilesDocumentPicker(onPick: { url in
@@ -1953,6 +1962,11 @@ struct ContentView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .onAppear {
+                // Remove only our old, UUID-named outputs left by a crashed
+                // prior session; never remove current/new files or RAW.
+                _ = Build98ExportTemporaryFiles.removeStale()
+            }
             .alert("提示", isPresented: Binding(
                 get: { message != nil },
                 set: { if !$0 { message = nil } }
@@ -2012,15 +2026,24 @@ struct ContentView: View {
                     let file = try await model.exportTIFF16(
                         resolution: resolution, confirmedPlan: confirmedPlan
                     )
+                    temporarySharedExport=Build98ExportTemporaryFiles.isOwnedExport(file)
+                        ? file : nil
                     activeSheet = .share(file)
                 } else {
                     let file = try await model.exportJPEG(
                         resolution: resolution, confirmedPlan: confirmedPlan
                     )
                     if saveToPhotos {
+                        // The Photos operation has consumed the file only
+                        // after await returns (also clean on thrown error).
+                        defer {
+                            _ = Build98ExportTemporaryFiles.removeAfterUse(file)
+                        }
                         try await PhotoLibrarySaver.saveJPEG(at: file)
                         model.status = "\(mode)照片已保存到系统相册"
                     } else {
+                        temporarySharedExport=Build98ExportTemporaryFiles.isOwnedExport(file)
+                            ? file : nil
                         activeSheet = .share(file)
                     }
                 }
