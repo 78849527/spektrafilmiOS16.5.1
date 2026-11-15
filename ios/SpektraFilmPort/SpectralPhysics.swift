@@ -1483,8 +1483,9 @@ struct SpectralPhysics {
         case .mallett2019:
             raw = sourceMallettRaw(linearRGB:linear)
         }
-        let mult=pow(2.0,cameraEV)
-        let irradiance=raw.map { $0*mult }
+        let irradiance=try Build83OriginalCameraPhoton.exposureCompensated(
+            raw,ev:cameraEV
+        )
         guard irradiance.count==3,
               irradiance.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相机 Hanatos 光子输出非有限")
@@ -1495,12 +1496,14 @@ struct SpectralPhysics {
     /// Raw-stage input after global Python boost and source lens Gaussian,
     /// converting photons to log10 and applying the source film H-D.
     func sourceSpatialInputFromCameraRaw(
-        _ raw:[Double]
+        _ raw:[Double],filmingReferenceScale:Double = 1.0
     ) throws -> SourceSpatialInput {
         guard raw.count==3 && raw.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相机镜头后曝光数据无效")
         }
-        let logRaw=raw.map { log10(max($0,0)+1e-10) }
+        let logRaw=try Build83OriginalCameraPhoton.logExposure(
+            photons:raw,filmingReferenceScale:filmingReferenceScale
+        )
         let initial=(0..<3).map {
             film.curve(logRaw[$0],channel:$0)
         }
