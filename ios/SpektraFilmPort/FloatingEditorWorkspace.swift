@@ -519,7 +519,9 @@ struct FloatingEditorWorkspace: View {
     private func togglePhotoZoom() {
         guard model.hasPhoto else { return }
         withAnimation(.easeInOut(duration:0.2)) {
-            photoScale = photoScale > 1 ? CGFloat(1) : CGFloat(2)
+            photoScale=CGFloat(Build99InteractionRules.nextPhotoScale(
+                Double(photoScale)
+            ))
         }
     }
 
@@ -619,8 +621,9 @@ struct FloatingEditorWorkspace: View {
         .gesture(
             DragGesture(minimumDistance: 8)
                 .onChanged { gesture in
-                    compareFraction = min(0.98, max(0.02,
-                        gesture.location.x / max(1, size.width)))
+                    compareFraction=Build99InteractionRules.compareDivider(
+                        x:Double(gesture.location.x), width:Double(size.width)
+                    )
                 }
         )
         .simultaneousGesture(
