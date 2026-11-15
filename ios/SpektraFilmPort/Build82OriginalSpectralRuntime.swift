@@ -298,9 +298,9 @@ enum Build82OriginalSpectralRuntime {
                     let b=original[(x0*side+y1)*3+ch]
                     let c=original[(x1*side+y0)*3+ch]
                     let d=original[(x1*side+y1)*3+ch]
-                    result[(i*side+j)*3+ch]=
-                        (a*(1-fy)+b*fy)*(1-fx)
-                        +(c*(1-fy)+d*fy)*fx
+                    let top=a*(1-fy)+b*fy
+                    let bottom=c*(1-fy)+d*fy
+                    result[(i*side+j)*3+ch] = top*(1-fx)+bottom*fx
                 }
             }
         }
