@@ -544,6 +544,50 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Build94: explicit LibRaw 0.22 Fuji RAF compatibility path. The
+    /// preserved RAW remains byte-identical and is never overwritten.
+    /// This decodes sensor values through LibRaw's X-Trans engine to RGB8;
+    /// it is not the Python source Float64/rawpy path.
+    func openPreservedRAWWithLibRaw() {
+        guard let url=capturedRAWURL else {
+            status="请先选择并保存原始富士 RAF 文件"
+            return
+        }
+        guard !busy else { return }
+        busy=true
+        status="LibRaw 0.22：正在解包富士 X-Trans RAW 并生成 RGB8 快速兼容图…"
+        Task { @MainActor in
+            defer { busy=false }
+            do {
+                let decoded=try await Task.detached(priority:.userInitiated) {
+                    let actual=try Build94LibRawIngress.open(url)
+                    let preview=try PhotoProcessor.preview(
+                        actual.image,lut:nil,strength:0
+                    )
+                    return (actual,preview)
+                }.value
+                invalidateSimulation()
+                // Changing a selected source-exact mode requires this
+                // explicit user action; never automatically switch on error.
+                sourcePixelIOEnabled=false
+                sourcePhysicalDirectEnabled=false
+                source=decoded.0.image
+                originalPhotoData=nil
+                originalPreview=decoded.1
+                processedPreview=decoded.1
+                rawFastModeActive=true
+                photoDimensions="\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB8"
+                try refresh()
+                status="富士 RAF 已经由 LibRaw \(decoded.0.librawVersion) 去马赛克；" +
+                    "当前为全尺寸 8-bit sRGB 兼容模式，原始 RAF 已无损保存；" +
+                    "不代表 Python rawpy / Float64 数值等价。"
+            } catch {
+                status="LibRaw RAW 解码失败（保留原始 RAF，绝不退回 JPEG）：" +
+                    error.localizedDescription
+            }
+        }
+    }
+
     /// Build79/09: explicit user-requested TRUE Apple RAW decoder probe.
     /// Do not use an embedded JPEG as a substitute, and don't modify the
     /// source RGB preview or claim Python rawpy numerical equivalence.
@@ -1463,7 +1507,7 @@ struct ContentView: View {
                 selectedFilmID: $selectedFilmID,
                 selectedPaperID: $selectedPaperID,
                 onOpenPhotoFile: {
-                    model.status = "请选择 RAF / DNG / CR3 / NEF / ARW 或 JPEG / HEIC / PNG / TIFF"
+                    model.status = "选择 RAF（X-T5 压缩/无压缩）、DNG / CR3 / NEF / ARW 或普通照片"
                     activeSheet = .photo
                 },
                 onOpenCamera: {
@@ -1566,11 +1610,15 @@ struct ContentView: View {
                 Button("使用 Apple RAW 兼容模式打开") {
                     model.openPreservedRAWWithApple()
                 }
+                Button("使用 LibRaw 0.22 富士 RAF 模式打开（8-bit）") {
+                    model.openPreservedRAWWithLibRaw()
+                }
                 Button("仅保留原始 RAW", role: .cancel) { }
             } message: {
-                Text("Apple RAW 使用 iOS 16.5.1 系统去马赛克和色彩处理，" +
-                     "只属于快速兼容模式；选择后才会关闭原版像素精确输入。" +
-                     "不支持的压缩格式会明确报错，不读取内嵌 JPEG。")
+                Text("Apple RAW 使用 iOS 系统解码；LibRaw 0.22 支持" +
+                     "富士 X-T5 压缩 RAF，明确以全尺寸 8-bit sRGB 输出。" +
+                     "两者均非原版 Python Float64 精确模式。" +
+                     "RAW 源文件始终保留；不支持的压缩格式直接报错。")
             }
             .sheet(item: $pendingExport) { proposal in
                 NavigationStack {
