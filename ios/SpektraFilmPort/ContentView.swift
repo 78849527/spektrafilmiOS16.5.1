@@ -1590,6 +1590,7 @@ struct ContentView: View {
     private struct ExportProposal: Identifiable {
         let id = UUID()
         let toPhotos: Bool
+        let tiff16: Bool
         let plan: SafeExportResolution.Plan
     }
 
@@ -1644,6 +1645,10 @@ struct ContentView: View {
                 },
                 onExport: { resolution in
                     proposeExport(saveToPhotos: false, resolution: resolution)
+                },
+                onExportTIFF16: { resolution in
+                    proposeExport(saveToPhotos: false, resolution: resolution,
+                                  tiff16: true)
                 },
                 onSaveToPhotos: { resolution in
                     proposeExport(saveToPhotos: true, resolution: resolution)
@@ -1743,7 +1748,8 @@ struct ContentView: View {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
-                            Text(proposal.plan.mode.title)
+                            Text(proposal.plan.mode.title +
+                                 (proposal.tiff16 ? " · TIFF 16-bit" : " · JPEG"))
                                 .font(.headline)
                             Text(proposal.plan.summary)
                                 .font(.system(size: 14, design: .monospaced))
@@ -1756,13 +1762,16 @@ struct ContentView: View {
                                 pendingExport = nil
                                 performExport(
                                     saveToPhotos: proposal.toPhotos,
+                                    tiff16: proposal.tiff16,
                                     resolution: proposal.plan.mode,
                                     confirmedPlan: proposal.plan
                                 )
                             } label: {
                                 Text(proposal.toPhotos
-                                    ? "确认尺寸并保存相册"
-                                    : "确认尺寸并导出文件")
+                                    ? "确认尺寸并保存 JPEG 相册"
+                                    : (proposal.tiff16
+                                       ? "确认尺寸并分享真正 16-bit TIFF"
+                                       : "确认尺寸并导出 JPEG"))
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
@@ -1798,13 +1807,21 @@ struct ContentView: View {
     }
 
     private func proposeExport(
-        saveToPhotos: Bool, resolution: ExportResolutionMode
+        saveToPhotos: Bool, resolution: ExportResolutionMode,
+        tiff16: Bool = false
     ) {
         guard model.hasPhoto && !model.busy else { return }
         do {
-            let plan = try model.prepareExport(resolution: resolution)
+            guard !saveToPhotos || !tiff16 else {
+                throw ImageProcessingError.invalid(
+                    "TIFF16 当前仅从文件导出菜单分享，系统相册仍为 JPEG"
+                )
+            }
+            let plan = try model.prepareExport(
+                resolution: resolution, tiff16: tiff16
+            )
             pendingExport = ExportProposal(
-                toPhotos: saveToPhotos, plan: plan
+                toPhotos: saveToPhotos, tiff16: tiff16, plan: plan
             )
         } catch {
             message = error.localizedDescription
@@ -1812,30 +1829,42 @@ struct ContentView: View {
     }
 
     private func performExport(
-        saveToPhotos: Bool, resolution: ExportResolutionMode,
+        saveToPhotos: Bool, tiff16: Bool = false,
+        resolution: ExportResolutionMode,
         confirmedPlan: SafeExportResolution.Plan
     ) {
         guard model.hasPhoto && !model.busy else { return }
         model.busy = true
         let mode = resolution.title
-        model.status = saveToPhotos
-            ? "正在制作\(mode) JPEG 并写入系统相册…"
-            : "正在制作\(mode) JPEG…"
+        model.status = tiff16
+            ? "正在制作\(mode) 的真实 16-bit TIFF 文件…"
+            : (saveToPhotos
+                ? "正在制作\(mode) JPEG 并写入系统相册…"
+                : "正在制作\(mode) JPEG…")
         Task { @MainActor in
             defer { model.busy = false }
             do {
-                let file = try await model.exportJPEG(
-                    resolution: resolution, confirmedPlan: confirmedPlan
-                )
-                if saveToPhotos {
-                    try await PhotoLibrarySaver.saveJPEG(at: file)
-                    model.status = "\(mode)照片已保存到系统相册"
-                } else {
+                if tiff16 {
+                    // TIFF only: explicit file share, not Photos JPEG saver.
+                    let file = try await model.exportTIFF16(
+                        resolution: resolution, confirmedPlan: confirmedPlan
+                    )
                     activeSheet = .share(file)
+                } else {
+                    let file = try await model.exportJPEG(
+                        resolution: resolution, confirmedPlan: confirmedPlan
+                    )
+                    if saveToPhotos {
+                        try await PhotoLibrarySaver.saveJPEG(at: file)
+                        model.status = "\(mode)照片已保存到系统相册"
+                    } else {
+                        activeSheet = .share(file)
+                    }
                 }
             } catch {
                 message = error.localizedDescription
-                model.status = "高清导出失败：" + error.localizedDescription
+                model.status = (tiff16 ? "TIFF16 " : "JPEG ") +
+                    "高清导出失败：" + error.localizedDescription
             }
         }
     }
