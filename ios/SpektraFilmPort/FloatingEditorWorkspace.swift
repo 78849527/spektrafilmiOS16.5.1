@@ -488,10 +488,14 @@ struct FloatingEditorWorkspace: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
-            .onChange(of: model.photoDimensions) { _ in
-                // Saved per-photo settings never carry into a newly loaded
-                // photo. The new document is its own state boundary.
+            .onChange(of: model.photoSessionRevision) { _ in
+                // A new photo of identical dimensions is a new session.
                 savedFastSettings=nil
+                originalHeld=false
+                comparisonEnabled=false
+                photoScale=1
+                compareFraction=0.5
+                pendingSourceMode=nil
             }
             .alert(item: $pendingSourceMode) { mode in
                 Alert(
@@ -509,6 +513,13 @@ struct FloatingEditorWorkspace: View {
             }
             .background(Color.black.ignoresSafeArea())
             // Preserve picker/dock lazy mounting for iOS 16.5.1.
+        }
+    }
+
+    private func togglePhotoZoom() {
+        guard model.hasPhoto else { return }
+        withAnimation(.easeInOut(duration:0.2)) {
+            photoScale = photoScale > 1 ? CGFloat(1) : CGFloat(2)
         }
     }
 
@@ -542,11 +553,16 @@ struct FloatingEditorWorkspace: View {
         } else {
             ZStack(alignment: .bottom) {
                 previewImage(
-                    originalHeld ? model.originalPreview : model.processedPreview,
+                    originalHeld ? model.originalPreview :
+                        (model.processedPreview ?? model.originalPreview),
                     size: size
                 )
                 if model.hasPhoto && controlsVisible {
-                    Text(originalHeld ? "原图" : "按住看原图 · 双击放大")
+                    Text(originalHeld ? "原图" :
+                         (model.simulationAwaitingCurrentSettings ||
+                          model.processedPreview == nil
+                            ? "当前效果正在更新 · 暂时显示原图"
+                            : "按住看原图 · 双击放大"))
                         .font(.caption2)
                         .foregroundColor(.white)
                         .padding(.horizontal, 9)
@@ -558,10 +574,7 @@ struct FloatingEditorWorkspace: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
-                let next = photoScale > 1 ? CGFloat(1) : CGFloat(2)
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    photoScale = next
-                }
+                togglePhotoZoom()
             }
             .overlay {
                 if model.hasPhoto {
@@ -602,12 +615,16 @@ struct FloatingEditorWorkspace: View {
             .allowsHitTesting(false)
         }
         .contentShape(Rectangle())
+        // A zero-distance drag swallowed split-view double-tap zoom.
         .gesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: 8)
                 .onChanged { gesture in
                     compareFraction = min(0.98, max(0.02,
                         gesture.location.x / max(1, size.width)))
                 }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { togglePhotoZoom() }
         )
     }
 
@@ -647,7 +664,8 @@ struct FloatingEditorWorkspace: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("保存相册：选择原始、智能安全或省内存分辨率")
-            .disabled(!model.hasPhoto || model.busy)
+            .disabled(!model.hasPhoto || model.busy ||
+                      model.simulationAwaitingCurrentSettings)
             Menu {
                 Button("原始分辨率（不缩小）") {
                     onExport(.original)
@@ -674,7 +692,8 @@ struct FloatingEditorWorkspace: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("分享存储：JPEG 或 TIFF 16-bit，三种明确分辨率选择")
-            .disabled(!model.hasPhoto || model.busy)
+            .disabled(!model.hasPhoto || model.busy ||
+                      model.simulationAwaitingCurrentSettings)
 
             Spacer(minLength: 2)
 
