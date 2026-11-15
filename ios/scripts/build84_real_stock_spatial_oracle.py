@@ -202,20 +202,72 @@ def spatial_oracle(ns):
     return samples
 
 
+def source_complete_dir_cases(ns, stock_records):
+    """Run original couplers.py complete density-to-log exposure correction.
+
+    Covers both positive/negative film, spatial-disabled chemistry,
+    source FIR -> YVV crossover, exponential-tail contribution and narrow
+    1px dimensions. The Swift counterpart uses actual production Double
+    convolution and Build84 original inhibitor chemistry.
+    """
+    by_name={stock["stock"]:stock for stock in stock_records}
+    frames=[]
+    for name,positive in (("kodak_portra_400",False),
+                          ("fujifilm_provia_100f",True)):
+        matrix=np.asarray(by_name[name]["matrix"],dtype=np.float64).reshape(3,3)
+        dmax=np.array([1.7,1.9,2.1],dtype=np.float64)
+        for width,height,core,tail,weight in (
+            (1,7,0.0,4.0,0.06),
+            (7,1,0.4,0.5,0.06),
+            (3,5,2.99,1.5,0.0),
+            (3,5,3.0,6.0,0.06),
+            (7,4,7.25,20.0,0.18),
+            (2,8,0.9,5.0,0.11),
+        ):
+            density=np.array([
+                [[0.11+((x+2)*(y+3)*(c+1)%11)*0.085
+                  for c in range(3)] for x in range(width)]
+                for y in range(height)],dtype=np.float64)
+            log_raw=np.array([
+                [[-1.2+((x+1)*(y+5)*(c+2)%17)*0.11
+                  for c in range(3)] for x in range(width)]
+                for y in range(height)],dtype=np.float64)
+            actual=ns["compute_exposure_correction_dir_couplers"](
+                log_raw,density,dmax,matrix,
+                diffusion_size_pixel=core,
+                diffusion_tail_size_pixel=tail,
+                diffusion_exp_tail_weight=weight,
+                positive=positive
+            )
+            assert np.isfinite(actual).all()
+            frames.append(dict(
+                stock=name,positive=positive,
+                width=width,height=height,core=core,tail=tail,weight=weight,
+                matrix=matrix.reshape(-1).tolist(),
+                maximum=dmax.tolist(),density=density.reshape(-1).tolist(),
+                rawLog=log_raw.reshape(-1).tolist(),
+                corrected=actual.reshape(-1).tolist()
+            ))
+    return frames
+
+
 def main(output_path):
     verify_extra_pins()
     original=source_namespace()
     filters=original_gaussian_namespace()
     stocks=source_stock_oracle(original)
     spatial=spatial_oracle(filters)
+    original.update({"fast_gaussian_filter":filters["fast_gaussian_filter"],
+                     "fast_exponential_filter":filters["fast_exponential_filter"]})
+    dir_stages=source_complete_dir_cases(original,stocks)
     pathlib.Path(output_path).write_text(
-        json.dumps({"stocks":stocks,"spatial":spatial},
+        json.dumps({"stocks":stocks,"spatial":spatial,"dirStages":dir_stages},
                    separators=(",",":"),allow_nan=False),
         encoding="utf-8"
     )
     print("ORIGINAL SOURCE AST PASS stocks=",len(stocks),
           "256-node curves=",len(stocks)*256*3,
-          "spatial cases=",len(spatial),
+          "spatial cases=",len(spatial),"full DIR stages=",len(dir_stages),
           "exact source hashes pinned=",len(PROFILE_BLOBS)+len(OTHER_PINS)+len(SOURCE_BLOBS))
 
 
