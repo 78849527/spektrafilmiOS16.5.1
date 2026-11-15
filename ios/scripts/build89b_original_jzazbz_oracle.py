@@ -66,11 +66,25 @@ def main(destination):
             assert np.isfinite(output).all(),(
                 space,knee,output[~np.isfinite(output).all(axis=1)]
             )
-            for rgb,expected in zip(samples,output):
+            cs=colour.RGB_COLOURSPACES[space]
+            sourceXYZ=colour.RGB_to_XYZ(
+                samples,colourspace=space,illuminant=cs.whitepoint,
+                apply_cctf_decoding=False
+            )*100.0
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore",RuntimeWarning)
+                origJz=colour.XYZ_to_Jzazbz(sourceXYZ)
+                backXYZ=colour.Jzazbz_to_XYZ(origJz)
+            assert np.isfinite(origJz).all()
+            for rgb,xyz,jz,inv,expected in zip(
+                samples,sourceXYZ,origJz,backXYZ,output
+            ):
                 cases.append(dict(
                     algorithm="jzazbz",space=space,
-                    rgb=rgb.tolist(),knee=knee,
-                    light=lightness,expected=expected.tolist()
+                    rgb=rgb.tolist(),sourceXYZ=xyz.tolist(),
+                    sourceJz=jz.tolist(),sourceInverseXYZ=inv.tolist(),
+                    knee=knee,light=lightness,
+                    expected=expected.tolist()
                 ))
     assert len(cases)==72
     Path(destination).write_text(
