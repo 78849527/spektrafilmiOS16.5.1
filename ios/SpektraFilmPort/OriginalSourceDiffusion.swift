@@ -135,8 +135,10 @@ enum OriginalSourceDiffusion {
     static func radius(width:Int,height:Int,pixelUM:Double,
                        settings:Settings) throws -> Int {
         try settings.validate()
-        guard width>=3,height>=3, pixelUM.isFinite,pixelUM>0 else {
-            throw Failure.invalid("原版扩散 PSF 需要有效像素尺寸与至少 3×3 的图像")
+        // Original NumPy reflect pads 1x1 / 1xN / 2xN source images as
+        // well. The previous ≥3 restriction silently removed branches.
+        guard width>=1,height>=1,pixelUM.isFinite,pixelUM>0 else {
+            throw Failure.invalid("原版扩散 PSF 需要有效图像与像素尺寸")
         }
         let sh=shape(settings.family)
         let lambdaMax=sh.bloom.center*max(settings.bloomSize,1e-6) *
@@ -252,9 +254,13 @@ enum OriginalSourceDiffusion {
         }
     }
     private static func reflect(_ pos:Int,dimension:Int) -> Int {
-        if pos<0 { return -pos }
-        if pos>=dimension { return 2*dimension-2-pos }
-        return pos
+        precondition(dimension>0)
+        // numpy.pad(mode="reflect") repeats its mirrored period; a
+        // 1-pixel axis has no neighbour and therefore repeats the pixel.
+        if dimension==1 {return 0}
+        let period=2*dimension-2
+        let residue=(pos%period+period)%period
+        return residue<dimension ? residue : period-residue
     }
     static func apply(_ rgb:[Double],width:Int,height:Int,
                       pixelUM:Double,settings:Settings) throws -> [Double] {
