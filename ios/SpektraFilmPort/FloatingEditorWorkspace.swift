@@ -28,6 +28,8 @@ struct FloatingEditorWorkspace: View {
     @State private var controlsVisible = false
     @State private var unifiedEditorExpanded = false
     @State private var selectedEditorPage: EditorPage = .adjustment
+    @State private var selectedDailyCategory: DailyCategory = .light
+    @State private var selectedProcessStage: ProcessStage = .film
     // Preserve the proven staged mounting for the heavy adjustment tree:
     // SwiftUI iOS 16.5.1 crashed when all pages mounted in one transaction.
     @State private var adjustmentRowsReady = false
@@ -40,7 +42,25 @@ struct FloatingEditorWorkspace: View {
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
 
-    private enum EditorPage: String { case film = "胶卷", adjustment = "调整" }
+    // View-only grouping: changing a page does not change source algorithms.
+    private enum EditorPage: String {
+        case film = "胶卷"
+        case adjustment = "调整"
+        case workflow = "工艺"
+        case laboratory = "实验室"
+    }
+    private enum DailyCategory: String, CaseIterable {
+        case light = "光线"
+        case color = "色彩"
+        case texture = "质感"
+        case detail = "细节"
+    }
+    private enum ProcessStage: String, CaseIterable {
+        case camera = "拍摄"
+        case film = "胶片"
+        case paper = "相纸"
+        case scanner = "扫描"
+    }
     private enum AdjustmentFeature: String {
         case basic = "基础"
         case scanner = "扫描"
@@ -137,6 +157,15 @@ struct FloatingEditorWorkspace: View {
         if abs(model.strength - 1.0) > 1e-9 {
             changes.append("效果强度恢复为 100%")
         }
+        if mode == .physical {
+            if !model.spatialDIREnabled { changes.append("启用胶片层间扩散") }
+            if !model.spatialDIRSourceConvolutionEnabled {
+                changes.append("启用原版空间扩散计算")
+            }
+            if !model.sourcePixelIOEnabled {
+                changes.append("启用原版像素通道")
+            }
+        }
         if model.grainEnabled { changes.append("关闭随机密度颗粒") }
         if model.scannerFinishingEnabled { changes.append("关闭旧版扫描锐化") }
         if mode == .pixel {
@@ -176,10 +205,12 @@ struct FloatingEditorWorkspace: View {
         // The old SourcePixelIO validator requires the original DIR
         // source convolution and a selected film/paper LUT. These
         // prerequisites are not silently fabricated by the UI.
-        guard model.spatialDIREnabled,
-              model.spatialDIRSourceConvolutionEnabled,
-              model.lut != nil else { return }
-        if mode == .physical && !model.sourcePixelIOEnabled { return }
+        // Compatibility mode retains existing strict dependencies; full
+        // physical mode may prepare prerequisites only after confirmation.
+        guard model.lut != nil else { return }
+        if mode == .pixel &&
+            (!model.spatialDIREnabled ||
+             !model.spatialDIRSourceConvolutionEnabled) { return }
         if requiredChanges(for: mode).isEmpty {
             commitSourceMode(mode)
         } else {
@@ -212,6 +243,8 @@ struct FloatingEditorWorkspace: View {
             model.sourcePixelIOEnabled = true
             model.sourcePhysicalDirectEnabled = false
         } else {
+            model.spatialDIREnabled = true
+            model.spatialDIRSourceConvolutionEnabled = true
             model.hanatosOriginalPrecisionEnabled = true
             model.originalScannerEnabled = true
             if !isReversal { model.originalPrintOpticsEnabled = true }
@@ -264,12 +297,12 @@ struct FloatingEditorWorkspace: View {
             adjustmentRowsReady = false
             adjustmentDetailReady = false
         }
-        guard page == .adjustment else { return }
+        guard page != .film else { return }
         DispatchQueue.main.async {
-            guard unifiedEditorExpanded && selectedEditorPage == .adjustment else { return }
+            guard unifiedEditorExpanded && selectedEditorPage == page else { return }
             adjustmentRowsReady = true
             DispatchQueue.main.async {
-                guard unifiedEditorExpanded && selectedEditorPage == .adjustment &&
+                guard unifiedEditorExpanded && selectedEditorPage == page &&
                       adjustmentRowsReady else { return }
                 adjustmentDetailReady = true
             }
@@ -709,35 +742,11 @@ struct FloatingEditorWorkspace: View {
     /// drawers. Keep the existing AnyView-based detail tree intact.
     private func unifiedEditorDock(width: CGFloat, maxHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Button {
-                    selectEditorPage(.film)
-                } label: {
-                    Text("胶卷")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(selectedEditorPage == .film
-                                         ? .accentColor : .primary)
-                        .padding(.horizontal, 13)
-                        .frame(height: 34)
-                        .background(selectedEditorPage == .film
-                                    ? Color.accentColor.opacity(0.15)
-                                    : Color.primary.opacity(0.06), in: Capsule())
-                }
-                .accessibilityLabel("胶卷，切换到胶卷与相纸")
-                Button {
-                    selectEditorPage(.adjustment)
-                } label: {
-                    Text("调整")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(selectedEditorPage == .adjustment
-                                         ? .accentColor : .primary)
-                        .padding(.horizontal, 13)
-                        .frame(height: 34)
-                        .background(selectedEditorPage == .adjustment
-                                    ? Color.accentColor.opacity(0.15)
-                                    : Color.primary.opacity(0.06), in: Capsule())
-                }
-                .accessibilityLabel("调整，切换到效果参数")
+            HStack(spacing: 4) {
+                editorTab(.film)
+                editorTab(.adjustment)
+                editorTab(.workflow)
+                editorTab(.laboratory)
                 Spacer(minLength: 0)
                 if selectedEditorPage == .adjustment {
                     Button {
@@ -762,17 +771,8 @@ struct FloatingEditorWorkspace: View {
             .padding(.horizontal, 10)
 
             Divider()
-            if selectedEditorPage == .film {
-                filmSelectionContent
-                    .frame(height: maxHeight, alignment: .top)
-            } else if adjustmentRowsReady {
-                adjustmentControls
-                    .frame(height: maxHeight)
-            } else {
-                Color.clear
-                    .frame(height: maxHeight)
-                    .accessibilityHidden(true)
-            }
+            editorPageContent
+                .frame(height: maxHeight, alignment: .top)
         }
         .frame(width: width, height: maxHeight + 44, alignment: .top)
         .foregroundColor(.primary)
@@ -781,6 +781,40 @@ struct FloatingEditorWorkspace: View {
         .overlay(RoundedRectangle(cornerRadius: 15)
             .stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .shadow(color: Color.black.opacity(0.18), radius: 9, y: 3)
+    }
+
+    private func editorTab(_ page: EditorPage) -> some View {
+        Button { selectEditorPage(page) } label: {
+            Text(page.rawValue)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+                .foregroundColor(selectedEditorPage == page
+                                 ? .accentColor : .primary)
+                .padding(.horizontal, 8)
+                .frame(height: 34)
+                .background(selectedEditorPage == page
+                            ? Color.accentColor.opacity(0.15)
+                            : Color.primary.opacity(0.06), in: Capsule())
+        }
+        .accessibilityLabel(page.rawValue + "，切换编辑页")
+    }
+
+    // iOS16.5.1 safety: dismount inactive complex view trees and stage the
+    // active detail after two turns to prevent generic metadata stack crash.
+    private var editorPageContent: AnyView {
+        if selectedEditorPage == .film {
+            return AnyView(filmSelectionContent)
+        }
+        guard adjustmentRowsReady else {
+            return AnyView(Color.clear.accessibilityHidden(true))
+        }
+        switch selectedEditorPage {
+        case .film: return AnyView(filmSelectionContent)
+        case .adjustment: return AnyView(dailyAdjustmentControls)
+        case .workflow: return AnyView(processControls)
+        case .laboratory: return AnyView(advancedControls)
+        }
     }
 
     /// Each horizontal page swipe CHANGES the active material binding.
@@ -1123,9 +1157,17 @@ struct FloatingEditorWorkspace: View {
     // to adjustmentControls.getter, followed by STACK GUARD SIGSEGV.
     // Avoid a giant nested SwiftUI opaque type; each child is explicitly
     // type-erased BEFORE composing it with parent views.
-    private var adjustmentControls: AnyView {
+    private var advancedControls: AnyView {
         AnyView(
             VStack(spacing: 3) {
+                HStack(spacing: 5) {
+                    Text("算法实验室 · 保留所有原版参数")
+                        .font(.caption2).foregroundColor(.secondary)
+                    Spacer(minLength: 2)
+                    Text(fullPhysicalMode ? "精细实验" : "快速 / 兼容")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 11)
                 featureRow
                 simpleSwitchRow
                 Divider().padding(.horizontal, 8)
