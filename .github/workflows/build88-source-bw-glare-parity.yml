@@ -41,6 +41,10 @@ jobs:
           python ios/scripts/build88_original_scanner_reference_glare_oracle.py \
             /tmp/build88-source-bw-glare.json
           test -s /tmp/build88-source-bw-glare.json
+      - name: Regenerate original pinned MT19937 reference for production RNG
+        run: |
+          python ios/scripts/generate_source_mt19937.py
+          test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
       - name: Extract real native Double source FIR YVV
         run: |
           python ios/scripts/extract_source_filter_core_for_linux.py \
@@ -49,6 +53,7 @@ jobs:
         run: |
           swiftc -O -parse-as-library \
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
             /tmp/Build88BWGlareFilterCore.swift \
             ios/SpektraFilmPort/Build87OriginalColorReference.swift \
