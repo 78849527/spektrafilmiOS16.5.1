@@ -38,3 +38,15 @@
 | 12/13MP 真正原版颗粒/光晕/FFTs | 未执行 iOS16.5.1 全幅连续链 | **未认证** |
 
 工程路线推进到了 44/47 的工作位置并不表示 42–44 三项全部验收。**45–47（Build92）必须有 Python 分阶段 full-frame source tapes、真实 iPhoneOS GUI 回归和同 SHA Release，不能以此 CI 推导科学认证或发布 IPA。**
+
+## Build91 本轮 iPhoneOS arm64 最终真实构建
+
+- [Build91 完整合并编译 run 43691244359](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43691244359)：**PASS / BUILD SUCCEEDED**。实际受测源提交 `dd33f25333fa8954a9d823e84175304f483e04d7`，2026-11-15 07:49 UTC 完成。此前 run `43690886517` 的两个 Swift 超长 UInt64 内存预检表达式造成 Xcode 不能在时限内完成类型检查，已经分别拆成等价的显式 UInt64 累加，并以最新源码重新编译成功。
+- Xcode 16.4、iPhoneOS SDK 18.5、`generic/platform=iOS`、arm64、Release、`CODE_SIGNING_ALLOWED=NO`；`OriginalGrainKernels.air` 成功链接 `default.metallib`，Xcode 产物 APP 通过工作流内部检查。
+- `CFBundleShortVersionString=1.8.58`、`CFBundleVersion=83` 仍为原项目标识。本次**没有签名、新发布 Build91 IPA 或 GitHub Release**。Xcode 能编译 ≠ 实机 iOS16.5.1 能正常运行，更不是原版 12MP 科学完整认证。
+- [最终源 FFT 108 帧 CI 43690710183](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43690710183)：**PASS**，原版反射 FFT 和全部四扩散家族逐阶段数据。
+- [最终 6 档内存预算 CI 43690710141](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43690710141)：**PASS**，1/2/4/7.2/12/13MP、真源 FFT padded grid、大小限制、全颗粒/光晕/扫描眩光、摄像/印相 scratch 峰值的纯算术测试。
+- [最终 Build90→Build91 性能/数值双对照 CI 43690710168](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43690710168)：**PASS**，29493 + 215040 个 RGB Double 通道前后最大差 `0.0`；一次 Ubuntu 主机样本 113×87 `1.07×`、320×224 `0.986×`，RSS 66056KiB vs 66220KiB，不能宣传持续加速或稳定减内存。减少多次 Swift FFT workplane heap alloc 是代码级改进，仍需实际 12MP 和真机测量。
+- [Metal YVV cache Xcode 主机独立检查 CI 43690960526](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43690960526)：**PASS**（Swift Metal host typecheck）；并没有实际 iPhone GPU 上执行 `hardwareDiagnostic()`，无法由 host typecheck 声明 Float32 源数值新认证。
+
+**工程工作位置：44／47（约 93.6%）。这仅是路线图序号，不是所有模块科学认证通过率。** 下一组 Build92 的 45–47 真机原版分阶段 tape、SwiftUI/RAW/相册/Files 大图回归及同 SHA IPA/签名/Release 是明确未完成；另有既存 EXR 真实编码和 XMP/某些 RAW 光学入口未完全移植，不能把总路线图线性完成位置解释为剩余工作量只有 6.4%。
