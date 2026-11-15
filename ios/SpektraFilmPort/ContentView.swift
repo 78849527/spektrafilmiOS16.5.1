@@ -16,6 +16,9 @@ final class PhotoEditorModel: ObservableObject {
     @Published var photoDimensions = ""
     /// Original Bayer DNG file from the most recent RAW+JPEG capture.
     @Published var capturedRAWURL: URL?
+    /// Build93: only an explicit user choice opens non-source Apple RAW.
+    @Published var rawNeedsChoice = false
+    @Published var rawFastModeActive = false
     @Published var filmExposureEV = 0.0
     @Published var printExposureEV = 0.0
     @Published var hanatosOriginalPrecisionEnabled = true
@@ -482,15 +485,62 @@ final class PhotoEditorModel: ObservableObject {
                 photoDimensions="RAW ."+kind.rawValue.uppercased()
                     + "（尚未显影）"
                 capturedRAWURL=saved.url
+                rawFastModeActive=false
+                rawNeedsChoice=true
                 status="已无损导入 ."+kind.rawValue.uppercased()
                     + " 原片，SHA256="+String(saved.sha256.prefix(12))
                     + "…，已保存至「文件」/ SpektraFilm RAW Imports。"
-                    + "尚未执行 RAW 去马赛克；禁止使用内嵌 JPEG 代替。"
+                    + "请选择「Apple RAW 兼容模式」执行真实去马赛克，或仅保存原片。"
                 return
             }
             try loadPhoto(Data(contentsOf: url))
         } catch {
             status = "文件导入失败：" + error.localizedDescription
+        }
+    }
+
+    /// Build93: selected explicitly by the RAW import dialog. The original
+    /// sensor file always remains byte-for-byte in Documents; CIImage is a
+    /// lazily evaluated Apple *fast compatibility* development, never source
+    /// Python Float64 / X-Trans rawpy parity. Unsupported compression fails.
+    func openPreservedRAWWithApple() {
+        guard let url=capturedRAWURL else {
+            status="没有可打开的原始 RAW 文件"
+            return
+        }
+        guard !busy else { return }
+        busy=true
+        status="Apple RAW 兼容模式：正在验证真实传感器像素与生成预览…"
+        Task { @MainActor in
+            defer { busy=false }
+            do {
+                let decoded=try await Task.detached(priority:.userInitiated) {
+                    let actual=try Build93AppleRAWImport.open(url)
+                    let preview=try PhotoProcessor.preview(
+                        actual.image,lut:nil,strength:0
+                    )
+                    return (actual,preview)
+                }.value
+                invalidateSimulation()
+                // This explicit choice is the only place where prior source
+                // pixel mode is switched off. It never happens on a failed
+                // decoder or as an automatic precision-mode fallback.
+                sourcePixelIOEnabled=false
+                sourcePhysicalDirectEnabled=false
+                source=decoded.0.image
+                originalPhotoData=nil
+                originalPreview=decoded.1
+                processedPreview=decoded.1
+                rawFastModeActive=true
+                photoDimensions="\\(decoded.0.width) × \\(decoded.0.height) · RAW Apple 兼容模式"
+                try refresh()
+                status="已用 Apple RAW 真实解码 .\\(decoded.0.format.rawValue.uppercased())；" +
+                    "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
+                    "不是 Python rawpy 原版数值等价。"
+            } catch {
+                status="Apple RAW 兼容解码失败（原始 RAW 仍保留）：" +
+                    error.localizedDescription
+            }
         }
     }
 
@@ -618,6 +668,8 @@ final class PhotoEditorModel: ObservableObject {
         source = decoded
         originalPhotoData = data
         capturedRAWURL = nil
+        rawNeedsChoice = false
+        rawFastModeActive = false
         photoDimensions = "\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
         originalPreview = try PhotoProcessor.preview(decoded, lut: nil, strength: 0)
         try refresh()
@@ -1411,7 +1463,7 @@ struct ContentView: View {
                 selectedFilmID: $selectedFilmID,
                 selectedPaperID: $selectedPaperID,
                 onOpenPhotoFile: {
-                    model.status = "请选择 JPEG / HEIC / PNG / TIFF 图片文件"
+                    model.status = "请选择 RAF / DNG / CR3 / NEF / ARW 或 JPEG / HEIC / PNG / TIFF"
                     activeSheet = .photo
                 },
                 onOpenCamera: {
@@ -1505,6 +1557,20 @@ struct ContentView: View {
                 case .share(let url):
                     ActivitySheet(items: [url])
                 }
+            }
+            .confirmationDialog(
+                "相机 RAW 已无损保存",
+                isPresented: $model.rawNeedsChoice,
+                titleVisibility: .visible
+            ) {
+                Button("使用 Apple RAW 兼容模式打开") {
+                    model.openPreservedRAWWithApple()
+                }
+                Button("仅保留原始 RAW", role: .cancel) { }
+            } message: {
+                Text("Apple RAW 使用 iOS 16.5.1 系统去马赛克和色彩处理，" +
+                     "只属于快速兼容模式；选择后才会关闭原版像素精确输入。" +
+                     "不支持的压缩格式会明确报错，不读取内嵌 JPEG。")
             }
             .sheet(item: $pendingExport) { proposal in
                 NavigationStack {
