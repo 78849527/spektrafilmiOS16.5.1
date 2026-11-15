@@ -115,7 +115,8 @@ def main(destination):
                         stage._film_render=NS(grain=NS(density_min=[.03,.03,.03]))
                         stage._enlarger=params
                         stage._enlarger_service=service
-                        stage._print=NS(data=NS(log_sensitivity=paper["data"]["log_sensitivity"]))
+                        stage._print=NS(data=NS(log_sensitivity=np.asarray(
+                            paper["data"]["log_sensitivity"],dtype=np.float64)))
                         stage._resize_service=NS(pixel_size_um=9.0)
                         stage._settings=NS(use_enlarger_lut=False)
                         stage._color_reference_service=NS(
