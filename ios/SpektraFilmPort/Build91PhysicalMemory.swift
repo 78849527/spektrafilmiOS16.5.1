@@ -1,0 +1,173 @@
+import Foundation
+
+/// Build91 (#44) original array/FFT geometry dry-run planner. It never
+/// allocates a 1–13 MP image merely to decide whether the image can fit.
+/// All values use UInt64 and are checked BEFORE ImageIO/photon buffers.
+/// Estimated peak is NOT a measured iPhone resident memory sample.
+enum Build91PhysicalMemory {
+    enum Failure:LocalizedError {
+        case invalid(String)
+        var errorDescription:String? {
+            if case let .invalid(m)=self{return m}
+            return nil
+        }
+    }
+    struct FFT {
+        let radius:Int
+        let paddedWidth:Int
+        let paddedHeight:Int
+        let fftWidth:Int
+        let fftHeight:Int
+        let gridElements:UInt64
+        let sourceFFTGuardBytes:UInt64
+        let actualScratchBytes:UInt64
+        let psfBytes:UInt64
+        /// Same guard as OriginalSourceDiffusion: 5 FFT planes + 2 RGB.
+        static let sourceCap:UInt64=512_000_000
+    }
+    struct Plan {
+        let width:Int
+        let height:Int
+        let pixels:UInt64
+        let basePeakBytes:UInt64
+        let additionalFFTBytes:UInt64
+        let estimatedPeakBytes:UInt64
+        let allowedBytes:UInt64
+        let processAvailableBytes:UInt64?
+        let cameraFFT:FFT?
+        let paperFFT:FFT?
+        var megapixels:Double {Double(pixels)/1_000_000}
+        var peakMB:Double {Double(estimatedPeakBytes)/1_000_000}
+    }
+    private static func pow2(_ value:Int) throws->Int {
+        guard value>0,value<=32768 else {
+            throw Failure.invalid(
+                "Build91 原版 Double FFT 大于 32768 网格；" +
+                "禁止减少源扩散 PSF 或换 GPU 近似滤波"
+            )
+        }
+        var n=1
+        while n<value {n*=2}
+        return n
+    }
+    /// OriginalSourceDiffusion.apply uses this exact reflect geometry.
+    static func fft(
+        width:Int,height:Int,pixelUM:Double,
+        settings:OriginalSourceDiffusion.Settings
+    ) throws->FFT? {
+        if !settings.active || settings.strength<=0 ||
+           settings.spatialScale<=0 {return nil}
+        let radius=try OriginalSourceDiffusion.radius(
+            width:width,height:height,pixelUM:pixelUM,
+            settings:settings
+        )
+        guard width>0,height>0,radius>=0,
+              radius<=4096,width<=Int.max-4*radius,
+              height<=Int.max-4*radius else {
+            throw Failure.invalid("源 FFT padded radius 整数溢出")
+        }
+        let kernel=2*radius+1
+        let w=try pow2(width+4*radius)
+        let h=try pow2(height+4*radius)
+        let elements=UInt64(w)*UInt64(h)
+        let pixels=UInt64(width)*UInt64(height)
+        let guardBytes=elements*40+pixels*48
+        let scratchBytes=elements*32+UInt64(2*(w+h))*8
+        let psf=UInt64(kernel)*UInt64(kernel)*3*8
+        return FFT(
+            radius:radius,paddedWidth:width+2*radius,
+            paddedHeight:height+2*radius,
+            fftWidth:w,fftHeight:h,
+            gridElements:elements,
+            sourceFFTGuardBytes:guardBytes,
+            actualScratchBytes:scratchBytes,
+            psfBytes:psf
+        )
+    }
+    /// Camera and paper FFT execute SEQUENTIALLY, so account for their
+    /// maximum extra scratch, not the sum of both stages.
+    static func plan(
+        width:Int,height:Int,
+        baseBytesPerPixel:UInt64=120,
+        additionalBytesPerPixel:UInt64=0,
+        physicalMemory:UInt64,
+        processAvailable:UInt64?=nil,
+        camera:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
+        paper:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil
+    ) throws->Plan {
+        guard width>0,height>0,width<=8192,height<=8192,
+              width<=13_000_000/height else {
+            throw Failure.invalid(
+                "全光学源工作尺寸不合法或超过 1300 万像素；" +
+                "任何输出分辨率必须用户明确选择"
+            )
+        }
+        guard baseBytesPerPixel>0,
+              baseBytesPerPixel<=4096,
+              additionalBytesPerPixel<=4096,
+              physicalMemory>0 else {
+            throw Failure.invalid("原版物理内存预算参数不合法")
+        }
+        let pixels=UInt64(width)*UInt64(height)
+        let bytesPerPixel=baseBytesPerPixel+additionalBytesPerPixel
+        let basePeak=pixels*bytesPerPixel
+        let cameraFFT=try camera.flatMap{
+            try fft(width:width,height:height,
+                    pixelUM:$0.pixelUM,settings:$0.settings)
+        }
+        let paperFFT=try paper.flatMap{
+            try fft(width:width,height:height,
+                    pixelUM:$0.pixelUM,settings:$0.settings)
+        }
+        // The 512 MB source guard is not permission to switch CPU Double
+        // into unconstrained Metal Float32.
+        for (label,work) in [
+            ("摄影 RAW",cameraFFT),("相纸 RAW",paperFFT)
+        ] {
+            if let work,work.sourceFFTGuardBytes>FFT.sourceCap {
+                throw Failure.invalid(
+                    "Build91 \(label) 源 FFT 需要 " +
+                    "\(work.fftWidth)×\(work.fftHeight) Double 网格、" +
+                    "约 \(work.sourceFFTGuardBytes/1_000_000) MB，" +
+                    "超过 512 MB 数值原版上限；禁止降采样／" +
+                    "缩短 PSF／静默换 Float32"
+                )
+            }
+        }
+        let additionalFFT=max(
+            cameraFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0,
+            paperFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0
+        )
+        let estimated=basePeak+additionalFFT
+        let allowed=min(1_500_000_000,physicalMemory/3)
+        return Plan(
+            width:width,height:height,pixels:pixels,
+            basePeakBytes:basePeak,additionalFFTBytes:additionalFFT,
+            estimatedPeakBytes:estimated,
+            allowedBytes:allowed,processAvailableBytes:processAvailable,
+            cameraFFT:cameraFFT,paperFFT:paperFFT
+        )
+    }
+    /// Same physicalMemory/3 cap and process 80% headroom rule as
+    /// existing v1.8.58 production memory guard, using UInt64.
+    static func validate(_ plan:Plan) throws {
+        let headroomOK=plan.processAvailableBytes.map{
+            $0>0 && plan.estimatedPeakBytes<=($0/10)*8
+        } ?? true
+        guard plan.estimatedPeakBytes<=plan.allowedBytes,
+              headroomOK else {
+            let available=plan.processAvailableBytes.map{
+                "\($0/1_000_000)"
+            } ?? "未获取"
+            throw Failure.invalid(
+                "Build91 原版 Double 内存预算不足 " +
+                "\(plan.width)×\(plan.height)：" +
+                "预估峰值 \(plan.estimatedPeakBytes/1_000_000) MB，" +
+                "允许 \(plan.allowedBytes/1_000_000) MB，" +
+                "当前可分配 \(available) MB。" +
+                "请明确选择较低导出分辨率，不会自动缩图、" +
+                "跳过胶片颗粒或将 CPU Float64 换为 GPU Float32。"
+            )
+        }
+    }
+}
