@@ -1354,6 +1354,18 @@ struct SpectralPhysics {
     /// Upstream grain.py layer inversion uses the SAME measured 256×3×3
     /// Float64 original film curves as the H-D development engine.
     /// Distinct from the old approximate 3D colour-cube grain inputs.
+    /// grain.sublayers_active=false uses 3 film-H-D channel maxima,
+    /// not the sum of nine measured emulsion sublayer density maxima.
+    func sourceSpatialGrainSingleLayerMaximum() throws -> [Double] {
+        let source=try sourceSpatialMeasuredHDCurves()
+        guard source.densityMaximum.allSatisfy({
+            $0.isFinite && $0>0
+        }) else {
+            throw PhysicsError.invalid("源单层胶片颗粒 H-D 最大密度非法")
+        }
+        return source.densityMaximum
+    }
+
     func sourceSpatialGrainLayers() throws -> OriginalSourcePhysicalGrain.MeasuredLayers {
         let maxima=film.sublayerMaxima
         guard useOriginalScanner,
