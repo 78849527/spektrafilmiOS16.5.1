@@ -1,4 +1,4 @@
-name: Build77-83 source verification and separately requested Build83 unsigned IPA
+name: Build77-83 source verification and Build83 C-workflow UI revision app
 
 on:
   push:
@@ -10,6 +10,7 @@ on:
       - port/build81-input-geometry-gamut-13-16
       - port/build82-hanatos-surface-filter-17-18
       - port/build83-camera-photon-optics-19-20
+      - ui/build83-editor-workflow-c-r1
     paths:
       - "ios/scripts/build77_source_contract.py"
       - "ios/scripts/certify_build77_oneshot.py"
@@ -571,6 +572,48 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 83
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
           echo "Build83 unsigned test app 1.8.58(83) compiled; upstream scientific parity NOT certified"
+      - name: Package Build83 C-workflow UI revision app for user inspection
+        if: github.ref == 'refs/heads/ui/build83-editor-workflow-c-r1'
+        run: |
+          set -euo pipefail
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -s "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx '1.8.58'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx '83'
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist" | grep -Fx '16.5'
+          xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
+          xcrun vtool -show-build "$APP/SpektraFilmPort" | grep -F 'platform IOS'
+          test -s "$APP/irradiance_xy_tc.npy"
+          echo '52f90c724811f5fab80769f8548bf24d08a521eb09e65ab6e016893258d2a783  ' | cat - /dev/null >/dev/null
+          ACTUAL="$(shasum -a 256 "$APP/irradiance_xy_tc.npy" | awk '{print $1}')"
+          test "$ACTUAL" = '52f90c724811f5fab80769f8548bf24d08a521eb09e65ab6e016893258d2a783'
+          /usr/libexec/PlistBuddy -c "Add :Build83UIRevision string C-R1" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :Build83UISourceSHA string $GITHUB_SHA" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :Build83UIRealDeviceVerified bool false' "$APP/Info.plist"
+          DEST="$PWD/ios/build/build83-ui-c-r1-release"
+          mkdir -p "$DEST/Payload"
+          cp -R "$APP" "$DEST/Payload/SpektraFilmPort.app"
+          cd "$DEST"
+          IPA='SpektraFilm-1.8.58-Build83-UI-C-R1-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa'
+          zip -q -r "$IPA" Payload
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/SpektraFilmPort'
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/irradiance_xy_tc.npy'
+          shasum -a 256 "$IPA" > "$IPA.sha256"
+          printf '%s\n' "SOURCE_COMMIT=$GITHUB_SHA" 'UI_REVISION=C-R1' 'APP_VERSION=1.8.58(83)' 'MIN_IOS=16.5' 'ARCH=arm64' 'UNSIGNED=YES' 'SCIENTIFIC_PARITY=NOT_CERTIFIED' 'REAL_DEVICE=NOT_TESTED' 'INSTALL=REQUIRES_OWN_APPLE_SIGNING' > verification.txt
+          test -s "$IPA"
+          echo "PASS: Build83 C-workflow UI revision iPhoneOS arm64, original 81-wavelength data and unsigned IPA SHA256"
+      - name: Upload newly built C-workflow UI revision IPA
+        if: github.ref == 'refs/heads/ui/build83-editor-workflow-c-r1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build83-ui-c-r1-unsigned
+          path: |
+            ios/build/build83-ui-c-r1-release/*.ipa
+            ios/build/build83-ui-c-r1-release/*.sha256
+            ios/build/build83-ui-c-r1-release/verification.txt
+          if-no-files-found: error
       - name: Package user-requested Build83 v1.8.58 unsigned experimental IPA
         if: github.ref == 'refs/heads/port/build83-camera-photon-optics-19-20'
         run: |
@@ -1039,3 +1082,54 @@ jobs:
           test -n "$LINK"
           echo "VERIFIED_BUILD83_IPA_DIRECT_URL=$LINK"
           echo "VERIFIED_BUILD83_SOURCE_COMMIT=$GITHUB_SHA"
+
+  publish-build83-ui-c-r1:
+    name: Publish C-workflow interface Build83 test IPA (UNSIGNED / UNVERIFIED)
+    if: github.ref == 'refs/heads/ui/build83-editor-workflow-c-r1'
+    needs:
+      - upstream-contract
+      - python-reference-taps
+      - ios-stage-recorder
+      - native-stock-byte-audit
+      - native-parameter-digest-audit
+      - native-stock-halation-digest-audit
+      - native-neutral-filter-database-audit
+      - one-shot-full-device-certification-preflight
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build83-ui-c-r1-unsigned
+          path: build83-ui-c-r1
+      - name: Verify SHA256 then publish unique UI revision prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd build83-ui-c-r1
+          IPA='SpektraFilm-1.8.58-Build83-UI-C-R1-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa'
+          test -s "$IPA"
+          test -s "$IPA.sha256"
+          test -s verification.txt
+          shasum -a 256 -c "$IPA.sha256"
+          grep -Fx "SOURCE_COMMIT=$GITHUB_SHA" verification.txt
+          grep -Fx 'UI_REVISION=C-R1' verification.txt
+          grep -Fx 'UNSIGNED=YES' verification.txt
+          TAG='ios1651-v1.8.58-build83-UI-C-R1-UNSIGNED-UNVERIFIED'
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing UI revision release"
+            exit 1
+          fi
+          gh release create "$TAG" \
+            "$IPA" "$IPA.sha256" verification.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title 'SpektraFilm Build83 UI C-R1 iOS 16.5.1 (UNSIGNED / EXPERIMENT)' \
+            --notes 'New editor information architecture: 胶卷、调整 (光线/色彩/质感/细节)、工艺 (拍摄/胶片/相纸/扫描)、实验室 (all original expert controls). Film-route rules hide paper controls for reversal films; full physical source-mode changes require explicit consent. Built upon Build83 without claiming Build84 algorithm completion. iPhoneOS arm64 minimum 16.5; UNSIGNED and not normally installable before own Apple signing; no actual iOS16.5.1 hardware GUI certification or full Python whole-image parity.' \
+            --prerelease
+          LINK="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name | endswith(".ipa")) | .browser_download_url')"
+          test -n "$LINK"
+          echo "VERIFIED_BUILD83_UI_C_R1_IPA_DIRECT_URL=$LINK"
+          echo "VERIFIED_BUILD83_UI_C_R1_SOURCE_SHA=$GITHUB_SHA"
