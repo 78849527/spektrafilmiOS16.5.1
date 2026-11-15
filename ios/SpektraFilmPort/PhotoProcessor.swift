@@ -164,6 +164,23 @@ enum PhotoProcessor {
               source.extent.width > 0, source.extent.height > 0 else {
             throw ImageProcessingError.invalid("源照片尺寸无效")
         }
+        // Build97 P0: capture/verify the actual confirmed plan BEFORE
+        // allocating a full original CGImage. An original-size request is
+        // explicit but not permission to exceed iOS process memory headroom.
+        let sourceBounds = source.extent.integral
+        let plan = try confirmedPlan ?? SafeExportResolution.capture(
+            width: Int(sourceBounds.width),
+            height: Int(sourceBounds.height), mode: resolution
+        )
+        guard plan.sourceWidth == Int(sourceBounds.width),
+              plan.sourceHeight == Int(sourceBounds.height),
+              plan.mode == resolution else {
+            throw ImageProcessingError.invalid(
+                "导出预检：原图/档位已改变，请重新确认输出尺寸"
+            )
+        }
+        try SafeExportResolution.validateBeforeRender(plan)
+
         // Explicit choice only: ORIGINAL always evaluates at source pixel
         // dimensions. SAFE first reduces the entire input to a conservative
         // budget, then executes the exact same optical density/SciPy/Metal
@@ -172,19 +189,7 @@ enum PhotoProcessor {
         var downsampled = false
         if resolution != .original {
             let bounds = source.extent.integral
-            let plan = try confirmedPlan ??
-                SafeExportResolution.capture(
-                    width: Int(bounds.width),
-                    height: Int(bounds.height), mode: resolution
-                )
-            guard plan.sourceWidth == Int(bounds.width),
-                  plan.sourceHeight == Int(bounds.height),
-                  plan.mode == resolution else {
-                throw ImageProcessingError.invalid(
-                    "安全输出：已确认的尺寸与当前照片不匹配，请重新选择"
-                )
-            }
-            try SafeExportResolution.validateBeforeRender(plan)
+            // The same immutable plan has already been validated above.
             let target = plan.dimensions
             if target.reduced {
                 // Normalize image coordinates to zero before filtering.
