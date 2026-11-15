@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.67"
-    CURRENT_PROJECT_VERSION: "100"
+    MARKETING_VERSION: "1.8.68"
+    CURRENT_PROJECT_VERSION: "101"
 packages:
   NextLevel:
     path: Vendor/NextLevel
@@ -58,6 +58,9 @@ targets:
       properties:
         CFBundleIdentifier: com.twogou.spektrafilmport
         CFBundleDisplayName: SpektraFilm Port
+        # Exactly injected by Build101 CI from GITHUB_SHA and verified in
+        # the compiled Info.plist and final IPA (not a static historical SHA).
+        SFSourceCommit: "$(SF_SOURCE_COMMIT)"
         NSCameraUsageDescription: 允许拍照并将照片直接交给 SpektraFilm 原版冲印处理。
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
