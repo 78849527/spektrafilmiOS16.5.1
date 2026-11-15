@@ -219,7 +219,9 @@ checks.update({
         "static func required(" in filter_contract and
         "throw Failure.stage(stage)" in filter_contract,
     "p0_no_plain_lut_fallback":
-        "else { return optical }" not in processor and
+        # No LUT or strength=0 intentionally returns the optical identity.
+        # Only a failed requested CIColorCube may NOT return optical.
+        "guard let output = cube.outputImage else { return optical }" not in processor and
         "禁止静默输出原片" in processor,
     "p0_grain_nonfallback":
         "密度颗粒：所选显影效果未生成图像" in processor,
