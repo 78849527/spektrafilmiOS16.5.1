@@ -58,16 +58,16 @@ enum SpatialOptics {
 
     /// Input and output are sRGB CIImages; filters run on a linearized image.
     /// Must be applied to the final preview/export resolution *before* LUT.
-    static func apply(to image: CIImage, settings: SpatialOpticsSettings) -> CIImage {
+    static func apply(to image: CIImage, settings: SpatialOpticsSettings) throws -> CIImage {
         guard settings.enabled, !image.extent.isEmpty else { return image }
         let exposure = image.applyingFilter("CISRGBToneCurveToLinear")
         let longSide = max(1.0, image.extent.width, image.extent.height)
         // The original film exposure size defaults to 36x24mm; avoid fixed
         // pixel-radius halos that change physical width between preview/export.
         let micrometersPerPixel = 36_000.0 / longSide
-        let scattered = scatter(exposure, amount: settings.scatterAmount,
+        let scattered = try scatter(exposure, amount: settings.scatterAmount,
                                 micrometersPerPixel: micrometersPerPixel)
-        let final = halation(scattered, amount: settings.halationAmount,
+        let final = try halation(scattered, amount: settings.halationAmount,
                              micrometersPerPixel: micrometersPerPixel,
                              preset: Preset.forFilm(
                                 use: settings.filmUse,
@@ -80,24 +80,24 @@ enum SpatialOptics {
     /// Original:
     /// E1=(1-s)E0 + s[(1-w)*Gaussian_core(E0)+w*Exponential_tail(E0)]
     private static func scatter(_ image: CIImage, amount: Double,
-                                micrometersPerPixel: Double) -> CIImage {
+                                micrometersPerPixel: Double) throws -> CIImage {
         let s = min(1, max(0, amount))
         guard s > 0 else { return image }
         let coreRadius = scatterCoreUM.map { $0 / micrometersPerPixel }
         let tailRadius = scatterTailUM.map { $0 / micrometersPerPixel }
-        let direct = weighted(image, [1-s, 1-s, 1-s])
-        let core = gaussianWeighted(
+        let direct = try weighted(image, [1-s, 1-s, 1-s])
+        let core = try gaussianWeighted(
             image, radii: coreRadius,
             weights: scatterTailWeight.map { s * (1-$0) }
         )
-        var sum = add(direct, core)
+        var sum = try add(direct, core)
         for mix in exponentialMixture {
-            let part = gaussianWeighted(
+            let part = try gaussianWeighted(
                 image,
                 radii: tailRadius.map { $0 * mix.radiusRatio },
                 weights: scatterTailWeight.map { s * $0 * mix.weight }
             )
-            sum = add(sum, part)
+            sum = try add(sum, part)
         }
         return sum.cropped(to: image.extent)
     }
@@ -107,7 +107,7 @@ enum SpatialOptics {
     /// with k=1..3, rho=0.5 and per-film antihalation presets.
     private static func halation(_ image: CIImage, amount: Double,
                                  micrometersPerPixel: Double,
-                                 preset: Preset) -> CIImage {
+                                 preset: Preset) throws -> CIImage {
         let strength = min(3.0, max(0, amount))
         guard strength > 0 else { return image }
 
@@ -117,17 +117,17 @@ enum SpatialOptics {
         let normalizer = (0..<bounceCount).reduce(0.0) { sum, i in
             sum + pow(bounceDecay, Double(i))
         }
-        var sum = weighted(image, total)
+        var sum = try weighted(image, total)
 
         for bounce in 1...bounceCount {
             let weight = pow(bounceDecay, Double(bounce-1)) / normalizer
-            let part = gaussianWeighted(
+            let part = try gaussianWeighted(
                 image, radii: Array(repeating: radius * sqrt(Double(bounce)), count: 3),
                 weights: (0..<3).map { c in
                     a[c] * total[c] * weight
                 }
             )
-            sum = add(sum, part)
+            sum = try add(sum, part)
         }
         return sum.cropped(to: image.extent)
     }
@@ -137,7 +137,7 @@ enum SpatialOptics {
     /// with a different convolution implementation.
     private static func gaussianWeighted(
         _ image: CIImage, radii: [Double], weights: [Double]
-    ) -> CIImage {
+    ) throws -> CIImage {
         var combined: CIImage?
         for channel in 0..<3 {
             if abs(weights[channel]) < 1e-12 { continue }
@@ -148,23 +148,28 @@ enum SpatialOptics {
                 let filter = CIFilter.gaussianBlur()
                 filter.inputImage = image.clampedToExtent()
                 filter.radius = Float(min(120, radii[channel]))
-                blurred = (filter.outputImage ?? image).cropped(to: image.extent)
+                blurred = try Build97FilterContract.required(
+                    filter.outputImage, stage: "散射/光晕 GaussianBlur"
+                ).cropped(to: image.extent)
             }
             let channelWeights = (0..<3).map { $0 == channel ? weights[channel] : 0 }
-            let part = weighted(blurred, channelWeights)
-            combined = combined.map { add($0, part) } ?? part
+            let part = try weighted(blurred, channelWeights)
+            combined = try combined.map { try add($0, part) } ?? part
         }
-        return combined ?? weighted(image, [0, 0, 0])
+        if let combined { return combined }
+        return try weighted(image, [0, 0, 0])
     }
 
-    private static func weighted(_ image: CIImage, _ w: [Double]) -> CIImage {
+    private static func weighted(_ image: CIImage, _ w: [Double]) throws -> CIImage {
         let f = CIFilter.colorMatrix()
         f.inputImage = image
         f.rVector = CIVector(x: w[0], y: 0, z: 0, w: 0)
         f.gVector = CIVector(x: 0, y: w[1], z: 0, w: 0)
         f.bVector = CIVector(x: 0, y: 0, z: w[2], w: 0)
         f.aVector = CIVector(x: 0, y: 0, z: 0, w: 1)
-        return (f.outputImage ?? image).cropped(to: image.extent)
+        return try Build97FilterContract.required(
+            f.outputImage, stage: "空间光学 RGB 权重矩阵"
+        ).cropped(to: image.extent)
     }
 
     // CIAdditionCompositing is alpha compositing, NOT plain radiometric RGB
@@ -177,13 +182,13 @@ enum SpatialOptics {
         }
         """)
 
-    private static func add(_ lhs: CIImage, _ rhs: CIImage) -> CIImage {
-        guard let kernel = radiometricSumKernel,
-              let output = kernel.apply(extent: lhs.extent, arguments: [lhs, rhs])
-        else {
-            assertionFailure("Unable to compile Core Image radiometric add kernel")
-            return lhs
-        }
+    private static func add(_ lhs: CIImage, _ rhs: CIImage) throws -> CIImage {
+        let output = try Build97FilterContract.required(
+            radiometricSumKernel?.apply(
+                extent: lhs.extent, arguments: [lhs, rhs]
+            ),
+            stage: "空间光学 radiometricAdd"
+        )
         return output.cropped(to: lhs.extent)
     }
 
