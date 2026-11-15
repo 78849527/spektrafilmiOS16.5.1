@@ -675,8 +675,16 @@ enum OriginalSourcePhysicalImage {
         }
         if parameters.sourceOutputCCTFEncoding &&
            (parameters.scannerOptics.active || controlledScannerGlare) {
-            for k in frame.rgb.indices {
-                frame.rgb[k]=OriginalScannerMath.encodeSRGB(frame.rgb[k])
+            // Original colour.RGB_to_RGB(sRGB→sRGB) performs a Float64
+            // 3x3 pass BEFORE its CCTF, even for same-colourspace RGB.
+            // Do this over the entire LINEAR scan output only after all
+            // scanner optics, never per channel on a single scalar.
+            for p in 0..<(w*h) {
+                let k=p*3
+                let encoded=OriginalScannerMath.sourceCCTFEncoding(
+                    [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+                )
+                for ch in 0..<3 {frame.rgb[k+ch]=encoded[ch]}
             }
         }
         stageDoubleObserver?("printed",frame.rgb)
