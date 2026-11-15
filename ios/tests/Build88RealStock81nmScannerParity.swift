@@ -89,12 +89,12 @@ enum Build88RealStock81nmScannerParity {
                 compressed,try vector(test,"sourceCompressed"),
                 "source ACES-RGC #\(ix)",limit:2e-7
             ))
-            let output=compressed.map {
-                OriginalScannerMath.encodeSRGB($0)
-            }
+            let output=OriginalScannerMath.sourceCCTFEncoding(
+                compressed
+            )
             maxCCTF=max(maxCCTF,try compare(
                 output,try vector(test,"sourceCCTF"),
-                "source scanner output CCTF #\(ix)",limit:2e-5
+                "source scanner output CCTF #\(ix)",limit:2e-7
             ))
         }
         guard totalPaper==32,totalPositive==16,k75>0,masked>0 else {
