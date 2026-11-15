@@ -45,14 +45,23 @@ enum Build87OriginalColorReference {
                   xyz.allSatisfy({$0.isFinite}) else {
                 throw Failure.invalid("源扫描 XYZ 输入非有限")
             }
-            if !settings.enabled {return xyz}
-            let corrected=max(0,min(1,m*xyz[1]+q))
-            let factor=corrected/(xyz[1]+1e-10)
-            let out=xyz.map{$0*factor}
+            let out=correctXYZAfterValidatedSpectralScan(xyz)
             guard out.allSatisfy({$0.isFinite}) else {
                 throw Failure.invalid("源扫描黑白 XYZ 校正溢出")
             }
             return out
+        }
+
+        /// SpectralPhysics scanFilmDensity is an old nonthrowing API.
+        /// This is its sole calibrated-XYZ arithmetic; existing source
+        /// physical callers reject NaN/Inf on the actual output boundary.
+        /// The reference parameters themselves are prevalidated at init.
+        func correctXYZAfterValidatedSpectralScan(_ xyz:[Double]) -> [Double] {
+            precondition(xyz.count==3)
+            if !settings.enabled {return xyz}
+            let corrected=max(0,min(1,m*xyz[1]+q))
+            let factor=corrected/(xyz[1]+1e-10)
+            return xyz.map {$0*factor}
         }
 
         /// Original PrintingStage invokes this BEFORE optical print
