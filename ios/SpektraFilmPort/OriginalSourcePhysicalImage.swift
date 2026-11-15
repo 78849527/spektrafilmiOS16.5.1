@@ -46,7 +46,9 @@ enum OriginalSourcePhysicalImage {
         width:Int,height:Int,
         additionalBytesPerPixel:UInt64=0,
         physicalMemory:UInt64?=nil,
-        processAvailableMemory:UInt64?=nil
+        processAvailableMemory:UInt64?=nil,
+        cameraDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
+        paperDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil
     ) throws {
         guard width>0,height>0,width<=8192,height<=8192,
               width<=maximumPixels/height else {
@@ -55,10 +57,7 @@ enum OriginalSourcePhysicalImage {
                 "禁止自动缩图或切换快速算法。"
             )
         }
-        let bytesPerPixel=estimatedPeakBytesPerPixel+additionalBytesPerPixel
-        let peak = UInt64(width) * UInt64(height) * bytesPerPixel
-        let physical = physicalMemory ?? ProcessInfo.processInfo.physicalMemory
-        let allowed = min(maximumSourceMemoryBudget,physical/3)
+        let physical=physicalMemory ?? ProcessInfo.processInfo.physicalMemory
         let headroom:UInt64?
         if let explicit=processAvailableMemory {
             headroom=explicit
@@ -69,26 +68,17 @@ enum OriginalSourcePhysicalImage {
             headroom=nil
             #endif
         }
-        let sourceOK = peak <= allowed
-        // Advisory headroom can fluctuate, so require 20% margin.
-        let processOK = headroom.map {
-            $0 > 0 && peak <= ($0 / 10) * 8
-        } ?? true
-        guard sourceOK,processOK else {
-            let required = peak/1_000_000
-            let budget = allowed/1_000_000
-            let free = headroom.map {
-                String($0/1_000_000)
-            } ?? "未获取"
-            throw Failure.invalid(
-                "逐像素全光学（实验）原尺寸内存预算不足：" +
-                "\(width)×\(height)，预估峰值约 \(required) MB，" +
-                "安全预算 \(budget) MB，当前可分配约 \(free) MB。" +
-                "请在导出菜单明确选择「智能安全分辨率」或「省内存分辨率」，" +
-                "或减少后台内存占用后重新确认；" +
-                "不会擅自缩图、跳过物理显影或切换 Float32 LUT。"
-            )
-        }
+        // Build91 preflight includes original reflect FFT full-frame
+        // complex scratch and PSF for CAMERA and PAPER diffusion.
+        // Do it before decoding or allocating photon/density frames.
+        let plan=try Build91PhysicalMemory.plan(
+            width:width,height:height,
+            baseBytesPerPixel:estimatedPeakBytesPerPixel,
+            additionalBytesPerPixel:additionalBytesPerPixel,
+            physicalMemory:physical,processAvailable:headroom,
+            camera:cameraDiffusion,paper:paperDiffusion
+        )
+        try Build91PhysicalMemory.validate(plan)
     }
 
     struct Parameters {
@@ -300,8 +290,22 @@ enum OriginalSourcePhysicalImage {
         // buffers in the memory gate BEFORE any full-frame allocation.
         let capturePaperStages=stageDoubleObserver != nil &&
             !SpectralPhysics.isPositiveFilm(parameters.filmID)
+        let cameraDiffusionEnabled=(parameters.cameraOptics.active ||
+            parameters.filmHalation.active) &&
+            parameters.cameraOptics.diffusion.active &&
+            parameters.cameraOptics.diffusion.strength>0 &&
+            parameters.cameraOptics.diffusion.spatialScale>0
+        let pixelUMForFFT=parameters.cameraOptics.filmFormatMM *
+            1000.0 / Double(max(w,h))
+        let cameraFFT:(settings:OriginalSourceDiffusion.Settings,
+                       pixelUM:Double)? = cameraDiffusionEnabled
+            ? (parameters.cameraOptics.diffusion,pixelUMForFFT) : nil
+        let paperFFT:(settings:OriginalSourceDiffusion.Settings,
+                      pixelUM:Double)? = activePrintDiffusion
+            ? (parameters.printDiffusion,pixelUMForFFT) : nil
         try validateMemoryBudget(
             width:w,height:h,
+            cameraDiffusion:cameraFFT,paperDiffusion:paperFFT,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active ? scannerFinishExtraBytesPerPixel : 0) +
                 (controlledScannerGlare ? scannerGlareExtraBytesPerPixel : 0) +
@@ -788,8 +792,25 @@ extension OriginalSourcePixelIO {
         }
         let targetW=resizedTo?.width ?? w.intValue
         let targetH=resizedTo?.height ?? h.intValue
+        let sourcePixelsUM=parameters.cameraOptics.filmFormatMM *
+            1000.0 / Double(max(targetW,targetH))
+        let cameraEnabled=(parameters.cameraOptics.active ||
+            parameters.filmHalation.active) &&
+            parameters.cameraOptics.diffusion.active &&
+            parameters.cameraOptics.diffusion.strength>0 &&
+            parameters.cameraOptics.diffusion.spatialScale>0
+        let paperEnabled=parameters.printDiffusion.active &&
+            parameters.printDiffusion.strength>0 &&
+            parameters.printDiffusion.spatialScale>0
+        let preflightCamera:(settings:OriginalSourceDiffusion.Settings,
+                             pixelUM:Double)?=cameraEnabled
+            ? (parameters.cameraOptics.diffusion,sourcePixelsUM):nil
+        let preflightPaper:(settings:OriginalSourceDiffusion.Settings,
+                            pixelUM:Double)?=paperEnabled
+            ? (parameters.printDiffusion,sourcePixelsUM):nil
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:targetW,height:targetH,
+            cameraDiffusion:preflightCamera,paperDiffusion:preflightPaper,
             additionalBytesPerPixel:
                 (parameters.scannerOptics.active
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
