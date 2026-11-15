@@ -499,6 +499,10 @@ final class PhotoEditorModel: ObservableObject {
 
     func selectFromPhotos(_ selection: PhotosPickerItem?) {
         guard let selection else { return }
+        guard !busy else {
+            status="当前正在处理，请完成后再次选择照片；旧图未被覆盖"
+            return
+        }
         busy = true
         status = "正在读取照片…"
         Task {
@@ -549,6 +553,10 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     func loadPhotoFile(_ url: URL) {
+        guard !busy else {
+            status="当前正在处理，文件导入已拒绝；旧图保持不变"
+            return
+        }
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -1488,6 +1496,9 @@ final class PhotoEditorModel: ObservableObject {
                 width: plan.dimensions.width, height: plan.dimensions.height
             )
         }
+        // Include original JPEG in the same early admission; the source
+        // photo may be larger than a stable iPhone process can render.
+        try SafeExportResolution.validateBeforeRender(plan)
         return plan
     }
 
@@ -1497,6 +1508,11 @@ final class PhotoEditorModel: ObservableObject {
     ) async throws -> URL {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
+        }
+        // Recheck live memory before the background work begins. Original
+        // source Float64 exports are protected here as well as CI JPEG.
+        if let confirmedPlan {
+            try SafeExportResolution.validateBeforeRender(confirmedPlan)
         }
         if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
             guard grainSublayersEnabled, densityGrainStage != nil,
@@ -1678,7 +1694,8 @@ struct ContentView: View {
                 selectedFilmID: $selectedFilmID,
                 selectedPaperID: $selectedPaperID,
                 onOpenPhotoFile: {
-                    model.status = "选择 RAF（X-T5 压缩/无压缩）、DNG / CR3 / NEF / ARW 或普通照片"
+                    guard !model.busy else { return }
+                    model.status = "请选择照片文件；已有编辑在新照片成功打开前保留"
                     activeSheet = .photo
                 },
                 onOpenCamera: {
@@ -1740,6 +1757,13 @@ struct ContentView: View {
             .onChange(of: selectedPhoto) { item in
                 model.selectFromPhotos(item)
             }
+            .onChange(of: model.rawNeedsChoice) { showing in
+                // Dismissing a pending RAW without choosing a decoder must
+                // not bind its file to the currently displayed older photo.
+                if !showing && !model.busy {
+                    model.dismissPendingRAWChoice()
+                }
+            }
             .onChange(of: selectedFilmID) { _ in
                 model.queueSpectralPreview()
             }
@@ -1791,7 +1815,9 @@ struct ContentView: View {
                 Button("使用 LibRaw 富士 RAF 16-bit 高位深兼容模式") {
                     model.openPreservedRAW16Bit()
                 }
-                Button("仅保留原始 RAW", role: .cancel) { }
+                Button("仅保留原始 RAW", role: .cancel) {
+                    model.dismissPendingRAWChoice()
+                }
             } message: {
                 Text("Apple RAW 使用系统解码；富士 LibRaw 可选 8-bit 快速" +
                      "或 16-bit 高位深 sRGB 兼容模式。导入时保持原尺寸，" +
