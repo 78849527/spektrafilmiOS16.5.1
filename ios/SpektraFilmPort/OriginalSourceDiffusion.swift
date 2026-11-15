@@ -129,9 +129,10 @@ enum OriginalSourceDiffusion {
     /// That fallback is shared by both kernel radius and per-pixel PSF.
     private static func sourceDefaultGroupGeometry(_ s:Settings) -> Bool {
         let sh=shape(s.family)
-        return sh.wc*max(s.coreIntensity,0) +
-               sh.wh*max(s.haloIntensity,0) +
-               sh.wb*max(s.bloomIntensity,0) <= 0
+        let core:Double=sh.wc*max(s.coreIntensity,0.0)
+        let halo:Double=sh.wh*max(s.haloIntensity,0.0)
+        let bloom:Double=sh.wb*max(s.bloomIntensity,0.0)
+        return (core+halo+bloom)<=0.0
     }
 
     private static func groupWeights(_ s: Settings,_ sh: Shape) -> [Double] {
