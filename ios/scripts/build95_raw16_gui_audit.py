@@ -98,8 +98,9 @@ checks.update({
         "libraw_dcraw_make_mem_image" in libraw_bridge,
     "libraw_no_jpeg_thumbnail": "libraw_dcraw_make_mem_thumb" not in libraw_bridge and
         "libraw_unpack_thumb" not in libraw_bridge,
-    "libraw_explicit_rgb8": "libraw_set_output_bps(raw, 8)" in libraw_bridge and
-        "image->bits != 8" in libraw_bridge,
+    "libraw_explicit_8_or_16": "libraw_set_output_bps(raw, (int)bits)" in libraw_bridge and
+        "image->bits != (unsigned)bits" in libraw_bridge and
+        "decodeURL:url bitsPerComponent:8 error:error" in libraw_bridge,
     "libraw_camera_wb": "raw->params.use_camera_wb = 1" in libraw_bridge,
     "libraw_real_rgba_transport": "CGImage(" in libraw_swift and
         "Build79RAWSignature.probeFile" in libraw_swift,
