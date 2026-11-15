@@ -114,7 +114,19 @@ enum Build90OriginalLUT {
             guard point.count==3,point.allSatisfy({$0.isFinite}) else {
                 throw Failure.invalid("源 LUT 输入 RGB 非有限／维度错误")
             }
-            if n==1{return (0..<3).map{values[index(0,0,0,$0)]}}
+            if n==1 {
+                // Original prepare_lut_pchip_3d calls the soft monotonic
+                // validator before its size=1 fast path. np.max(diff)
+                // on an empty 1-node line RAISES ValueError. Preserve
+                // source behavior instead of silently returning a color.
+                if method == .pchip {
+                    throw Failure.invalid(
+                        "原版 PCHIP 1-node LUT: Python monotonic check " +
+                        "raises ValueError (empty diff); no silent fallback"
+                    )
+                }
+                return (0..<3).map{values[index(0,0,0,$0)]}
+            }
             let coordinate=(0..<3).map {ch in
                 (point[ch]-minDomain[ch])/
                 (maxDomain[ch]-minDomain[ch])*Double(n-1)
