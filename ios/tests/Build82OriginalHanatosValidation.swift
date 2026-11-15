@@ -61,13 +61,10 @@ enum Build82OriginalHanatosValidation {
         guard let root=try JSONSerialization.jsonObject(with:bytes)
                 as? [String:Any],
               let source=root["pinned"] as? [String:String],
-              source["spectral_upsampling.py"]==
-                "bb75f8a00d00eb02ba571c6cfdbec88a8c0194cb",
-              source["color_filters.py"]==
-                "73849be82f7e32e21cd9bf3e116ba244a931188b",
+              source["spectral_upsampling.py"] == "bb75f8a00d00eb02ba571c6cfdbec88a8c0194cb",
+              source["color_filters.py"] == "73849be82f7e32e21cd9bf3e116ba244a931188b",
               root["colour_version"] as? String=="0.4.6",
-              root["source_npy_sha256"] as? String ==
-                Build82GeneratedHanatosProfiles.sourceSHA256,
+              (root["source_npy_sha256"] as? String) == Build82GeneratedHanatosProfiles.sourceSHA256,
               Build82GeneratedHanatosProfiles.all.count==20,
               let cases=root["cases"] as? [[String:Any]],
               cases.count==3,
