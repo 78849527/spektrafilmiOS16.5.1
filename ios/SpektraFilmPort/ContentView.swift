@@ -233,6 +233,9 @@ final class PhotoEditorModel: ObservableObject {
     private var originalMetalPreviewVersion = 0
     // A stale simulation cannot release the busy state of a newer request.
     private var activeSimulationGeneration: Int?
+    @Published private(set) var simulationAwaitingCurrentSettings = false
+    /// Updated on every committed photo, including identical dimensions.
+    @Published private(set) var photoSessionRevision: UInt64 = 0
     private var photoTransferToken: UInt64 = 0
     private var photoTransferActive = false
     private var photoTransferTask: Task<Void, Never>?
@@ -241,7 +244,13 @@ final class PhotoEditorModel: ObservableObject {
         pendingRender?.cancel()
         renderGeneration &+= 1
         let generation = renderGeneration
-        guard hasPhoto else { return }
+        guard hasPhoto else {
+            simulationAwaitingCurrentSettings=false
+            return
+        }
+        simulationAwaitingCurrentSettings=true
+        originalMetalPreviewVersion &+= 1
+        processedPreview=nil
         pendingRender = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 380_000_000)
             guard !Task.isCancelled && generation == renderGeneration else { return }
@@ -252,6 +261,7 @@ final class PhotoEditorModel: ObservableObject {
     private func invalidateSimulation() {
         pendingRender?.cancel()
         renderGeneration &+= 1
+        simulationAwaitingCurrentSettings=false
     }
 
     private var source: CIImage?
@@ -326,6 +336,7 @@ final class PhotoEditorModel: ObservableObject {
             try refresh()
             if rawCompatible { pendingImportedRAWURL=nil }
             rawNeedsChoice=false
+            photoSessionRevision &+= 1
         } catch {
             restoreEditing(prior)
             throw error
@@ -929,6 +940,11 @@ final class PhotoEditorModel: ObservableObject {
     func applyMeasuredSimulation() {
         pendingRender?.cancel()
         renderGeneration &+= 1
+        simulationAwaitingCurrentSettings=hasPhoto
+        if hasPhoto {
+            originalMetalPreviewVersion &+= 1
+            processedPreview=nil
+        }
         applyMeasuredSimulation(generation: renderGeneration)
     }
 
@@ -937,6 +953,7 @@ final class PhotoEditorModel: ObservableObject {
             status = "请先选择照片，再模拟真实胶片数据。"
             return
         }
+        simulationAwaitingCurrentSettings=true
         let filmID = UserDefaults.standard.string(forKey: "compactFilmStock") ?? "kodak_portra_400"
         let paperID = UserDefaults.standard.string(forKey: "compactPaperStock") ?? "kodak_portra_endura"
         guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -1028,6 +1045,13 @@ final class PhotoEditorModel: ObservableObject {
                     return (cube, density, spatialDIR)
                 }.value
                 guard generation == renderGeneration else { return }
+                // Atomic optical update; old grain and LUT must not be
+                // mixed with a newly selected stock on a failed refresh.
+                let oldLUT=lut
+                let oldDensity=densityGrainStage
+                let oldDIR=spatialDIRStage
+                let oldStrength=strength
+                let oldPreview=processedPreview
                 spatialDIRStage = result.2
                 if let stage = result.1 {
                     densityGrainStage = DensityGrainStage(
@@ -1046,7 +1070,18 @@ final class PhotoEditorModel: ObservableObject {
                     dimension: 17, rgbaFloatData: result.0
                 )
                 strength = 1.0
-                try refresh()
+                do {
+                    try refresh()
+                } catch {
+                    originalMetalPreviewVersion &+= 1
+                    lut=oldLUT
+                    densityGrainStage=oldDensity
+                    spatialDIRStage=oldDIR
+                    strength=oldStrength
+                    processedPreview=oldPreview
+                    throw error
+                }
+                simulationAwaitingCurrentSettings=false
                 status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。" +
                     (requiresSpatialDIRStage
                         ? "DIR 空间抑制扩散 → 显影密度 → 光谱印相已启用。"
@@ -1055,7 +1090,11 @@ final class PhotoEditorModel: ObservableObject {
                             : "原版光谱链路已启用。"))
             } catch {
                 guard generation == renderGeneration else { return }
-                status = "光谱计算失败：" + error.localizedDescription
+                // Keep dirty state: a stale LUT cannot be exported under
+                // the currently selected film/paper label.
+                processedPreview=nil
+                status = "当前胶片/相纸模拟失败，导出已锁定：" +
+                    error.localizedDescription
             }
             if activeSimulationGeneration == generation {
                 activeSimulationGeneration=nil
@@ -1507,6 +1546,11 @@ final class PhotoEditorModel: ObservableObject {
         guard let src = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
+        guard !simulationAwaitingCurrentSettings else {
+            throw ImageProcessingError.invalid(
+                "当前胶片/相纸仍在模拟或已失败；禁止使用旧 LUT 导出"
+            )
+        }
         if tiff16 && sourcePixelIOEnabled {
             throw ImageProcessingError.invalid(
                 "逐像素原版 Float64 不允许静默转入 CI TIFF16。" +
@@ -1600,6 +1644,9 @@ final class PhotoEditorModel: ObservableObject {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
+        guard !simulationAwaitingCurrentSettings else {
+            throw ImageProcessingError.invalid("胶片/相纸尚未匹配当前选项，无法导出旧效果")
+        }
         try requireConfiguredGrain()
         // Recheck live memory before the background work begins. Original
         // source Float64 exports are protected here as well as CI JPEG.
@@ -1690,6 +1737,9 @@ final class PhotoEditorModel: ObservableObject {
     ) async throws -> URL {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
+        }
+        guard !simulationAwaitingCurrentSettings else {
+            throw ImageProcessingError.invalid("胶片/相纸尚未匹配当前选项，无法导出旧效果")
         }
         try requireConfiguredGrain()
         guard !sourcePixelIOEnabled else {
