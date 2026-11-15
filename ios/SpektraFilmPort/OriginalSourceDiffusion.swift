@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// Literal Float64 port of Python model.diffusion.apply_diffusion_filter_um:
 /// four original PSF families, warmth redistribution, reflect padding,
@@ -350,8 +355,23 @@ enum OriginalSourceDiffusion {
         var bi=[Double](repeating:0,count:grid)
         for c in 0..<3 {
             if c>0 {
-                for i in 0..<grid {
-                    ar[i]=0; ai[i]=0; br[i]=0; bi[i]=0
+                // Initialize existing Double elements to the exact
+                // IEEE-754 +0.0 bit pattern. The old Swift per-element
+                // loops incurred 4 × grid bounds/CoW checks per channel;
+                // memset keeps the original zero-padded FFT grid and
+                // prevents any allocation/Float32 approximation.
+                let bytes=grid*MemoryLayout<Double>.stride
+                ar.withUnsafeMutableBufferPointer {
+                    if let ptr=$0.baseAddress { _=memset(ptr,0,bytes) }
+                }
+                ai.withUnsafeMutableBufferPointer {
+                    if let ptr=$0.baseAddress { _=memset(ptr,0,bytes) }
+                }
+                br.withUnsafeMutableBufferPointer {
+                    if let ptr=$0.baseAddress { _=memset(ptr,0,bytes) }
+                }
+                bi.withUnsafeMutableBufferPointer {
+                    if let ptr=$0.baseAddress { _=memset(ptr,0,bytes) }
                 }
             }
             for y in 0..<paddedH {
