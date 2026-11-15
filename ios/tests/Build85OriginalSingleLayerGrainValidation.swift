@@ -63,17 +63,30 @@ enum Build85OriginalSingleLayerGrainValidation {
                 }
                 worst=max(worst,delta)
             }
+            // grain.py::apply_grain() ignores use_fast_stats for
+            // sublayers_active=false. It MUST remain SciPy with identical
+            // sample values rather than reject a valid source combination.
+            settings.useFastStats=true
+            try settings.validate()
+            let stillSciPy=try OriginalSourcePhysicalGrain.applySingleLayer(
+                input,width:width,height:height,
+                pixelUM:1.8,maximum:maxCurve,settings:settings
+            )
+            guard stillSciPy.count==original.count else {
+                throw Failure.invalid("Source fast_stats-ignored shape mismatch")
+            }
+            for k in stillSciPy.indices {
+                let delta=abs(stillSciPy[k]-original[k])
+                guard delta.isFinite,delta<=2e-8 else {
+                    throw Failure.invalid(
+                        "Single-layer fast_stats source-ignored flag diverged at \(k), delta \(delta)"
+                    )
+                }
+            }
         }
-        // Rejection is explicit: native alternate Numba branch cannot be
-        // used for source single-layer chemistry (source hardcodes SciPy).
-        do {
-            var s=OriginalSourcePhysicalGrain.Settings()
-            s.active=true;s.sublayersActive=false;s.useFastStats=true
-            try s.validate()
-            throw Failure.invalid("Source single-layer silently accepted Numba")
-        } catch OriginalSourcePhysicalGrain.Failure.invalid(_) {}
-        print("PASS Build85 ORIGINAL GRAIN.PY/SciPy 36 real-stock " +
+        print("PASS Build104 ORIGINAL GRAIN.PY/SciPy 36 real-stock " +
               "single-/multi-layer seeded Poisson+Binomial RGB frames; " +
+              "use_fast_stats false/true same source output, " +
               "maxAbsolute=\(worst), tolerance=2e-8, original FIR threshold.")
     }
 }

@@ -59,11 +59,13 @@ enum OriginalSourcePhysicalGrain {
                   nSubLayers>=1,nSubLayers<=Int(UInt32.max/10) else {
                 throw Failure.invalid("源颗粒参数必须严格使用合法的原版数量、面积、模糊及 3×3 亚层")
             }
-            if active && sublayersActive && numbaSeed == nil {
-                throw Failure.invalid("原版颗粒受控 Numba RNG 需要显式固定种子，不允许自动近似")
-            }
-            if active && useFastStats {
-                guard sublayersActive, fastStatsSeed != nil,
+            // Python grain.py only samples Numba for active microstructure
+            // (30nm/px > 0.05) or the 3x3 fast_stats path. The microstructure
+            // threshold depends on pixelUM and is enforced in apply().
+            // When sublayers_active=false, Python ignores use_fast_stats and
+            // always uses seeded SciPy Poisson/Binomial.
+            if active && sublayersActive && useFastStats {
+                guard fastStatsSeed != nil, numbaSeed != nil,
                       fastStatsSeed == numbaSeed else {
                     throw Failure.invalid(
                         "源三亚层 Numba fast_stats 与后续 lognormal 必须共用同一个单线程 RNG 种子／状态"
@@ -287,8 +289,10 @@ enum OriginalSourcePhysicalGrain {
         stageObserver:((String,[Double])->Void)?=nil
     ) throws -> [Double] {
         try settings.validate()
+        // Upstream apply_grain() deliberately does not forward
+        // use_fast_stats into apply_grain_to_density(). For this branch,
+        // even useFastStats=true must keep the SciPy source path.
         guard settings.active,!settings.sublayersActive,
-              !settings.useFastStats,
               width>0,height>0,width<=Int.max/height/3,
               densityCMY.count==width*height*3,
               densityCMY.allSatisfy({ $0.isFinite }),

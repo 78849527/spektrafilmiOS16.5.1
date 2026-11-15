@@ -146,15 +146,29 @@ enum SourcePhysicalGrainValidation {
                 throw Failure.invalid("Controlled seeded source grain not deterministic")
             }
             settings.numbaSeed=nil
-            do {
-                _=try OriginalSourcePhysicalGrain.apply(
+            if sample.microEnabled {
+                // Source active lognormal needs an explicit controlled
+                // worker seed; never invent a production random stream.
+                do {
+                    _=try OriginalSourcePhysicalGrain.apply(
+                        density,width:w,height:h,pixelUM:sample.pixelUM,
+                        measured:measured,settings:settings
+                    )
+                    throw Failure.invalid("Missing active Numba seed silently accepted")
+                } catch OriginalSourcePhysicalGrain.Failure.invalid {}
+            } else {
+                // Upstream add_micro_structure() short-circuits when
+                // 0.001 * microNM / pixelUM <= 0.05; no Numba draw occurs.
+                let seedFree=try OriginalSourcePhysicalGrain.apply(
                     density,width:w,height:h,pixelUM:sample.pixelUM,
                     measured:measured,settings:settings
                 )
-                throw Failure.invalid("Missing Numba seed silently accepted")
-            } catch OriginalSourcePhysicalGrain.Failure.invalid {}
+                guard seedFree==actual else {
+                    throw Failure.invalid("Inactive microstructure changed the SciPy source field without Numba seed")
+                }
+            }
         }
-        print("PASS original Python grain.py source 3x3 production DENSITY: \(manifest.cases.count) real whole-frame fixtures, \(checked) stage channels, max Float64 discrepancy=\(worst), controlled seed 8888 reproducibility and missing-seed rejection.")
+        print("PASS original Python grain.py source 3x3 production DENSITY: \(manifest.cases.count) real whole-frame fixtures, \(checked) stage channels, max Float64 discrepancy=\(worst), controlled seed 8888 reproducibility, inactive-micro seed-free branch and active-micro missing-seed rejection.")
         print("NOT CERTIFIED: unseeded prange multiworker RNG, RAW, real iPhone full-display RGB original matching.")
     }
 }

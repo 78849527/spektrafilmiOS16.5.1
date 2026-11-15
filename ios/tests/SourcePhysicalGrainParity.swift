@@ -160,11 +160,18 @@ struct SourcePhysicalGrainParity {
         }
         var noSeed=OriginalSourcePhysicalGrain.Settings()
         noSeed.active=true
+        // The microstructure threshold is only known with pixelUM, not
+        // at Settings.validate(). Check missing seed on the REAL branch.
         do {
-            try noSeed.validate()
-            fatalError("Missing Numba seed silently accepted")
+            _=try OriginalSourcePhysicalGrain.apply(
+                [0.2,0.3,0.4],width:1,height:1,pixelUM:0.3,
+                measured:.init(maxima:[Double](repeating:0.5,count:9),
+                               sublayers:{_ in [Double](repeating:0.1,count:9)}),
+                settings:noSeed
+            )
+            fatalError("Active Numba microstructure missing seed silently accepted")
         } catch OriginalSourcePhysicalGrain.Failure.invalid {
-            print("PASS original grain fail-closed: missing Numba seed rejected")
+            print("PASS original grain fail-closed: active microstructure missing Numba seed rejected")
         }
         print("PASS: 3 original-source full-field 9-sublayer numeric fixtures, controlled seeded Numba and SciPy, independent stage checks")
         print("NOT CERTIFIED: unseeded multi-thread Numba prange, arbitrary RAW/JPEG, original source full RGB photo parity")
