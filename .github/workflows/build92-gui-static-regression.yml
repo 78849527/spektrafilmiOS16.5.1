@@ -1,0 +1,31 @@
+name: Build92 #46 iOS16.5.1 camera/editor/photos/files static regression
+
+on:
+  push:
+    branches:
+      - 'port/build92-source-tapes-device-regression-release-45-47'
+    paths:
+      - 'ios/scripts/build92_gui_regression_audit.py'
+      - 'ios/project.yml'
+      - 'ios/SpektraFilmPort/Build92DeviceSourceStageDiagnostic.swift'
+      - 'ios/SpektraFilmPort/ContentView.swift'
+      - '.github/workflows/build92-gui-static-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gui-api-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Git exact source revision
+        run: git rev-parse HEAD
+      - name: 21 fail-closed original GUI regression checks
+        run: python3 ios/scripts/build92_gui_regression_audit.py /tmp/build92-gui-static.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build92-21-gui-static-source-checks-not-real-device
+          path: /tmp/build92-gui-static.json
