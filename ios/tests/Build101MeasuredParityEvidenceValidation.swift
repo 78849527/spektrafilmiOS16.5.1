@@ -93,8 +93,7 @@ ensure(missingIdentity.status=="controlled_stage_pass_missing_binary_commit" &&
        "unidentifiable installed IPA cannot earn identity-bound PASS")
 
 let output=try Build101DeviceParityEvidence.write(failed,documents:root)
-ensure(output.deletingLastPathComponent().lastPathComponent==
-       "SpektraFilm Verification",
+ensure(output.deletingLastPathComponent().lastPathComponent == "SpektraFilm Verification",
        "per-device result must remain in persistent verification Documents")
 let reopened=try JSONDecoder().decode(
     Build101DeviceParityEvidence.Report.self,
