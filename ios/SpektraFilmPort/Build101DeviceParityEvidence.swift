@@ -18,6 +18,8 @@ enum Build101DeviceParityEvidence {
         let schema: Int
         let testedVersion: String
         let testedBuild: String
+        let binarySourceCommit: String
+        let binarySourceCommitVerified: Bool
         let deviceModel: String
         let osVersion: String
         let physicalDevice: Bool
@@ -46,13 +48,18 @@ enum Build101DeviceParityEvidence {
     ]
 
     static func capture(
-        version: String, build: String, deviceModel: String,
-        osVersion: String, physicalDevice: Bool, now: Date,
+        version: String, build: String, binarySourceCommit: String,
+        deviceModel: String, osVersion: String,
+        physicalDevice: Bool, now: Date,
         referenceManifest: URL?,
         evaluate: () throws -> String
     ) -> Report {
         let began=Date()
         let isTarget=physicalDevice && osVersion=="16.5.1"
+        let commitValid=binarySourceCommit.count==40 &&
+            binarySourceCommit.unicodeScalars.allSatisfy {
+                ("0123456789abcdef".unicodeScalars).contains($0)
+            }
         var referenceDigest: String?
         var text: String?
         var failure: String?
@@ -85,8 +92,10 @@ enum Build101DeviceParityEvidence {
         let status: String
         if !ranSuccessfully {
             status="controlled_stage_failed_or_reference_missing"
-        } else if isTarget {
+        } else if isTarget && commitValid {
             status="controlled_stage_pass_on_physical_ios1651"
+        } else if isTarget {
+            status="controlled_stage_pass_missing_binary_commit"
         } else {
             status="controlled_stage_pass_non_target_environment"
         }
@@ -94,6 +103,8 @@ enum Build101DeviceParityEvidence {
         formatter.formatOptions=[.withInternetDateTime]
         return Report(
             schema:1,testedVersion:version,testedBuild:build,
+            binarySourceCommit:binarySourceCommit,
+            binarySourceCommitVerified:commitValid,
             deviceModel:deviceModel,osVersion:osVersion,
             physicalDevice:physicalDevice,exactIOS1651:isTarget,
             referenceFixture:fixture,
@@ -102,7 +113,8 @@ enum Build101DeviceParityEvidence {
             generatedUTC:formatter.string(from:now),
             durationSeconds:max(0,Date().timeIntervalSince(began)),
             status:status,evaluatorOutput:text,firstFailure:failure,
-            controlledParityPassOnTargetDevice:ranSuccessfully && isTarget,
+            controlledParityPassOnTargetDevice:ranSuccessfully &&
+                isTarget && commitValid,
             fullPythonOriginalCertified:false,
             limitations:limitations
         )
