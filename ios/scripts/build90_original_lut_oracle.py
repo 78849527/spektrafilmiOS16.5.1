@@ -75,9 +75,19 @@ def main(output):
                         pchip=mod.apply_lut_3d(
                             lut,probes.reshape(1,-1,3)
                         )[0]
-                    mitchell=mod.apply_lut_3d(
-                        lut,probes.reshape(1,-1,3),method="mitchell"
-                    )[0]
+                    if size==1:
+                        # Scalar source explicitly handles constant n=1;
+                        # the separate bulk Mitchell kernel has no safe
+                        # constant fastpath, so do not claim full-frame
+                        # 1-node Mitchell certification.
+                        single=mod.cubic_interp_lut_at_3d(
+                            lut,0.0,0.0,0.0
+                        )
+                        mitchell=np.tile(single,(len(probes),1))
+                    else:
+                        mitchell=mod.apply_lut_3d(
+                            lut,probes.reshape(1,-1,3),method="mitchell"
+                        )[0]
             assert np.isfinite(pchip).all() and np.isfinite(mitchell).all()
             records.append(dict(size=size,kind=kind,
                 pchipUnsupported=size==1,
