@@ -763,10 +763,10 @@ extension OriginalSourcePixelIO {
     }
     #endif
 
-    static func exportPhysicalJPEG(
+    private static func renderPhysicalExportFrame(
         _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters,
-        resizedTo: (width:Int,height:Int)? = nil
-    ) throws -> URL {
+        resizedTo:(width:Int,height:Int)?
+    ) throws -> Frame {
         // Original-sized rendering still uses the 13 MP guard.
         // Explicitly confirmed safe/economy rendering may accept source
         // metadata up to 16 MP, but ALL original physical equations run
@@ -815,6 +815,57 @@ extension OriginalSourcePixelIO {
         try OriginalSourcePhysicalImage.developInPlace(
             &frame,parameters:parameters
         )
-        return try createJPEG(frame)
+        return frame
+    }
+
+    // Preserve existing 98% JPEG/Photos/Files semantics EXACTLY,
+    // independent of Build90 opt-in file-format and uint-truncation.
+    static func exportPhysicalJPEG(
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters,
+        resizedTo:(width:Int,height:Int)?=nil
+    ) throws -> URL {
+        return try createJPEG(
+            renderPhysicalExportFrame(
+                data,parameters:parameters,resizedTo:resizedTo
+            )
+        )
+    }
+
+    /// Build90 opt-in native file export. Source image optics and
+    /// memory guard are shared with the existing verified JPEG path.
+    /// Different colourspace inputs are REFUSED here because the
+    /// current true spectral scanner raw-linear path is sRGB-only;
+    /// a synthetic wide-space writer test is not certification of
+    /// the physical scanner producing that output colourspace.
+    static func exportPhysicalOriginalFile(
+        _ data:Data,parameters:OriginalSourcePhysicalImage.Parameters,
+        format:Build90SourceOutputQuantization.FileFormat,
+        bitDepth:Int,outputSpace:String="sRGB",
+        cctfEncoded:Bool=true,
+        resizedTo:(width:Int,height:Int)?=nil
+    ) throws ->URL {
+        guard outputSpace=="sRGB",
+              parameters.sourceOutputCCTFEncoding==cctfEncoded,
+              parameters.sourceOutputGamut?.outputSpace
+                != .displayP3,
+              parameters.sourceOutputGamut?.outputSpace
+                != .bt2020 else {
+            throw Failure.invalid(
+                "Build90 源光谱 XYZ→线性 RGB 的真实宽色域转换" +
+                "未获图像级认证，禁止将 sRGB 数值贴成 P3/BT.2020"
+            )
+        }
+        let frame=try renderPhysicalExportFrame(
+            data,parameters:parameters,resizedTo:resizedTo
+        )
+        let options=Build90NativeOutputWriter.Options(
+            format:format,bitDepth:bitDepth,
+            outputSpace:outputSpace,cctfEncoded:cctfEncoded,
+            sourceImageData:data
+        )
+        return try Build90NativeOutputWriter.write(
+            width:frame.width,height:frame.height,
+            rgb:frame.rgb,options:options
+        )
     }
 }
