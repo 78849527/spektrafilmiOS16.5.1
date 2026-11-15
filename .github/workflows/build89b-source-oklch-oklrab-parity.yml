@@ -1,0 +1,57 @@
+name: Build89b original Oklch and Oklrab 64x720 output gamut parity
+
+on:
+  push:
+    branches:
+      - 'port/build89b-perceptual-output-oklch-oklrab-jzazbz'
+    paths:
+      - 'ios/SpektraFilmPort/Build89bOriginalOklabGamut.swift'
+      - 'ios/SpektraFilmPort/Build89OriginalOutputGamut.swift'
+      - 'ios/scripts/build89b_original_oklch_oklrab_oracle.py'
+      - 'ios/scripts/generate_scanner_reference.py'
+      - 'ios/tests/Build89bOriginalOklchOklrabValidation.swift'
+      - '.github/workflows/build89b-source-oklch-oklrab-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  true-source-oklab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install exact Python source colour-science dependencies
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.4.0' 'scipy==1.16.3' \
+            'colour-science==0.4.6' 'matplotlib==3.10.8'
+      - name: Compute true Colour original source matrices
+        run: |
+          git rev-parse HEAD
+          python ios/scripts/generate_scanner_reference.py
+          grep -q 'sourceOklabXYZToLMS' \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift
+      - name: Execute actual pinned original gamut source Oklch/Oklrab
+        run: |
+          python ios/scripts/build89b_original_oklch_oklrab_oracle.py \
+            /tmp/build89b-original-oklab-gamut.json
+      - name: Verify app syntax and compile original Swift gamut
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/Build89OriginalCAM16.swift \
+            ios/SpektraFilmPort/Build89bOriginalOklabGamut.swift \
+            ios/SpektraFilmPort/Build89OriginalOutputGamut.swift \
+            ios/tests/Build89bOriginalOklchOklrabValidation.swift \
+            -o /tmp/Build89bOklab
+          /tmp/Build89bOklab /tmp/build89b-original-oklab-gamut.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build89b-pinned-original-144-oklch-oklrab-float64
+          path: /tmp/build89b-original-oklab-gamut.json
