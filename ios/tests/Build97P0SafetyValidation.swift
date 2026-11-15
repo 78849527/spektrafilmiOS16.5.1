@@ -39,6 +39,27 @@ let noScanner=try ScannerFinishing.apply(
 )
 ensure(noScanner.extent==base.extent,"disabled scanner returns image unchanged")
 
+// Exercise real enabled Core Image kernels, not only a textual static check.
+let optics=try SpatialOptics.apply(
+    to:base,
+    settings:SpatialOpticsSettings(
+        scatterAmount:0.15, halationAmount:0.3,
+        filmUse:"still", antihalation:"weak"
+    )
+)
+var finish=ScannerFinishSettings()
+finish.enabled=true
+finish.applyGlare=true
+finish.glarePercent=0.03
+finish.unsharpAmount=0.7
+let processed=try ScannerFinishing.apply(to:optics,settings:finish)
+let ci=CIContext(options:[.cacheIntermediates:false])
+guard let rendered=ci.createCGImage(processed,from:processed.extent) else {
+    fatalError("Build97 P0 FAIL: enabled CI stages failed to render")
+}
+ensure(rendered.width==32 && rendered.height==24,
+       "enabled optics/scanner retain geometry")
+
 var physical=try SafeExportResolution.plan(
     width:4000,height:3000,
     physicalMemory:8_000_000_000,
