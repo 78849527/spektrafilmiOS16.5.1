@@ -98,8 +98,8 @@ enum Build87OriginalColorReference {
             guard midgrayBeforeCorrection>0 else {
                 throw Failure.invalid("原版正片中灰参考值非法")
             }
-            let density=-log10(0.184)
-            let adjusted=-log10(midgrayBeforeCorrection)
+            let density = -log10(0.184)
+            let adjusted = -log10(midgrayBeforeCorrection)
             let inverted=curve.map { -$0 }
             let corrected = -Self.npInterp(
                 -(adjusted-base),axis:inverted,values:logExposure
