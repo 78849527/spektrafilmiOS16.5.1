@@ -185,6 +185,19 @@ final class PhotoEditorModel: ObservableObject {
         )
     }
 
+    /// If a user has requested grain, a missing prepared density stage
+    /// must never produce a plain LUT image and call it grain development.
+    private func requireConfiguredGrain() throws {
+        if !sourcePixelIOEnabled && grainEnabled && grainAmount > 0 {
+            guard densityGrainStage != nil, lut != nil else {
+                throw ImageProcessingError.invalid(
+                    "密度颗粒已开启，但显影密度阶段尚未生成。" +
+                    "请重新选择胶片或关闭颗粒；禁止静默输出无颗粒图像。"
+                )
+            }
+        }
+    }
+
     private var grainSettings: DensityGrainSettings? {
         guard grainEnabled, grainAmount > 0, let stage = densityGrainStage else {
             return nil
@@ -989,6 +1002,7 @@ final class PhotoEditorModel: ObservableObject {
             status = lut == nil ? "请先导入照片。" : "LUT 已导入，请选择照片。"
             return
         }
+        try requireConfiguredGrain()
         if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
             guard grainSublayersEnabled, densityGrainStage != nil,
                   lut != nil else {
@@ -1509,6 +1523,7 @@ final class PhotoEditorModel: ObservableObject {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
+        try requireConfiguredGrain()
         // Recheck live memory before the background work begins. Original
         // source Float64 exports are protected here as well as CI JPEG.
         if let confirmedPlan {
@@ -1599,6 +1614,7 @@ final class PhotoEditorModel: ObservableObject {
         guard let imageSource = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
+        try requireConfiguredGrain()
         guard !sourcePixelIOEnabled else {
             throw ImageProcessingError.invalid(
                 "原版 Float64 当前没有经验证的直连 TIFF16，禁止自动转为兼容 CI"
