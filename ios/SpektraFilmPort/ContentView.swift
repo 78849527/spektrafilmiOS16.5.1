@@ -1348,10 +1348,17 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    func prepareExport(resolution: ExportResolutionMode) throws
+    func prepareExport(resolution: ExportResolutionMode,
+                       tiff16: Bool = false) throws
         -> SafeExportResolution.Plan {
         guard let src = source else {
             throw ImageProcessingError.invalid("请先导入照片")
+        }
+        if tiff16 && sourcePixelIOEnabled {
+            throw ImageProcessingError.invalid(
+                "逐像素原版 Float64 不允许静默转入 CI TIFF16。" +
+                "此 TIFF16 只用于普通/Apple RAW/LibRaw 兼容编辑；原版数值 TIFF 使用 Build90 独立链"
+            )
         }
         if sourcePixelIOEnabled {
             // Before opening the confirmation sheet, validate the ORIGINAL
@@ -1379,6 +1386,7 @@ final class PhotoEditorModel: ObservableObject {
             width: Int(bounds.width), height: Int(bounds.height),
             mode: resolution,
             estimatedBytesPerPixel:
+                tiff16 ? Build96TIFF16Writer.estimatedBytesPerPixel :
                 sourcePixelIOEnabled && sourcePhysicalDirectEnabled
                 ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
                    (sourceScannerOpticalEnabled
@@ -1417,6 +1425,13 @@ final class PhotoEditorModel: ObservableObject {
                         ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
                     (printSourceDiffusionEnabled
                         ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
+            )
+        }
+        if tiff16 {
+            // Before presenting the selected size, reject a 40 MP render
+            // that would exceed the user's current process headroom.
+            try Build96TIFF16Writer.validateBudget(
+                width: plan.dimensions.width, height: plan.dimensions.height
             )
         }
         return plan
@@ -1503,6 +1518,65 @@ final class PhotoEditorModel: ObservableObject {
         status = "\(label) \(output.width) × \(output.height) JPEG 已完成"
         return output.url
     }
+
+    /// Build96: actual processed 16-bit TIFF for ordinary/Apple/LibRaw
+    /// compatible CI images. The source-exact Float64 pixel engine remains
+    /// isolated: it must never silently reroute via Core Image.
+    func exportTIFF16(
+        resolution: ExportResolutionMode,
+        confirmedPlan: SafeExportResolution.Plan
+    ) async throws -> URL {
+        guard let imageSource = source else {
+            throw ImageProcessingError.invalid("请先导入照片")
+        }
+        guard !sourcePixelIOEnabled else {
+            throw ImageProcessingError.invalid(
+                "原版 Float64 当前没有经验证的直连 TIFF16，禁止自动转为兼容 CI"
+            )
+        }
+        if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
+            guard grainSublayersEnabled, densityGrainStage != nil,
+                  lut != nil else {
+                throw ImageProcessingError.invalid(
+                    "TIFF16 原版颗粒显影缺少实测亚层，禁止降级 LUT"
+                )
+            }
+        }
+        guard confirmedPlan.mode == resolution,
+              confirmedPlan.sourceWidth == Int(imageSource.extent.integral.width),
+              confirmedPlan.sourceHeight == Int(imageSource.extent.integral.height)
+        else {
+            throw ImageProcessingError.invalid(
+                "TIFF16 已确认的输出尺寸与当前照片不匹配"
+            )
+        }
+        try SafeExportResolution.validateBeforeRender(confirmedPlan)
+        try Build96TIFF16Writer.validateBudget(
+            width: confirmedPlan.dimensions.width,
+            height: confirmedPlan.dimensions.height
+        )
+        let currentLUT = lut
+        let currentStrength = strength
+        let currentSpatial = spatialSettings
+        let currentGrain = grainSettings
+        let currentScanner = scannerFinishSettings
+        let currentDIRStage = spatialDIRStage
+        let currentDIRSettings = spatialDIRSettings
+        let result = try await Task.detached(priority: .userInitiated) {
+            try PhotoProcessor.exportTIFF16(
+                imageSource, lut: currentLUT, strength: currentStrength,
+                spatial: currentSpatial, grain: currentGrain,
+                scanner: currentScanner,
+                dirStage: currentDIRStage,
+                dirSettings: currentDIRSettings,
+                resolution: resolution,
+                confirmedPlan: confirmedPlan
+            )
+        }.value
+        status = "TIFF16 RGB16 · \(result.width)×\(result.height) 已验证实际位深并生成文件"
+        return result.url
+    }
+
 }
 
 struct ContentView: View {
