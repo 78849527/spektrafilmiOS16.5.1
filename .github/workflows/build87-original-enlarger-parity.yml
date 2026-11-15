@@ -1,0 +1,50 @@
+name: Build87 81nm original enlarger filters preflash and exposure parity
+
+on:
+  push:
+    branches:
+      - 'port/build87-print-optics-reference-29-34-bulk'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalPrintOptics.swift'
+      - 'ios/scripts/build87_original_enlarger_oracle.py'
+      - 'ios/tests/Build87OriginalEnlarger96Validation.swift'
+      - '.github/workflows/build87-original-enlarger-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spectral-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print source and toolchain
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - name: Install Python source spectral dependencies
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.3.5' 'scipy==1.16.3' 'opt_einsum==3.4.0'
+      - name: Execute pinned original 81nm full optical printing functions
+        run: |
+          python3 ios/scripts/build87_original_enlarger_oracle.py \
+            /tmp/build87-source-enlarger.json
+          test -s /tmp/build87-source-enlarger.json
+      - name: Parse original complete Swift application sources
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Compile original production enlarger and verify 96 source setups
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalPrintOptics.swift \
+            ios/tests/Build87OriginalEnlarger96Validation.swift \
+            -o /tmp/Build87OriginalEnlarger
+          /tmp/Build87OriginalEnlarger /tmp/build87-source-enlarger.json
+      - name: Preserve measured spectral oracle
+        uses: actions/upload-artifact@v4
+        with:
+          name: build87-source-81nm-real-negative-paper-enlarger
+          path: /tmp/build87-source-enlarger.json
