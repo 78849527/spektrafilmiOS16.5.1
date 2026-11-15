@@ -1822,7 +1822,8 @@ struct SpectralPhysics {
         filmDensity:[Double],paperEV:Double,
         paperStageObserver: (([Double], [Double]) -> Void)? = nil
     ) throws -> [Double] {
-        guard useOriginalScanner, !useReferenceBlackWhite,
+        guard useOriginalScanner,
+              (!useReferenceBlackWhite || sourceReferencePrepared != nil),
               !defaultCAM16Gamut,
               filmDensity.count==3,
               filmDensity.allSatisfy({ $0.isFinite }),
@@ -1843,7 +1844,8 @@ struct SpectralPhysics {
 
     /// True Python normalized scanner lamp XYZ, NEVER medium base white.
     func sourceSpatialScannerIlluminantXYZ() throws -> [Double] {
-        guard useOriginalScanner,!useReferenceBlackWhite,
+        guard useOriginalScanner,
+              (!useReferenceBlackWhite || sourceReferencePrepared != nil),
               !defaultCAM16Gamut,
               scannerIlluminantXYZ.count==3,
               scannerIlluminantXYZ.allSatisfy({ $0.isFinite }) else {
@@ -1855,7 +1857,8 @@ struct SpectralPhysics {
     /// RGB is intentionally computed AFTER the *whole image* gets the
     /// source glare field in XYZ, before source scanner lens FIR/YVV.
     func sourceSpatialXYZToLinearRGB(_ xyz:[Double]) throws -> [Double] {
-        guard useOriginalScanner,!useReferenceBlackWhite,
+        guard useOriginalScanner,
+              (!useReferenceBlackWhite || sourceReferencePrepared != nil),
               !defaultCAM16Gamut,xyz.count==3,
               xyz.allSatisfy({$0.isFinite}) else {
             throw PhysicsError.invalid("源扫描 XYZ→RGB 输入无效或色域模式未实现")
