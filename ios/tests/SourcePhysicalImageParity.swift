@@ -395,13 +395,20 @@ enum SourcePhysicalImageParity {
                     let expectedLinear=try engine.sourceSpatialXYZToLinearRGB(
                         expectedXYZ
                     )
+                    // Original Python colour.RGB_to_RGB(sRGB,sRGB,
+                    // decoding=false,encoding=true) is a non-identity
+                    // Float64 3x3 pass followed by sRGB CCTF.
+                    // A scalar encodeSRGB() skips that stage, producing
+                    // false "wrong stage order" results on real iPhones.
+                    let expectedEncoded=OriginalScannerMath.sourceCCTFEncoding(
+                        expectedLinear
+                    )
                     for ch in 0..<3 {
                         let deltaXYZ=abs(observedXYZ[k+ch]-expectedXYZ[ch])
                         let deltaLinear=abs(observedLinear[k+ch]-expectedLinear[ch])
-                        let expectedEncoded=OriginalScannerMath.encodeSRGB(
-                            expectedLinear[ch]
+                        let deltaEncoded=abs(
+                            glared.rgb[k+ch]-expectedEncoded[ch]
                         )
-                        let deltaEncoded=abs(glared.rgb[k+ch]-expectedEncoded)
                         maxXYZ=max(maxXYZ,deltaXYZ)
                         maxLinear=max(maxLinear,deltaLinear)
                         maxEncoded=max(maxEncoded,deltaEncoded)
@@ -409,8 +416,8 @@ enum SourcePhysicalImageParity {
                               deltaEncoded<1e-11 else {
                             throw Failure.invalid(
                                 "Production scanner glare wrong stage order " +
-                                "p=\\(pixel) c=\\(ch) XYZ=\\(deltaXYZ) " +
-                                "linear=\\(deltaLinear) encoded=\\(deltaEncoded)"
+                                "p=\(pixel) c=\(ch) XYZ=\(deltaXYZ) " +
+                                "linear=\(deltaLinear) encoded=\(deltaEncoded)"
                             )
                         }
                     }
@@ -427,8 +434,8 @@ enum SourcePhysicalImageParity {
                 print(
                     "PASS v1.8.46 production 2D source glare " +
                     "paperXYZ→glareXYZ→ACESlinear→sRGB, " +
-                    "\\(observedXYZ.count) XYZ channels max=\\(maxXYZ), " +
-                    "linearMax=\\(maxLinear), sRGBMax=\\(maxEncoded); " +
+                    "\(observedXYZ.count) XYZ channels max=\(maxXYZ), " +
+                    "linearMax=\(maxLinear), sRGBMax=\(maxEncoded); " +
                     "seed reproducible, seed-missing rejection PASS"
                 )
             }
