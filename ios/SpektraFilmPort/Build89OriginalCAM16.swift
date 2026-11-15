@@ -237,10 +237,17 @@ enum Build89OriginalCAM16 {
             let probe=Appearance(
                 jp:L,ap:mid*cos(h),bp:mid*sin(h)
             )
-            let xyz=try inverseXYZ(probe,context:c)
-            let rgb=mul(xyz,c.xyzToRGB)
-            let inside=rgb.allSatisfy {
-                $0.isFinite && $0 >= -1e-6 && $0 <= 1.0+1e-6
+            let inside:Bool
+            do {
+                let xyz=try inverseXYZ(probe,context:c)
+                let rgb=mul(xyz,c.xyzToRGB)
+                inside=rgb.allSatisfy {
+                    $0.isFinite && $0 >= -1e-6 && $0 <= 1.0+1e-6
+                }
+            } catch {
+                // The source's np.all((rgb>=-1e-6)&(rgb<=1+1e-6))
+                // treats nonfinite inverse-CAM16 probes as OUTSIDE.
+                inside=false
             }
             if inside {low=mid} else {high=mid}
         }
@@ -252,7 +259,7 @@ enum Build89OriginalCAM16 {
         return low
     }
 
-    static func sourceCMaxLookup(
+    private static func sourceCMaxLookup(
         Jp:Double,h:Double,space:String,context c:Context
     ) throws->Double {
         let L=max(1.0,min(110.0,Jp))
