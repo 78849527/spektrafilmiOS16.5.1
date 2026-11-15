@@ -142,6 +142,12 @@ struct FloatingEditorWorkspace: View {
         if mode == .disablePixel {
             if model.sourcePhysicalDirectEnabled {
                 changes.append("同步关闭依赖像素直连的逐像素全光学")
+                if model.scatterEnabled {
+                    changes.append("关闭源乳剂散射，避免自动落回旧版近似散射")
+                }
+                if model.halationEnabled {
+                    changes.append("关闭源背反射光晕，避免自动落回旧版近似光晕")
+                }
             }
             return changes
         }
@@ -221,6 +227,12 @@ struct FloatingEditorWorkspace: View {
     private func commitSourceMode(_ mode: SourceModeChange) {
         // Called only after confirmation of the affected settings.
         if mode == .disablePixel {
+            if model.sourcePhysicalDirectEnabled {
+                // Prevent silent reassignment of source photon optics to
+                // legacy CI effects when leaving full original mode.
+                model.scatterEnabled = false
+                model.halationEnabled = false
+            }
             model.sourcePixelIOEnabled = false
             model.sourcePhysicalDirectEnabled = false
             model.queueSpectralPreview()
@@ -1664,10 +1676,12 @@ struct FloatingEditorWorkspace: View {
                 .font(.caption2).foregroundColor(.secondary)
             exposureControl("胶片曝光", value: $model.filmExposureEV, enabled: model.hasPhoto,
                             onCommit: { model.queueSpectralPreview() })
-            exposureControl(isReversal ? "反转片无需印相" : "相纸曝光",
-                            value: $model.printExposureEV,
-                            enabled: model.hasPhoto && !isReversal,
-                            onCommit: { model.queueSpectralPreview() })
+            if !isReversal {
+                exposureControl("相纸曝光",
+                                value:$model.printExposureEV,
+                                enabled:model.hasPhoto && !model.busy,
+                                onCommit:{model.queueSpectralPreview()})
+            }
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("效果强度").font(.caption)
@@ -1687,14 +1701,19 @@ struct FloatingEditorWorkspace: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(!model.hasPhoto || model.lut == nil || model.busy)
+                    .disabled(!model.hasPhoto || model.lut == nil ||
+                              model.busy || directPixelMode)
                     .accessibilityLabel("效果强度，点击数值恢复默认 100%")
                 }
                 Slider(value: $model.strength, in: 0...1, step: 0.05,
                        onEditingChanged: { editing in
                     if !editing { onRefresh() }
                 })
-                .disabled(!model.hasPhoto || model.lut == nil)
+                .disabled(!model.hasPhoto || model.lut == nil || directPixelMode)
+                if directPixelMode {
+                    Text("原版像素通道固定 100% 强度；不允许混合近似 LUT。")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
             }
 
             Divider()
