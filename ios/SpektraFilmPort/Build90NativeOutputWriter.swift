@@ -184,10 +184,22 @@ enum Build90NativeOutputWriter {
                 )
             }
             guard let embeddedSpace=saved.colorSpace,
-                  let rawICC=embeddedSpace.copyICCData(),
-                  (rawICC as Data)==icc else {
+                  let rawICC=embeddedSpace.copyICCData() else {
+                throw Failure.invalid("编码文件缺少可读取的 ICC")
+            }
+            let savedICC=rawICC as Data
+            if savedICC != icc {
+                let created=cs.copyICCData() as Data?
+                let count=min(savedICC.count,icc.count)
+                let first=(0..<count).first(where:{
+                    savedICC[$0] != icc[$0]
+                }) ?? count
+                let createdEqual=(created==icc)
                 throw Failure.invalid(
-                    "实际文件 ICC 不等于原版 ICC 原字节；拒绝错误色彩标记"
+                    "实际文件 ICC 字节变化：source=\(icc.count) " +
+                    "read=\(savedICC.count) " +
+                    "firstDiff=\(first) sourceColorSpacePreserved=\(createdEqual); " +
+                    "不能宣称原始 ICC 完全一致"
                 )
             }
             return url
