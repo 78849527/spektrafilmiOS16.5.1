@@ -5,9 +5,8 @@ on:
     branches:
       - 'port/build87-print-optics-reference-29-34-bulk'
     paths:
-      - 'ios/SpektraFilmPort/**'
-      - 'ios/scripts/**'
-      - 'ios/project.yml'
+      # Batch only: source-file commits must NOT start another Xcode build.
+      # Re-run explicitly via workflow_dispatch after multi-module changes.
       - '.github/workflows/build87-print-optics-iphoneos-compile.yml'
   workflow_dispatch:
 
