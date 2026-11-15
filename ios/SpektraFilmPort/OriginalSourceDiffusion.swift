@@ -266,17 +266,38 @@ enum OriginalSourceDiffusion {
     }
     private static func fft2(_ real:inout [Double],_ imag:inout [Double],
                              width:Int,height:Int,inverse:Bool) {
+        // Build91 CPU Double: keep one pair of row scratch arrays and one
+        // pair of column scratch arrays for the WHOLE FFT2 invocation.
+        // Historical code allocated fresh heap arrays for every row and
+        // every column (and for each of three RGB channels).
+        // The one-dimensional butterfly ORDER remains bit-for-bit the
+        // same: rows then columns, original fft1 untouched.
+        var rowReal=[Double](repeating:0,count:width)
+        var rowImag=[Double](repeating:0,count:width)
         for y in 0..<height {
-            var re=Array(real[y*width..<(y+1)*width])
-            var im=Array(imag[y*width..<(y+1)*width])
-            fft1(&re,&im,inverse:inverse)
-            for x in 0..<width { real[y*width+x]=re[x];imag[y*width+x]=im[x] }
+            let origin=y*width
+            for x in 0..<width {
+                rowReal[x]=real[origin+x]
+                rowImag[x]=imag[origin+x]
+            }
+            fft1(&rowReal,&rowImag,inverse:inverse)
+            for x in 0..<width {
+                real[origin+x]=rowReal[x]
+                imag[origin+x]=rowImag[x]
+            }
         }
+        var colReal=[Double](repeating:0,count:height)
+        var colImag=[Double](repeating:0,count:height)
         for x in 0..<width {
-            var re=(0..<height).map { real[$0*width+x] }
-            var im=(0..<height).map { imag[$0*width+x] }
-            fft1(&re,&im,inverse:inverse)
-            for y in 0..<height { real[y*width+x]=re[y];imag[y*width+x]=im[y] }
+            for y in 0..<height {
+                colReal[y]=real[y*width+x]
+                colImag[y]=imag[y*width+x]
+            }
+            fft1(&colReal,&colImag,inverse:inverse)
+            for y in 0..<height {
+                real[y*width+x]=colReal[y]
+                imag[y*width+x]=colImag[y]
+            }
         }
     }
     private static func reflect(_ pos:Int,dimension:Int) -> Int {
@@ -319,11 +340,20 @@ enum OriginalSourceDiffusion {
         let kernel=try psf(width:width,height:height,
                            pixelUM:pixelUM,settings:settings)
         var output=[Double](repeating:0,count:rgb.count)
+        // Reuse the SAME four double-precision FFT planes for all three
+        // channels. Every value is zeroed before refilling the next RGB
+        // plane, so the old per-channel four-plane allocation / reduction
+        // order are preserved without a large heap allocation per pass.
+        var ar=[Double](repeating:0,count:grid)
+        var ai=[Double](repeating:0,count:grid)
+        var br=[Double](repeating:0,count:grid)
+        var bi=[Double](repeating:0,count:grid)
         for c in 0..<3 {
-            var ar=[Double](repeating:0,count:grid)
-            var ai=[Double](repeating:0,count:grid)
-            var br=[Double](repeating:0,count:grid)
-            var bi=[Double](repeating:0,count:grid)
+            if c>0 {
+                for i in 0..<grid {
+                    ar[i]=0; ai[i]=0; br[i]=0; bi[i]=0
+                }
+            }
             for y in 0..<paddedH {
                 let sy=reflect(y-r,dimension:height)
                 for x in 0..<paddedW {
