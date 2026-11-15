@@ -1,0 +1,119 @@
+name: Build84-85 bulk single unsigned iPhoneOS compile certification
+
+on:
+  push:
+    branches:
+      - 'port/build84-85-chemistry-grain-bulk-21-25'
+    paths:
+      - 'ios/SpektraFilmPort/**'
+      - 'ios/scripts/**'
+      - 'ios/project.yml'
+      - '.github/workflows/build84-85-bulk-iphoneos-compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  group-compile-once:
+    runs-on: macos-15
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact bulk source revision
+        uses: actions/checkout@v4
+      - name: Use Xcode iPhoneOS SDK and report real source SHA
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          git rev-parse HEAD
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original fixture generation source stack
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
+            'matplotlib==3.10.7' 'numba==0.61.2' 'opt_einsum==3.4.0' \
+            'scikit-image==0.25.2'
+      - name: Generate original film, print, scanner, random and physical data
+        run: |
+          set -euo pipefail
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_camera_batch.py
+          python ios/scripts/generate_compact_catalog.py
+          python ios/scripts/generate_spectral_data.py
+          python ios/scripts/generate_original_optics.py
+          python ios/scripts/generate_hanatos.py
+          python ios/scripts/generate_build77_stock_halation.py
+          python ios/scripts/generate_dir.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_hd_interpolation_reference.py
+          python ios/scripts/generate_dir_spatial.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_spatial_dir_2d.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_full_frame.py
+          python ios/scripts/generate_sublayer_grain.py
+          python ios/scripts/generate_original_metal_grain.py
+          python ios/scripts/generate_original_source_rng.py
+          python ios/scripts/generate_source_iir.py
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_original_scipy_rng.py
+          python ios/scripts/generate_source_replay.py
+          python ios/scripts/generate_source_microstructure.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
+            NUMBA_THREADING_LAYER=workqueue \
+            python ios/scripts/generate_source_physical_grain.py
+          python ios/scripts/generate_source_rgb_parity.py
+          python ios/scripts/generate_source_print_scanner_parity.py
+          python ios/scripts/generate_source_negative_print_chain.py
+          python ios/scripts/generate_source_film_dir_print_chain.py
+          python ios/scripts/generate_source_camera_film_print_chain.py
+          python ios/scripts/validate_source_float64_original.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
+            NUMBA_THREADING_LAYER=workqueue \
+            python ios/scripts/generate_source_physical_frame.py
+          python ios/scripts/generate_build77_rgb_pre_original.py
+          python ios/scripts/generate_scanner_reference.py
+          python ios/scripts/generate_cam16_gamut.py
+          python ios/scripts/generate_print_morph.py
+          python ios/scripts/generate_print_optics.py
+          test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
+          test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
+          test -s ios/SpektraFilmPort/GeneratedDIRData.swift
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Generate original exact Numba fast-count and glare source tables
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==2.4.0' 'numba==0.64.0' 'scipy==1.16.3' \
+            'colour-science==0.4.6' 'opt_einsum==3.4.0'
+          python ios/scripts/generate_source_numba_fast_counts.py
+          python ios/scripts/generate_source_scanner_glare.py
+          python ios/scripts/build81_generate_source_locus.py \
+            --output ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift
+          python ios/scripts/build82_generate_profiles.py \
+            --output ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
+          test -s ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+      - name: Generate Xcode project and compile all merged native modules ONCE
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate --spec project.yml
+          cd ..
+          xcodebuild -project ios/SpektraFilmPort.xcodeproj \
+            -scheme SpektraFilmPort -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Verify exact original target baseline without IPA
+        run: |
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -s "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.58
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 83
+          xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
+          echo 'Bulk Build84-85 unsigned iPhoneOS compile PASS; NOT real-device stage parity or new released IPA'
