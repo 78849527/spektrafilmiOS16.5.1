@@ -1,0 +1,54 @@
+name: Build88 real scanner lens FIR-YVV and unsharp source parity
+
+on:
+  push:
+    branches:
+      - 'port/build88-scanner-spectrum-glare-optics-35-37-bulk'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceScannerOptics.swift'
+      - 'ios/scripts/build88_original_scanner_optics_oracle.py'
+      - 'ios/tests/Build88OriginalScannerOpticsValidation.swift'
+      - '.github/workflows/build88-scanner-lens-source-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  true-source-scanner-optics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source SHA and Swift toolchain
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - name: Install Python source dependencies
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.3.5' 'scipy==1.16.3' 'opt_einsum==3.4.0'
+      - name: Execute original scanning Gaussian and unsharp code AST
+        run: |
+          python3 ios/scripts/build88_original_scanner_optics_oracle.py \
+            /tmp/build88-scanner-optics.json
+          test -s /tmp/build88-scanner-optics.json
+      - name: Parse entire full Swift application source
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Extract unmodified real FIR/YVV production Float64
+        run: |
+          python3 ios/scripts/extract_source_filter_core_for_linux.py \
+            /tmp/Build88ScannerFIRYVV.swift
+      - name: Compile actual Swift scanner finishing and compare 60 source frames
+        run: |
+          swiftc -O -parse-as-library \
+            /tmp/Build88ScannerFIRYVV.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerOptics.swift \
+            ios/tests/Build88OriginalScannerOpticsValidation.swift \
+            -o /tmp/Build88ScannerOptics
+          /tmp/Build88ScannerOptics /tmp/build88-scanner-optics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build88-pinned-scanner-lens-unsharp-60-original-python
+          path: /tmp/build88-scanner-optics.json
