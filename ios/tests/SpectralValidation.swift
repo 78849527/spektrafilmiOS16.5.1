@@ -33,6 +33,7 @@ struct SpectralValidation {
         try Build80OriginalRAWWhiteBalanceValidation.evaluate()
         try Build81OriginalInputValidation.evaluate()
         try Build82OriginalHanatosValidation.evaluate()
+        try Build83OriginalCameraOpticsValidation.evaluate()
         try SourceFloat64ProfileValidation.evaluate()
         try SourceHDInterpolationValidation.evaluate()
         try OriginalSourceCameraBatchValidation.evaluate()
