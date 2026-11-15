@@ -1,4 +1,4 @@
-name: Build77-80 original source verification and Build80 requested unsigned IPA
+name: Build77-82 source verification and Build80 historic unsigned IPA
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - port/build79-raw-identify-09
       - port/build80-raw-wb-lens-10-12
       - port/build81-input-geometry-gamut-13-16
+      - port/build82-hanatos-surface-filter-17-18
     paths:
       - "ios/scripts/build77_source_contract.py"
       - "ios/scripts/certify_build77_oneshot.py"
@@ -58,6 +59,11 @@ on:
       - "ios/tests/Build81OriginalInputValidation.swift"
       - "ios/scripts/build81_original_input_oracle.py"
       - "ios/scripts/build81_generate_source_locus.py"
+      - "ios/scripts/build82_generate_profiles.py"
+      - "ios/scripts/build82_original_hanatos_oracle.py"
+      - "ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift"
+      - "ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift"
+      - "ios/tests/Build82OriginalHanatosValidation.swift"
       - "ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
@@ -104,6 +110,8 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalPreview.swift \
             ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
             ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
+            ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift \
+            ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
             ios/tests/Build81OriginalInputValidation.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
@@ -406,6 +414,15 @@ jobs:
           python ios/scripts/build81_original_input_oracle.py \
             --output build77-evidence/build81-original-input.json
           test -s build77-evidence/build81-original-input.json
+      - name: Generate source 20-stock Hanatos adaptation and original 192x192x81 Python oracle
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'opt-einsum'
+          python ios/scripts/build82_generate_profiles.py \
+            --output ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+          test -s ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+          python ios/scripts/build82_original_hanatos_oracle.py \
+            --output build77-evidence/build82-original-hanatos.json
+          test -s build77-evidence/build82-original-hanatos.json
       - name: "Build77: native full original source spectral numerical suite"
         run: |
           xcrun swiftc -Onone -parse-as-library -D BUILD77_HOST_TAPE \
@@ -426,7 +443,10 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalPreview.swift \
             ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
             ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
+            ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift \
+            ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
             ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift \
+            ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourceCameraOptics.swift \
@@ -490,6 +510,7 @@ jobs:
             ios/tests/Build80OriginalRAWTintValidation.swift \
             ios/tests/Build80OriginalRAWWhiteBalanceValidation.swift \
             ios/tests/Build81OriginalInputValidation.swift \
+            ios/tests/Build82OriginalHanatosValidation.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Validate actual in-production optical paper stage taps
@@ -502,6 +523,9 @@ jobs:
           BUILD80_RAW_WB_ORACLE="$PWD/build77-evidence/build80-original-raw-whitebalance.json" \
           BUILD81_ORIGINAL_INPUT_ORACLE="$PWD/build77-evidence/build81-original-input.json" \
           BUILD81_ORACLE_REQUIRED=1 \
+          BUILD82_SOURCE_SPECTRA_NPY="$PWD/src/spektrafilm/data/luts/spectral_upsampling/irradiance_xy_tc.npy" \
+          BUILD82_HANATOS_ORACLE="$PWD/build77-evidence/build82-original-hanatos.json" \
+          BUILD82_ORACLE_REQUIRED=1 \
             /tmp/SpektrafilmSpectralValidation
           test "$(find build77-evidence/host-original-physical-tapes -name one-shot-manifest.json | wc -l | tr -d ' ')" -eq 1
           echo "Actual macOS production code exercised all three diagnostic topologies; not device certification."
@@ -528,10 +552,10 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.56
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 81
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.57
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 82
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
-          echo "Build81 unsigned test app 1.8.56(81) compiled; upstream scientific parity NOT certified"
+          echo "Build82 unsigned test app 1.8.57(82) compiled; upstream scientific parity NOT certified"
       - name: Package requested Build80 v1.8.55 unsigned diagnostic IPA
         if: github.ref == 'refs/heads/port/build80-raw-wb-lens-10-12'
         run: |
