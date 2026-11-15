@@ -1861,6 +1861,10 @@ struct ContentView: View {
     // A generated file is owned by this share operation until the system
     // activity sheet closes; source RAW from Documents is NEVER deleted.
     @State private var temporarySharedExport: URL?
+    /// Sheet dismissal completion, not an arbitrary 350ms sleep, decides
+    /// when a newly captured report/folder is safe to share.
+    @State private var diagnosticDismissPending=false
+    @State private var diagnosticPendingShare: URL?
 
     private struct ExportProposal: Identifiable {
         let id = UUID()
@@ -1933,23 +1937,83 @@ struct ContentView: View {
                 onRefresh: { refresh() },
                 onShareBuild100Readiness: {
                     guard !model.busy else { return }
+                    diagnosticDismissPending=true
                     do {
                         let url=try model.exportBuild100Readiness()
                         model.status="Build100 验收清单已存入文件；未测试项目保持 not_run"
-                        // The report sheet must be fully dismissed before
-                        // the same activeSheet binding presents share UI.
-                        Task { @MainActor in
-                            try? await Task.sleep(
-                                nanoseconds:350_000_000
-                            )
-                            activeSheet = .share(url)
-                        }
+                        enqueueDiagnosticShare(url)
                     } catch {
                         message="验收报告导出失败："+error.localizedDescription
                     }
                 },
+                onRunBuild101DeviceParity: {
+                    guard !model.busy else { return }
+                    diagnosticDismissPending=true
+                    model.busy=true
+                    model.status="正在真实运行受控 Python→Swift 原版阶段对照…"
+                    let bundle=Bundle.main
+                    let version=bundle.object(
+                        forInfoDictionaryKey:"CFBundleShortVersionString"
+                    ) as? String ?? "unknown"
+                    let build=bundle.object(
+                        forInfoDictionaryKey:"CFBundleVersion"
+                    ) as? String ?? "unknown"
+                    let modelName=UIDevice.current.model
+                    let os=UIDevice.current.systemVersion
+                    #if targetEnvironment(simulator)
+                    let hardware=false
+                    #else
+                    let hardware=true
+                    #endif
+                    let reference=bundle.url(
+                        forResource:"manifest",withExtension:"json",
+                        subdirectory:Build101DeviceParityEvidence.fixture
+                    )
+                    Task { @MainActor in
+                        defer { model.busy=false }
+                        let proof=await Task.detached(priority:.userInitiated) {
+                            Build101DeviceParityEvidence.capture(
+                                version:version,build:build,
+                                deviceModel:modelName,osVersion:os,
+                                physicalDevice:hardware,now:Date(),
+                                referenceManifest:reference,
+                                evaluate:{
+                                    try Build92DeviceSourceStageDiagnostic.evaluate()
+                                }
+                            )
+                        }.value
+                        do {
+                            guard let documents=FileManager.default.urls(
+                                for:.documentDirectory,in:.userDomainMask
+                            ).first else {
+                                throw ImageProcessingError.invalid(
+                                    "无法定位文档目录，阶段数值证据无法保存"
+                                )
+                            }
+                            let file=try Build101DeviceParityEvidence.write(
+                                proof,documents:documents
+                            )
+                            model.status=proof.controlledParityPassOnTargetDevice
+                                ? "受控原版阶段数值对照通过；仅限本次参考样本，未完成全链认证"
+                                : "受控阶段对照未达真机目标或失败；详细原因已存 JSON"
+                            enqueueDiagnosticShare(file)
+                        } catch {
+                            model.status="Build101 阶段验证存档失败：" +
+                                error.localizedDescription
+                            message=error.localizedDescription
+                        }
+                    }
+                },
+                onDiagnosticSheetDismissed: {
+                    diagnosticDismissPending=false
+                    if let file=diagnosticPendingShare {
+                        diagnosticPendingShare=nil
+                        activeSheet = .share(file)
+                    }
+                },
                 onCaptureBuild77Evidence: {
                     guard !model.busy else { return }
+                    diagnosticDismissPending=true
                     let hardwareName=UIDevice.current.model
                     let version=UIDevice.current.systemVersion
                     model.busy=true
@@ -1967,7 +2031,7 @@ struct ContentView: View {
                             }.value
                             model.status="真实 iPhone 阶段证据已生成。文件应用→我的 iPhone→SpektraFilm Port→" +
                                 folder.lastPathComponent + "；仍未完成 Python 数值认证。"
-                            activeSheet = .share(folder)
+                            enqueueDiagnosticShare(folder)
                         } catch {
                             model.status="Build77 一次性阶段采集失败："
                                 + error.localizedDescription
@@ -2111,6 +2175,14 @@ struct ContentView: View {
             } message: {
                 Text(message ?? "")
             }
+        }
+    }
+
+    private func enqueueDiagnosticShare(_ url: URL) {
+        if diagnosticDismissPending {
+            diagnosticPendingShare=url
+        } else {
+            activeSheet = .share(url)
         }
     }
 
