@@ -120,6 +120,10 @@ enum OriginalSourcePhysicalImage {
         // until real ICC/raw ingress has passed independent verification.
         var cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB
         var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
+        /// Build83 literal original source post-optics film-reference photon
+        /// multiplier. 1.0 is an explicit uncalibrated diagnostic default;
+        /// the Python source calibration service is NOT yet ported.
+        var cameraFilmingReferenceScale: Double = 1.0
         /// Explicit original 81-wavelength Hanatos TC LUT full recompute,
         /// exposing the source poly4 surface even when UV/IR is off.
         var hanatosSourceRecompute: Bool = false
@@ -153,6 +157,12 @@ enum OriginalSourcePhysicalImage {
             try cameraOptics.validate()
             try filmHalation.validate()
             try cameraBandpass.validate()
+            guard cameraFilmingReferenceScale.isFinite &&
+                  cameraFilmingReferenceScale >= 0 else {
+                throw Failure.invalid(
+                    "原版摄影黑白参考 RAW 光子倍率无效；禁止自动代入估算值"
+                )
+            }
             if cameraInputColorSpace == .proPhotoLinear &&
                 cameraRawMethod != .hanatos2025 {
                 throw Failure.invalid(
@@ -362,7 +372,9 @@ enum OriginalSourcePhysicalImage {
             let k=p*3
             let sample=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
             let initial=try (parameters.cameraOptics.active || parameters.filmHalation.active)
-                ? engine.sourceSpatialInputFromCameraRaw(sample)
+                ? engine.sourceSpatialInputFromCameraRaw(
+                    sample,filmingReferenceScale:parameters.cameraFilmingReferenceScale
+                )
                 : engine.sourceSpatialInput(
                     encodedRGB:sample,cameraEV:parameters.cameraEV
                 )
