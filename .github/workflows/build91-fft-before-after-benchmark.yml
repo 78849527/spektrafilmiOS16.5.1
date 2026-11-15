@@ -1,0 +1,72 @@
+name: Build91 measured CPU Double FFT before-after scratch reuse
+
+on:
+  push:
+    branches:
+      - 'port/build91-double-fft-scratch-metal-memory-42-44'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift'
+      - 'ios/tests/Build91DoubleFFTBenchmark.swift'
+      - '.github/workflows/build91-fft-before-after-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measured-double-fft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Original frozen Build90 baseline and current Build91 SHA
+        run: |
+          git rev-parse HEAD
+          git show 20cb39daf08f3f117820a98231720adba8c875d9:ios/SpektraFilmPort/OriginalSourceDiffusion.swift > /tmp/build90-original-source-diffusion.swift
+          sha256sum /tmp/build90-original-source-diffusion.swift ios/SpektraFilmPort/OriginalSourceDiffusion.swift
+      - name: Build baseline and scratch-optimized REAL production algorithms
+        run: |
+          swiftc -O -parse-as-library \
+            /tmp/build90-original-source-diffusion.swift \
+            ios/tests/Build91DoubleFFTBenchmark.swift -o /tmp/build90-fft
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/tests/Build91DoubleFFTBenchmark.swift -o /tmp/build91-fft
+      - name: Measure full-frame CPU Double actual source FFT before/after
+        run: |
+          /usr/bin/time -v -o /tmp/build90-fft-rss.txt \
+            /tmp/build90-fft /tmp/build90-fft-output.json
+          /usr/bin/time -v -o /tmp/build91-fft-rss.txt \
+            /tmp/build91-fft /tmp/build91-fft-output.json
+          grep 'Maximum resident set size' /tmp/build90-fft-rss.txt
+          grep 'Maximum resident set size' /tmp/build91-fft-rss.txt
+          python3 - <<'PY'
+          import json,math
+          a=json.load(open('/tmp/build90-fft-output.json'))['cases']
+          b=json.load(open('/tmp/build91-fft-output.json'))['cases']
+          assert len(a)==len(b)==2
+          for old,new in zip(a,b):
+              assert (old['width'],old['height'])==(new['width'],new['height'])
+              x,y=old['pixels'],new['pixels']
+              assert len(x)==len(y)==old['width']*old['height']*3
+              maximum=max(map(lambda p:abs(p[0]-p[1]),zip(x,y)))
+              mean=sum(abs(u-v) for u,v in zip(x,y))/len(x)
+              assert maximum<=2e-13,(maximum,mean)
+              print('PASS BUILD91 before-after full-frame FFT size',
+                old['width'],old['height'],'channels',len(x),
+                'max_abs',maximum,'MAE',mean,
+                'old_s',old['elapsedSeconds'],
+                'new_s',new['elapsedSeconds'],
+                'speedup_observed',old['elapsedSeconds']/max(1e-10,new['elapsedSeconds']))
+          print('PASS Build91 physical math Float64 FFT source unaffected by scratch pooling')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build91-source-fft-double-before-after-measured-fullframe
+          path: |
+            /tmp/build90-fft-output.json
+            /tmp/build91-fft-output.json
+            /tmp/build90-fft-rss.txt
+            /tmp/build91-fft-rss.txt
