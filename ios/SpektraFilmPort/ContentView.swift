@@ -238,6 +238,89 @@ final class PhotoEditorModel: ObservableObject {
 
     private var source: CIImage?
     private var originalPhotoData: Data?
+    /// Saved RAW waiting for a decoder. This is NOT the currently edited RAW.
+    private var pendingImportedRAWURL: URL?
+
+    private struct EditingSnapshot {
+        let source: CIImage?
+        let sourceData: Data?
+        let rawURL: URL?
+        let pendingRAWURL: URL?
+        let needsRAWChoice: Bool
+        let rawFastMode: Bool
+        let originalPreview: UIImage?
+        let processedPreview: UIImage?
+        let dimensions: String
+        let sourcePixel: Bool
+        let sourcePhysical: Bool
+    }
+
+    private func snapshotEditing() -> EditingSnapshot {
+        EditingSnapshot(
+            source:source, sourceData:originalPhotoData,
+            rawURL:capturedRAWURL, pendingRAWURL:pendingImportedRAWURL,
+            needsRAWChoice:rawNeedsChoice, rawFastMode:rawFastModeActive,
+            originalPreview:originalPreview, processedPreview:processedPreview,
+            dimensions:photoDimensions,
+            sourcePixel:sourcePixelIOEnabled,
+            sourcePhysical:sourcePhysicalDirectEnabled
+        )
+    }
+
+    private func restoreEditing(_ prior: EditingSnapshot) {
+        invalidateSimulation()
+        originalMetalPreviewVersion &+= 1
+        source=prior.source
+        originalPhotoData=prior.sourceData
+        capturedRAWURL=prior.rawURL
+        pendingImportedRAWURL=prior.pendingRAWURL
+        rawNeedsChoice=prior.needsRAWChoice
+        rawFastModeActive=prior.rawFastMode
+        originalPreview=prior.originalPreview
+        processedPreview=prior.processedPreview
+        photoDimensions=prior.dimensions
+        sourcePixelIOEnabled=prior.sourcePixel
+        sourcePhysicalDirectEnabled=prior.sourcePhysical
+    }
+
+    /// Commit source and UI state only after successful file decoding
+    /// and initial preview. If the active film pipeline refuses the image,
+    /// restore the previous photo, modes, and displayed preview atomically.
+    private func commitDecodedPhoto(
+        image:CIImage, preview:UIImage,
+        data:Data?, rawURL:URL?, rawCompatible:Bool,
+        dimensions:String
+    ) throws {
+        let prior=snapshotEditing()
+        invalidateSimulation()
+        if rawCompatible {
+            sourcePixelIOEnabled=false
+            sourcePhysicalDirectEnabled=false
+        }
+        source=image
+        originalPhotoData=data
+        originalPreview=preview
+        processedPreview=preview
+        photoDimensions=dimensions
+        rawFastModeActive=rawCompatible
+        capturedRAWURL=rawURL
+        do {
+            try refresh()
+            if rawCompatible { pendingImportedRAWURL=nil }
+            rawNeedsChoice=false
+        } catch {
+            restoreEditing(prior)
+            throw error
+        }
+    }
+
+    func dismissPendingRAWChoice() {
+        guard pendingImportedRAWURL != nil else { return }
+        pendingImportedRAWURL=nil
+        rawNeedsChoice=false
+        status="RAW 原片已保存，当前照片和编辑设置保持不变"
+    }
+
     var hasPhoto: Bool { source != nil }
 
     /// Explicitly reject all unported combinations in direct source mode.
@@ -477,20 +560,14 @@ final class PhotoEditorModel: ObservableObject {
                 let saved=try Build79RAWStorage.preserve(
                     url,kind:kind
                 )
-                invalidateSimulation()
-                source=nil
-                originalPhotoData=nil
-                originalPreview=nil
-                processedPreview=nil
-                photoDimensions="RAW ."+kind.rawValue.uppercased()
-                    + "（尚未显影）"
-                capturedRAWURL=saved.url
-                rawFastModeActive=false
+                // Do not clear the current edit before a chosen decoder
+                // has both decoded the new RAW and produced a valid preview.
+                pendingImportedRAWURL=saved.url
                 rawNeedsChoice=true
                 status="已无损导入 ."+kind.rawValue.uppercased()
                     + " 原片，SHA256="+String(saved.sha256.prefix(12))
                     + "…，已保存至「文件」/ SpektraFilm RAW Imports。"
-                    + "请选择 Apple RAW / LibRaw 8-bit / LibRaw 16-bit 进行显影，或仅保存。"
+                    + "请选择显影后替换当前照片，或仅保存原片；当前编辑不变。"
                 return
             }
             try loadPhoto(Data(contentsOf: url))
@@ -749,16 +826,15 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     private func loadPhoto(_ data: Data) throws {
-        invalidateSimulation()
         let decoded = try PhotoProcessor.decode(data)
-        source = decoded
-        originalPhotoData = data
-        capturedRAWURL = nil
-        rawNeedsChoice = false
-        rawFastModeActive = false
-        photoDimensions = "\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
-        originalPreview = try PhotoProcessor.preview(decoded, lut: nil, strength: 0)
-        try refresh()
+        let preview = try PhotoProcessor.preview(
+            decoded, lut:nil, strength:0
+        )
+        try commitDecodedPhoto(
+            image:decoded, preview:preview, data:data,
+            rawURL:nil, rawCompatible:false,
+            dimensions:"\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
+        )
         queueSpectralPreview()
     }
 
