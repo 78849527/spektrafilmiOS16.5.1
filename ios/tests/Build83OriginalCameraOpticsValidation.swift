@@ -35,11 +35,8 @@ enum Build83OriginalCameraOpticsValidation {
             let d=abs(actual[i]-source[i])
             let limit=absolute+relative*abs(source[i])
             guard actual[i].isFinite,source[i].isFinite,d<=limit else {
-                throw Failure.invalid(
-                    "Build83 Python source numerical drift in \(context) channel \(i): "
-                    +"Swift=\(actual[i]), Python=\(source[i]), "
-                    +"error=\(d), limit=\(limit)"
-                )
+                let message="Build83 source numerical drift \(context) at \(i): Swift=\(actual[i]), Python=\(source[i]), abs=\(d), limit=\(limit)"
+                throw Failure.invalid(message)
             }
             maxAbs=max(maxAbs,d)
             sumAbs+=d
@@ -129,10 +126,7 @@ enum Build83OriginalCameraOpticsValidation {
                 width:width,height:height,pixelUM:pixelUM,settings:settings
             )
             guard psf.radius==radius else {
-                throw Failure.invalid(
-                    "Build83 original photographic PSF radius drift \(name): "
-                    +"Swift=\(psf.radius), Python=\(radius)"
-                )
+                throw Failure.invalid("Build83 PSF radius drift \(name): Swift=\(psf.radius), Python=\(radius)")
             }
             let referencePSF=try numbers(row["psf"],label:"PSF "+name)
             let pe=try validate(psf.data,referencePSF,
@@ -157,9 +151,9 @@ enum Build83OriginalCameraOpticsValidation {
             filmingReferenceScale:1.0
         )
         guard noChange.count==7,
-              noChange[0]==-10,
-              noChange[1]==-10,
-              noChange[3]==-10 else {
+              noChange[0] == -10.0,
+              noChange[1] == -10.0,
+              noChange[3] == -10.0 else {
             throw Failure.invalid("Build83 source negative/zero photon log10 floor drift")
         }
         let report="PASS Build83 source camera 6 RAW photon vectors / \(rawSamples) checks max=\(expMax); 4 original diffusion families / \(psfSamples) PSF taps max=\(psfMax); \(imageSamples) FFT output channels max=\(imageMax). Not device certified."
