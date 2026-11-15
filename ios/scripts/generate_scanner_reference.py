@@ -64,6 +64,20 @@ def main():
         sources[name]=(norm,matrix)
         lines.append(f'        "{name}": {fmt(matrix)},')
     lines.append("    ]")
+    # The original ScanningStage._apply_cctf_encoding calls
+    # colour.RGB_to_RGB(sRGB,sRGB,decoding=False,encoding=True).
+    # Its colourspace→same-colourspace 3x3 roundtrip is NOT bit-identity;
+    # skipping it created a measured ~2.27e-5 sRGB discrepancy.
+    same_space_matrix=np.asarray(colour.RGB_to_RGB(
+        np.eye(3,dtype=np.float64),"sRGB","sRGB",
+        apply_cctf_decoding=False,apply_cctf_encoding=False
+    ),dtype=np.float64)
+    assert same_space_matrix.shape==(3,3)
+    assert np.isfinite(same_space_matrix).all()
+    lines.append(
+        "    static let sourceLinearIdentityRGBMatrix: [Double] = "
+        + fmt(same_space_matrix)
+    )
     lines.append("    static let xyzYNormalization: [String: Double] = [")
     for name,(norm,_) in sources.items():
         lines.append(f'        "{name}": {format(norm,".17g")},')
