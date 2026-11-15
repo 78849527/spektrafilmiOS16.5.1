@@ -35,14 +35,13 @@ enum Build90NativeOutputWriter {
         }
     }
     static func write(
-        _ frame:OriginalSourcePixelIO.Frame,
+        width w:Int,height h:Int,rgb:[Double],
         options:Options
     ) throws->URL {
-        let w=frame.width,h=frame.height
         guard w>0,h>0,w<=8192,h<=8192,
               w<=16_000_000/h,
-              frame.rgb.count==w*h*3,
-              frame.rgb.allSatisfy({$0.isFinite}) else {
+              rgb.count==w*h*3,
+              rgb.allSatisfy({$0.isFinite}) else {
             throw Failure.invalid(
                 "原版文件导出尺寸/Float64 输入无效，禁止自动缩图或降位深"
             )
@@ -68,7 +67,7 @@ enum Build90NativeOutputWriter {
             )
         }
         let bytes=try Build90SourceOutputQuantization.packed(
-            frame.rgb,as:spec
+            rgb,as:spec
         )
         let bits=spec.storage.bitsPerChannel
         let bitmap:CGBitmapInfo
