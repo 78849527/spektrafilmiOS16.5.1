@@ -193,7 +193,7 @@ enum Build103VerificationEvidence {
         version:String,build:String,commit:String,device:String,
         osVersion:String,physicalDevice:Bool,
         manifestURL:URL?,now:Date=Date(),
-        evaluate:((_ observe:(StageMetric)->Void) throws -> Void),
+        evaluate:((_ observe:@escaping (StageMetric)->Void) throws -> Void),
         rng:() throws -> RandomSummary,
         memory:() throws -> MemorySummary
     )->Report {
