@@ -89,9 +89,10 @@ enum Build91PhysicalMemoryMatrixValidation {
         }
         let grid=UInt64(fft.fftWidth)*UInt64(fft.fftHeight)
         let sourceGuard=grid*40+1_000_000*48
+        let exactScratch=grid*32+
+            UInt64(2*(fft.fftWidth+fft.fftHeight))*8
         guard fft.sourceFFTGuardBytes==sourceGuard,
-              fft.actualScratchBytes==grid*32+
-                UInt64(2*(fft.fftWidth+fft.fftHeight))*8 else {
+              fft.actualScratchBytes==exactScratch else {
             throw Failure.invalid("Original fft2 work allocations mismatch")
         }
 
@@ -102,8 +103,8 @@ enum Build91PhysicalMemoryMatrixValidation {
             physicalMemory:physical,processAvailable:available,
             camera:(opt,pixels),paper:(opt,pixels)
         )
-        guard doublePlan.additionalFFTBytes==
-                fft.actualScratchBytes+fft.psfBytes else {
+        let oneFFT=fft.actualScratchBytes+fft.psfBytes
+        guard doublePlan.additionalFFTBytes==oneFFT else {
             throw Failure.invalid(
                 "Camera and paper non-overlapping FFT scratch was double counted"
             )
