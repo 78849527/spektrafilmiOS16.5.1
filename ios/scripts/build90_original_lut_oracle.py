@@ -52,7 +52,8 @@ def main(output):
                 limits=[-0.5,0.2,1.2],[2.,2.3,1.9]
             else:
                 limits=[-2.,-0.4,0.15],[1.5,1.4,1.75]
-            mi=np.asarray(limits[0]),ma=np.asarray(limits[1])
+            mi=np.asarray(limits[0])
+            ma=np.asarray(limits[1])
             source_points=probes*(ma-mi)+mi
             with np.errstate(invalid="ignore"):
                 import warnings
