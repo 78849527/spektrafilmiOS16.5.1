@@ -47,7 +47,8 @@ struct OriginalHanatosResponse {
 
     init(
         filmID: String, precision: Precision = .originalFloat64,
-        inputColorSpace: InputColorSpace = .sRGB
+        inputColorSpace: InputColorSpace = .sRGB,
+        sourceRecomputedLUT: [Double]? = nil
     ) throws {
         let n = GeneratedHanatosData.dimension
         let matrix: [Double]?
@@ -68,6 +69,19 @@ struct OriginalHanatosResponse {
         rgbToXYZ = matrix
         self.n = n
         let itemCount = n*n*3
+        if let recomputed=sourceRecomputedLUT {
+            guard case .originalFloat64=precision,
+                  recomputed.count==itemCount,
+                  recomputed.allSatisfy({$0.isFinite}) else {
+                throw DecodeError.unavailable(
+                    "Build82 原版重算 Hanatos LUT 必须 Float64 且尺寸/数值完整"
+                )
+            }
+            // Do not cache under old filmID alone: UV/IR, surface,
+            // Gaussian and gamut change the source LUT content.
+            rawLUT=recomputed
+            return
+        }
         switch precision {
         case .originalFloat64:
             if let cached=Self.originalCache.object(forKey:filmID as NSString) {
