@@ -1,0 +1,62 @@
+name: Build88 original source B-W reference then Numba XYZ glare parity
+
+on:
+  push:
+    branches:
+      - 'port/build88-scanner-spectrum-glare-optics-35-37-bulk'
+    paths:
+      - 'ios/scripts/build88_original_scanner_reference_glare_oracle.py'
+      - 'ios/tests/Build88OriginalScanBWGlareValidation.swift'
+      - 'ios/SpektraFilmPort/Build87OriginalColorReference.swift'
+      - 'ios/SpektraFilmPort/OriginalSourceScannerGlare.swift'
+      - '.github/workflows/build88-source-bw-glare-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-source-xyz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NUMBA_NUM_THREADS: '1'
+      NUMBA_THREADING_LAYER: workqueue
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact source commit
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install actual Python source NumPy Numba and SciPy stack
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.4.0' 'numba==0.64.0' 'scipy==1.16.3' \
+            'opt_einsum==3.4.0'
+      - name: Run original independent Python B-W then stochastic glare stages
+        run: |
+          python ios/scripts/build88_original_scanner_reference_glare_oracle.py \
+            /tmp/build88-source-bw-glare.json
+          test -s /tmp/build88-source-bw-glare.json
+      - name: Extract real native Double source FIR YVV
+        run: |
+          python ios/scripts/extract_source_filter_core_for_linux.py \
+            /tmp/Build88BWGlareFilterCore.swift
+      - name: Compile ACTUAL Swift source RNG, B-W and XYZ glare stages
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            /tmp/Build88BWGlareFilterCore.swift \
+            ios/SpektraFilmPort/Build87OriginalColorReference.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/tests/Build88OriginalScanBWGlareValidation.swift \
+            -o /tmp/Build88BWGlare
+          /tmp/Build88BWGlare /tmp/build88-source-bw-glare.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build88-original-48-source-calibrated-xyz-seeded-glare-frames
+          path: /tmp/build88-source-bw-glare.json
