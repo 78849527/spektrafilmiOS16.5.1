@@ -155,9 +155,9 @@ def main(destination):
                             baseValid=np.isfinite(base).tolist(),
                             sensitivity=sens.tolist(),
                             sourcePreflash=pre.tolist(),
-                            midRaw=(1.0/first)*np.ones(3),
-                            compRaw=(1.0/comp)*np.ones(3),
-                            sourceDivisor=1.0/ref,
+                            midRaw=(np.ones(3)/np.asarray(first).reshape(-1)[0]).tolist(),
+                            compRaw=(np.ones(3)/np.asarray(comp).reshape(-1)[0]).tolist(),
+                            sourceDivisor=float(1.0/np.asarray(ref).reshape(-1)[0]),
                             raw=raw.tolist(),rawLog=logged.tolist(),
                             paperEV=0.6,final=final.tolist()
                         )
