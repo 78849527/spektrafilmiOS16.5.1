@@ -39,3 +39,12 @@
 - 没有把默认 CAM16 偷换为 ACES，也没有默默将原版 Double 替换成 Metal Float32。
 
 **进度**：路线图现已推进到 **37 / 47 ≈ 78.7% 的工程工作项顺序位置**；这不是任何意义上的“原版科学认证完成 78.7%”。Build88 35–37 条目须待最终源码/tap/编译/真机审计才能逐条标记全部完成。后续 Build89 是 38–39 默认 CAM16 全参数及多算法输出色域。
+
+## 2026-11-15 最终合并编译验收
+
+- [GitHub Actions Build88 grouped iPhoneOS run 43682071748](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43682071748)：**PASS / BUILD SUCCEEDED**，精确受测源 SHA `2ab8eafa3081ded871c7e150e8409b2e2f17604b`。
+- Xcode 16.4；iPhoneOS Release SDK；`generic/platform=iOS`；`CODE_SIGNING_ALLOWED=NO`；`arm64`；`default.metallib` 存在；`CFBundleShortVersionString=1.8.58`，`CFBundleVersion=83`，不冒称已产生正式 Build88 IPA。
+- 首次合批 run `43681739245` FAIL，仅在 `Build88ScannerCombinedProductionDiagnostic.swift:150` 发现 Swift 比较符空格语法歧义；已以最小语义等价修复，最终 run 43682071748 明确覆盖该修复并 **PASS**。
+- 先前 Build87 未通过的 `OriginalSourceDiffusion.swift:132` Float64 求和 Swift 类型检查超时也已在本次同一个 arm64 编译中被验证修复。
+- 3 个源 SciPy/Numba/Colour 独立数值 workflow 均为 **PASS**：60 + 64 + 48 = **172 组**跨类型源样本；无种子多线程、完整 8/12MP RGB、实机内存、GUI 和原版默认 CAM16 尚未认证。
+- **无新签名、无 IPA、无 GitHub Release 发布**；源证据只涉及本报告明确限定的 ACES-RGC 源可选分支、原版光谱和控制随机流。
