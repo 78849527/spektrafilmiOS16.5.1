@@ -1,0 +1,43 @@
+name: Build91 Metal IIR source cache macOS typecheck (not GPU certification)
+
+on:
+  push:
+    branches:
+      - 'port/build91-double-fft-scratch-metal-memory-42-44'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalMetalIIR.swift'
+      - '.github/workflows/build91-metal-pipeline-typecheck.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-metal-host-compile:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile real Metal host code with generated fixture interface
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          git rev-parse HEAD
+          cat >/tmp/Build91MetalReferenceOnly.swift <<'SWIFT'
+          import Foundation
+          enum GeneratedSourceIIRReference {
+              struct Case {
+                  let name:String
+                  let width:Int
+                  let height:Int
+                  let sigmas:[Double]
+                  let input:[Double]
+                  let expected:[Double]
+              }
+              static let cases:[Case]=[]
+          }
+          SWIFT
+          swiftc -typecheck -parse-as-library \
+            ios/SpektraFilmPort/OriginalMetalIIR.swift \
+            /tmp/Build91MetalReferenceOnly.swift
+          echo 'PASS macOS Metal IIR pipeline-cache HOST TYPECHECK.'
+          echo 'NOT iPhoneOS 16.5.1 execution, Float32 difference, or GPU speed certification.'
