@@ -1,4 +1,4 @@
-name: Build77-82 source verification and Build80 historic unsigned IPA
+name: Build77-83 source verification and separately requested Build83 unsigned IPA
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - port/build80-raw-wb-lens-10-12
       - port/build81-input-geometry-gamut-13-16
       - port/build82-hanatos-surface-filter-17-18
+      - port/build83-camera-photon-optics-19-20
     paths:
       - "ios/scripts/build77_source_contract.py"
       - "ios/scripts/certify_build77_oneshot.py"
@@ -64,6 +65,9 @@ on:
       - "ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift"
       - "ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift"
       - "ios/tests/Build82OriginalHanatosValidation.swift"
+      - "ios/scripts/build83_original_camera_optics_oracle.py"
+      - "ios/SpektraFilmPort/Build83OriginalCameraPhoton.swift"
+      - "ios/tests/Build83OriginalCameraOpticsValidation.swift"
       - "ios/SpektraFilmPort/Build80AppleRAWDevelopment.swift"
       - "ios/SpektraFilmPort/OriginalSourcePixelIO.swift"
       - "ios/tests/Build78HighBitDepthValidation.swift"
@@ -112,6 +116,7 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
             ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift \
             ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
+            ios/SpektraFilmPort/Build83OriginalCameraPhoton.swift \
             ios/tests/Build81OriginalInputValidation.swift \
             ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
             ios/tests/Build78HighBitDepthValidation.swift \
@@ -423,6 +428,11 @@ jobs:
           python ios/scripts/build82_original_hanatos_oracle.py \
             --output build77-evidence/build82-original-hanatos.json
           test -s build77-evidence/build82-original-hanatos.json
+      - name: Generate pinned Python Build83 camera photon and full optical FFT source oracle
+        run: |
+          python ios/scripts/build83_original_camera_optics_oracle.py \
+            --output build77-evidence/build83-original-camera-optics.json
+          test -s build77-evidence/build83-original-camera-optics.json
       - name: "Build77: native full original source spectral numerical suite"
         run: |
           xcrun swiftc -Onone -parse-as-library -D BUILD77_HOST_TAPE \
@@ -445,6 +455,7 @@ jobs:
             ios/SpektraFilmPort/Build81OriginalSourceInputStage.swift \
             ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift \
             ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
+            ios/SpektraFilmPort/Build83OriginalCameraPhoton.swift \
             ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift \
             ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
@@ -511,6 +522,7 @@ jobs:
             ios/tests/Build80OriginalRAWWhiteBalanceValidation.swift \
             ios/tests/Build81OriginalInputValidation.swift \
             ios/tests/Build82OriginalHanatosValidation.swift \
+            ios/tests/Build83OriginalCameraOpticsValidation.swift \
             ios/tests/SpectralValidation.swift \
             -o /tmp/SpektrafilmSpectralValidation
       - name: Validate actual in-production optical paper stage taps
@@ -526,6 +538,8 @@ jobs:
           BUILD82_SOURCE_SPECTRA_NPY="$PWD/src/spektrafilm/data/luts/spectral_upsampling/irradiance_xy_tc.npy" \
           BUILD82_HANATOS_ORACLE="$PWD/build77-evidence/build82-original-hanatos.json" \
           BUILD82_ORACLE_REQUIRED=1 \
+          BUILD83_SOURCE_ORACLE="$PWD/build77-evidence/build83-original-camera-optics.json" \
+          BUILD83_ORACLE_REQUIRED=1 \
             /tmp/SpektrafilmSpectralValidation
           test "$(find build77-evidence/host-original-physical-tapes -name one-shot-manifest.json | wc -l | tr -d ' ')" -eq 1
           echo "Actual macOS production code exercised all three diagnostic topologies; not device certification."
@@ -552,10 +566,51 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -f "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.57
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 82
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.58
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 83
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
-          echo "Build82 unsigned test app 1.8.57(82) compiled; upstream scientific parity NOT certified"
+          echo "Build83 unsigned test app 1.8.58(83) compiled; upstream scientific parity NOT certified"
+      - name: Package user-requested Build83 v1.8.58 unsigned experimental IPA
+        if: github.ref == 'refs/heads/port/build83-camera-photon-optics-19-20'
+        run: |
+          set -euo pipefail
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -s "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.58
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 83
+          xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
+          xcrun vtool -show-build "$APP/SpektraFilmPort" | grep -E 'minos 16\\.5|platform IOS'
+          test -s "$APP/irradiance_xy_tc.npy"
+          shasum -a 256 "$APP/irradiance_xy_tc.npy" | awk '{print $1}' > /tmp/build83-bundle-spectra.sha256
+          shasum -a 256 src/spektrafilm/data/luts/spectral_upsampling/irradiance_xy_tc.npy | awk '{print $1}' > /tmp/build83-source-spectra.sha256
+          cmp /tmp/build83-bundle-spectra.sha256 /tmp/build83-source-spectra.sha256
+          /usr/libexec/PlistBuddy -c "Add :Build83SourceCommit string $GITHUB_SHA" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :Build83ScientificParityCertified bool false' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :Build83SourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
+          DEST="$PWD/ios/build/build83-ipa-release"
+          mkdir -p "$DEST/Payload"
+          cp -R "$APP" "$DEST/Payload/SpektraFilmPort.app"
+          cd "$DEST"
+          IPA='SpektraFilm-1.8.58-Build83-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa'
+          zip -q -r "$IPA" Payload
+          test -s "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/SpektraFilmPort'
+          unzip -Z1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/irradiance_xy_tc.npy'
+          shasum -a 256 "$IPA" > "$IPA.sha256"
+          printf '%s\n' "SOURCE_COMMIT=$GITHUB_SHA" 'MIN_IOS=16.5' 'APP_VERSION=1.8.58(83)' 'ARCH=arm64' 'UNSIGNED=YES' 'PYTHON_FULL_PARITY=NOT_CERTIFIED' 'REAL_DEVICE=NOT_TESTED' 'INSTALL=REQUIRES_YOUR_OWN_APPLE_SIGNING' > verification.txt
+          echo "PASS: Build83 actual compiled unsigned iPhoneOS IPA package, spectra bytes and SHA256 verified"
+      - name: Upload independently requested Build83 IPA for GitHub prerelease publication
+        if: github.ref == 'refs/heads/port/build83-camera-photon-optics-19-20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build83-ipa-unsigned-v1.8.58
+          path: |
+            ios/build/build83-ipa-release/*.ipa
+            ios/build/build83-ipa-release/*.sha256
+            ios/build/build83-ipa-release/verification.txt
+          if-no-files-found: error
       - name: Package requested Build80 v1.8.55 unsigned diagnostic IPA
         if: github.ref == 'refs/heads/port/build80-raw-wb-lens-10-12'
         run: |
@@ -927,3 +982,59 @@ jobs:
           test -n "$LINK"
           echo "VERIFIED_BUILD80_IPA_DIRECT_URL=$LINK"
           echo "VERIFIED_SOURCE_COMMIT=$GITHUB_SHA"
+
+  publish-build83-requested-test-ipa:
+    name: Publish user-requested Build83 iOS16.5.1 IPA (UNSIGNED / UNVERIFIED)
+    if: github.ref == 'refs/heads/port/build83-camera-photon-optics-19-20'
+    needs:
+      - upstream-contract
+      - python-reference-taps
+      - ios-stage-recorder
+      - native-stock-byte-audit
+      - native-parameter-digest-audit
+      - native-stock-halation-digest-audit
+      - native-neutral-filter-database-audit
+      - one-shot-full-device-certification-preflight
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the exact complete successful Build83 source SHA
+        uses: actions/checkout@v4
+      - name: Retrieve the Build83 IPA from this exact passed workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: build83-ipa-unsigned-v1.8.58
+          path: build83-ipa
+      - name: Validate artifact and publish distinct experimental Build83 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd build83-ipa
+          IPA='SpektraFilm-1.8.58-Build83-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa'
+          test -s "$IPA"
+          test -s "$IPA.sha256"
+          test -s verification.txt
+          shasum -a 256 -c "$IPA.sha256"
+          grep -Fx "SOURCE_COMMIT=$GITHUB_SHA" verification.txt
+          grep -Fx 'APP_VERSION=1.8.58(83)' verification.txt
+          grep -Fx 'UNSIGNED=YES' verification.txt
+          grep -Fx 'PYTHON_FULL_PARITY=NOT_CERTIFIED' verification.txt
+          TAG='ios1651-v1.8.58-build83-CAMERA-OPTICS-UNSIGNED-UNVERIFIED'
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite already published Build83 IPA."
+            exit 1
+          fi
+          gh release create "$TAG" \
+            "$IPA" "$IPA.sha256" verification.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title 'SpektraFilm 1.8.58 Build83 iOS16.5.1 (UNSIGNED / NOT CERTIFIED)' \
+            --notes 'Build83 camera photon EV/RAW log10 and original four-family photographic diffusion source reference tests; includes Build82 Hanatos adaptive 81-wavelength LUT. This IPA was compiled for arm64 iPhoneOS minimum iOS16.5, is UNSIGNED and cannot be installed normally without your own Apple signing. Original Python full image/RAW device numerical parity and iOS16.5.1 physical device certification are NOT established. Build82 was not released as part of this request.' \
+            --prerelease
+          LINK="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            --jq ".assets[] | select(.name == \\"$IPA\\") | .browser_download_url")"
+          test -n "$LINK"
+          echo "VERIFIED_BUILD83_IPA_DIRECT_URL=$LINK"
+          echo "VERIFIED_BUILD83_SOURCE_COMMIT=$GITHUB_SHA"
