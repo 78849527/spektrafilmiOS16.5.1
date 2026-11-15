@@ -39,7 +39,6 @@ jobs:
       - name: Compile native source Float64 reference code and test
         run: |
           swiftc -O -parse-as-library \
-            ios/SpektraFilmPort/OriginalScannerMath.swift \
             ios/SpektraFilmPort/Build87OriginalColorReference.swift \
             ios/tests/Build87SourceColorReferenceValidation.swift \
             -o /tmp/Build87OriginalReference
