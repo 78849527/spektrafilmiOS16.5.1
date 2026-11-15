@@ -1,0 +1,45 @@
+name: Build91 actual source Double FFT 108 full-frame numerical parity
+
+on:
+  push:
+    branches:
+      - 'port/build91-double-fft-scratch-metal-memory-42-44'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift'
+      - 'ios/tests/Build87PrintDiffusion108Parity.swift'
+      - '.github/workflows/build91-source-fft-scratch-108-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  true-source-double-fft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build91 source SHA and Swift toolchain
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - name: Install original Python NumPy and SciPy FFT reference
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.3.5' 'scipy==1.16.3'
+      - name: Execute ORIGINAL unmodified source 108 PSF/reflect FFT frames
+        run: |
+          python3 ios/scripts/build87_original_2d_print_diffusion_oracle.py \
+            /tmp/build91-original-fft-108.json
+      - name: Swift app parse and exact CPU Double FFT kernel compilation
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/tests/Build87PrintDiffusion108Parity.swift \
+            -o /tmp/Build91SourceFFT
+          /tmp/Build91SourceFFT /tmp/build91-original-fft-108.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build91-original-double-fft-108-scratch-reuse
+          path: /tmp/build91-original-fft-108.json
