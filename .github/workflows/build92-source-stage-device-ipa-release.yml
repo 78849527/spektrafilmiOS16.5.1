@@ -192,7 +192,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.59
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 92
           xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
-          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist" | grep -E '^16\.5([.]0)?
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist" | grep -E '^16[.]5([.]0)?$'
 
           test -s "$APP/generated-physical-v1.8.22/manifest.json"
           test -s "$APP/generated-physical-v1.8.22/kodak_grain_micro_yvv.grainPrinted.f64le"
