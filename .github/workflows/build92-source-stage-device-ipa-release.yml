@@ -83,6 +83,9 @@ jobs:
           python-version: '3.13'
       - name: Audit 4 actual original-Python 12-stage optical and seeded grain images
         run: |
+          # setup-python switched from 3.11 to 3.13. The NumPy
+          # installed for source generation in 3.11 is NOT inherited.
+          python -m pip install --quiet 'numpy==2.4.0'
           python ios/scripts/build92_source_stage_tapes_audit.py \
             --fixtures ios/verification/generated-physical-v1.8.22 \
             --out /tmp/build92-real-source-48-stage-tapes.json
