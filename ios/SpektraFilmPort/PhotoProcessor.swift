@@ -251,4 +251,99 @@ enum PhotoProcessor {
                             height: rendered.height,
                             downsampled: downsampled)
     }
+
+    /// Build96: same film/paper/scanner stages and user-confirmed geometry as
+    /// JPEG. Actual file is 16-bit TIFF, never a renamed 8-bit export.
+    static func exportTIFF16(
+        _ source: CIImage, lut: FilmLUT?, strength: Double,
+        spatial: SpatialOpticsSettings = SpatialOpticsSettings(),
+        grain: DensityGrainSettings? = nil,
+        scanner: ScannerFinishSettings = ScannerFinishSettings(),
+        dirStage: SpatialDIRStage? = nil,
+        dirSettings: SpatialDIRSettings = SpatialDIRSettings(),
+        resolution: ExportResolutionMode = .original,
+        confirmedPlan: SafeExportResolution.Plan? = nil
+    ) throws -> ExportResult {
+        guard resolution == .original || confirmedPlan != nil else {
+            throw ImageProcessingError.invalid(
+                "TIFF16 安全/省内存导出必须先在界面确认输出尺寸"
+            )
+        }
+        // Full-resolution output: NEVER silently shrink high-resolution
+        // images to 12.5 MP. The preview remains 1500 px for performance.
+        // On-memory CI filters evaluate lazily until JPEG encoding.
+        guard source.extent.width.isFinite, source.extent.height.isFinite,
+              source.extent.width > 0, source.extent.height > 0 else {
+            throw ImageProcessingError.invalid("源照片尺寸无效")
+        }
+        // Explicit choice only: ORIGINAL always evaluates at source pixel
+        // dimensions. SAFE first reduces the entire input to a conservative
+        // budget, then executes the exact same optical density/SciPy/Metal
+        // chain on that whole output image (no per-tile random stream reset).
+        var workingSource = source
+        var downsampled = false
+        if resolution != .original {
+            let bounds = source.extent.integral
+            let plan = try confirmedPlan ??
+                SafeExportResolution.capture(
+                    width: Int(bounds.width),
+                    height: Int(bounds.height), mode: resolution
+                )
+            guard plan.sourceWidth == Int(bounds.width),
+                  plan.sourceHeight == Int(bounds.height),
+                  plan.mode == resolution else {
+                throw ImageProcessingError.invalid(
+                    "安全输出：已确认的尺寸与当前照片不匹配，请重新选择"
+                )
+            }
+            try SafeExportResolution.validateBeforeRender(plan)
+            let target = plan.dimensions
+            if target.reduced {
+                // Normalize image coordinates to zero before filtering.
+                // Fractional dimensions are cropped to an exact integer
+                // output rectangle; never upscale or stretch the aspect.
+                let normalized = source.transformed(
+                    by: CGAffineTransform(
+                        translationX: -bounds.minX, y: -bounds.minY
+                    )
+                ).cropped(to: CGRect(origin: .zero, size: bounds.size))
+                let ratio = max(
+                    Double(target.width) / Double(bounds.width),
+                    Double(target.height) / Double(bounds.height)
+                )
+                let shrink = CIFilter.lanczosScaleTransform()
+                shrink.inputImage = normalized
+                shrink.scale = Float(ratio)
+                shrink.aspectRatio = 1
+                guard let scaled = shrink.outputImage else {
+                    throw ImageProcessingError.invalid(
+                        "安全输出：无法创建 Lanczos 等比例缩小图像"
+                    )
+                }
+                workingSource = scaled.cropped(
+                    to: CGRect(
+                        x: 0, y: 0,
+                        width: CGFloat(target.width),
+                        height: CGFloat(target.height)
+                    )
+                )
+                downsampled = true
+            }
+        }
+        let outputBounds = workingSource.extent.integral
+        // Validate memory BEFORE running FIR/YVV, Metal grain or rendering
+        // full-sized 40MP X-T5 optical buffers.
+        try Build96TIFF16Writer.validateBudget(
+            width: Int(outputBounds.width), height: Int(outputBounds.height)
+        )
+        let image = try apply(
+            to: workingSource, lut: lut, strength: strength,
+            spatial: spatial, grain: grain, scanner: scanner,
+            dirStage: dirStage, dirSettings: dirSettings
+        )
+        let url = try Build96TIFF16Writer.write(image)
+        return ExportResult(url: url, width: Int(image.extent.integral.width),
+                            height: Int(image.extent.integral.height),
+                            downsampled: downsampled)
+    }
 }
