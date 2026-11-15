@@ -23,12 +23,13 @@
 12. Mitchell 可选分支保持原版 B=C=1/3、四点相邻采样、反射边界、64 个权重、除以实际 weightSum 规范化。既不是 trilinear，也不是 Core Image 33³ cubic 插值。
 13. 每通道独立输入 `minimum/maximum` 与真实源 `linspace`，严格按用户指定 LUT steps/revision 构造单独 Prepared，不使用已过期缓存；明确要求 revision，换胶片/相纸/调整参数必须构造新对象，完整光学 Float64 路线**永远不会隐式降级到 LUT**。
 14. 原版代码 `prepare_lut_pchip_3d` 在 size=1 时提前执行单调性检查，`np.max(np.diff(...))` 抛 `ValueError`；iOS PCHIP 保留该失败语义，不能擅自当常量处理。原版单像素 Mitchell 1-node 返回常量；原版 1-node 图像批处理另待单独验证。
-15. `OriginalSourcePixelIO` 尚未提供可从现有 UI 控制的原版 PCHIP 快速预览入口；本次完成的是原版数学实现和可重用 Prepared，未变更既有 `FilmLUT` 用户导入兼容路径。
+15. `Build90OriginalLUTCache.swift`：48 MiB 上限、数值/三轴 domain/revision 全量比对、2 次锁检测防并行重复插入、失效释放缓存，改变胶片/相纸参数不会命中旧样本；超出预算明确报错，不降 LUT resolution。
+16. `OriginalSourcePixelIO.applyOriginalSourceLUTPreview` 已提供严格 16MP 输入尺寸、CPU Float64 原版 LUT/缓存选择的完整 RGB 图像快速预览 API，但**尚未添加独立的 SwiftUI 选择项**；既有 `FilmLUT` 导入/相册导出交互不变。
 
 ## 实测证据
 
 - [真实 pinned Python OIIO AST 960 通道 vs Swift](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43688207358)：**PASS**，8 个格式/位深组合、40 组三通道样本（包含负值、超白、边界），整数相等和 Float32 位流完全相等；并不代替实际文件编码。
-- [原版 Numba PCHIP/Mitchell 672 通道 vs Swift](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43688545971)：**PASS**。8 原版 LUT（1/2/5/7 点、含非单调），PCHIP 最大误差 `3.219646771412954e-15`，Mitchell 最大误差 `4.440892098500626e-15`，上限 `4e-12`；源 1-node PCHIP ValueError 单独验证，不计入 672 有效通道。
+- [原版 Numba PCHIP/Mitchell 672 通道与缓存失效 vs Swift](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43689375517)：**PASS**。8 原版 LUT（1/2/5/7 点、含非单调），PCHIP 最大误差 `3.219646771412954e-15`，Mitchell 最大误差 `4.440892098500626e-15`，上限 `4e-12`；源 1-node PCHIP ValueError 单独验证，不计入 672 有效通道。
 - [8 个原版 ICC 真实 macOS ImageIO 文件](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/43689053728)：**PASS**。sRGB JPEG、PNG、TIFF8、TIFF16、TIFF32，Display P3 编码 PNG，BT.2020 编码/线性 TIFF16。**实际文件 ICC bytes、CGImageSource 回读尺寸与真实 bitsPerComponent**一致。缺少 P3 线性 ICC/EXR 实际编码显式失败。
 - 总计本批纯数值通道 `960+672=1632`，磁盘文件 8。此为原版抽样输入证明，不等于 1632 张 12MP 真机整幅图。
 
