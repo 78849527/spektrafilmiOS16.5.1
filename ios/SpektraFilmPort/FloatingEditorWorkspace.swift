@@ -24,6 +24,7 @@ struct FloatingEditorWorkspace: View {
     let onRefresh: () -> Void
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
+    let onRunBuild103Metrics: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -810,6 +811,18 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
                     Text("使用已打包的 Build92 Python 原版参考图，让当前设备实际运行 Swift 冲印处理链并比较。PASS 仅代表受控样本，不代表完整原版、默认随机数、RAW 或高位深全链认证。无论通过或失败都生成本机 JSON 证据。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild103Metrics()
+                    } label: {
+                        Label("Build103：28 阶段误差、受控颗粒与实际内存报告",
+                              systemImage:"chart.xyaxis.line")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("重新执行 4 组原版 Python 图的 28 个核心 Float64 阶段，保存每阶段 MAE／RMSE／最大误差与首错；另测固定种子单线程 Numba 统计和 8 MiB 实际触页。未验证多线程默认 RNG、13MP 整图、RAW／ICC。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
