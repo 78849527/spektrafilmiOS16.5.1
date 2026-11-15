@@ -868,12 +868,30 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     func loadLUTFile(_ url: URL) {
+        guard !busy else {
+            status="当前正在处理，LUT 导入未开始；原编辑保持不变"
+            return
+        }
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
             let importedLUT = try FilmLUT.read(text: text,
                 filename: url.deletingPathExtension().lastPathComponent)
+            // The old implementation changed six active processing toggles
+            // before proving the imported LUT could preview correctly.
+            // Treat the import as a transaction: all previous values recover
+            // if refreshing the replacement fails.
+            let previousLUT=lut
+            let previousGrain=densityGrainStage
+            let previousDIR=spatialDIRStage
+            let previousDIREnabled=spatialDIREnabled
+            let previousGrainEnabled=grainEnabled
+            let previousSublayers=grainSublayersEnabled
+            let previousDiscrete=grainDiscreteParticlesEnabled
+            let previousMetal=grainOriginalMetalEnabled
+            let previousSciPy=grainOriginalSciPyEnabled
+            let previousPreview=processedPreview
             invalidateSimulation()
             densityGrainStage = nil
             spatialDIRStage = nil
@@ -884,8 +902,23 @@ final class PhotoEditorModel: ObservableObject {
             grainOriginalMetalEnabled = false
             grainOriginalSciPyEnabled = false
             lut = importedLUT
-            busy = false
-            try refresh()
+            do {
+                try refresh()
+            } catch {
+                invalidateSimulation()
+                originalMetalPreviewVersion &+= 1
+                lut=previousLUT
+                densityGrainStage=previousGrain
+                spatialDIRStage=previousDIR
+                spatialDIREnabled=previousDIREnabled
+                grainEnabled=previousGrainEnabled
+                grainSublayersEnabled=previousSublayers
+                grainDiscreteParticlesEnabled=previousDiscrete
+                grainOriginalMetalEnabled=previousMetal
+                grainOriginalSciPyEnabled=previousSciPy
+                processedPreview=previousPreview
+                throw error
+            }
         } catch {
             status = "LUT 导入失败：" + error.localizedDescription
         }
