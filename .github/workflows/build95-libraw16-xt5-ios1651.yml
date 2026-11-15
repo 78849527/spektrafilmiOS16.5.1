@@ -90,7 +90,7 @@ jobs:
             --fixtures ios/verification/generated-physical-v1.8.22 \
             --out /tmp/build92-real-source-48-stage-tapes.json
           test -s /tmp/build92-real-source-48-stage-tapes.json
-      - name: Validate Build95 real 16-bit RGB48 LibRaw and prior GUI regressions
+      - name: Validate Build95 explicit 8/16bit LibRaw behavior and prior GUI regressions
         run: |
           python ios/scripts/build95_raw16_gui_audit.py \
             /tmp/build92-native-ui-static.json
