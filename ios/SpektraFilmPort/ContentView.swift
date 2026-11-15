@@ -1038,6 +1038,21 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // Build89 native true per-pixel original CAM16-UCS:
+                // source default 64x720 Cmax / 18 bisections, not 33³.
+                // Production append-only diagnostic does NOT add to 8/8.
+                do {
+                    let gamut=try Build89OutputGamutProductionDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build89 原版 CAM16-UCS 全链路／输出线性及 CCTF｜生产自检】\n" +
+                        gamut
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build89 原版逐像素色域输出｜失败／未认证】\n" +
+                        error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
