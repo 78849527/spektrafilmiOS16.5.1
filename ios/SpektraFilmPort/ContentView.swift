@@ -1053,6 +1053,21 @@ final class PhotoEditorModel: ObservableObject {
                         error.localizedDescription
                     )
                 }
+                // Build91 (#42–44) app dry-run source memory matrix.
+                // Never allocate a 13MP image for a diagnostic appendix.
+                // The Metal cache COUNTER is not new GPU source parity.
+                do {
+                    let memory=try Build91MemoryProductionDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build91 CPU Double FFT／原版内存安全预算与 Metal 缓存｜预检未做真机大图】\n" +
+                        memory
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build91 原版 FFT 内存／GPU 缓存检查｜失败／未认证】\n" +
+                        error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
