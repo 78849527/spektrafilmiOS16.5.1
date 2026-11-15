@@ -8,7 +8,7 @@ import Foundation
 /// per-pixel appearance model; 33^3 Float32 LUT is never called here.
 ///
 /// Oklch and Oklrab use the source Colour Float64 Oklab (not a 3D
-/// lookup). JzAzBz remains fail closed pending its separate PQ model.
+/// lookup). JzAzBz now uses source Safdar2017 ST2084 PQ in CPU Float64.
 enum Build89OriginalOutputGamut {
     enum Failure:LocalizedError {
         case invalid(String)
@@ -62,13 +62,8 @@ enum Build89OriginalOutputGamut {
             try knee.validate()
             try lightness?.validate()
             switch algorithm {
-            case .off,.acesRGC,.cam16UCS,.oklch,.oklrab:break
-            case .jzazbz:
-                throw Failure.invalid(
-                    "原版输出色域算法 \(algorithm.rawValue) " +
-                    "尚未通过源 Float64 Cmax/感知变换对照；" +
-                    "不能用 CAM16 33³ LUT 或 ACES 静默替代"
-                )
+            case .off,.acesRGC,.cam16UCS,.oklch,.oklrab,.jzazbz:
+                break
             }
             guard GeneratedScannerReference.sourceOutputWhiteXYZ[
                 outputSpace.rawValue
@@ -141,8 +136,9 @@ enum Build89OriginalOutputGamut {
                 knee:settings.knee,lightness:settings.lightness
             )
         case .jzazbz:
-            throw Failure.invalid(
-                "jzazbz 源 PQ + Cmax 未通过单独 Float64 测试，禁止近似替代"
+            return try Build89bOriginalJzAzBz.compress(
+                rgb,space:settings.outputSpace.rawValue,
+                knee:settings.knee,lightness:settings.lightness
             )
         }
     }
