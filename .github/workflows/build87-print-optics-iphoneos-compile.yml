@@ -96,6 +96,15 @@ jobs:
             --output ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
           test -s ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+      - name: Verify final Build87 source audit and all production entry points
+        run: |
+          test -s docs/BUILD87-PRINT-OPTICS-REFERENCE-29-34-BULK.md
+          test -s ios/SpektraFilmPort/Build87OriginalColorReference.swift
+          test -s ios/SpektraFilmPort/Build87PrintScanProductionDiagnostic.swift
+          test -s ios/SpektraFilmPort/OriginalPrintMorph.swift
+          test -s ios/SpektraFilmPort/OriginalSourceDiffusion.swift
+          test -s ios/SpektraFilmPort/OriginalPrintOptics.swift
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
       - name: Generate Xcode project and compile all merged native modules ONCE
         run: |
           brew install xcodegen
