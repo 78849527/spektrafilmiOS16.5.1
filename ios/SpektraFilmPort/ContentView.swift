@@ -1069,17 +1069,25 @@ final class PhotoEditorModel: ObservableObject {
             status = lut == nil ? "请先导入照片。" : "LUT 已导入，请选择照片。"
             return
         }
-        try requireConfiguredGrain()
-        if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
-            guard grainSublayersEnabled, densityGrainStage != nil,
-                  lut != nil else {
-                throw ImageProcessingError.invalid(
-                    "原版 Metal 显影缺少实测亚层或光谱输入，禁止降级为快速 LUT"
-                )
-            }
-        }
+        // Invalidate all previous in-flight previews BEFORE any guard
+        // can fail. Otherwise a stale completed task might overwrite a
+        // newer error or the previously restored editing session.
         originalMetalPreviewVersion &+= 1
         let revision = originalMetalPreviewVersion
+        do {
+            try requireConfiguredGrain()
+            if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
+                guard grainSublayersEnabled, densityGrainStage != nil,
+                      lut != nil else {
+                    throw ImageProcessingError.invalid(
+                        "原版 Metal 显影缺少实测亚层或光谱输入，禁止降级为快速 LUT"
+                    )
+                }
+            }
+        } catch {
+            processedPreview=nil
+            throw error
+        }
         if sourcePixelIOEnabled {
             // A refused precision request must never leave an earlier,
             // potentially half-quantized preview looking like its result.
@@ -1154,6 +1162,7 @@ final class PhotoEditorModel: ObservableObject {
                     await MainActor.run {
                         guard revision == self.originalMetalPreviewVersion
                         else { return }
+                        self.processedPreview=nil
                         self.status = "原版 Metal 显影失败（未退回快速模式）：" +
                             error.localizedDescription
                     }
@@ -1190,6 +1199,7 @@ final class PhotoEditorModel: ObservableObject {
                 } catch {
                     await MainActor.run {
                         guard revision==self.originalMetalPreviewVersion else {return}
+                        self.processedPreview=nil
                         self.status="原版空间 DIR 失败（没有降级 CI 近似）：" +
                             error.localizedDescription
                     }
