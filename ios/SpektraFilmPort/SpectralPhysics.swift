@@ -1548,6 +1548,23 @@ struct SpectralPhysics {
         return SourceSpatialInput(rawLog:logE,initialDensity:initial)
     }
 
+    /// Source DirCouplersParams.active=false: return initial film H-D density;
+    /// never use a corrected-before-DIR H-D curve when couplers are inactive.
+    func sourceSpatialDevelopInitialLog(
+        _ logRaw:[Double]
+    ) throws -> [Double] {
+        guard logRaw.count == 3, logRaw.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版非 DIR H-D 曝光无效")
+        }
+        let density = (0..<3).map {
+            film.curve(logRaw[$0],channel:$0)
+        }
+        guard density.allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("原版非 DIR H-D 输出非有限")
+        }
+        return density
+    }
+
     func sourceSpatialDevelopCorrectedLog(
         _ logRaw: [Double]
     ) throws -> [Double] {
