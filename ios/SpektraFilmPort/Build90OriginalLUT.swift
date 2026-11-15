@@ -316,9 +316,10 @@ enum Build90OriginalLUT {
         _ m0:Double,_ m1:Double,_ t:Double
     )->Double {
         let t2=t*t,t3=t2*t
-        return (2*t3-3*t2+1)*y0+
-               (t3-2*t2+t)*m0+
-               (-2*t3+3*t2)*y1+
-               (t3-t2)*m1
+        let h00=2*t3-3*t2+1
+        let h10=t3-2*t2+t
+        let h01 = -2*t3+3*t2
+        let h11=t3-t2
+        return (h00*y0+h10*m0)+(h01*y1+h11*m1)
     }
 }
