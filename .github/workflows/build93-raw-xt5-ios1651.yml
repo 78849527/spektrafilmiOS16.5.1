@@ -90,7 +90,7 @@ jobs:
             --fixtures ios/verification/generated-physical-v1.8.22 \
             --out /tmp/build92-real-source-48-stage-tapes.json
           test -s /tmp/build92-real-source-48-stage-tapes.json
-      - name: Validate Build93 RAW import and 21 iOS16.5.1 UI invariants
+      - name: Validate Build93 RAW actual-code audit and 21 iOS16.5.1 UI invariants
         run: |
           python ios/scripts/build93_raw_gui_audit.py \
             /tmp/build92-native-ui-static.json
