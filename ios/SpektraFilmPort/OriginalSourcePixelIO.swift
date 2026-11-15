@@ -312,6 +312,29 @@ enum OriginalSourcePixelIO {
         return Frame(width:frame.width,height:frame.height,rgb:pixels)
     }
 
+    /// Build90 explicit *quick* preview via source CPU Float64
+    /// PCHIP/Mitchell, called ONLY when the user selects a LUT path.
+    /// It is not the default spectral camera/film/paper physics mode;
+    /// the latter never silently routes through a 33³ RGB cube.
+    static func applyOriginalSourceLUTPreview(
+        _ frame:Frame,
+        prepared:Build90OriginalLUT.Prepared,
+        method:Build90OriginalLUT.Method = .pchip
+    ) throws->Frame {
+        guard frame.width>0,frame.height>0,
+              frame.width<=8192,frame.height<=8192,
+              frame.width<=16_000_000/frame.height,
+              frame.rgb.count==frame.width*frame.height*3 else {
+            throw Failure.invalid(
+                "Build90 源 LUT 快速预览尺寸／通道无效，不改变原全光学模式"
+            )
+        }
+        return Frame(
+            width:frame.width,height:frame.height,
+            rgb:try prepared.applyImage(frame.rgb,method:method)
+        )
+    }
+
     /// 8-bit display encoding is explicit and unavoidable for JPEG.
     /// No Core Image interpolation or internal Float16 intermediate.
     static func displayImage(_ frame: Frame) throws -> CGImage {
