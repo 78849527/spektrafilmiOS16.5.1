@@ -532,9 +532,9 @@ final class PhotoEditorModel: ObservableObject {
                 originalPreview=decoded.1
                 processedPreview=decoded.1
                 rawFastModeActive=true
-                photoDimensions="\\(decoded.0.width) × \\(decoded.0.height) · RAW Apple 兼容模式"
+                photoDimensions="\(decoded.0.width) × \(decoded.0.height) · RAW Apple 兼容模式"
                 try refresh()
-                status="已用 Apple RAW 真实解码 .\\(decoded.0.format.rawValue.uppercased())；" +
+                status="已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；" +
                     "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
                     "不是 Python rawpy 原版数值等价。"
             } catch {
