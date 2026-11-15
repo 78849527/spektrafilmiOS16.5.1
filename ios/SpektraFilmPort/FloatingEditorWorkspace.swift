@@ -96,6 +96,7 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
+    @MainActor
     private struct FastSettingsSnapshot {
         let strength: Double
         let grain: Bool
