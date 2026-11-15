@@ -77,6 +77,18 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
                 @"LibRaw 源图超出目前 4500 万像素解码上限；原始 RAF 已保留");
             break;
         }
+        // Conservative pre-unpack memory admission gate. 40MP/16-bit
+        // estimates 1216MB; a failed admission NEVER silently switches to
+        // 8-bit or to the RAF embedded JPEG.
+        const uint64_t pixels = w * h;
+        const uint64_t estimatedBytes =
+            pixels * (bits == 16 ? 28ull : 18ull) + 96000000ull;
+        if (estimatedBytes > 1400000000ull) {
+            SFBuild94Fail(error, 7, [NSString stringWithFormat:
+                @"LibRaw %@-bit 估算内存 %.0f MB 超过 1400 MB 上限；原始 RAF 保留",
+                @(bits), (double)estimatedBytes / 1000000.0]);
+            break;
+        }
         // Explicit LibRaw output precision. This is LibRaw's post-demosaic
         // sRGB curve, NOT the source rawpy/ACES Float64 sensor input.
         // UInt16 output is native-endian on iPhoneOS arm64 (little-endian).
