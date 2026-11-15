@@ -54,6 +54,10 @@ def main(destination):
             for black,white in ((False,False),(True,False),
                                 (False,True),(True,True)):
                 obj=cls.__new__(cls)
+                obj._scan_film=False
+                obj._film=types.SimpleNamespace(
+                    info=types.SimpleNamespace(type="negative")
+                )
                 obj._black_correction=black
                 obj._white_correction=white
                 obj._black_level=decode(0.01)
