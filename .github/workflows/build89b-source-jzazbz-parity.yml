@@ -1,0 +1,58 @@
+name: Build89b original JzAzBz Safdar2017 PQ full gamut parity
+
+on:
+  push:
+    branches:
+      - 'port/build89b-perceptual-output-oklch-oklrab-jzazbz'
+    paths:
+      - 'ios/SpektraFilmPort/Build89bOriginalJzAzBz.swift'
+      - 'ios/scripts/build89b_original_jzazbz_oracle.py'
+      - 'ios/scripts/generate_scanner_reference.py'
+      - 'ios/tests/Build89bOriginalJzAzBzValidation.swift'
+      - '.github/workflows/build89b-source-jzazbz-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  true-source-jzazbz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install original source spectral maths and Colour v0.4.6
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.4.0' 'scipy==1.16.3' \
+            'colour-science==0.4.6' 'matplotlib==3.10.8'
+      - name: Generate original Colour Jz PQ source matrices
+        run: |
+          git rev-parse HEAD
+          python ios/scripts/generate_scanner_reference.py
+          grep -q 'sourceJzXYZToLMS' \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift
+      - name: Execute original Python Jz Safdar2017 64x720x18 Cmax
+        run: |
+          python ios/scripts/build89b_original_jzazbz_oracle.py \
+            /tmp/build89b-source-jzazbz.json
+          test -s /tmp/build89b-source-jzazbz.json
+      - name: Parse full App and compile actual Swift Jz PQ source
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/Build89OriginalCAM16.swift \
+            ios/SpektraFilmPort/Build89bOriginalOklabGamut.swift \
+            ios/SpektraFilmPort/Build89bOriginalJzAzBz.swift \
+            ios/SpektraFilmPort/Build89OriginalOutputGamut.swift \
+            ios/tests/Build89bOriginalJzAzBzValidation.swift \
+            -o /tmp/Build89bJzAzBz
+          /tmp/Build89bJzAzBz /tmp/build89b-source-jzazbz.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build89b-pinned-original-72-jzazbz-pq-source
+          path: /tmp/build89b-source-jzazbz.json
