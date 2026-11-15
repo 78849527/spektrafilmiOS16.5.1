@@ -994,6 +994,20 @@ final class PhotoEditorModel: ObservableObject {
                         + error.localizedDescription
                     )
                 }
+                // Build86: real production dynamic DIR + two original
+                // grain paths, including a continuous Numba worker state.
+                // Diagnostic appendix only, never counted in 8/8 Metal.
+                do {
+                    let bulk = try Build86BulkProductionPathDiagnostic.evaluate()
+                    checks.append(
+                        "附录【Build86 胶片 DIR／SciPy／Numba 真实冲印链自检】\n" + bulk
+                    )
+                } catch {
+                    checks.append(
+                        "附录【Build86 胶片 DIR／SciPy／Numba 自检失败／未认证】\n" +
+                        error.localizedDescription
+                    )
+                }
                 // Stage-specific RGB evidence is NOT an 9th certified
                 // item. Explicitly preserve failures and measured drift.
                 do {
