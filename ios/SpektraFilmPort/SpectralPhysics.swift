@@ -1434,6 +1434,38 @@ struct SpectralPhysics {
         )
     }
 
+    /// Original 256-node measured film H-D data for custom DIR chemistry.
+    /// Fails rather than silently reading compact mobile Float32 profiles.
+    func sourceSpatialMeasuredHDCurves() throws -> (
+        logExposure:[Double],normalizedDensityCurves:[Double],
+        densityMaximum:[Double]
+    ) {
+        guard useOriginalScanner,
+              film.sourceDensityCurvesF64 != nil,
+              film.sourceLogExposureF64 != nil else {
+            throw PhysicsError.invalid(
+                "自定义 DIR 要求全部 Float64 原版实测胶片 H-D 曲线"
+            )
+        }
+        let axis=(0..<256).map {
+            film.sourceLogExposureF64![$0]
+        }
+        let curves=(0..<256).flatMap { i in
+            (0..<3).map { ch in
+                film.densityAt(i*3+ch)-film.minimumDensity[ch]
+            }
+        }
+        let maximum=(0..<3).map { ch in
+            (0..<256).reduce(-Double.infinity) {
+                max($0,curves[$1*3+ch])
+            }
+        }
+        guard (axis+curves+maximum).allSatisfy({ $0.isFinite }) else {
+            throw PhysicsError.invalid("源 H-D 数值含 NaN/Inf，禁止降精度")
+        }
+        return (axis,curves,maximum)
+    }
+
     func sourceSpatialFilmParameters() throws -> SourceSpatialFilmParams {
         guard useOriginalScanner && !useReferenceBlackWhite &&
               !defaultCAM16Gamut,
