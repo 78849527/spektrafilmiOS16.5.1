@@ -21,7 +21,7 @@ enum OriginalPrintMorph {
         }
         var valid: Bool {
             [gamma,fast,slow,red,green,blue].allSatisfy({
-                $0.isFinite && $0 > 0.0 && $0 <= 3.0
+                $0.isFinite && $0 > 0.0
             }) && developerExhaustion.isFinite &&
                 (0...1).contains(developerExhaustion)
         }
