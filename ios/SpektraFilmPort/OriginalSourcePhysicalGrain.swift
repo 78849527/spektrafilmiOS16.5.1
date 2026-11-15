@@ -25,6 +25,14 @@ enum OriginalSourcePhysicalGrain {
     struct Settings {
         var active = false
         var particleAreaUM2 = 0.2
+        /// Original grain.sublayers_active=false uses
+        /// apply_grain_to_density; default preserves 3×3 measured emulsion.
+        var sublayersActive = true
+        var nSubLayers = 1
+        /// One explicitly seeded Numba worker, not source prange parity.
+        /// The default keeps SciPy RandomState layer sampling unchanged.
+        var useFastStats = false
+        var fastStatsSeed: UInt32? = nil
         var particleScale: [Double] = [1.6,1.6,3.2]
         var sublayerScale: [Double] = [2.0,1.0,0.5]
         var densityMin: [Double] = [0.03,0.03,0.03]
@@ -47,11 +55,19 @@ enum OriginalSourcePhysicalGrain {
                   grainBlur.isFinite,grainBlur>=0,
                   dyeCloudBlurUM.isFinite,dyeCloudBlurUM>=0,
                   microstructureUM.isFinite,microstructureUM>=0,
-                  microstructureNM.isFinite,microstructureNM>=0 else {
+                  microstructureNM.isFinite,microstructureNM>=0,
+                  nSubLayers>=1,nSubLayers<=128 else {
                 throw Failure.invalid("源颗粒参数必须严格使用合法的原版数量、面积、模糊及 3×3 亚层")
             }
-            if active && numbaSeed == nil {
+            if active && sublayersActive && numbaSeed == nil {
                 throw Failure.invalid("原版颗粒受控 Numba RNG 需要显式固定种子，不允许自动近似")
+            }
+            if active && useFastStats {
+                guard sublayersActive, fastStatsSeed != nil else {
+                    throw Failure.invalid(
+                        "原版单层颗粒只执行 SciPy；三亚层 Numba fast_stats 需显式单线程种子"
+                    )
+                }
             }
         }
     }
@@ -156,6 +172,10 @@ enum OriginalSourcePhysicalGrain {
         var saturations=[Double](repeating:0,count:pixels)
         var cloud=settings.dyeCloudBlurUM>0
             ? [Double](repeating:0,count:pixels*3) : []
+        var controlledFastSampler:OriginalSourceNumbaFastCounts? =
+            settings.useFastStats
+                ? OriginalSourceNumbaFastCounts(seed:settings.fastStatsSeed!)
+                : nil
         for ch in 0..<3 {
             for sl in 0..<3 {
                 let li=sl*3+ch
@@ -168,10 +188,20 @@ enum OriginalSourcePhysicalGrain {
                     saturations[p]=saturation
                     rates[p]=n/saturation
                 }
-                let counts=try OriginalSourceSciPySampler.drawLayer(
-                    rates:rates,probabilities:probabilities,
-                    seed:UInt32(ch+sl*10)
-                )
+                let counts:[Int64]
+                if settings.useFastStats {
+                    // Numba state is independent of NumPy seed(ch+10*sl).
+                    // One explicit persistent worker across all 9 layers.
+                    let draw=try controlledFastSampler!.runOriginalTwoPhase(
+                        rates:rates,probabilities:probabilities
+                    )
+                    counts=draw.binomial
+                } else {
+                    counts=try OriginalSourceSciPySampler.drawLayer(
+                        rates:rates,probabilities:probabilities,
+                        seed:UInt32(ch+sl*10)
+                    )
+                }
                 // dye-cloud blur_particle in grain.py deliberately passes
                 // blur_dye_clouds_um WITHOUT dividing by pixelUM, then
                 // multiplies sqrt(optical density per particle).
@@ -235,5 +265,79 @@ enum OriginalSourcePhysicalGrain {
         }
         stageObserver?("sourceGrainFinalDensity",out)
         return out
+    }
+
+    /// Source grain.py::apply_grain_to_density, selected when
+    /// grain.sublayers_active=false. This is NOT the measured 3x3 path.
+    /// Keep each channel/sub-layer SciPy seed equal to ch+10*sublayer.
+    static func applySingleLayer(
+        _ densityCMY:[Double],width:Int,height:Int,
+        pixelUM:Double,maximum:[Double],settings:Settings,
+        stageObserver:((String,[Double])->Void)?=nil
+    ) throws -> [Double] {
+        try settings.validate()
+        guard settings.active,!settings.sublayersActive,
+              !settings.useFastStats,
+              width>0,height>0,width<=Int.max/height/3,
+              densityCMY.count==width*height*3,
+              densityCMY.allSatisfy({ $0.isFinite }),
+              pixelUM.isFinite,pixelUM>0,
+              maximum.count==3,maximum.allSatisfy({$0.isFinite && $0>0})
+        else {
+            throw Failure.invalid("源单层颗粒需要完整 Float64 胶片 H-D 和 SciPy RandomState")
+        }
+        let pixels=width*height
+        var result=[Double](repeating:0,count:densityCMY.count)
+        var rates=[Double](repeating:0,count:pixels)
+        var probabilities=[Double](repeating:0,count:pixels)
+        var saturations=[Double](repeating:0,count:pixels)
+        for ch in 0..<3 {
+            let totalMax=maximum[ch]+settings.densityMin[ch]
+            let n=Double(pixelUM*pixelUM) /
+                (settings.particleAreaUM2*settings.particleScale[ch]) /
+                Double(settings.nSubLayers)
+            let opticalParticle=totalMax/n
+            guard totalMax.isFinite,totalMax>0,n.isFinite,n>0,
+                  opticalParticle.isFinite else {
+                throw Failure.invalid("原版单层颗粒数量或密度溢出")
+            }
+            for layer in 0..<settings.nSubLayers {
+                for p in 0..<pixels {
+                    let density=densityCMY[p*3+ch]+settings.densityMin[ch]
+                    let probability=min(1.0-1e-6,max(1e-6,density/totalMax))
+                    let saturation=1-probability*settings.uniformity[ch]*(1-1e-6)
+                    probabilities[p]=probability
+                    saturations[p]=saturation
+                    rates[p]=n/saturation
+                }
+                let counts=try OriginalSourceSciPySampler.drawLayer(
+                    rates:rates,probabilities:probabilities,
+                    seed:UInt32(ch+layer*10)
+                )
+                for p in 0..<pixels {
+                    result[p*3+ch] +=
+                        Double(counts[p])*opticalParticle*saturations[p]
+                }
+            }
+            for p in 0..<pixels {
+                result[p*3+ch] =
+                    result[p*3+ch]/Double(settings.nSubLayers) -
+                    settings.densityMin[ch]
+            }
+        }
+        stageObserver?("sourceGrainSingleLayer",result)
+        // The single-layer upstream uses grain_blur > 0.4. The 3x3
+        // grain.py path uses > 0.0: never conflate the two boundaries.
+        if settings.grainBlur>0.4 {
+            result=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
+                result,width:width,height:height,
+                coreSigma:settings.grainBlur,tailSigma:0,tailWeight:0
+            )
+        }
+        guard result.allSatisfy({ $0.isFinite }) else {
+            throw Failure.invalid("原版单层颗粒输出 NaN/Inf")
+        }
+        stageObserver?("sourceGrainFinalDensity",result)
+        return result
     }
 }
