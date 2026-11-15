@@ -112,6 +112,21 @@ def main():
     ):
         lines.append(f"    static let {swift_name}: [Double] = "
                      + fmt(source_matrix))
+    # Safdar 2017 original JzAzBz/PQ source matrices and exact
+    # NumPy inverse; source uses SDR 100 cd/m² before PQ (peak 10000).
+    from colour.models.jzazbz import (
+        MATRIX_JZAZBZ_XYZ_TO_LMS,MATRIX_JZAZBZ_LMS_TO_XYZ,
+        MATRIX_JZAZBZ_LMS_P_TO_IZAZBZ_SAFDAR2017,
+        MATRIX_JZAZBZ_IZAZBZ_TO_LMS_P_SAFDAR2017
+    )
+    for swift_name,source_matrix in (
+        ("sourceJzXYZToLMS",MATRIX_JZAZBZ_XYZ_TO_LMS),
+        ("sourceJzLMSToXYZ",MATRIX_JZAZBZ_LMS_TO_XYZ),
+        ("sourceJzLMSToIz",MATRIX_JZAZBZ_LMS_P_TO_IZAZBZ_SAFDAR2017),
+        ("sourceJzIzToLMS",MATRIX_JZAZBZ_IZAZBZ_TO_LMS_P_SAFDAR2017),
+    ):
+        lines.append(f"    static let {swift_name}: [Double] = "
+                     + fmt(source_matrix))
     # The original ScanningStage._apply_cctf_encoding calls
     # colour.RGB_to_RGB(sRGB,sRGB,decoding=False,encoding=True).
     # Its colourspace→same-colourspace 3x3 roundtrip is NOT bit-identity;
