@@ -1839,9 +1839,13 @@ final class PhotoEditorModel: ObservableObject {
             fullPhysicalMode:sourcePhysicalDirectEnabled &&
                              sourcePixelIOEnabled
         )
-        let documents=FileManager.default.urls(
+        guard let documents=FileManager.default.urls(
             for:.documentDirectory,in:.userDomainMask
-        ).first!
+        ).first else {
+            throw ImageProcessingError.invalid(
+                "无法定位本机文档目录，验收清单未写入"
+            )
+        }
         return try Build100Readiness.write(report,documents:documents)
     }
 
