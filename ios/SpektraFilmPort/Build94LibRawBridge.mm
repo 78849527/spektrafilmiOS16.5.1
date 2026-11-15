@@ -1,5 +1,11 @@
 #import "Build94LibRawBridge.h"
 #include "libraw/libraw.h"
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#include <os/proc.h>
+#endif
+#endif
 
 static NSString * const SFBuild94Domain = @"SpektraFilm.LibRaw.Build94";
 
@@ -89,6 +95,19 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
                 @(bits), (double)estimatedBytes / 1000000.0]);
             break;
         }
+        // Build96: genuine iPhoneOS process headroom admission BEFORE
+        // LibRaw allocates full X-Trans sensor, RGB, and temporary images.
+        // This is advisory; never promise jetsam-free 40MP processing.
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+        const uint64_t headroom = (uint64_t)os_proc_available_memory();
+        if (!headroom || estimatedBytes > (headroom / 100ull) * 70ull) {
+            SFBuild94Fail(error, 8, [NSString stringWithFormat:
+                @"LibRaw %@-bit: iPhone 当前可用内存 %.0f MB，预估需 %.0f MB；禁止在高风险内存下启动 RAW 解包；请换更空闲设备或在相机改小 RAW 规格",
+                @(bits), (double)headroom / 1000000.0,
+                (double)estimatedBytes / 1000000.0]);
+            break;
+        }
+#endif
         // Explicit LibRaw output precision. This is LibRaw's post-demosaic
         // sRGB curve, NOT the source rawpy/ACES Float64 sensor input.
         // UInt16 output is native-endian on iPhoneOS arm64 (little-endian).
