@@ -26,14 +26,14 @@ enum OriginalSourceScannerOptics {
             lensBlurSigma > 0 || (unsharpSigma > 0 && unsharpAmount > 0)
         }
         func validate() throws {
-            guard lensBlurSigma.isFinite,
-                  unsharpSigma.isFinite, unsharpAmount.isFinite,
-                  (0...50).contains(lensBlurSigma),
-                  (0...50).contains(unsharpSigma),
-                  (0...2).contains(unsharpAmount) else {
+            // Upstream scanning.py passes lens_blur and
+            // (unsharp_sigma, unsharp_amount) directly. Negative/zero
+            // sigmas and nonpositive amounts are NO-OP source branches.
+            // No ±50px or amount<=2 mathematical cap exists in Python.
+            guard lensBlurSigma.isFinite,unsharpSigma.isFinite,
+                  unsharpAmount.isFinite else {
                 throw Failure.invalid(
-                    "源扫描 Gaussian/Unsharp 参数无效或超过此实验版" +
-                    " sigma 50 像素与 amount 2 的保护范围"
+                    "原版扫描 Gaussian/Unsharp 参数非有限，拒绝静默截断"
                 )
             }
         }
