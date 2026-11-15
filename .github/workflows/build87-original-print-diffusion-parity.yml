@@ -1,0 +1,49 @@
+name: Build87 all four original 2D paper diffusion family FFT parity
+
+on:
+  push:
+    branches:
+      - 'port/build87-print-optics-reference-29-34-bulk'
+    paths:
+      - 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift'
+      - 'ios/scripts/build87_original_2d_print_diffusion_oracle.py'
+      - 'ios/tests/Build87PrintDiffusion108Parity.swift'
+      - '.github/workflows/build87-original-print-diffusion-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-fft-reflect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print exact original source SHA and native Swift
+        run: |
+          git rev-parse HEAD
+          swiftc --version
+      - name: Install original Python NumPy+SciPy FFT reference stack
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            'numpy==2.3.5' 'scipy==1.16.3'
+      - name: Execute original diffusion.py AST PSF/reflect/FFT (no reimplement)
+        run: |
+          python3 ios/scripts/build87_original_2d_print_diffusion_oracle.py \
+            /tmp/build87-source-print-fft.json
+          test -s /tmp/build87-source-print-fft.json
+      - name: Parse original complete Swift application
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Compile untouched native Double FFT and compare 108 whole images
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/tests/Build87PrintDiffusion108Parity.swift \
+            -o /tmp/Build87PrintDiffusion108
+          /tmp/Build87PrintDiffusion108 /tmp/build87-source-print-fft.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build87-original-four-diffusion-family-fullframe-108-fft-psf
+          path: /tmp/build87-source-print-fft.json
