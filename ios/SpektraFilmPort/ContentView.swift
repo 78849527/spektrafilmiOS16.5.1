@@ -262,6 +262,13 @@ final class PhotoEditorModel: ObservableObject {
         pendingRender?.cancel()
         renderGeneration &+= 1
         simulationAwaitingCurrentSettings=false
+        // When replacing a photo while an old non-cancellable source task
+        // is still running, its stale completion exits before the normal
+        // busy cleanup. Only release busy when THIS simulation owns it.
+        if activeSimulationGeneration != nil {
+            activeSimulationGeneration=nil
+            busy=false
+        }
     }
 
     private var source: CIImage?
@@ -1246,11 +1253,20 @@ final class PhotoEditorModel: ObservableObject {
             }
             return
         }
-        processedPreview = try PhotoProcessor.preview(
-            source, lut: lut, strength: strength, spatial: spatialSettings,
-            grain: grainSettings, scanner: scannerFinishSettings,
-            dirStage: spatialDIRStage, dirSettings: spatialDIRSettings
-        )
+        do {
+            processedPreview = try PhotoProcessor.preview(
+                source, lut: lut, strength: strength,
+                spatial: spatialSettings,
+                grain: grainSettings, scanner: scannerFinishSettings,
+                dirStage: spatialDIRStage,
+                dirSettings: spatialDIRSettings
+            )
+        } catch {
+            // Fail closed even on the synchronous mobile route. Do not
+            // leave yesterday's preview visible after changing sliders.
+            processedPreview=nil
+            throw error
+        }
         if let lut {
             status = "已应用 \(lut.title) · \(lut.dimension)³ LUT · \(photoDimensions)"
         } else {
