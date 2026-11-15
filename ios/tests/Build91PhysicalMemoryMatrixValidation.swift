@@ -89,8 +89,8 @@ enum Build91PhysicalMemoryMatrixValidation {
         }
         let grid=UInt64(fft.fftWidth)*UInt64(fft.fftHeight)
         let sourceGuard=grid*40+1_000_000*48
-        let exactScratch=grid*32+
-            UInt64(2*(fft.fftWidth+fft.fftHeight))*8
+        let rowColumn=UInt64(2*(fft.fftWidth+fft.fftHeight))*8
+        let exactScratch=grid*32+rowColumn
         guard fft.sourceFFTGuardBytes==sourceGuard,
               fft.actualScratchBytes==exactScratch else {
             throw Failure.invalid("Original fft2 work allocations mismatch")
