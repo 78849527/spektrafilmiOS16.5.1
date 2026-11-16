@@ -94,7 +94,7 @@ enum OriginalSourcePhysicalGrain {
     static let extraBytesPerPixel: UInt64 = 272
     /// Extra retained worker-local particle input/count copies at
     /// concurrency boundaries, over the existing seeded grain ledger.
-    static let unseededParallelExtraBytesPerPixel: UInt64 = 40
+    static let unseededParallelExtraBytesPerPixel: UInt64 = 56
 
     /// A sampled, fully measured source 3x3 film density profile.
     /// Ordering is [sublayer][CMY] and each layer uses the original
