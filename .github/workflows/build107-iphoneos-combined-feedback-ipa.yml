@@ -1,3 +1,4 @@
+# Build107 CI rerun: preserve all historical static GUI regression assertions while using exact current Build107 1.8.73/107 identity.
 # Build107: same-source Build106 memory lifecycle + Build107 bounded RSS; single LOG+JSON truth-telling release.
 # Build107-HF: source grain conditional missing-seed diagnostic hotfix; original algorithms unchanged.
 # Build104 retry: fix diagnostic Swift multiline infix source parser error, verified with swiftc -frontend -parse.
