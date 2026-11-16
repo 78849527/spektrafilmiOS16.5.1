@@ -1,3 +1,4 @@
+# Build111 fix: ship compatibility changes via the existing Build110 release branch, no extra release branch.
 # Build111 fast fail: real tagged P3/JPEG ColorSync fixture executes before original source generation.
 # Build111 Swift parser fix: use one interpolated accessibility label, preserving iOS16.5.1 behavior.
 # Build111 release source after preserving original Build78 16-bit PNG/TIFF and Float TIFF inputs.
@@ -17,7 +18,7 @@ name: Build111 photo input P3/ICC consent ColorSync plus four-gamut real-device 
 on:
   push:
     branches:
-      - 'release/build111-photo-input-color-profile-ios1651'
+      - 'release/build110-gamut-real-device-four-modes-ios1651'
     paths:
       # Batch only: source-file commits must NOT start another Xcode build.
       # Re-run explicitly via workflow_dispatch after multi-module changes.
@@ -533,7 +534,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BRANCH=release/build111-photo-input-color-profile-ios1651
+          BRANCH=release/build110-gamut-real-device-four-modes-ios1651
           TAG=ios1651-v1.8.77-build111-input-profile-p3-colorsync-UNSIGNED-UNVERIFIED
           HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
           if [ "$HEAD" != "$GITHUB_SHA" ]; then
