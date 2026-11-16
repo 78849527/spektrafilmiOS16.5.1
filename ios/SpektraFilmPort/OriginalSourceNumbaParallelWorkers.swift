@@ -68,8 +68,7 @@ final class OriginalSourceNumbaParallelWorkers {
     }
 
     private func interval(_ worker:Int,count:Int)->Range<Int> {
-        let start=(count/workerCount)*worker+
-            min(worker,count%workerCount)
+        let start = (count / workerCount) * worker + min(worker, count % workerCount)
         let size=count/workerCount+(worker<count%workerCount ? 1 : 0)
         return start..<(start+size)
     }
