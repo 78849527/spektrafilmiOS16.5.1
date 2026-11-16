@@ -346,6 +346,148 @@ enum SourceSpatialDIRConvolution {
         return result
     }
 
+    /// Build114 memory-only rearrangement of the same reflect FIR/YVV:
+    /// channel-independent processing uses one input plane + two shared
+    /// work planes + one accumulator, then overwrites its original RGB
+    /// channel. The pass order and Double operations per pixel are unchanged.
+    /// At 13MP this removes one separate 3-channel Double result array,
+    /// while retaining the original full-frame boundary conditions.
+    /// Actual RSS/Jetsam must still be certified on iPhone 16.5.1.
+    static func diffuseInPlaceMemoryBounded(
+        _ input:inout [Double], width:Int,height:Int,
+        coreSigma:Double,tailSigma:Double,tailWeight:Double,
+        coreSigmaRGB:[Double]?=nil,tailSigmaRGB:[Double]?=nil
+    ) throws {
+        try requireValid(input,width:width,height:height,sigma:coreSigma)
+        for vector in [coreSigmaRGB,tailSigmaRGB] {
+            if let vector {
+                guard vector.count==3,
+                      vector.allSatisfy({$0.isFinite && $0>=0}) else {
+                    throw Failure.invalid("原版每通道 FIR/YVV sigma 必须为三个非负 Double")
+                }
+            }
+        }
+        guard tailSigma.isFinite,tailSigma>=0,
+              tailWeight.isFinite,(0...1).contains(tailWeight) else {
+            throw Failure.invalid("原版 DIR 流式扩散尾部参数无效")
+        }
+        let pixels=width*height
+        var intermediate=[Double](repeating:0,count:pixels)
+        var filtered=[Double](repeating:0,count:pixels)
+        // No RGB result array. One channel's original input is kept until
+        // all four Gaussian passes have consumed it, then written back.
+        var channelSource=[Double](repeating:0,count:pixels)
+        var accumulated=[Double](repeating:0,count:pixels)
+
+        func gaussianChannel(_ channel:Int,sigma:Double) {
+            if sigma <= 0 {
+                for p in 0..<pixels {
+                    filtered[p]=channelSource[p]
+                }
+                return
+            }
+            if sigma < 3.0 {
+                // Original fast_gaussian_filter.py: reflect FIR in vertical,
+                // then horizontal order, Gaussian truncated to 3 sigma.
+                let kernel=weights(sigma)
+                let radius=(kernel.count-1)/2
+                for y in 0..<height {
+                    for x in 0..<width {
+                        var sum=0.0
+                        for k in -radius...radius {
+                            let yy=reflect(y+k,height)
+                            sum+=channelSource[yy*width+x] *
+                                kernel[k+radius]
+                        }
+                        intermediate[y*width+x]=sum
+                    }
+                }
+                for y in 0..<height {
+                    for x in 0..<width {
+                        var sum=0.0
+                        for k in -radius...radius {
+                            let xx=reflect(x+k,width)
+                            sum+=intermediate[y*width+xx]*kernel[k+radius]
+                        }
+                        filtered[y*width+x]=sum
+                    }
+                }
+                return
+            }
+            // Same Young-van Vliet B/B1/B2/B3 source Double coefficients
+            // and replicated-edge initial states as the original yvv().
+            let (B,B1,B2,B3)=yvvCoefficients(sigma:sigma)
+            for y in 0..<height {
+                var s1=channelSource[y*width]
+                var s2=s1,s3=s1
+                for x in 0..<width {
+                    let p=y*width+x
+                    let v=B*channelSource[p]+B1*s1+B2*s2+B3*s3
+                    intermediate[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+                let last=y*width+width-1
+                s1=intermediate[last];s2=s1;s3=s1
+                for x in stride(from:width-1,through:0,by:-1) {
+                    let p=y*width+x
+                    let v=B*intermediate[p]+B1*s1+B2*s2+B3*s3
+                    intermediate[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+            }
+            for x in 0..<width {
+                var s1=intermediate[x]
+                var s2=s1,s3=s1
+                for y in 0..<height {
+                    let p=y*width+x
+                    let v=B*intermediate[p]+B1*s1+B2*s2+B3*s3
+                    filtered[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+                let last=(height-1)*width+x
+                s1=filtered[last];s2=s1;s3=s1
+                for y in stride(from:height-1,through:0,by:-1) {
+                    let p=y*width+x
+                    let v=B*filtered[p]+B1*s1+B2*s2+B3*s3
+                    filtered[p]=v
+                    s3=s2;s2=s1;s1=v
+                }
+            }
+        }
+
+        let sourcePasses:[(gain:Double,sigma:Double)] = [
+            (1.0-tailWeight,coreSigma)
+        ] + (tailWeight == 0 ? [] : mixture.map {
+            (tailWeight*$0.0,tailSigma*$0.1)
+        })
+        for c in 0..<3 {
+            for p in 0..<pixels { channelSource[p]=input[p*3+c] }
+            for (pass,(gain,sigma)) in sourcePasses.enumerated() {
+                let actualSigma:Double
+                if pass==0 {
+                    actualSigma=coreSigmaRGB.map {$0[c]} ?? sigma
+                } else {
+                    actualSigma=tailSigmaRGB.map {
+                        $0[c]*mixture[pass-1].1
+                    } ?? sigma
+                }
+                gaussianChannel(c,sigma:actualSigma)
+                for p in 0..<pixels {
+                    if pass == 0 {
+                        accumulated[p]=gain*filtered[p]
+                    } else {
+                        accumulated[p]+=gain*filtered[p]
+                    }
+                }
+            }
+            for p in 0..<pixels { input[p*3+c]=accumulated[p] }
+        }
+        guard input.allSatisfy({ $0.isFinite }) else {
+            throw Failure.invalid("原版 DIR 低内存 FIR/YVV 出现 NaN/Inf")
+        }
+    }
+
+
     /// Original 2D RGB per-channel Gaussian: source Float64 FIR/YVV and
     /// full-frame edge behavior with reusable single-channel workspaces.
     static func gaussianPerChannelMemoryBounded(
