@@ -323,7 +323,8 @@ enum OriginalSourcePhysicalImage {
             filmHalation:parameters.filmHalation.active,
             paperDiffusion:parameters.printDiffusion.active,
             stageObserver:stageDoubleObserver != nil,
-            paperStageObserver:capturePaperStages
+            paperStageObserver:capturePaperStages,
+            parallelGrain:parameters.sourceGrain.useUnseededParallel
         )
         try validateMemoryBudget(
             width:w,height:h,
@@ -835,7 +836,8 @@ extension OriginalSourcePixelIO {
             filmHalation:parameters.filmHalation.active,
             paperDiffusion:parameters.printDiffusion.active,
             stageObserver:false,
-            paperStageObserver:false
+            paperStageObserver:false,
+            parallelGrain:parameters.sourceGrain.useUnseededParallel
         )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:targetW,height:targetH,
