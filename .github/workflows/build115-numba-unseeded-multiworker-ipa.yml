@@ -40,7 +40,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A separate public-repository Ubuntu runner tests whether runner
+  # provisioning works at all, before spending time in the macOS queue.
+  # Failure to start both runners is an Actions/account-level blocker,
+  # not a Swift compile diagnostic.
+  runner-preflight:
+    name: Linux runner + Build115 source contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Linux runner acquired and audit source before macOS
+        run: |
+          set -euo pipefail
+          echo "RUNNER_OS=$RUNNER_OS RUNNER_NAME=$RUNNER_NAME SHA=$GITHUB_SHA"
+          python3 ios/scripts/build115_unseeded_parallel_source_audit.py
+          python3 -m py_compile ios/scripts/build115_compare_parallel_moments.py ios/scripts/build114_unseeded_numba_statistical_gate.py
+          git diff --exit-code
+
   group-compile-once:
+    needs: runner-preflight
     runs-on: macos-15
     timeout-minutes: 55
     steps:
@@ -166,7 +185,12 @@ jobs:
       - name: Build115 run real Swift 4-worker unseeded Numba distribution, state and Python cross comparison
         run: |
           set -euo pipefail
+          # OriginalSourceMT19937.validateReference resolves this generated
+          # type at typecheck time; omitting it always breaks this swiftc link.
+          python ios/scripts/generate_source_mt19937.py
+          test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
           swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
             ios/SpektraFilmPort/OriginalSourceMT19937.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
