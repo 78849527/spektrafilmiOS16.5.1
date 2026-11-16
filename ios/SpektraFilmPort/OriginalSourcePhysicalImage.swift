@@ -29,7 +29,12 @@ enum OriginalSourcePhysicalImage {
     /// before any full-size ImageIO decode. This includes the user's
     /// 3888x2592 (10.08MP) only when measured available memory permits.
     static let maximumPixels = 13_000_000
-    static let estimatedPeakBytesPerPixel: UInt64 = 120
+    // Build114: full-frame DIR now uses an in-place channel accumulator.
+    // The original conservative 120 B/pixel was reduced by ONLY the 8 B/pixel
+    // measured-array peak delta from replacing the 3-channel result array
+    // with per-channel source + accumulator. The 13MP safety gate still
+    // requires independent real-device RSS/Jetsam evidence.
+    static let estimatedPeakBytesPerPixel: UInt64 = 112
     // Full-size scanner finish requires an additional 3-channel Double
     // filtered result and two 1-channel Double Gaussian workspaces.
     static let scannerFinishExtraBytesPerPixel: UInt64 = 40
@@ -502,12 +507,13 @@ enum OriginalSourcePhysicalImage {
             // Source diffusion_size_um=0: skip filter, retain inhibitors.
             diffused=inhibitors
         } else {
-            diffused=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-                inhibitors,width:w,height:h,
+            try SourceSpatialDIRConvolution.diffuseInPlaceMemoryBounded(
+                &inhibitors,width:w,height:h,
                 coreSigma:(dynamicDIR?.settings.diffusionSizeUM ?? 20.0)*radius/pixelUM,
                 tailSigma:(dynamicDIR?.settings.diffusionTailUM ?? 200.0)*radius/pixelUM,
                 tailWeight:dynamicDIR?.settings.diffusionTailWeight ?? parameters.dir.tailWeight
             )
+            diffused=inhibitors
         }
         // Do not keep another full-frame 3-channel inhibitor buffer alive
         // while computing the real spectral paper/scan output.
