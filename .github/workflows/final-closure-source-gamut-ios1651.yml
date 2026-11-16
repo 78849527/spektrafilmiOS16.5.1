@@ -1,0 +1,72 @@
+name: Final closure batch A - original input Oklch and source CAM16 production route
+on:
+  push:
+    branches:
+      - integration/build108-final-closure-source-gamut-ios1651
+    paths:
+      - ios/**
+      - .github/workflows/final-closure-source-gamut-ios1651.yml
+      - docs/FINAL-CLOSURE-BATCH-A-SOURCE-GAMUT.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-original-python-and-native-float64:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned Build108 production base and Swift syntax
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor b02e2773f07d913e101bd3dcdc5d0c709b74dc77 HEAD
+          xcrun swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+          python3 ios/scripts/final_gamut_source_route_audit.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original Colour/SciPy/Matplotlib pinned stack
+        run: |
+          python -m pip install --quiet --disable-pip-version-check \
+            'numpy==1.26.4' 'scipy==1.15.3' \
+            'colour-science==0.4.6' 'matplotlib==3.10.7'
+      - name: Build Python source CIE1931 reference locus and true input Oklch fixtures
+        run: |
+          set -euo pipefail
+          python ios/scripts/build81_generate_source_locus.py \
+            --output ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift
+          python ios/scripts/final_source_oklch_oracle.py \
+            --output /tmp/final-source-input-oklch-python.json
+          test -s /tmp/final-source-input-oklch-python.json
+      - name: Native Swift original Oklch 96-channel comparison
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
+            ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift \
+            ios/tests/FinalSourceOklchValidation.swift \
+            -o /tmp/FinalOklch
+          /tmp/FinalOklch /tmp/final-source-input-oklch-python.json
+      - name: Original 216-case Python CAM16-UCS independent native comparison
+        run: |
+          set -euo pipefail
+          python ios/scripts/generate_scanner_reference.py
+          python ios/scripts/build89_real_cam16_original_oracle.py \
+            /tmp/final-source-cam16-python.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/Build89OriginalCAM16.swift \
+            ios/tests/Build89NativeSourceCAM16Validation.swift \
+            -o /tmp/FinalCAM16
+          /tmp/FinalCAM16 /tmp/final-source-cam16-python.json
+      - name: Archive original Python oracles and native proof
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-closure-A-original-source-gamut-not-full-certified
+          path: |
+            /tmp/final-source-input-oklch-python.json
+            /tmp/final-source-cam16-python.json
+          if-no-files-found: warn
