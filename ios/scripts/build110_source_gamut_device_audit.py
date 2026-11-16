@@ -5,6 +5,7 @@ Actual certification requires installing the unsigned IPA after signing
 and providing a true iOS 16.5.1 JSON+LOG.
 """
 from pathlib import Path
+from build_ci_version_floor import minimum_build, minimum_minor
 r=Path(__file__).resolve().parents[2]
 def source(p):return (r/p).read_text()
 ui=source("ios/SpektraFilmPort/ContentView.swift")
@@ -33,7 +34,7 @@ assert "meanAbsoluteDeltaFromBaseline:delta" in code
 assert "Build108SourceOpticalDeviceStress.capture(" in code
 assert "Build110SourceGamutDeviceEvidence.write(" in ui
 assert "Build106-107-108-110-gamut-four-mode-" in code
-assert 'CURRENT_PROJECT_VERSION: "112"' in project
-assert 'MARKETING_VERSION: "1.8.78"' in project
+assert minimum_build(project, 112)
+assert minimum_minor(project, 78)
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS Build110 phone JSON+LOG four actual source Float64 gamut variants, toggles snapshot, production SHA and prior Build108 report integration. Device certification NOT RUN in CI.")
