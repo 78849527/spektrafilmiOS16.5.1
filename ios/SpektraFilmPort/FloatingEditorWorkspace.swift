@@ -257,7 +257,7 @@ struct FloatingEditorWorkspace: View {
             if !isReversal && !model.originalPrintOpticsEnabled {
                 changes.append("启用原版放大机")
             }
-            if model.scannerCAM16Enabled { changes.append("关闭 CAM16") }
+            if model.scannerCAM16Enabled { changes.append("关闭旧版扫描 CAM16 LUT（精细 CAM16-UCS 独立配置）") }
             if model.scannerBlackWhiteEnabled { changes.append("关闭黑白场校准") }
             if model.exposureReferenceEnabled { changes.append("关闭曝光参考") }
         }
@@ -1709,6 +1709,18 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
                 if model.originalPrintOpticsEnabled {
+                    DisclosureGroup("滤色片 · C / M / Y") {
+                        VStack(alignment:.leading,spacing:6) {
+                            morphSlider("青色 C / CC",value:$model.printCyanShift,
+                                        range:-40...40)
+                            morphSlider("洋红 M / CC",value:$model.printMagentaShift,
+                                        range:-40...40)
+                            morphSlider("黄色 Y / CC",value:$model.printYellowShift,
+                                        range:-40...40)
+                        }
+                        .padding(.top,4)
+                    }
+                    .font(.caption)
                     exposureControl("相纸曝光",value:$model.printExposureEV,
                                     enabled:model.hasPhoto && !model.busy,
                                     onCommit:{model.queueSpectralPreview()})
@@ -1730,7 +1742,7 @@ struct FloatingEditorWorkspace: View {
                             }
                     }
                 }
-                Text("滤色与相纸显影曲线可在「调整 → 色彩」及实验室中设置。")
+                Text("原版 CMY 滤色片可在此展开；相纸显影曲线等源码参数保留高级。")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -1747,6 +1759,19 @@ struct FloatingEditorWorkspace: View {
                     model.queueSpectralPreview()
                 }
             if fullPhysicalMode {
+                if !isReversal {
+                    resetToggle("扫描眩光 · 受控单线程",
+                                value:$model.sourceScannerGlareEnabled,
+                                enabled:model.hasPhoto && !model.busy,
+                                resetTo:false)
+                        .onChange(of:model.sourceScannerGlareEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    if model.sourceScannerGlareEnabled {
+                        Text("固定 seed=8888 · 单线程受控；无固定种子多线程仍未认证")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                }
                 Text("输出色域：" +
                      (model.sourcePhysicalCAM16DefaultGamutEnabled
                       ? "CAM16-UCS · 原版 Float64"
@@ -1783,7 +1808,7 @@ struct FloatingEditorWorkspace: View {
                                     range:0...1.5,suffix:"×",resetTo:0.7)
                 }
             }
-            Text("精细模式的 CAM16-UCS 在工艺色域路线选择；扫描眩光、Float64 校准仍在高级。")
+            Text("精细 CAM16-UCS 在上方选路线；扫描眩光参数和未认证校准留在高级。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -2180,8 +2205,8 @@ struct FloatingEditorWorkspace: View {
         VStack(alignment: .leading, spacing: 7) {
             if model.originalScannerEnabled {
                 Text(model.scannerCAM16Enabled
-                     ? "默认色域 · CAM16 查表插值"
-                     : "可选色域 · ACES RGC")
+                     ? "快速 CAM16 LUT · 查表插值"
+                     : "快速 ACES RGC · 非原版 Float64 CAM16-UCS")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 resetToggle("黑白场校准", value: $model.scannerBlackWhiteEnabled,
@@ -2233,12 +2258,8 @@ struct FloatingEditorWorkspace: View {
                 Text("胶片 → 二色滤色光谱 → 相纸曝光")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                morphSlider("青色 C / CC", value: $model.printCyanShift,
-                            range: -40...40)
-                morphSlider("洋红 M / CC", value: $model.printMagentaShift,
-                            range: -40...40)
-                morphSlider("黄色 Y / CC", value: $model.printYellowShift,
-                            range: -40...40)
+                Text("C / M / Y 滤色片：工艺 → 相纸；此处保留光源与原版数据库参数。")
+                    .font(.caption2).foregroundColor(.secondary)
             }
         }
     }
@@ -2510,15 +2531,8 @@ struct FloatingEditorWorkspace: View {
     private var sourceScannerGlareSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {
-                resetToggle("源扫描 XYZ 眩光（单线程实验）",
-                            value:$model.sourceScannerGlareEnabled,
-                            enabled:model.hasPhoto && !model.busy &&
-                                    model.sourcePixelIOEnabled &&
-                                    model.sourcePhysicalDirectEnabled && !isReversal,
-                            resetTo:false)
-                    .onChange(of:model.sourceScannerGlareEnabled) { _ in
-                        model.queueSpectralPreview()
-                    }
+                Text("扫描 XYZ 眩光开关：工艺 → 扫描；此处仅保留原版源码参数。")
+                    .font(.caption2).foregroundColor(.secondary)
                 if model.sourceScannerGlareEnabled {
                     morphSlider("原版扫描眩光百分比 %",
                                 value:$model.sourceScannerGlarePercent,
