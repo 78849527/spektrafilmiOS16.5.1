@@ -6,6 +6,7 @@ hardware camera, actual Photos permissions, Files sharing, or real device.
 Real-device scripted checklist remains REQUIRED for certification.
 """
 from pathlib import Path
+from build_ci_version_floor import minimum_build, minimum_minor
 import json
 import hashlib
 import sys
@@ -21,8 +22,8 @@ stages=(P/"SpektraFilmPort/Build92DeviceSourceStageDiagnostic.swift").read_text(
 checks={
     "ios16_deployment_min":"iOS: \"16.5\"" in spec and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
-    "build96_version":'CURRENT_PROJECT_VERSION: "96"' in spec and
-        'MARKETING_VERSION: "1.8.63"' in spec,
+    "build96_version":minimum_build(spec, 96) and
+        minimum_minor(spec, 63),
     "real_camera_capture":"engine.capturePhoto()" in camera and
         "NextLevelCapturedPhoto" in camera,
     "raw_dng_not_jpeg_fallback":"pendingRAW" in camera and
@@ -197,8 +198,8 @@ checks.update({
     "tiff16_mac_no_device_claim":
         "DOES NOT use RAF" in tiff_test,
     "build96_app_version":
-        'CURRENT_PROJECT_VERSION: "96"' in spec and
-        'MARKETING_VERSION: "1.8.63"' in spec and
+        minimum_build(spec, 96) and
+        minimum_minor(spec, 63) and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
 })
 failed=[k for k,v in checks.items() if not v]
