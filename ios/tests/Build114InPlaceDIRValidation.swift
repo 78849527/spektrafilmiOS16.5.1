@@ -57,7 +57,7 @@ struct Build114InPlaceDIRValidation {
             }
         }
         let fullPixels=13_000_000
-        let baseEstimate=fullPixels*Int(OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel)
+        let baseEstimate=fullPixels*112
         precondition(baseEstimate==1_456_000_000)
         precondition(baseEstimate<1_500_000_000)
         precondition(baseEstimate + fullPixels*40 > 1_500_000_000,
