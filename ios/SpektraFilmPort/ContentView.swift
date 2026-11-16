@@ -153,7 +153,8 @@ final class PhotoEditorModel: ObservableObject {
     // Batch v1.8.48: opt-in actual three-sublayer film grain BEFORE
     // the enlarger, not old mobile Gaussian/Metal post-density noise.
     // SciPy count RNG seeds remain original [ch+sl*10].
-    // Numba microstructure is controlled single worker, seed=8888.
+    // Numba microstructure defaults to controlled seed=8888 until the
+    // separate explicitly selected Build115 parallel option is enabled.
     @Published var sourcePhysicalGrainEnabled = false
     // Build115 separate source-default unseeded Numba parallel candidate.
     // OFF preserves exact seeded single-thread parity fixtures.
