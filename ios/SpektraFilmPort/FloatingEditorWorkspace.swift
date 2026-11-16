@@ -845,8 +845,7 @@ struct FloatingEditorWorkspace: View {
                         .opacity(0.94),in:RoundedRectangle(cornerRadius:9))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("当前照片："+model.photoInputSummary+
-                            "。"+model.photoInputExplanation)
+        .accessibilityLabel("当前照片：\(model.photoInputSummary)。\(model.photoInputExplanation)")
     }
 
     private var statusReportSheet: some View {

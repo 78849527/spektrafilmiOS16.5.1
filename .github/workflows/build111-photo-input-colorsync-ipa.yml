@@ -1,3 +1,4 @@
+# Build111 Swift parser fix: use one interpolated accessibility label, preserving iOS16.5.1 behavior.
 # Build111 release source after preserving original Build78 16-bit PNG/TIFF and Float TIFF inputs.
 # Build108 audit follow-up: check the actual SwiftUI callback name independently of the ContentView method name.
 # Build108: syntax-only preflight cannot read generated original Python manifests before generator runs.
