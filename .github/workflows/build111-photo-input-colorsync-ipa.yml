@@ -1,3 +1,4 @@
+# Build111 fast fail: real tagged P3/JPEG ColorSync fixture executes before original source generation.
 # Build111 Swift parser fix: use one interpolated accessibility label, preserving iOS16.5.1 behavior.
 # Build111 release source after preserving original Build78 16-bit PNG/TIFF and Float TIFF inputs.
 # Build108 audit follow-up: check the actual SwiftUI callback name independently of the ContentView method name.
@@ -51,6 +52,21 @@ jobs:
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift
           # Python audit needs generated original-source manifest, checked
           # in the next source-reference step after original fixture generation.
+      - name: Build111 actual tagged P3 to sRGB ColorSync bytes plus unified image admission audit
+        run: |
+          set -euo pipefail
+          python ios/scripts/build111_photo_input_audit.py
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build111PhotoInputProfile.swift \
+            ios/tests/Build111PhotoInputProfileValidation.swift \
+            -o /tmp/Build111PhotoInputValidation
+          /tmp/Build111PhotoInputValidation
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build111PhotoInputProfile.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/Build110SourceGamutDeviceEvidence.swift
+
       - name: Install original fixture generation source stack
         run: |
           python -m pip install --disable-pip-version-check --quiet \
@@ -134,21 +150,6 @@ jobs:
             ios/SpektraFilmPort/Build110SourceGamutDeviceEvidence.swift \
             ios/SpektraFilmPort/ContentView.swift \
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-      - name: Build111 actual tagged P3 to sRGB ColorSync bytes plus unified image admission audit
-        run: |
-          set -euo pipefail
-          python ios/scripts/build111_photo_input_audit.py
-          swiftc -O -parse-as-library \
-            ios/SpektraFilmPort/Build111PhotoInputProfile.swift \
-            ios/tests/Build111PhotoInputProfileValidation.swift \
-            -o /tmp/Build111PhotoInputValidation
-          /tmp/Build111PhotoInputValidation
-          swiftc -frontend -parse \
-            ios/SpektraFilmPort/Build111PhotoInputProfile.swift \
-            ios/SpektraFilmPort/ContentView.swift \
-            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
-            ios/SpektraFilmPort/Build110SourceGamutDeviceEvidence.swift
-
       - name: Build107 source gate (carried-forward) validate previous device false-failure against 4 real Python original fixtures
         run: |
           set -euo pipefail

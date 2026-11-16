@@ -33,7 +33,7 @@ assert "meanAbsoluteDeltaFromBaseline:delta" in code
 assert "Build108SourceOpticalDeviceStress.capture(" in code
 assert "Build110SourceGamutDeviceEvidence.write(" in ui
 assert "Build106-107-108-110-gamut-four-mode-" in code
-assert 'CURRENT_PROJECT_VERSION: "110"' in project
-assert 'MARKETING_VERSION: "1.8.76"' in project
+assert 'CURRENT_PROJECT_VERSION: "111"' in project
+assert 'MARKETING_VERSION: "1.8.77"' in project
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS Build110 phone JSON+LOG four actual source Float64 gamut variants, toggles snapshot, production SHA and prior Build108 report integration. Device certification NOT RUN in CI.")
