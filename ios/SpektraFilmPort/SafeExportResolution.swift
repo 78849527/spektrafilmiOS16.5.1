@@ -6,7 +6,7 @@ import os
 /// User chooses resolution explicitly; original must never silently shrink.
 enum ExportResolutionMode: Equatable {
     case original
-    case safe      // adaptive 50% of live memory, up to 12MP
+    case safe      // adaptive up to 1.3GB, up to 12MP; live headroom enforced
     case economy   // adaptive 30% of live memory, up to 7.2MP
 
     var title: String {
@@ -26,6 +26,8 @@ enum ExportResolutionMode: Equatable {
 /// os_proc_available_memory() also caps the estimate with CURRENT PROCESS
 /// memory headroom. The app may still be killed by jetsam: this is a
 /// conservative heuristic, not a memory reservation or a guarantee.
+/// The 1.3GB smart allowance is a HARD UPPER CEILING, not a target
+/// allocation, and can be lowered by live headroom and optical stages.
 enum SafeExportResolution {
     // User-selected size ceilings, NOT guaranteed output dimensions.
     // Live memory and exact original per-pixel staging still take priority.
@@ -33,7 +35,8 @@ enum SafeExportResolution {
     static let economyMaximumPixels: UInt64 = 7_200_000
     static let estimatedBytesPerPixel: UInt64 = 104
     static let physicalMaximumBudget: UInt64 = 1_500_000_000
-    static let intelligentBudgetPercent: UInt64 = 50
+    static let intelligentBudgetPercent: UInt64 = 90
+    static let intelligentMaximumBudget: UInt64 = 1_300_000_000
     static let economyBudgetPercent: UInt64 = 30
 
     struct Dimensions: Equatable {
@@ -51,7 +54,7 @@ enum SafeExportResolution {
         /// min(1.5GB, physicalRAM/3, measured process headroom if available).
         let effectiveBudgetBytes: UInt64
         let processHeadroomBytes: UInt64?
-        /// Portion of effective budget earmarked by the selected mode.
+        /// Maximum projected peak for this export, NOT pre-allocated memory.
         let allocationAllowanceBytes: UInt64
         let estimatedPeakBytes: UInt64
 
@@ -67,7 +70,7 @@ enum SafeExportResolution {
             已选档位：\(mode == .safe ? "智能安全（上限1200万）" : mode == .economy ? "省内存（上限720万）" : "原始尺寸")
             预计输出：\(dimensions.width) × \(dimensions.height)（约 \(Double(dimensions.pixels)/1_000_000) 百万像素）
             预计显影峰值：约 \(estimatedMB) MB
-            设备安全预算：约 \(budgetMB) MB；本档计划上限 \(allowanceMB) MB
+            设备安全预算：约 \(budgetMB) MB；本档计划上限 \(allowanceMB) MB（估算上限，非预占内存）
             当前 App 可分配余量：\(headroom)
             JPEG 质量 98%。估算不是内存保证；失败不自动降档。
             """
@@ -118,8 +121,18 @@ enum SafeExportResolution {
         case .safe: percentage = intelligentBudgetPercent
         case .economy: percentage = economyBudgetPercent
         }
-        let allowance = mode == .original ?
-            physicalBudget : budget / 100 * percentage
+        let allowance: UInt64
+        switch mode {
+        case .original:
+            allowance = physicalBudget
+        case .safe:
+            // User-requested 1.3GB MAXIMUM, bounded by measured free
+            // process headroom with 10% left unused for UIKit/Jetsam.
+            allowance = min(intelligentMaximumBudget,
+                            (budget / 100) * percentage)
+        case .economy:
+            allowance = (budget / 100) * percentage
+        }
         let targetPixels: UInt64
         if mode == .original {
             targetPixels = sourcePixels
