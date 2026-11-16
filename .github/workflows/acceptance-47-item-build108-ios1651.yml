@@ -1,0 +1,75 @@
+name: Frozen Build108 47-item formal acceptance evidence gate (NO IPA)
+on:
+  push:
+    branches:
+      - acceptance/build108-frozen-47-item-ios1651
+    paths:
+      - ios/scripts/acceptance_47_item_gate.py
+      - .github/workflows/acceptance-47-item-build108-ios1651.yml
+      - docs/ACCEPTANCE-47-FROZEN-BUILD108.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-and-native-regression:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Freeze Build108 provenance and generate all 47 audit rows
+        run: |
+          set -euo pipefail
+          python3 ios/scripts/acceptance_47_item_gate.py --out /tmp/final-acceptance
+      - name: Parse all real Swift application production files
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - name: Run existing source Float64 memory matrix on macOS Swift
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/Build91PhysicalMemory.swift \
+            ios/tests/Build91PhysicalMemoryMatrixValidation.swift \
+            -o /tmp/Build91MemoryMatrix
+          /tmp/Build91MemoryMatrix
+      - name: Run Build106 conservative budget and scratch lifetime regression
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build106SourceMemoryLedger.swift \
+            ios/tests/Build106SourceMemoryLedgerValidation.swift \
+            -o /tmp/Build106MemoryLedger
+          /tmp/Build106MemoryLedger
+      - name: Create acceptance step summary
+        if: always()
+        run: |
+          if test -s /tmp/final-acceptance/final-47-acceptance.md; then
+            cat /tmp/final-acceptance/final-47-acceptance.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload machine-readable acceptance ledger (even when blocked)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build108-47-item-frozen-acceptance-not-certified
+          path: /tmp/final-acceptance/final-47-acceptance.*
+          if-no-files-found: warn
+      - name: HARD GATE — forbid formal certification while P0 gaps remain
+        run: |
+          python3 - <<'PY'
+          import json
+          p='/tmp/final-acceptance/final-47-acceptance.json'
+          a=json.load(open(p))
+          assert len(a['items']) == 47
+          assert a['full_python_original_certified'] is False
+          assert a['ipa_generated_by_acceptance'] is False
+          if a['blocking_findings'] or a['manual_12_item_gui_check']!='PASS':
+              raise SystemExit(
+                'BLOCKED BY DESIGN: unresolved original-source/full-device '
+                'requirements. See uploaded 47-item report. NO CERTIFIED IPA.'
+              )
+          PY
