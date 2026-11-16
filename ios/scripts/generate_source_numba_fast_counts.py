@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
-import sys
 from pathlib import Path
 
 import numba
@@ -69,9 +68,6 @@ def main():
     spec = importlib.util.spec_from_file_location("pinned_numba_fast_stats", SOURCE)
     assert spec is not None and spec.loader is not None
     upstream = importlib.util.module_from_spec(spec)
-    # Register the import identity before Numba compiles cached dispatchers.
-    # The original source is unchanged; only the fixture-loader identity is fixed.
-    sys.modules[spec.name] = upstream
     spec.loader.exec_module(upstream)
 
     numba.set_num_threads(1)
@@ -106,7 +102,7 @@ def main():
     )
     seeds = [0, 8888, 123456]
     lines = [
-        f"// Executed original upstream fast_stats.py, NumPy{np.__version__}/Numba{numba.__version__}.",
+        "// Executed original upstream fast_stats.py, NumPy2.4/Numba0.64.",
         "// One explicitly seeded prange worker ONLY; not production RNG parity.",
         "enum GeneratedSourceNumbaFastCountsReference {",
         '    static let fastStatsBlob = "' + FAST_BLOB + '"',
