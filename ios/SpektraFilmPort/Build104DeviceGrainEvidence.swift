@@ -152,8 +152,7 @@ enum Build104DeviceGrainEvidence {
                     let error=abs(got[i]-source[i])
                     guard error.isFinite && error<=1e-10 else {
                         throw Failure.invalid(
-                            "Python 原版偏差 "+sample.name+"/"+upstream+
-                            " index=\(i) delta=\(error)")
+                            "Python 原版偏差 "+sample.name+"/"+upstream+" index=\(i) delta=\(error)")
                     }
                     maxError=max(maxError,error)
                     mae+=error
