@@ -40,6 +40,8 @@ def main():
         items=re.findall(r"(?m)^(0[1-9]|[1-3][0-9]|4[0-7])\.\s+(.+)$",section)
         assert len(items)==47
         assert [int(x) for x,y in items]==list(range(1,48))
+        assert "full13MPOperationMeasured:false" in read("ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift")
+        assert "guard options.format != .exr" in read("ios/SpektraFilmPort/Build90NativeOutputWriter.swift")
         status["frozen_source_and_47"]="PASS"
     except Exception:
         (O/"logs"/"freeze-failure.log").write_text(traceback.format_exc())
@@ -122,6 +124,7 @@ def main():
                  (".raf",".dng",".cr3",".nef",".arw")])
     roadmap=[{"number":n,"title":title,"state":labels[codes[i]],"complete":False}
              for i,(n,title) in enumerate(items)]
+    assert len(status)==11,"Single-pass ledger must contain 11 controlled checks"
     failures=[x for x,y in status.items() if y!="PASS"]
     report={
       "version":"1.8.74 Build108","ios_target":"16.5.1","minimum_ios":"16.5",
