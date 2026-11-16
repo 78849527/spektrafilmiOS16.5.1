@@ -38,11 +38,11 @@ enum Build115ParallelNumbaEvidence {
         }/n
         return Moments(count:values.count,mean:mu,variance:variance)
     }
-    private static func close(_ got:Moments,mean:Double,var variance:Double,
+    private static func close(_ got:Moments,mean:Double,variance expectedVariance:Double,
                               muTol:Double,varTol:Double)->Bool {
         got.mean.isFinite && got.variance.isFinite &&
         abs(got.mean-mean)<muTol &&
-        abs(got.variance-variance)<varTol
+        abs(got.variance-expectedVariance)<varTol
     }
     private static func fullGrainIntegration(fast:Bool) throws->Bool {
         let w=18,h=13,pixels=w*h
@@ -103,8 +103,8 @@ enum Build115ParallelNumbaEvidence {
             sourceSciPy=try fullGrainIntegration(fast:false)
             sourceFast=try fullGrainIntegration(fast:true)
             if !different || !sourceSciPy || !sourceFast ||
-                !close(particles!,mean:3.2,var:3.2,muTol:0.10,varTol:0.24) ||
-                !close(micro!,mean:1,var:0.09,muTol:0.013,varTol:0.012) {
+                !close(particles!,mean:3.2,variance:3.2,muTol:0.10,varTol:0.24) ||
+                !close(micro!,mean:1,variance:0.09,muTol:0.013,varTol:0.012) {
                 failure="原版 Numba 多线程统计矩或真实三亚层生产整合未通过"
             }
         } catch {
