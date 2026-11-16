@@ -55,7 +55,22 @@ jobs:
           set -euo pipefail
           echo "RUNNER_OS=$RUNNER_OS RUNNER_NAME=$RUNNER_NAME SHA=$GITHUB_SHA"
           python3 ios/scripts/build115_unseeded_parallel_source_audit.py
-          python3 -m py_compile ios/scripts/build115_compare_parallel_moments.py ios/scripts/build114_unseeded_numba_statistical_gate.py
+          python3 ios/scripts/build111_photo_input_audit.py
+          python3 ios/scripts/final_gamut_source_route_audit.py
+          python3 ios/scripts/build110_source_gamut_device_audit.py
+          python3 -m compileall -q ios/scripts
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'ios/scripts')
+          from build_ci_version_floor import minimum_build, minimum_minor
+          project=Path('ios/project.yml').read_text()
+          assert minimum_build(project,115)
+          assert minimum_minor(project,81)
+          assert not minimum_build(project,116)
+          assert not minimum_minor(project,82)
+          print('PASS current 1.8.81/115 and all carried-forward minimum release contracts')
+          PY
           git diff --exit-code
 
   group-compile-once:
