@@ -78,10 +78,10 @@ jobs:
 
   group-compile-once:
     needs: runner-preflight
-    # macos-15 is Apple Silicon; recent hosted ARM VM allocation failed
-    # before executing any step. Intel is a separate standard runner pool.
-    # Xcode 16.4 still builds the same generic iPhoneOS arm64 target.
-    runs-on: macos-15-intel
+    # Apple Silicon runner: do not use macos-15-intel.
+    # Xcode 16.4 builds the same generic iPhoneOS arm64 target.
+    # Python 3.11 + Numba 0.61.2 remains the tested source fixture stack.
+    runs-on: macos-15
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
@@ -348,8 +348,8 @@ jobs:
           grep -Fq 'CURRENT_PROJECT_VERSION: "115"' ios/project.yml
       - uses: actions/setup-python@v5
         with:
-          # Keep 3.11 + Numba 0.61.2, the proven source-generation stack.
-          # New Numba/llvmlite releases no longer ship official macOS Intel wheels.
+          # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
+          # Stable on Apple Silicon and avoids changing source RNG versions mid-build.
           python-version: '3.11'
       - name: Audit 4 original-Python 12-stage reference tapes (Build92 baseline)
         run: |
@@ -359,7 +359,7 @@ jobs:
           assert numba.__version__ == '0.61.2', numba.__version__
           assert numpy.__version__ == '1.26.4', numpy.__version__
           assert scipy.__version__ == '1.15.3', scipy.__version__
-          print('PASS pinned Mac Intel Numba/llvmlite source stack', llvmlite.__version__)
+          print('PASS pinned Apple Silicon Numba/llvmlite source stack', llvmlite.__version__)
           PY
           python ios/scripts/build92_source_stage_tapes_audit.py \
             --fixtures ios/verification/generated-physical-v1.8.22 \
@@ -387,7 +387,7 @@ jobs:
           NUMBA_THREADING_LAYER: workqueue
         run: |
           # Earlier source reference generation uses the same pinned original
-          # 3.11 + 0.61.2 stack. Avoid unsupported llvmlite 0.46.x on Intel.
+          # 3.11 + 0.61.2 stack; keep reference RNG/toolchain stable.
           python - <<'PY'
           import numba, numpy
           assert numba.__version__ == '0.61.2', numba.__version__
