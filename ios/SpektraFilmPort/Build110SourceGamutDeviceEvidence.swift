@@ -17,6 +17,11 @@ enum Build110SourceGamutDeviceEvidence {
         let cameraRawMethod: String
         let inputOklchToggle: Bool
         let outputCAM16Toggle: Bool
+        /// Build111: actual selected file transport metadata, NOT the fixed
+        /// synthetic 512² input run by this diagnostic.
+        let selectedPhotoInputSummary: String
+        let selectedPhotoDirectCompatible: Bool
+        let selectedPhotoP3ColorSyncConverted: Bool
         var effectiveInputOklch: Bool {
             hasPhoto && pixelIOEnabled && fullPhysicalEnabled &&
             originalHanatosDoubleEnabled &&
@@ -396,6 +401,7 @@ enum Build110SourceGamutDeviceEvidence {
         s+="User direct pixel=\(report.userSwitchSnapshot.pixelIOEnabled) full optics=\(report.userSwitchSnapshot.fullPhysicalEnabled)\n"
         s+="User HanatosDouble=\(report.userSwitchSnapshot.originalHanatosDoubleEnabled) scanner=\(report.userSwitchSnapshot.originalScannerEnabled) method=\(report.userSwitchSnapshot.cameraRawMethod)\n"
         s+="User switches Oklch=\(report.userSwitchSnapshot.inputOklchToggle) CAM16=\(report.userSwitchSnapshot.outputCAM16Toggle)\n"
+        s+="Build111 selected file=\(report.userSwitchSnapshot.selectedPhotoInputSummary) directCompatible=\(report.userSwitchSnapshot.selectedPhotoDirectCompatible) explicitP3ToSRGB=\(report.userSwitchSnapshot.selectedPhotoP3ColorSyncConverted)\n"
         s+="Effective production Oklch=\(report.userSwitchSnapshot.effectiveInputOklch) CAM16=\(report.userSwitchSnapshot.effectiveOutputCAM16)\n"
         for c in report.gamutCases {
             s+="\n\(c.name) sourceInput=\(c.inputAlgorithm) sourceOutput=\(c.outputAlgorithm) status=\(c.status)\n"

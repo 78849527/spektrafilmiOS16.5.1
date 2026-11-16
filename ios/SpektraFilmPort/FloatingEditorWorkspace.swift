@@ -482,17 +482,19 @@ struct FloatingEditorWorkspace: View {
                         .padding(.horizontal, 9)
                         .padding(.top, 7)
                     }
-                    if model.hasPhoto {
-                        inputCompatibilityBanner
-                            .padding(.horizontal,9)
-                            .padding(.top,4)
-                    }
                     GeometryReader { previewSlot in
                         previewArea(size: previewSlot.size)
                             .frame(width: previewSlot.size.width,
                                    height: previewSlot.size.height,
                                    alignment: .top)
                             .clipped()
+                            .overlay(alignment:.top) {
+                                if model.hasPhoto {
+                                    inputCompatibilityBanner
+                                        .padding(.horizontal,9)
+                                        .padding(.top,5)
+                                }
+                            }
                     }
                     bottomToolbar
                         .padding(.horizontal, 8)
@@ -526,7 +528,8 @@ struct FloatingEditorWorkspace: View {
                 compareFraction=0.5
                 pendingSourceMode=nil
             }
-            .alert("原版像素输入检测",isPresented:$sourceInputCompatibilityAlert) {
+            .confirmationDialog("原版像素输入检测",isPresented:$sourceInputCompatibilityAlert,
+                                titleVisibility:.visible) {
                 if model.photoP3ConversionPossible && !model.busy {
                     Button("转换 P3 为 sRGB 副本") {
                         do {

@@ -2438,7 +2438,10 @@ struct ContentView: View {
             originalScannerEnabled:model.originalScannerEnabled,
             cameraRawMethod:model.sourceCameraRawMethod.rawValue,
             inputOklchToggle:model.sourcePhysicalInputOklchEnabled,
-            outputCAM16Toggle:model.sourcePhysicalCAM16DefaultGamutEnabled
+            outputCAM16Toggle:model.sourcePhysicalCAM16DefaultGamutEnabled,
+            selectedPhotoInputSummary:model.photoInputSummary,
+            selectedPhotoDirectCompatible:model.photoDirectInputReady,
+            selectedPhotoP3ColorSyncConverted:model.photoInputConvertedFromP3
         )
         diagnosticDismissPending=true
         model.busy=true
