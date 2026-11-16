@@ -418,15 +418,15 @@ checks.update({
         "editorTab(.workflow)" in ui and
         "editorTab(.laboratory)" not in ui,
     "b100_advanced_lab_preserved":
-        'Button("专业参数与待认证项目")' in ui and
+        'Button("专业参数与验证状态")' in ui and
         "selectEditorPage(.laboratory)" in ui and
         "case .laboratory: return AnyView(advancedControls)" in ui,
     "b100_no_source_algorithm_deleted":
         "private var activeSettings: AnyView" in ui and
         "private var advancedControls: AnyView" in ui and
-        'Text("原版专业参数 · 未认证范围仍单独标注")' in ui and
-        "sourcePhysicalGrainSettings" in ui and
-        "sourceScannerGlareSettings" in ui,
+        'Text("高级参数与验收 · 已验证功能不等于待认证")' in ui and
+        ui.count("sourcePhysicalGrainSettings")>=2 and
+        ui.count("sourceScannerGlareSettings")>=2,
     "b100_scope_in_status_sheet":
         "source_float64_experimental" in readiness and
         "原版 Float64 光学（受控 PASS，整图未认证）" in ui and
