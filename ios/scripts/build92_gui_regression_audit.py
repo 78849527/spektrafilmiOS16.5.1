@@ -6,6 +6,7 @@ hardware camera, actual Photos permissions, Files sharing, or real device.
 Real-device scripted checklist remains REQUIRED for certification.
 """
 from pathlib import Path
+from build_ci_version_floor import minimum_build, minimum_minor
 import json
 import hashlib
 import sys
@@ -21,8 +22,8 @@ stages=(P/"SpektraFilmPort/Build92DeviceSourceStageDiagnostic.swift").read_text(
 checks={
     "ios16_deployment_min":"iOS: \"16.5\"" in spec and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
-    "build92_version":'CURRENT_PROJECT_VERSION: "92"' in spec and
-        'MARKETING_VERSION: "1.8.59"' in spec,
+    "build92_version":minimum_build(spec, 92) and
+        minimum_minor(spec, 59),
     "real_camera_capture":"engine.capturePhoto()" in camera and
         "NextLevelCapturedPhoto" in camera,
     "raw_dng_not_jpeg_fallback":"pendingRAW" in camera and
