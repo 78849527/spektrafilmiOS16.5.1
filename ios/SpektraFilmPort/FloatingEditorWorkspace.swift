@@ -27,6 +27,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild103Metrics: () -> Void
     let onRunBuild104Grain: () -> Void
     let onRunBuild107CombinedFeedback: () -> Void
+    let onRunBuild108FullFrameFeedback: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -849,6 +850,18 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
                     Text("一次运行 Build103 28 阶段、Build104 20 阶段、Build106 六档×四种内存预算和 Build107 实际 16MiB 触页/进程 RSS。自动生成同编号 .log 与 .json 并一起分享。13MP 全图/Jetsam 仍未认证。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild108FullFrameFeedback()
+                    } label: {
+                        Label("Build108：真实 100/200 万像素光学与 106–108 综合 LOG",
+                              systemImage:"waveform.path.ecg")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("执行原版 Float64 100 万像素（含九层颗粒）＋200 万像素（不含颗粒）真实逐像素显影／印相／扫描；25ms 采样 RSS。保留 Build103/104 的 48 阶段与 Build106/107 报告，一次分享 .log＋.json。测试可能耗时较长；不宣称 1300 万像素或默认并行 RNG。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()

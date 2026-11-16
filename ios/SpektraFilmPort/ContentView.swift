@@ -2024,6 +2024,9 @@ struct ContentView: View {
                 onRunBuild107CombinedFeedback: {
                     runBuild107CombinedFeedback()
                 },
+                onRunBuild108FullFrameFeedback: {
+                    runBuild108FullFrameFeedback()
+                },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -2338,6 +2341,74 @@ struct ContentView: View {
     /// Build106/107: do not ask user to perform 4 separate exports.
     /// Both actual stage reports and both memory subsets live in one
     /// SHA-bound readable LOG and JSON, shared in a single activity sheet.
+    /// Build108 opt-in full-size source optical stress, separate from the
+    /// original 16MiB bounded-memory diagnostic. Never run on app launch.
+    private func runBuild108FullFrameFeedback() {
+        guard !model.busy else {return}
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build108：正在运行真实 100/200 万像素 Float64 光学 + 106/107 回归…"
+        let bundle=Bundle.main
+        let version=bundle.object(
+            forInfoDictionaryKey:"CFBundleShortVersionString"
+        ) as? String ?? "unknown"
+        let build=bundle.object(
+            forInfoDictionaryKey:"CFBundleVersion"
+        ) as? String ?? "unknown"
+        let sha=bundle.object(
+            forInfoDictionaryKey:"SFSourceCommit"
+        ) as? String ?? "missing"
+        let device=UIDevice.current.model
+        let osVersion=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physicalDevice=false
+        #else
+        let physicalDevice=true
+        #endif
+        let manifest=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:Build101DeviceParityEvidence.fixture
+        )
+        let grain=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:"generated-source-grain-v1.8.48"
+        )?.deletingLastPathComponent()
+        Task { @MainActor in
+            defer {model.busy=false}
+            let report=await Task.detached(priority:.userInitiated) {
+                Build108SourceOpticalDeviceStress.capture(
+                    version:version,build:build,commit:sha,
+                    device:device,osVersion:osVersion,
+                    physicalDevice:physicalDevice,
+                    coreManifest:manifest,grainDirectory:grain
+                )
+            }.value
+            do {
+                guard let documents=FileManager.default.urls(
+                    for:.documentDirectory,in:.userDomainMask
+                ).first else {
+                    throw ImageProcessingError.invalid(
+                        "Build108 真实光学反馈：文档目录不可访问"
+                    )
+                }
+                let pair=try Build108SourceOpticalDeviceStress.write(
+                    report,documents:documents
+                )
+                model.status=report.allControlledChecksPassedOnTarget
+                    ? "Build108 1/2MP 原版完整光学与 106/107 回归通过；LOG＋JSON 已保存"
+                    : "Build108 尚未全部通过：首错和真实 RSS 已保存到 LOG＋JSON"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build108 反馈保存失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
     private func runBuild107CombinedFeedback() {
         guard !model.busy else { return }
         diagnosticDismissPending=true
