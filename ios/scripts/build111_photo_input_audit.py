@@ -34,7 +34,7 @@ assert "Preserve Build78 certified" in detector
 assert "color == .extendedSRGB" in detector
 assert "selectedPhotoDirectCompatible" in report
 assert "selectedPhotoP3ColorSyncConverted" in report
-assert 'MARKETING_VERSION: "1.8.77"' in project
-assert 'CURRENT_PROJECT_VERSION: "111"' in project
+assert 'MARKETING_VERSION: "1.8.78"' in project
+assert 'CURRENT_PROJECT_VERSION: "112"' in project
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS Build111 unified camera Photos Files profile admission and consented P3 ColorSync copy; physical iPhone not yet tested")
