@@ -37,8 +37,8 @@ assert "selectedPhotoP3ColorSyncConverted" in report
 # Legacy Build111 checks must remain valid after later grouped IPA builds.
 # Validate minimum supported version without rejecting the current Build115.
 import re
-version = re.search(r'MARKETING_VERSION:\s*"1\\.8\\.(\\d+)"', project)
-build = re.search(r'CURRENT_PROJECT_VERSION:\s*"(\\d+)"', project)
+version = re.search(r'MARKETING_VERSION:\s*"1\.8\.(\d+)"', project)
+build = re.search(r'CURRENT_PROJECT_VERSION:\s*"(\d+)"', project)
 assert version and int(version.group(1)) >= 78, "Build111 input-profile baseline was lost"
 assert build and int(build.group(1)) >= 112, "Build111 minimum build was lost"
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
