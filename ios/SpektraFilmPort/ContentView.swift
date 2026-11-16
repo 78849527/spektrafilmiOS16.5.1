@@ -2108,6 +2108,7 @@ struct ContentView: View {
                 onRunBuild110GamutEvidence: {
                     runBuild110GamutEvidence()
                 },
+                onRunBuild114FourGates: { runBuild114FourGates() },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -2504,6 +2505,80 @@ struct ContentView: View {
                 }
             } catch {
                 model.status="Build110 报告写入失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
+
+    /// Build114 high-memory test is explicitly user-triggered. Write an
+    /// atomic checkpoint before allocating 13MP. If iOS Jetsam terminates
+    /// the process, the incomplete checkpoint remains for investigation.
+    private func runBuild114FourGates() {
+        guard !model.busy else {return}
+        let bundle=Bundle.main
+        let version=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let sha=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        let system=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physical=false
+        #else
+        let physical=true
+        #endif
+        guard let docs=FileManager.default.urls(
+            for:.documentDirectory,in:.userDomainMask
+        ).first else {
+            model.status="Build114 无法访问本机文档目录"
+            return
+        }
+        let folder=docs.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true
+        )
+        let checkpoint=folder.appendingPathComponent(
+            "Build114-last-13MP-run-checkpoint.txt"
+        )
+        do {
+            try FileManager.default.createDirectory(
+                at:folder,withIntermediateDirectories:true
+            )
+            let initial="status=INCOMPLETE_OR_NOT_RUN\napp=\(version) build=\(build) sha=\(sha)\n13MP 仍无成功报告；如果闪退或 Jetsam，此文件保留。\n"
+            try initial.write(to:checkpoint,atomically:true,encoding:.utf8)
+        } catch {
+            model.status="Build114 无法保存 Jetsam 前检查点："+error.localizedDescription
+            return
+        }
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build114 正在执行 13MP Float64 真机内存测试；不可视为 Python 原版整图认证…"
+        Task { @MainActor in
+            defer {model.busy=false}
+            let report=await Task.detached(priority:.userInitiated) {
+                Build108SourceOpticalDeviceStress.captureBuild114FourGates(
+                    version:version,build:build,commit:sha,
+                    osVersion:system,physicalDevice:physical
+                )
+            }.value
+            do {
+                let pair=try Build108SourceOpticalDeviceStress.writeBuild114FourGates(
+                    report,documents:docs
+                )
+                let measured=report.thirteenMegapixelMemoryMeasured
+                let finished="status=\(measured ? "13MP_BASELINE_MEASURED" : "FAILED_OR_INCOMPLETE")\napp=\(version) build=\(build) sha=\(sha)\n"
+                try finished.write(to:checkpoint,atomically:true,encoding:.utf8)
+                model.status=measured
+                    ? "Build114 13MP 基础全光学真实执行完成；其他三项仍未完整认证"
+                    : "Build114 13MP 未通过：失败证据及其他三项边界已保存"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build114 真机报告写入失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }
