@@ -237,7 +237,7 @@ enum Build81OriginalInputGamut {
         oklchLock.unlock()
         if let cached{return cached}
         let L=0.05+0.95*Double(LIndex)/63.0
-        let h=-Double.pi+2.0*Double.pi*Double(hIndex)/720.0
+        let h = -Double.pi + 2.0*Double.pi*Double(hIndex)/720.0
         let ch=cos(h),sh=sin(h)
         var lo=0.0,hi=0.5
         for _ in 0..<18 {
