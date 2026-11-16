@@ -324,6 +324,7 @@ jobs:
             ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
             ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
             ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
             ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
