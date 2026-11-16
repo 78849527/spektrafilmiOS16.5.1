@@ -97,9 +97,10 @@ enum Build115ParallelNumbaEvidence {
             // Two independently OS-entropy-seeded production instances
             // MUST not produce identical entire random fields.
             let second=try OriginalSourceNumbaParallelWorkers(workerCount:4)
-            different=counts != (try second.particleLayer(
+            let secondCounts=try second.particleLayer(
                 rates:rates,probabilities:ps
-            ))
+            )
+            different=counts != secondCounts
             sourceSciPy=try fullGrainIntegration(fast:false)
             sourceFast=try fullGrainIntegration(fast:true)
             if !different || !sourceSciPy || !sourceFast ||
