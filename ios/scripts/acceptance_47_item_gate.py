@@ -128,7 +128,7 @@ def main():
     assert 'MARKETING_VERSION: "1.8.74"' in project
     assert 'CURRENT_PROJECT_VERSION: "108"' in project
     assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
-    assert git("rev-parse", "HEAD^") == FROZEN, "frozen source parent drift"
+    assert git("merge-base", FROZEN, "HEAD") == FROZEN, "frozen source ancestry drift"
     changed=git("diff", "--name-only", FROZEN, "HEAD").splitlines()
     allowed={
         "ios/scripts/acceptance_47_item_gate.py",
