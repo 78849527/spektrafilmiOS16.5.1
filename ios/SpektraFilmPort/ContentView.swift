@@ -1868,6 +1868,8 @@ struct ContentView: View {
     /// when a newly captured report/folder is safe to share.
     @State private var diagnosticDismissPending=false
     @State private var diagnosticPendingShare: URL?
+    /// Build107: one feedback share with the matched human LOG and JSON.
+    @State private var diagnosticPendingFeedback: (log:URL,json:URL)?
 
     private struct ExportProposal: Identifiable {
         let id = UUID()
@@ -1887,6 +1889,7 @@ struct ContentView: View {
         case lut
         case stocks
         case share(URL)
+        case shareFeedback(URL,URL)
 
         var id: String {
             switch self {
@@ -1894,6 +1897,8 @@ struct ContentView: View {
             case .lut: return "lut-file"
             case .stocks: return "stock-catalog"
             case .share(let url): return "share-" + url.absoluteString
+            case .shareFeedback(let log,let json):
+                return "feedback-" + log.absoluteString + json.absoluteString
             }
         }
     }
@@ -2016,9 +2021,15 @@ struct ContentView: View {
                 },
                 onRunBuild103Metrics: { runBuild103Metrics() },
                 onRunBuild104Grain: { runBuild104Grain() },
+                onRunBuild107CombinedFeedback: {
+                    runBuild107CombinedFeedback()
+                },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
-                    if let file=diagnosticPendingShare {
+                    if let pair=diagnosticPendingFeedback {
+                        diagnosticPendingFeedback=nil
+                        activeSheet = .shareFeedback(pair.log,pair.json)
+                    } else if let file=diagnosticPendingShare {
                         diagnosticPendingShare=nil
                         activeSheet = .share(file)
                     }
@@ -2103,6 +2114,8 @@ struct ContentView: View {
                     CompactStockCatalogView()
                 case .share(let url):
                     ActivitySheet(items: [url])
+                case .shareFeedback(let log,let json):
+                    ActivitySheet(items: [log,json])
                 }
             }
             .confirmationDialog(
@@ -2317,6 +2330,71 @@ struct ContentView: View {
                 enqueueDiagnosticShare(file)
             } catch {
                 model.status="Build104 诊断保存失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
+    /// Build106/107: do not ask user to perform 4 separate exports.
+    /// Both actual stage reports and both memory subsets live in one
+    /// SHA-bound readable LOG and JSON, shared in a single activity sheet.
+    private func runBuild107CombinedFeedback() {
+        guard !model.busy else { return }
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="正在运行 Build106+107 真机反馈：28+20 原版阶段、内存预算、16MiB RSS…"
+        let bundle=Bundle.main
+        let ver=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let revision=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        let device=UIDevice.current.model
+        let system=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physical=false
+        #else
+        let physical=true
+        #endif
+        let coreManifest=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:Build101DeviceParityEvidence.fixture
+        )
+        let grainDirectory=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:"generated-source-grain-v1.8.48"
+        )?.deletingLastPathComponent()
+        Task { @MainActor in
+            defer {model.busy=false}
+            let report=await Task.detached(priority:.userInitiated) {
+                Build107CombinedDeviceFeedback.capture(
+                    version:ver,build:build,commit:revision,
+                    device:device,osVersion:system,
+                    physicalDevice:physical,
+                    coreManifest:coreManifest,grainDirectory:grainDirectory
+                )
+            }.value
+            do {
+                guard let documents=FileManager.default.urls(
+                    for:.documentDirectory,in:.userDomainMask
+                ).first else {
+                    throw ImageProcessingError.invalid(
+                        "Build106+107 LOG：文档目录不可访问")
+                }
+                let pair=try Build107CombinedDeviceFeedback.write(
+                    report,documents:documents
+                )
+                model.status=report.allControlledChecksPassedOnTarget
+                    ? "Build106+107 受控反馈 PASS：已生成 LOG + JSON（非 13MP 整图认证）"
+                    : "Build106+107 检查未全部通过；首错和阶段结果已保存在 LOG + JSON"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build106+107 反馈保存失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }

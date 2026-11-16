@@ -26,6 +26,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
     let onRunBuild104Grain: () -> Void
+    let onRunBuild107CombinedFeedback: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -836,6 +837,18 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
                     Text("读取随 App 打包的 Python 原版 5 组颗粒整图参考，逐阶段对照 Swift Float64，测试无微结构种子分支与单层 SciPy 标志；导出绑定本机版本及提交 SHA 的真实结果 JSON。不是全分辨率/多线程 RNG 认证。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild107CombinedFeedback()
+                    } label: {
+                        Label("Build106 + 107：一键生成真机反馈 LOG + JSON",
+                              systemImage:"doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("一次运行 Build103 28 阶段、Build104 20 阶段、Build106 六档×四种内存预算和 Build107 实际 16MiB 触页/进程 RSS。自动生成同编号 .log 与 .json 并一起分享。13MP 全图/Jetsam 仍未认证。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
