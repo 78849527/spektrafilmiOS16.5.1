@@ -2125,6 +2125,7 @@ struct ContentView: View {
                     runBuild110GamutEvidence()
                 },
                 onRunBuild114FourGates: { runBuild114FourGates() },
+                onRunBuild115ParallelGrain: { runBuild115ParallelGrain() },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -2595,6 +2596,64 @@ struct ContentView: View {
                 }
             } catch {
                 model.status="Build114 真机报告写入失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
+    /// Build115: actual source multi-worker stochastic implementation,
+    /// measured on the real device and written with the true compiled SHA.
+    private func runBuild115ParallelGrain() {
+        guard !model.busy else {return}
+        let bundle=Bundle.main
+        let version=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let sha=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        let system=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physical=false
+        #else
+        let physical=true
+        #endif
+        let grain=model.sourcePhysicalGrainEnabled
+        let parallel=model.sourceGrainUseUnseededParallel
+        let fast=model.sourceGrainFastStatsEnabled
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build115：执行原版 Numba 多线程粒子／微结构统计及真实三亚层集成…"
+        Task { @MainActor in
+            defer {model.busy=false}
+            let proof=await Task.detached(priority:.userInitiated) {
+                Build115ParallelNumbaEvidence.capture(
+                    version:version,build:build,commit:sha,
+                    osVersion:system,physical:physical,
+                    grain:grain,parallel:parallel,fast:fast
+                )
+            }.value
+            do {
+                guard let documents=FileManager.default.urls(
+                    for:.documentDirectory,in:.userDomainMask
+                ).first else {
+                    throw ImageProcessingError.invalid(
+                        "Build115 无法访问诊断保存目录"
+                    )
+                }
+                let pair=try Build115ParallelNumbaEvidence.write(
+                    proof,documents:documents
+                )
+                model.status=proof.sourceStatisticalChecksPassedOnTarget
+                    ? "Build115 四线程颗粒统计及两条三亚层真机入口 PASS；并行随机逐位等价未认证"
+                    : "Build115 多线程颗粒未全通过：首错已写入 LOG＋JSON"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build115 保存真机随机报告失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }
