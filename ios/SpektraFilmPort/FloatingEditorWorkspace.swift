@@ -76,6 +76,21 @@ struct FloatingEditorWorkspace: View {
         case paper = "相纸"
         case scanner = "扫描"
     }
+    // Build112 purely presents the EXISTING two independent source switches.
+    // No added saved mode, optical model, default, or alternate renderer.
+    private enum SourceColorRoute {
+        case classic, oklch, cam16, both
+        var label:String {
+            switch self {
+            case .classic: return "经典 xy / ACES"
+            case .oklch: return "Oklch 输入"
+            case .cam16: return "CAM16-UCS 输出"
+            case .both: return "Oklch + CAM16"
+            }
+        }
+        var usesOklch:Bool { self == .oklch || self == .both }
+        var usesCAM16:Bool { self == .cam16 || self == .both }
+    }
     private enum AdjustmentFeature: String {
         case basic = "基础"
         case scanner = "扫描"
@@ -468,20 +483,11 @@ struct FloatingEditorWorkspace: View {
             let available = canvas.size
              ZStack {
                 Color.black
-                // Fixed top-to-bottom order; image starts right below
-                // diagnostics. The toolbar never overlays the preview.
+                // The image area has a constant layout rectangle.
+                // BOTH notifications are overlays on top of the photo.
+                // Never place variable-height text above GeometryReader:
+                // status transitions must not shift the image or zoom.
                 VStack(spacing: 4) {
-                    if controlsVisible && model.hasPhoto {
-                        Button {
-                            statusReportPresented = true
-                        } label: {
-                            statusChip
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("查看完整状态及 Metal 数值诊断报告")
-                        .padding(.horizontal, 9)
-                        .padding(.top, 7)
-                    }
                     GeometryReader { previewSlot in
                         previewArea(size: previewSlot.size)
                             .frame(width: previewSlot.size.width,
@@ -490,7 +496,7 @@ struct FloatingEditorWorkspace: View {
                             .clipped()
                             .overlay(alignment:.top) {
                                 if model.hasPhoto {
-                                    inputCompatibilityBanner
+                                    photoFloatingNotices
                                         .padding(.horizontal,9)
                                         .padding(.top,5)
                                 }
@@ -789,12 +795,33 @@ struct FloatingEditorWorkspace: View {
     }
 
     /// Compact, always tappable summary. Full diagnostic evidence is scrollable.
+    /// Fixed compact overlay: status remains one line regardless of whether
+    /// it says "busy", "PASS" or a long source error. Open diagnostics for
+    /// the full untruncated message; source photography does not jump.
+    private var photoFloatingNotices:some View {
+        VStack(spacing:4) {
+            if controlsVisible {
+                Button {
+                    statusReportPresented=true
+                } label: {
+                    statusChip
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("查看完整状态及 Metal 数值诊断报告")
+            }
+            inputCompatibilityBanner
+        }
+        .frame(maxWidth:.infinity,alignment:.top)
+        .fixedSize(horizontal:false,vertical:true)
+    }
+
     private var statusChip: some View {
         HStack(alignment: .center, spacing: 8) {
             Text(model.busy ? "正在生成胶片预览…" : model.status)
                 .font(.caption2)
                 .foregroundColor(.primary)
-                .lineLimit(2)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "doc.text.magnifyingglass")
@@ -803,8 +830,8 @@ struct FloatingEditorWorkspace: View {
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height:32)
         .background(
             Color(uiColor: .secondarySystemBackground).opacity(0.93),
             in: RoundedRectangle(cornerRadius: 10)
@@ -840,7 +867,7 @@ struct FloatingEditorWorkspace: View {
             }
             .foregroundColor(.primary)
             .padding(.horizontal,9)
-            .padding(.vertical,6)
+            .frame(height:42)
             .background(Color(uiColor:.secondarySystemBackground)
                         .opacity(0.94),in:RoundedRectangle(cornerRadius:9))
         }
@@ -855,7 +882,7 @@ struct FloatingEditorWorkspace: View {
                     Text("Build100｜功能验收状态")
                         .font(.headline)
                     Text("当前处理：" +
-                        (fullPhysicalMode ? "原版 Float64 光学（实验、未认证）" :
+                        (fullPhysicalMode ? "原版 Float64 光学（受控 PASS，整图未认证）" :
                          directPixelMode ? "8-bit 原版 DIR 直连（范围有限）" :
                          "移动快速兼容处理"))
                         .font(.subheadline)
@@ -1051,7 +1078,7 @@ struct FloatingEditorWorkspace: View {
                 // NOT an equal fourth production workflow. Keep the tested
                 // lazy-mount/dismount behavior after selecting its page.
                 Menu {
-                    Button("实验性原版参数（未认证）") {
+                    Button("专业参数与待认证项目") {
                         selectEditorPage(.laboratory)
                     }
                     Button("验证状态与诊断") {
@@ -1237,8 +1264,8 @@ struct FloatingEditorWorkspace: View {
         let paperName=media.first(where: {$0.id == selectedPaperID})
             .map { shortName($0) } ?? selectedPaperID
         let processing=fullPhysicalMode
-            ? "精细冲印 · 实验"
-            : (directPixelMode ? "兼容处理" : "快速冲印")
+            ? "精细冲印 · 受控验证"
+            : (directPixelMode ? "原版 DIR 直连" : "快速冲印")
         return HStack(spacing: 4) {
             Text(filmName)
             if !isReversal {
@@ -1421,7 +1448,7 @@ struct FloatingEditorWorkspace: View {
                 Button {
                     if !fullPhysicalMode { requestSourceMode(.physical) }
                 } label: {
-                    Text("精细冲印 · 实验")
+                    Text("精细冲印")
                         .font(.system(size:12,weight:.semibold))
                         .frame(maxWidth:.infinity,minHeight:30)
                         .foregroundColor(fullPhysicalMode ? .accentColor : .primary)
@@ -1442,10 +1469,88 @@ struct FloatingEditorWorkspace: View {
                 Text("当前为兼容处理。可切换快速冲印，或确认启用精细冲印依赖。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if fullPhysicalMode {
-                Text("Float64 光学实验路径：尚未完成真机整图原版等价认证。")
+                Text("Float64 受控真机 PASS；13MP、RAW 与 Python 原版整图仍未认证。")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
+    }
+
+    // Build112: four visible source routes map 1:1 to the same two
+    // proven Build110 Oklch/CAM16 fields. No preset persistence.
+    private var currentSourceColorRoute:SourceColorRoute {
+        switch (model.sourcePhysicalInputOklchEnabled,
+                model.sourcePhysicalCAM16DefaultGamutEnabled) {
+        case (false,false): return .classic
+        case (true,false): return .oklch
+        case (false,true): return .cam16
+        case (true,true): return .both
+        }
+    }
+
+    private func selectSourceColorRoute(_ route:SourceColorRoute) {
+        guard fullPhysicalMode && model.hasPhoto && !model.busy &&
+              model.hanatosOriginalPrecisionEnabled &&
+              model.originalScannerEnabled else {return}
+        // Oklch operates only on the Hanatos TC rebuild. A Mallett
+        // camera method is NOT silently replaced on button tap.
+        guard !route.usesOklch ||
+              model.sourceCameraRawMethod == .hanatos2025 else {return}
+        guard currentSourceColorRoute != route else {return}
+        model.sourcePhysicalInputOklchEnabled=route.usesOklch
+        model.sourcePhysicalCAM16DefaultGamutEnabled=route.usesCAM16
+        model.queueSpectralPreview()
+    }
+
+    private func sourceColorRouteButton(_ route:SourceColorRoute) -> some View {
+        let selected=currentSourceColorRoute == route
+        let permitted=fullPhysicalMode && model.hasPhoto && !model.busy &&
+            model.originalScannerEnabled && model.hanatosOriginalPrecisionEnabled &&
+            (!route.usesOklch ||
+             model.sourceCameraRawMethod == .hanatos2025)
+        return Button {selectSourceColorRoute(route)} label: {
+            Text(route.label)
+                .font(.system(size:11,weight:.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth:.infinity,minHeight:30)
+                .foregroundColor(selected ? .accentColor : .primary)
+                .background(selected ? Color.accentColor.opacity(0.15)
+                           :Color.primary.opacity(0.06),
+                            in:RoundedRectangle(cornerRadius:8))
+        }
+        .buttonStyle(.plain)
+        .disabled(!permitted)
+        .opacity(permitted ? 1 : 0.45)
+        .accessibilityLabel(route.label +
+            (selected ? "，已选择" : "，切换处理路线"))
+        .accessibilityHint(route.usesOklch
+            ? "需要精细冲印和 Hanatos2025；原版算法保持不变"
+            : "受控真机验证通过；全尺寸原版 Python 整图仍未认证")
+    }
+
+    private var sourceColorRouteControls:AnyView {
+        AnyView(
+            VStack(alignment:.leading,spacing:4) {
+                Text("原版色域路线 · 受控真机 4/4 PASS")
+                    .font(.system(size:10,weight:.medium))
+                    .foregroundColor(.secondary)
+                HStack(spacing:5) {
+                    sourceColorRouteButton(.classic)
+                    sourceColorRouteButton(.oklch)
+                }
+                HStack(spacing:5) {
+                    sourceColorRouteButton(.cam16)
+                    sourceColorRouteButton(.both)
+                }
+                Text(model.sourceCameraRawMethod == .hanatos2025
+                     ? "实际调用原版 Float64；完整照片 Python 对照未认证"
+                     : "当前为 Mallett：Oklch 需要在拍摄阶段切换 Hanatos2025")
+                    .font(.system(size:10))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .foregroundColor(.secondary)
+            }
+        )
     }
 
     private func processTab(_ stage: ProcessStage) -> some View {
@@ -1470,6 +1575,10 @@ struct FloatingEditorWorkspace: View {
             VStack(alignment:.leading,spacing:5) {
                 currentMaterialSummary
                 processingModeBar.padding(.horizontal,10)
+                if fullPhysicalMode {
+                    sourceColorRouteControls
+                        .padding(.horizontal,10)
+                }
                 HStack(spacing:5) {
                     processTab(.camera)
                     processTab(.film)
@@ -1508,6 +1617,19 @@ struct FloatingEditorWorkspace: View {
             Text("拍摄阶段 · 光线进入胶片之前")
                 .font(.caption).fontWeight(.semibold)
             if fullPhysicalMode {
+                Picker("原版光谱重建",selection:$model.sourceCameraRawMethod) {
+                    Text("Hanatos 2025 · 光谱 TC")
+                        .tag(SpectralPhysics.CameraRawMethod.hanatos2025)
+                    Text("Mallett 2019 · 81 波长")
+                        .tag(SpectralPhysics.CameraRawMethod.mallett2019)
+                }
+                .pickerStyle(.menu)
+                .onChange(of:model.sourceCameraRawMethod) { _ in
+                    model.queueSpectralPreview()
+                }
+                Text("输入色域：" + (model.sourcePhysicalInputOklchEnabled
+                    ? "Oklch Float64" : "经典 xy Float64"))
+                    .font(.caption2).foregroundColor(.secondary)
                 resetToggle("测光与镜头处理",value:$model.sourceCameraPreFilmEnabled,
                             enabled:model.hasPhoto && !model.busy,resetTo:false)
                     .onChange(of:model.sourceCameraPreFilmEnabled) { _ in
@@ -1536,7 +1658,7 @@ struct FloatingEditorWorkspace: View {
                 Text("快速冲印保留现有的相机曝光与色彩预处理，不会自动启用实验光谱算法。")
                     .font(.caption2).foregroundColor(.secondary)
             }
-            Text("光谱重建方法、紫外／红外截止等参数在实验室配置。")
+            Text("UV／IR 截止和源码光谱重算细节仍在高级专业参数。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1556,6 +1678,13 @@ struct FloatingEditorWorkspace: View {
                                 (!directPixelMode || fullPhysicalMode),resetTo:false)
                 .onChange(of:model.halationEnabled) { _ in onRefresh() }
             if fullPhysicalMode {
+                resetToggle("原版三亚层颗粒 · 受控验证",
+                            value:$model.sourcePhysicalGrainEnabled,
+                            enabled:model.hasPhoto && !model.busy,
+                            resetTo:false)
+                    .onChange(of:model.sourcePhysicalGrainEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
                 resetToggle("乳剂散射与背反射联动",
                             value:$model.sourceFilmHalationEnabled,
                             enabled:model.hasPhoto && !model.busy,resetTo:false)
@@ -1563,7 +1692,7 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
             }
-            Text("DIR、FIR/YVV、三亚层颗粒与随机显影的原始参数保留在实验室。")
+            Text("DIR、FIR/YVV 与颗粒详细参数保留在高级；默认多线程随机显影仍未认证。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1618,6 +1747,11 @@ struct FloatingEditorWorkspace: View {
                     model.queueSpectralPreview()
                 }
             if fullPhysicalMode {
+                Text("输出色域：" +
+                     (model.sourcePhysicalCAM16DefaultGamutEnabled
+                      ? "CAM16-UCS · 原版 Float64"
+                      : "经典原版输出（非 CAM16 LUT）"))
+                    .font(.caption2).foregroundColor(.secondary)
                 resetToggle("扫描镜头与锐化",
                             value:$model.sourceScannerOpticalEnabled,
                             enabled:model.hasPhoto && !model.busy,resetTo:false)
@@ -1630,6 +1764,15 @@ struct FloatingEditorWorkspace: View {
                                 range:0...2,resetTo:0.7)
                 }
             } else if !directPixelMode {
+                if model.originalScannerEnabled {
+                    resetToggle("快速 CAM16 LUT（旧版扫描器）",
+                                value:$model.scannerCAM16Enabled,
+                                enabled:model.hasPhoto && !model.busy,
+                                resetTo:false)
+                        .onChange(of:model.scannerCAM16Enabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                }
                 resetToggle("扫描锐化",value:$model.scannerFinishingEnabled,
                             enabled:model.hasPhoto && !model.busy,resetTo:false)
                     .onChange(of:model.scannerFinishingEnabled) { _ in
@@ -1640,7 +1783,7 @@ struct FloatingEditorWorkspace: View {
                                     range:0...1.5,suffix:"×",resetTo:0.7)
                 }
             }
-            Text("色域边界、扫描眩光与 Float64 校准等算法选项在实验室。")
+            Text("精细模式的 CAM16-UCS 在工艺色域路线选择；扫描眩光、Float64 校准仍在高级。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1794,14 +1937,10 @@ struct FloatingEditorWorkspace: View {
                 simpleToggle("散射", value: $model.scatterEnabled) {
                     onRefresh()
                 }
-                if model.originalScannerEnabled {
-                    simpleToggle("CAM16", value: $model.scannerCAM16Enabled) {
+                if model.originalScannerEnabled && model.scannerBlackWhiteEnabled &&
+                   !isReversal {
+                    simpleToggle("曝光参考", value: $model.exposureReferenceEnabled) {
                         model.queueSpectralPreview()
-                    }
-                    if model.scannerBlackWhiteEnabled && !isReversal {
-                        simpleToggle("曝光参考", value: $model.exposureReferenceEnabled) {
-                            model.queueSpectralPreview()
-                        }
                     }
                 }
                 if model.originalPrintOpticsEnabled && !isReversal {
@@ -1900,10 +2039,10 @@ struct FloatingEditorWorkspace: View {
         AnyView(
             VStack(spacing: 3) {
                 HStack(spacing: 5) {
-                    Text("实验性原版参数 · 保留但未完成全链认证")
+                    Text("原版专业参数 · 未认证范围仍单独标注")
                         .font(.caption2).foregroundColor(.secondary)
                     Spacer(minLength: 2)
-                    Text(fullPhysicalMode ? "Float64 实验" : "兼容 / 实验")
+                    Text(fullPhysicalMode ? "Float64 · 受控 PASS" : "快速 / 专业")
                         .font(.caption2).foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 11)
@@ -2254,37 +2393,9 @@ struct FloatingEditorWorkspace: View {
                             // source XYZ random glare is controlled only;
                             // never activate unseeded production prange.
                             sourceScannerGlareSettings
-                            resetToggle(
-                                "原版输入 Oklch：重新烘焙 Hanatos LUT（实验）",
-                                value:$model.sourcePhysicalInputOklchEnabled,
-                                enabled:model.hasPhoto && !model.busy &&
-                                        model.sourcePixelIOEnabled &&
-                                        model.sourcePhysicalDirectEnabled &&
-                                        model.sourceCameraRawMethod == .hanatos2025,
-                                resetTo:false
-                            )
-                            .onChange(of:model.sourcePhysicalInputOklchEnabled) { _ in
-                                model.queueSpectralPreview()
-                            }
-                            Text("源 InputGamutCompressSpec：直接在 192×192 光谱 TC LUT" +
-                                 " 内执行 Oklch Cmax 和双线性重映射，Float64。" +
-                                 "默认 xy 分支不变；高位深/RAW 仍未贯通。")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            resetToggle(
-                                "原版默认输出 CAM16-UCS（逐像素 Float64 实验）",
-                                value:$model.sourcePhysicalCAM16DefaultGamutEnabled,
-                                enabled:model.hasPhoto && !model.busy &&
-                                        model.sourcePixelIOEnabled &&
-                                        model.sourcePhysicalDirectEnabled,
-                                resetTo:false
-                            )
-                            .onChange(of:model.sourcePhysicalCAM16DefaultGamutEnabled) { _ in
-                                model.queueSpectralPreview()
-                            }
-                            Text("启用后实际进入原版 CAM16-UCS Float64 逐像素色域压缩；" +
-                                 "不是旧版 33³ CAM16 LUT。仅限 sRGB 源像素与 sRGB 输出，" +
-                                 "运算可能很慢；RAW、ICC 广色域和全图 Python 对照仍未认证。")
+                            Text("原版输入 Oklch / CAM16-UCS 已统一移至「工艺 → 原版色域路线」。" +
+                                 "当前：" + currentSourceColorRoute.label +
+                                 "；仅原版 Float64 受控真机通过，Python 整图未认证。")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             sourcePhysicalGrainSettings
@@ -2367,15 +2478,8 @@ struct FloatingEditorWorkspace: View {
     private var sourcePhysicalGrainSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {
-                resetToggle("源三亚层颗粒 / 染料云（Float64 实验）",
-                            value:$model.sourcePhysicalGrainEnabled,
-                            enabled:model.hasPhoto && !model.busy &&
-                                    model.sourcePixelIOEnabled &&
-                                    model.sourcePhysicalDirectEnabled,
-                            resetTo:false)
-                    .onChange(of:model.sourcePhysicalGrainEnabled) { _ in
-                        model.queueSpectralPreview()
-                    }
+                Text("三亚层颗粒开关：工艺 → 胶片；下面保留源码原样参数。")
+                    .font(.caption2).foregroundColor(.secondary)
                 if model.sourcePhysicalGrainEnabled {
                     morphSlider("原版末端颗粒模糊 σ / px",
                                 value:$model.sourcePhysicalGrainBlur,
@@ -2555,16 +2659,8 @@ struct FloatingEditorWorkspace: View {
     private var sourceCameraSpectralSettings: AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 6) {
-                Picker("相机原版光谱重建", selection: $model.sourceCameraRawMethod) {
-                    Text("Hanatos 2025（原版 TC 重算）")
-                        .tag(SpectralPhysics.CameraRawMethod.hanatos2025)
-                    Text("Mallett 2019（81 波长积分）")
-                        .tag(SpectralPhysics.CameraRawMethod.mallett2019)
-                }
-                .pickerStyle(.menu)
-                .onChange(of: model.sourceCameraRawMethod) { _ in
-                    model.queueSpectralPreview()
-                }
+                Text("光谱重建选择在工艺 → 拍摄；此处保留 UV／IR 和 Hanatos 源码参数。")
+                    .font(.caption2).foregroundColor(.secondary)
                 Text("Hanatos 原版 81 波长 TC 光谱重算支持 UV/IR；" +
                      "滤镜变更立即重算，并同时应用原版感光度窗口、" +
                      "四阶表面校正和输入 xy 色域压缩；不可读取原 LUT 代替。")
