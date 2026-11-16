@@ -29,6 +29,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild107CombinedFeedback: () -> Void
     let onRunBuild108FullFrameFeedback: () -> Void
     let onRunBuild110GamutEvidence: () -> Void
+    let onRunBuild114FourGates: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -979,6 +980,18 @@ struct FloatingEditorWorkspace: View {
                          + "Float64 显影/印相/扫描。记录逐模式耗时、RSS、输出指纹、"
                          + "与默认值的差异；内含原 Build106–108 全部诊断。"
                          + "本测试不是对已导入照片的逐像素 Python 原版认证。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild114FourGates()
+                    } label: {
+                        Label("Build114：13MP 真机压力测试＋四项认证边界报告",
+                              systemImage:"memorychip")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("显式运行 5000×2600 基础 Float64 全光学，采样 RSS，写入 LOG＋JSON；高风险内存测试可能遭遇 Jetsam。只认证实测范围；Python 大图、RAW 全链、默认多线程 RNG 继续分别标记。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
