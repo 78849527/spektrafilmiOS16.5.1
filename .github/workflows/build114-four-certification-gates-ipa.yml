@@ -1,3 +1,4 @@
+# Build114 final source-pinned CI trigger
 # Build114 UI-only. Starts from the previously PASS Build111 CI and only changes version/UI verification/release identity.
 # Follow-up: scan XYZ single-thread control moved to Process/Scanner; CMY to Process/Paper; Build100 audit updated for original advanced controls.
 # Build111 fix: ship compatibility changes via the existing Build110 release branch, no extra release branch.
@@ -51,6 +52,7 @@ jobs:
           xcrun swiftc -frontend -parse \
             ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift \
             ios/SpektraFilmPort/Build107CombinedDeviceFeedback.swift \
+          ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
             ios/SpektraFilmPort/ContentView.swift \
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift
           # Python audit needs generated original-source manifest, checked
