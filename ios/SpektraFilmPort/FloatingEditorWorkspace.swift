@@ -47,6 +47,7 @@ struct FloatingEditorWorkspace: View {
     @State private var selectedFeature: AdjustmentFeature? = .basic
     // Confirm before changing any OTHER user-selected settings.
     @State private var pendingSourceMode: SourceModeChange?
+    @State private var sourceInputCompatibilityAlert=false
     // The fast/editor configuration is saved only when first entering a
     // source-pixel mode. Leaving that mode restores the exact user values,
     // not a hardcoded default set. Never persist a snapshot across images.
@@ -250,6 +251,11 @@ struct FloatingEditorWorkspace: View {
 
     private func requestSourceMode(_ mode: SourceModeChange) {
         guard model.hasPhoto && !model.busy else { return }
+        if (mode == .pixel || mode == .physical) &&
+            !model.photoDirectInputReady {
+            sourceInputCompatibilityAlert=true
+            return
+        }
         if mode == .pixel && model.sourcePixelIOEnabled {
             requestSourceMode(.disablePixel)
             return
@@ -350,7 +356,11 @@ struct FloatingEditorWorkspace: View {
                 .font(.caption2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button {
-                requestSourceMode(mode)
+                if !isOn && !model.photoDirectInputReady {
+                    sourceInputCompatibilityAlert=true
+                } else {
+                    requestSourceMode(mode)
+                }
             } label: {
                 miniatureSwitch(isOn: isOn)
                     .frame(width: MiniSwitchMetrics.tapWidth,
@@ -358,11 +368,16 @@ struct FloatingEditorWorkspace: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(model.busy || (!isOn && (!prerequisite || !model.hasPhoto)))
+            .disabled(model.busy || (!isOn && (!model.hasPhoto ||
+                model.lut == nil || !model.spatialDIREnabled ||
+                !model.spatialDIRSourceConvolutionEnabled ||
+                (mode == .physical && !model.sourcePixelIOEnabled))))
             .accessibilityLabel(title + (isOn ? "，关闭" : "，开启"))
-            .accessibilityHint("若需改变其他已开启选项，会先列明并要求确认")
+            .accessibilityHint(model.photoDirectInputReady
+                ? "若需改变其他已开启选项，会先列明并要求确认"
+                : "原图需要检测或明确转换。点击查看原因")
         }
-        .opacity(!isOn && !prerequisite ? 0.45 : 1)
+        .opacity(!isOn && (!prerequisite || !model.photoDirectInputReady) ? 0.45 : 1)
     }
 
     /// Change top titles in the ONE lower sheet; the inactive adjustment
@@ -467,6 +482,11 @@ struct FloatingEditorWorkspace: View {
                         .padding(.horizontal, 9)
                         .padding(.top, 7)
                     }
+                    if model.hasPhoto {
+                        inputCompatibilityBanner
+                            .padding(.horizontal,9)
+                            .padding(.top,4)
+                    }
                     GeometryReader { previewSlot in
                         previewArea(size: previewSlot.size)
                             .frame(width: previewSlot.size.width,
@@ -505,6 +525,20 @@ struct FloatingEditorWorkspace: View {
                 photoScale=1
                 compareFraction=0.5
                 pendingSourceMode=nil
+            }
+            .alert("原版像素输入检测",isPresented:$sourceInputCompatibilityAlert) {
+                if model.photoP3ConversionPossible && !model.busy {
+                    Button("转换 P3 为 sRGB 副本") {
+                        do {
+                            try model.convertCurrentP3ToSRGB()
+                        } catch {
+                            model.status="Build111 色彩转换失败："+error.localizedDescription
+                        }
+                    }
+                }
+                Button("关闭",role:.cancel) {}
+            } message: {
+                Text(model.photoInputSummary+"。"+model.photoInputExplanation)
             }
             .alert(item: $pendingSourceMode) { mode in
                 Alert(
@@ -773,6 +807,43 @@ struct FloatingEditorWorkspace: View {
             in: RoundedRectangle(cornerRadius: 10)
         )
         .contentShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Always visible for capture / Photos / Files, even with controls hidden.
+    /// Small diagnostic row; never move/resize image inside its own preview.
+    private var inputCompatibilityBanner:some View {
+        Button {
+            sourceInputCompatibilityAlert=true
+        } label: {
+            HStack(alignment:.center,spacing:7) {
+                Image(systemName:model.photoDirectInputReady
+                      ? "checkmark.shield" : "info.circle")
+                    .font(.caption2)
+                VStack(alignment:.leading,spacing:2) {
+                    Text(model.photoInputSummary)
+                        .font(.system(size:10,weight:.medium))
+                        .lineLimit(1)
+                    Text(model.photoDirectInputReady
+                         ? "原版 8-bit 像素输入可用"
+                         : (model.photoP3ConversionPossible
+                            ? "P3 需明确转换为 sRGB；点此转换"
+                            : "原版像素输入不可用；点此查看原因"))
+                        .font(.system(size:10))
+                        .lineLimit(1)
+                }
+                Spacer(minLength:0)
+                Image(systemName:"chevron.right")
+                    .font(.caption2)
+            }
+            .foregroundColor(.primary)
+            .padding(.horizontal,9)
+            .padding(.vertical,6)
+            .background(Color(uiColor:.secondarySystemBackground)
+                        .opacity(0.94),in:RoundedRectangle(cornerRadius:9))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("当前照片："+model.photoInputSummary+
+                            "。"+model.photoInputExplanation)
     }
 
     private var statusReportSheet: some View {

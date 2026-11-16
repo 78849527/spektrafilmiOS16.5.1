@@ -17,6 +17,41 @@ final class PhotoEditorModel: ObservableObject {
     @Published var hardwareDiagnosticReport: String? = nil
     @Published var busy = false
     @Published var photoDimensions = ""
+    /// Build111 admission result for the *currently committed* photo.
+    @Published var photoInputProfile: Build111PhotoInputProfile.Inspection?
+    @Published var photoInputConvertedFromP3 = false
+    private var photoOriginalBeforeColorConversion: Data?
+    var photoDirectInputReady:Bool {
+        originalPhotoData != nil && !rawFastModeActive &&
+            photoInputProfile?.directCompatible == true
+    }
+    var photoP3ConversionPossible:Bool {
+        originalPhotoData != nil && !rawFastModeActive &&
+            photoInputProfile?.convertibleP3 == true
+    }
+    var photoInputSummary:String {
+        guard let p=photoInputProfile else {
+            return hasPhoto ? "RAW / 未认证输入：原版像素直连不可用" : "尚未导入照片"
+        }
+        return p.summary + (photoInputConvertedFromP3 ? "｜ColorSync 已转换" : "")
+    }
+    var photoInputExplanation:String {
+        photoInputProfile?.reason ??
+            "此照片没有可检测的原始文件数据，原版像素直连不可用。"
+    }
+
+    func convertCurrentP3ToSRGB() throws {
+        guard !busy,photoP3ConversionPossible,
+              let bytes=originalPhotoData else {
+            throw ImageProcessingError.invalid("当前照片不满足可转换的 P3 8-bit 条件")
+        }
+        let original=photoOriginalBeforeColorConversion ?? bytes
+        let converted=try Build111PhotoInputProfile.convertP3ToSRGB(bytes)
+        try loadPhoto(converted,entry:.converted)
+        photoOriginalBeforeColorConversion=original
+        photoInputConvertedFromP3=true
+        status="已明确使用 Apple ColorSync 将 P3 转为独立 sRGB JPEG；原始照片保留。(photoInputSummary)。原版全光学仍需通过其独立内存预算。"
+    }
     /// Original Bayer DNG file from the most recent RAW+JPEG capture.
     @Published var capturedRAWURL: URL?
     /// Build93: only an explicit user choice opens non-source Apple RAW.
@@ -298,6 +333,9 @@ final class PhotoEditorModel: ObservableObject {
         let dimensions: String
         let sourcePixel: Bool
         let sourcePhysical: Bool
+        let inputProfile:Build111PhotoInputProfile.Inspection?
+        let convertedFromP3:Bool
+        let unconvertedData:Data?
     }
 
     private func snapshotEditing() -> EditingSnapshot {
@@ -308,7 +346,10 @@ final class PhotoEditorModel: ObservableObject {
             originalPreview:originalPreview, processedPreview:processedPreview,
             dimensions:photoDimensions,
             sourcePixel:sourcePixelIOEnabled,
-            sourcePhysical:sourcePhysicalDirectEnabled
+            sourcePhysical:sourcePhysicalDirectEnabled,
+            inputProfile:photoInputProfile,
+            convertedFromP3:photoInputConvertedFromP3,
+            unconvertedData:photoOriginalBeforeColorConversion
         )
     }
 
@@ -326,6 +367,9 @@ final class PhotoEditorModel: ObservableObject {
         photoDimensions=prior.dimensions
         sourcePixelIOEnabled=prior.sourcePixel
         sourcePhysicalDirectEnabled=prior.sourcePhysical
+        photoInputProfile=prior.inputProfile
+        photoInputConvertedFromP3=prior.convertedFromP3
+        photoOriginalBeforeColorConversion=prior.unconvertedData
     }
 
     /// Commit source and UI state only after successful file decoding
@@ -334,16 +378,22 @@ final class PhotoEditorModel: ObservableObject {
     private func commitDecodedPhoto(
         image:CIImage, preview:UIImage,
         data:Data?, rawURL:URL?, rawCompatible:Bool,
-        dimensions:String
+        dimensions:String,
+        inputProfile:Build111PhotoInputProfile.Inspection? = nil
     ) throws {
         let prior=snapshotEditing()
         invalidateSimulation()
-        if rawCompatible {
+        // A newly imported P3/untagged/high-bit image must never inherit
+        // the previous photo's active original Float64 pixel mode.
+        if rawCompatible || inputProfile?.directCompatible != true {
             sourcePixelIOEnabled=false
             sourcePhysicalDirectEnabled=false
         }
         source=image
         originalPhotoData=data
+        photoInputProfile=inputProfile
+        photoInputConvertedFromP3=false
+        photoOriginalBeforeColorConversion=nil
         originalPreview=preview
         processedPreview=preview
         photoDimensions=dimensions
@@ -371,12 +421,15 @@ final class PhotoEditorModel: ObservableObject {
     /// RAW-compatible CI images do NOT satisfy direct source pixel input.
     /// Full high-depth/ICC validation still runs inside the exact pipeline.
     var originalPixelInputAvailable: Bool {
-        source != nil && originalPhotoData != nil
+        photoDirectInputReady
     }
 
     /// Explicitly reject all unported combinations in direct source mode.
     /// No silent switch back to Core Image when the user selected precision.
     private func validateSourcePixelIO() throws -> (Data,SpatialDIRStage) {
+        guard photoDirectInputReady else {
+            throw ImageProcessingError.invalid("照片输入预检未通过："+photoInputSummary+"。"+photoInputExplanation)
+        }
         guard let data=originalPhotoData, let stage=spatialDIRStage,
               spatialDIREnabled,spatialDIRSourceConvolutionEnabled,
               lut != nil,abs(strength-1.0)<1e-9 else {
@@ -625,7 +678,7 @@ final class PhotoEditorModel: ObservableObject {
                 try raw.write(to: output, options: .atomic)
                 rawFile = output
             }
-            try loadPhoto(capture.processed)
+            try loadPhoto(capture.processed,entry:.camera)
             capturedRAWURL = rawFile
             status = rawFile == nil
                 ? "\(capture.format) 拍摄完成，已进入当前胶片／相纸冲印"
@@ -661,7 +714,7 @@ final class PhotoEditorModel: ObservableObject {
                     + "请选择显影后替换当前照片，或仅保存原片；当前编辑不变。"
                 return
             }
-            try loadPhoto(Data(contentsOf: url))
+            try loadPhoto(Data(contentsOf: url),entry:.file)
         } catch {
             status = "文件导入失败：" + error.localizedDescription
         }
@@ -894,7 +947,11 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    private func loadPhoto(_ data: Data) throws {
+    private func loadPhoto(
+        _ data:Data,
+        entry:Build111PhotoInputProfile.Entry = .album
+    ) throws {
+        let inspection=Build111PhotoInputProfile.inspect(data,entry:entry)
         let decoded = try PhotoProcessor.decode(data)
         let preview = try PhotoProcessor.preview(
             decoded, lut:nil, strength:0
@@ -902,8 +959,10 @@ final class PhotoEditorModel: ObservableObject {
         try commitDecodedPhoto(
             image:decoded, preview:preview, data:data,
             rawURL:nil, rawCompatible:false,
-            dimensions:"\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))"
+            dimensions:"\(Int(decoded.extent.width)) × \(Int(decoded.extent.height))",
+            inputProfile:inspection
         )
+        status=inspection.summary+"。"+inspection.reason
         queueSpectralPreview()
     }
 
