@@ -9,9 +9,10 @@ import Foundation
 /// (4) final full-image reflect FIR/YVV grain Gaussian.
 ///
 /// SciPy uses fixed original layer seeds (channel + 10*sublayer). Numba
-/// prange is normally unseeded and multi-worker; here microstructure is
-/// only possible with one explicitly seeded, controlled CPU worker.
-/// This is NOT default Python parallel RNG/full-image parity.
+/// prange is normally unseeded and multi-worker. Build115 offers the
+/// separate OS-entropy 2–8-worker stochastic branch, while retaining the
+/// fixed-seed one-worker exact reference. Parallel moments may be verified;
+/// arbitrary Python worker scheduling and bitstream are NOT certified.
 /// No post-scanner RGB noise and no silent algorithm fallback.
 enum OriginalSourcePhysicalGrain {
     enum Failure: LocalizedError {
