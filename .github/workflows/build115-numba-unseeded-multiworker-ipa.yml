@@ -78,17 +78,18 @@ jobs:
 
   group-compile-once:
     needs: runner-preflight
-    # Intel runner: repeated Build115 jobs actually acquired this pool and
-    # executed 27 CI steps; 14 GB RAM versus standard M1 hosted runner's 7 GB.
-    # Pinned Python 3.11 + Numba 0.61.2 has compatible Intel wheels.
-    # Xcode 16.4 still targets iPhoneOS arm64 via cross-compilation.
-    runs-on: macos-15-intel
+    # Required by AGENTS.md: Apple Silicon macOS 15 (verified full Build112 baseline).
+    # Never switch to Intel or macos-latest without explicit user approval.
+    # iPhoneOS arm64 target, minimum iOS 16.5 / iOS 16.5.1 compatibility.
+    runs-on: macos-15
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
         uses: actions/checkout@v4
       - name: Use Xcode iPhoneOS SDK and report real source SHA
         run: |
+          # Fail immediately if the host accidentally changes to Intel.
+          test "$(uname -m)" = arm64
           sudo xcode-select -s /Applications/Xcode_16.4.app
           xcodebuild -version
           git rev-parse HEAD
