@@ -701,13 +701,13 @@ struct FloatingEditorWorkspace: View {
                 .disabled(model.busy)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
-            // original unchanged, adaptive 50% of live memory capped at 12MP, or economy 30% capped at 7.2MP.
+            // original unchanged; smart up to 1300MB with live headroom and 12MP; economy 30% up to 7.2MP.
             // Do not silently shrink after a failed original-size render.
             Menu {
                 Button("原始分辨率（不缩小）") {
                     onSaveToPhotos(.original)
                 }
-                Button("智能安全分辨率（最高 1200 万像素）") {
+                Button("智能安全分辨率（最高 1200 万像素 · 预算最多 1300 MB）") {
                     onSaveToPhotos(.safe)
                 }
                 Button("省内存分辨率（最高 720 万像素）") {
@@ -725,7 +725,7 @@ struct FloatingEditorWorkspace: View {
                 Button("原始分辨率（不缩小）") {
                     onExport(.original)
                 }
-                Button("智能安全分辨率（最高 1200 万像素）") {
+                Button("智能安全分辨率（最高 1200 万像素 · 预算最多 1300 MB）") {
                     onExport(.safe)
                 }
                 Button("省内存分辨率（最高 720 万像素）") {
@@ -1078,7 +1078,7 @@ struct FloatingEditorWorkspace: View {
                 // NOT an equal fourth production workflow. Keep the tested
                 // lazy-mount/dismount behavior after selecting its page.
                 Menu {
-                    Button("专业参数与待认证项目") {
+                    Button("专业参数与验证状态") {
                         selectEditorPage(.laboratory)
                     }
                     Button("验证状态与诊断") {
@@ -1658,7 +1658,7 @@ struct FloatingEditorWorkspace: View {
                 Text("快速冲印保留现有的相机曝光与色彩预处理，不会自动启用实验光谱算法。")
                     .font(.caption2).foregroundColor(.secondary)
             }
-            Text("UV／IR 截止和源码光谱重算细节仍在高级专业参数。")
+            Text("UV／IR 与光谱重算详细参数在高级，已通过受控的光学功能在工艺中使用。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1677,6 +1677,21 @@ struct FloatingEditorWorkspace: View {
                         enabled:model.hasPhoto && !model.busy &&
                                 (!directPixelMode || fullPhysicalMode),resetTo:false)
                 .onChange(of:model.halationEnabled) { _ in onRefresh() }
+            if !fullPhysicalMode && !directPixelMode {
+                resetToggle("快速胶片散射",value:$model.scatterEnabled,
+                            enabled:model.hasPhoto && !model.busy,resetTo:false)
+                    .onChange(of:model.scatterEnabled) { _ in onRefresh() }
+                resetToggle("快速胶片颗粒",value:$model.grainEnabled,
+                            enabled:model.hasPhoto && !model.busy,resetTo:false)
+                    .onChange(of:model.grainEnabled) { _ in
+                        if model.grainEnabled {model.queueSpectralPreview()}
+                        else {onRefresh()}
+                    }
+                if model.grainEnabled {
+                    strengthControl("颗粒强度",value:$model.grainAmount,
+                                    range:0...2,suffix:"×",resetTo:1)
+                }
+            }
             if fullPhysicalMode {
                 resetToggle("原版三亚层颗粒 · 受控验证",
                             value:$model.sourcePhysicalGrainEnabled,
@@ -1692,7 +1707,7 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
             }
-            Text("DIR、FIR/YVV 与颗粒详细参数保留在高级；默认多线程随机显影仍未认证。")
+            Text("快速颗粒独立于精细三亚层颗粒；DIR/FIR/YVV 参数在高级。未播种多线程 RNG 仍未认证。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1702,6 +1717,12 @@ struct FloatingEditorWorkspace: View {
             Text("相纸印相 · 仅适用于彩色负片")
                 .font(.caption).fontWeight(.semibold)
             if !isReversal {
+                resetToggle("相纸显影曲线 s023",value:$model.printMorphEnabled,
+                            enabled:model.hasPhoto && !model.busy && !fullPhysicalMode && !directPixelMode,
+                            resetTo:false)
+                    .onChange(of:model.printMorphEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
                 resetToggle("光学放大机",value:$model.originalPrintOpticsEnabled,
                             enabled:model.hasPhoto && !model.busy &&
                                     !fullPhysicalMode,resetTo:false)
@@ -1709,6 +1730,14 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
                 if model.originalPrintOpticsEnabled {
+                    if !fullPhysicalMode && !directPixelMode {
+                        resetToggle("印相曝光归一化",value:$model.normalizePrintExposure,
+                                    enabled:model.hasPhoto && !model.busy,resetTo:true)
+                            .onChange(of:model.normalizePrintExposure) { _ in model.queueSpectralPreview() }
+                        resetToggle("印相曝光补偿",value:$model.printExposureCompensation,
+                                    enabled:model.hasPhoto && !model.busy,resetTo:true)
+                            .onChange(of:model.printExposureCompensation) { _ in model.queueSpectralPreview() }
+                    }
                     DisclosureGroup("滤色片 · C / M / Y") {
                         VStack(alignment:.leading,spacing:6) {
                             morphSlider("青色 C / CC",value:$model.printCyanShift,
@@ -1790,6 +1819,15 @@ struct FloatingEditorWorkspace: View {
                 }
             } else if !directPixelMode {
                 if model.originalScannerEnabled {
+                    resetToggle("黑白场校准",value:$model.scannerBlackWhiteEnabled,
+                                enabled:model.hasPhoto && !model.busy,
+                                resetTo:false)
+                        .onChange(of:model.scannerBlackWhiteEnabled) { _ in model.queueSpectralPreview() }
+                    if model.scannerBlackWhiteEnabled && !isReversal {
+                        resetToggle("扫描曝光参考",value:$model.exposureReferenceEnabled,
+                                    enabled:model.hasPhoto && !model.busy,resetTo:false)
+                            .onChange(of:model.exposureReferenceEnabled) { _ in model.queueSpectralPreview() }
+                    }
                     resetToggle("快速 CAM16 LUT（旧版扫描器）",
                                 value:$model.scannerCAM16Enabled,
                                 enabled:model.hasPhoto && !model.busy,
@@ -2064,13 +2102,19 @@ struct FloatingEditorWorkspace: View {
         AnyView(
             VStack(spacing: 3) {
                 HStack(spacing: 5) {
-                    Text("原版专业参数 · 未认证范围仍单独标注")
+                    Text("高级参数与验收 · 已验证功能不等于待认证")
                         .font(.caption2).foregroundColor(.secondary)
                     Spacer(minLength: 2)
                     Text(fullPhysicalMode ? "Float64 · 受控 PASS" : "快速 / 专业")
                         .font(.caption2).foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 11)
+                Text("受控通过：28 核心＋20 颗粒阶段、四色域、1/2MP；工艺中直接使用相应功能。")
+                    .font(.caption2).foregroundColor(.secondary)
+                    .padding(.horizontal,11)
+                Text("尚未认证：13MP 全光学、Python 整图、RAW/高位深全链、默认多线程随机。")
+                    .font(.caption2).foregroundColor(.secondary)
+                    .padding(.horizontal,11)
                 featureRow
                 simpleSwitchRow
                 Divider().padding(.horizontal, 8)
