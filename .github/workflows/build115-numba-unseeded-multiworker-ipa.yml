@@ -1,3 +1,4 @@
+# Build115 syntax fix: worker interval infix '+' now stays in one Swift expression line.
 # Retry Build115 on the original development branch; single active attempt, unchanged Swift implementation.
 # Build115 final pinned test-and-release trigger after parallel grain source batch
 # Final source includes worker state + production 3x3 grain + UI/diagnostic + memory ledger + Python/Swift cross checks.
