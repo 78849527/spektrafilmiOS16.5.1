@@ -10,7 +10,7 @@ enum Build106SourceMemoryLedger {
     static let scannerFinishBytesPerPixel: UInt64 = 40
     static let scannerGlareBytesPerPixel: UInt64 = 96
     static let grainBytesPerPixel: UInt64 = 272
-    static let parallelGrainExtraBytesPerPixel: UInt64 = 40
+    static let parallelGrainExtraBytesPerPixel: UInt64 = 56
     static let cameraLensBytesPerPixel: UInt64 = 40
     static let filmHalationBytesPerPixel: UInt64 = 120
     static let paperDiffusionBytesPerPixel: UInt64 = 40
