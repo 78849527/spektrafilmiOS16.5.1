@@ -33,6 +33,11 @@ enum OriginalSourcePhysicalGrain {
         /// The default keeps SciPy RandomState layer sampling unchanged.
         var useFastStats = false
         var fastStatsSeed: UInt32? = nil
+        /// Upstream default unseeded Numba prange candidate; distinct from
+        /// the previous exact seeded single-worker diagnostic.
+        var useUnseededParallel = false
+        /// Zero means activeProcessorCount (clamped 2...8).
+        var parallelWorkerCount = 0
         var particleScale: [Double] = [1.6,1.6,3.2]
         var sublayerScale: [Double] = [2.0,1.0,0.5]
         var densityMin: [Double] = [0.03,0.03,0.03]
@@ -56,7 +61,9 @@ enum OriginalSourcePhysicalGrain {
                   dyeCloudBlurUM.isFinite,dyeCloudBlurUM>=0,
                   microstructureUM.isFinite,microstructureUM>=0,
                   microstructureNM.isFinite,microstructureNM>=0,
-                  nSubLayers>=1,nSubLayers<=Int(UInt32.max/10) else {
+                  nSubLayers>=1,nSubLayers<=Int(UInt32.max/10),
+                  (parallelWorkerCount==0 ||
+                   (2...8).contains(parallelWorkerCount)) else {
                 throw Failure.invalid("源颗粒参数必须严格使用合法的原版数量、面积、模糊及 3×3 亚层")
             }
             // Python grain.py only samples Numba for active microstructure
@@ -64,7 +71,15 @@ enum OriginalSourcePhysicalGrain {
             // threshold depends on pixelUM and is enforced in apply().
             // When sublayers_active=false, Python ignores use_fast_stats and
             // always uses seeded SciPy Poisson/Binomial.
-            if active && sublayersActive && useFastStats && fastStatsSeed == nil {
+            if useUnseededParallel {
+                guard sublayersActive && numbaSeed == nil &&
+                      fastStatsSeed == nil else {
+                    throw Failure.invalid(
+                        "原版 Numba 多线程和单线程种子冲突，必须明确选择一种路径"
+                    )
+                }
+            } else if active && sublayersActive && useFastStats &&
+                      fastStatsSeed == nil {
                 throw Failure.invalid(
                     "源三亚层 Numba fast_stats 必须提供受控单线程 RNG 种子"
                 )
@@ -77,6 +92,9 @@ enum OriginalSourcePhysicalGrain {
     /// For parent pre-decode safety budget. Additional whole-frame Double
     /// sublayer field + SciPy counts + blur scratch; do not auto-resize.
     static let extraBytesPerPixel: UInt64 = 272
+    /// Extra retained worker-local particle input/count copies at
+    /// concurrency boundaries, over the existing seeded grain ledger.
+    static let unseededParallelExtraBytesPerPixel: UInt64 = 40
 
     /// A sampled, fully measured source 3x3 film density profile.
     /// Ordering is [sublayer][CMY] and each layer uses the original
@@ -110,7 +128,7 @@ enum OriginalSourcePhysicalGrain {
         // Fail before consuming ANY SciPy/Numba draws or delivering
         // intermediate stages. Python only calls lognormal when > 0.05.
         let requestedMicroStd=settings.microstructureNM*0.001/pixelUM
-        if requestedMicroStd>0.05 {
+        if requestedMicroStd>0.05 && !settings.useUnseededParallel {
             guard let microSeed=settings.numbaSeed else {
                 throw Failure.invalid("原版 Numba 微结构随机线程未定义")
             }
@@ -188,8 +206,21 @@ enum OriginalSourcePhysicalGrain {
         var cloud=settings.dyeCloudBlurUM>0
             ? [Double](repeating:0,count:pixels*3) : []
         var controlledFastSampler:OriginalSourceNumbaFastCounts? =
-            settings.useFastStats
+            settings.useFastStats && !settings.useUnseededParallel
                 ? OriginalSourceNumbaFastCounts(seed:settings.fastStatsSeed!)
+                : nil
+        // Create the independent worker RNG states ONCE before the first
+        // fast_stats array, then keep them alive through all nine layers
+        // and the later Numba lognormal microstructure. SciPy remains on
+        // its original fixed per-sublayer seeds when fast_stats is OFF.
+        let multiworker:OriginalSourceNumbaParallelWorkers? =
+            settings.useUnseededParallel &&
+            (settings.useFastStats || requestedMicroStd>0.05)
+                ? try OriginalSourceNumbaParallelWorkers(
+                    workerCount:settings.parallelWorkerCount==0
+                        ? OriginalSourceNumbaParallelWorkers.defaultWorkers
+                        : settings.parallelWorkerCount
+                  )
                 : nil
         for ch in 0..<3 {
             for sl in 0..<3 {
@@ -205,12 +236,19 @@ enum OriginalSourcePhysicalGrain {
                 }
                 let counts:[Int64]
                 if settings.useFastStats {
-                    // Numba state is independent of NumPy seed(ch+10*sl).
-                    // One explicit persistent worker across all 9 layers.
-                    let draw=try controlledFastSampler!.runOriginalTwoPhase(
-                        rates:rates,probabilities:probabilities
-                    )
-                    counts=draw.binomial
+                    if let multiworker {
+                        // Default Python fast_stats is unseeded per worker.
+                        // The same workers persist through every sublayer.
+                        counts=try multiworker.particleLayer(
+                            rates:rates,probabilities:probabilities
+                        )
+                    } else {
+                        // Existing certified one-worker source bit replay.
+                        let draw=try controlledFastSampler!.runOriginalTwoPhase(
+                            rates:rates,probabilities:probabilities
+                        )
+                        counts=draw.binomial
+                    }
                 } else {
                     counts=try OriginalSourceSciPySampler.drawLayer(
                         rates:rates,probabilities:probabilities,
@@ -257,25 +295,32 @@ enum OriginalSourcePhysicalGrain {
         let microStd=settings.microstructureNM*0.001/pixelUM
         let microBlur=settings.microstructureUM/pixelUM
         if microStd>0.05 {
-            guard let seed=settings.numbaSeed else {
-                throw Failure.invalid("原版 Numba 微结构随机线程未定义")
-            }
-            // In the original grain.py the nine Numba fast_stats
-            // particle layers and the later lognormal draw share one
-            // continuous prange worker state. Reinitializing from seed
-            // at this boundary changes all sampled microstructure.
-            var numba=OriginalSourceNumbaSingleThreadNormal(seed:seed)
-            var clump=[Double](repeating:0,count:pixels*3)
-            for ix in clump.indices {
-                let normal:Double
-                if settings.useFastStats {
-                    normal=try controlledFastSampler!.nextMicrostructureNormal()
-                } else {
-                    normal=try numba.nextNormal()
-                }
-                clump[ix]=try OriginalSourceMicrostructure.lognormal(
-                    microStd:microStd,z:normal
+            var clump:[Double]
+            if let multiworker {
+                // Real concurrent independent per-worker RNG stream.
+                // Each render is unseeded and may differ, as in original
+                // Numba default. Never report bit-for-bit Python parity.
+                clump=try multiworker.microstructure(
+                    count:pixels*3,microStd:microStd
                 )
+            } else {
+                guard let seed=settings.numbaSeed else {
+                    throw Failure.invalid("原版 Numba 微结构随机线程未定义")
+                }
+                // Preserve previously certified single-worker seed 8888.
+                var numba=OriginalSourceNumbaSingleThreadNormal(seed:seed)
+                clump=[Double](repeating:0,count:pixels*3)
+                for ix in clump.indices {
+                    let normal:Double
+                    if settings.useFastStats {
+                        normal=try controlledFastSampler!.nextMicrostructureNormal()
+                    } else {
+                        normal=try numba.nextNormal()
+                    }
+                    clump[ix]=try OriginalSourceMicrostructure.lognormal(
+                        microStd:microStd,z:normal
+                    )
+                }
             }
             if microBlur>0.4 {
                 clump=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
