@@ -1,0 +1,125 @@
+name: Build106 fullframe Float64 memory lifecycle + Python grain source numeric parity
+
+on:
+  push:
+    branches: ['hardening/build106-fullframe-memory-lifecycle-ios1651']
+    paths:
+      - '.github/workflows/build106-fullframe-memory-and-grain-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-3x3-fast-stats-and-micro:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 16.4 / Swift source identity
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          git rev-parse HEAD
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pinned original Python SciPy and Numba
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'numba==0.61.2'
+      - name: Generate 5 independent original grain.py/fast_stats.py whole-image tapes
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_original_scipy_rng.py
+          python ios/scripts/generate_source_microstructure.py
+          python ios/scripts/generate_source_physical_grain.py
+          test -s ios/verification/generated-source-grain-v1.8.48/fast_stats_micro_active.final.f64le
+          test -s ios/verification/generated-source-grain-v1.8.48/fast_stats_no_micro.final.f64le
+      - name: Compile actual production Float64 3x3 grain and both independent stage validators
+        run: |
+          set -euo pipefail
+          BASE=(
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift
+          )
+          xcrun swiftc -Onone -parse-as-library -D SOURCE_GRAIN_STANDALONE "${BASE[@]}" \
+            ios/tests/SourcePhysicalGrainValidation.swift -o /tmp/Build106SourceGrainValidation
+          /tmp/Build106SourceGrainValidation
+          xcrun swiftc -Onone -parse-as-library -D SOURCE_GRAIN_STANDALONE "${BASE[@]}" \
+            ios/tests/SourcePhysicalGrainParity.swift -o /tmp/Build106SourceGrainParity
+          /tmp/Build106SourceGrainParity
+      - name: Execute Build106 real source memory ledger cases and production source integration
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build106SourceMemoryLedger.swift \
+            ios/tests/Build106SourceMemoryLedgerValidation.swift \
+            -o /tmp/Build106SourceLedger
+          /tmp/Build106SourceLedger
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift').read_text()
+          grain=Path('ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift').read_text()
+          led=Path('ios/SpektraFilmPort/Build106SourceMemoryLedger.swift').read_text()
+          assert source.count('Build106SourceMemoryLedger.additional(')==2, 'predecode + renderer MUST use same source memory ledger'
+          assert 'stageObserver:stageDoubleObserver != nil' in source
+          assert 'stageObserver:false' in source
+          assert 'stageObserverBytesPerPixel: UInt64 = 960' in led
+          assert grain.index('stageObserver?("sourceGrainDyeClouds",out)') < grain.index('layerInputs.removeAll(keepingCapacity:false)') < grain.index('let microStd=settings.microstructureNM')
+          for n in ('layerInputs','probabilities','rates','saturations','cloud'):
+              assert f'{n}.removeAll(keepingCapacity:false)' in grain, n
+          assert 'extraBytesPerPixel: UInt64 = 272' in grain
+          print('PASS source memory: early scratch lifetime, shared ImageIO preflight, conservative retained callback snapshots')
+          PY
+      - name: Retain source-controlled 20-stage validation fixtures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build106-5-original-Python-3x3-grain-fast-stats-f64
+          path: ios/verification/generated-source-grain-v1.8.48/
+          if-no-files-found: warn
+
+  original-single-layer-scipy-36:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned original SciPy dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'opt_einsum==3.4.0'
+      - name: Execute untouched original Python grain.py, real measured stocks
+        run: |
+          python3 ios/scripts/build85_single_layer_grain_oracle.py /tmp/build106-scipy-36.json
+          python3 ios/scripts/generate_source_mt19937.py
+          python3 ios/scripts/generate_original_scipy_rng.py
+          python3 ios/scripts/extract_source_filter_core_for_linux.py /tmp/SourceSpatialDoubleCore.swift
+          python3 ios/scripts/extract_build85_grain_single_for_linux.py /tmp/Build106SingleSource.swift
+      - name: Compile/compare ACTUAL production Swift against 36 source outputs with both fast_stats flag values
+        run: |
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            /tmp/SourceSpatialDoubleCore.swift /tmp/Build106SingleSource.swift \
+            ios/tests/Build85OriginalSingleLayerGrainValidation.swift \
+            -o /tmp/Build106SingleGrain
+          /tmp/Build106SingleGrain /tmp/build106-scipy-36.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build106-source-scipy-36-measured-film-output
+          path: /tmp/build106-scipy-36.json
