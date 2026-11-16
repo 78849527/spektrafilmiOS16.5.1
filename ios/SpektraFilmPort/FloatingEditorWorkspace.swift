@@ -2542,8 +2542,8 @@ struct FloatingEditorWorkspace: View {
                              "整图 Double FIR/YVV 与相纸显影均保留，不缩图；" +
                              "需开启原版 ACES 扫描、Hanatos Float64、" +
                              "负片原版放大机，关闭 CAM16/黑白参考。" +
-                             "原版三亚层随机颗粒已提供可选受控单线程模式；" +
-                             "RAW 与无固定种子的 Numba prange 尚未认证。")
+                             "三亚层有固定种子单线程和无固定种子多线程两条独立路径；" +
+                             "后者需 Build115 真机统计，RAW 全链仍未认证。")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
