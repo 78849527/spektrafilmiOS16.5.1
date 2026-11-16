@@ -155,6 +155,12 @@ final class PhotoEditorModel: ObservableObject {
     // SciPy count RNG seeds remain original [ch+sl*10].
     // Numba microstructure is controlled single worker, seed=8888.
     @Published var sourcePhysicalGrainEnabled = false
+    // Build115 separate source-default unseeded Numba parallel candidate.
+    // OFF preserves exact seeded single-thread parity fixtures.
+    @Published var sourceGrainUseUnseededParallel = false
+    // Actual Python grain.py defaults use_fast_stats=false (SciPy particles).
+    // Explicit user selection enables original optional fast_stats prange.
+    @Published var sourceGrainFastStatsEnabled = false
     @Published var sourcePhysicalGrainBlur = 0.65
     @Published var sourcePhysicalGrainDyeCloudBlur = 1.0
     @Published var sourcePhysicalGrainMicroUM = 0.2
@@ -572,11 +578,17 @@ final class PhotoEditorModel: ObservableObject {
             scannerGlareSeed:sourceScannerGlareEnabled ? 8888 : nil,
             sourceGrain:OriginalSourcePhysicalGrain.Settings(
                 active:sourcePhysicalGrainEnabled,
+                useFastStats:sourceGrainFastStatsEnabled,
+                fastStatsSeed:sourcePhysicalGrainEnabled &&
+                    sourceGrainFastStatsEnabled &&
+                    !sourceGrainUseUnseededParallel ? 8888 : nil,
+                useUnseededParallel:sourceGrainUseUnseededParallel,
                 grainBlur:sourcePhysicalGrainBlur,
                 dyeCloudBlurUM:sourcePhysicalGrainDyeCloudBlur,
                 microstructureUM:sourcePhysicalGrainMicroUM,
                 microstructureNM:sourcePhysicalGrainMicroNM,
-                numbaSeed:sourcePhysicalGrainEnabled ? 8888 : nil
+                numbaSeed:sourcePhysicalGrainEnabled &&
+                    !sourceGrainUseUnseededParallel ? 8888 : nil
             ),
             cameraOptics:preCamera,
             filmHalation:sourceHalation,
@@ -1696,7 +1708,9 @@ final class PhotoEditorModel: ObservableObject {
                     ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel
                     : 0) +
                    (sourcePhysicalGrainEnabled
-                    ? OriginalSourcePhysicalGrain.extraBytesPerPixel
+                    ? OriginalSourcePhysicalGrain.extraBytesPerPixel +
+                      (sourceGrainUseUnseededParallel
+                        ? OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel : 0)
                     : 0) +
                    (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                     ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
@@ -1718,7 +1732,9 @@ final class PhotoEditorModel: ObservableObject {
                     (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
                         ? OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel : 0) +
                     (sourcePhysicalGrainEnabled
-                        ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
+                        ? OriginalSourcePhysicalGrain.extraBytesPerPixel +
+                          (sourceGrainUseUnseededParallel
+                            ? OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel : 0) : 0) +
                     (sourceCameraPreFilmEnabled && sourceCameraLensBlurUM > 0
                         ? OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel : 0) +
                     (sourcePhysicalHalationRequested
