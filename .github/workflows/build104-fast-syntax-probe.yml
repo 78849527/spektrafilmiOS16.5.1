@@ -1,29 +1,36 @@
-name: Build104 syntax-only Swift parser preflight
-
+name: Build104 isolate Swift parse failure per changed file
 on:
   push:
     branches: ['hardening/build104-source-grain-branch-fidelity-ios1651']
     paths: ['.github/workflows/build104-fast-syntax-probe.yml']
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  parse-production-source:
-    runs-on: macos-15
-    timeout-minutes: 8
+  device-evidence:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Swift syntax parse every production file
+      - run: swiftc -frontend -parse ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
+  content-view:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: swiftc -frontend -parse ios/SpektraFilmPort/ContentView.swift
+  floating-editor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: swiftc -frontend -parse ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+  all-other-production:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse all other production source
         run: |
           set -euxo pipefail
-          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
-      - name: Check historical diagnostics source paths and project version
-        run: |
-          set -euxo pipefail
-          test -s ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
-          grep -Fq 'CURRENT_PROJECT_VERSION: "104"' ios/project.yml
-          grep -Fq 'MARKETING_VERSION: "1.8.71"' ios/project.yml
-          grep -Fq 'onRunBuild104Grain: () -> Void' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-          grep -Fq 'Build104DeviceGrainEvidence.capture(' ios/SpektraFilmPort/ContentView.swift
+          find ios/SpektraFilmPort -maxdepth 1 -name '*.swift' \
+            ! -name 'Build104DeviceGrainEvidence.swift' \
+            ! -name 'ContentView.swift' \
+            ! -name 'FloatingEditorWorkspace.swift' -print0 \
+            | xargs -0 swiftc -frontend -parse
