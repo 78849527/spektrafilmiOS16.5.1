@@ -184,9 +184,15 @@ enum Build81OriginalInputGamut {
         -0.076381284505706901,-0.42148197841801271,1.5861632204407947
     ]
     private static func matrix(_ m:[Double],_ v:[Double])->[Double] {
-        (0..<3).map {row in
-            m[row*3]*v[0]+m[row*3+1]*v[1]+m[row*3+2]*v[2]
+        var out=[Double](repeating:0,count:3)
+        for row in 0..<3 {
+            let base=row*3
+            let x=m[base]*v[0]
+            let y=m[base+1]*v[1]
+            let z=m[base+2]*v[2]
+            out[row]=x+y+z
         }
+        return out
     }
     private static func signedCbrt(_ v:Double)->Double {
         v<0 ? -pow(-v,1.0/3.0) : pow(v,1.0/3.0)
@@ -269,8 +275,9 @@ enum Build81OriginalInputGamut {
         let b=cmaxNode(LIndex:l0,hIndex:h1,locus:locus,key:key)
         let c=cmaxNode(LIndex:l1,hIndex:h0,locus:locus,key:key)
         let d=cmaxNode(LIndex:l1,hIndex:h1,locus:locus,key:key)
-        return a*(1-lf)*(1-hf)+b*(1-lf)*hf+
-               c*lf*(1-hf)+d*lf*hf
+        let left=a*(1-lf)*(1-hf)+b*(1-lf)*hf
+        let right=c*lf*(1-hf)+d*lf*hf
+        return left+right
     }
     private static func compressOklch(
         _ xy:[Point],knee:Knee,locus:[Point]
