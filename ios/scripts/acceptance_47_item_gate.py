@@ -102,16 +102,17 @@ def blockers():
         ("38", "P0", "CAM16 逐像素存在，但生产默认色域算法未认证",
          "var sourceOutputGamut: Build89OriginalOutputGamut.Settings? = nil" in physical),
         ("12", "P0", "RAW 与 rawpy 后端逐阶段等价证据未齐",
-         "原版" in doc),
+         None),
         ("44", "P0", "12/13MP 全光学＋颗粒真实 RSS/Jetsam 未取得",
          "full13MPOperationMeasured:false" in read("ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift")),
         ("45", "P0", "1/2MP 真机结果无独立 Python 全图数值比对",
          "largeImagePythonNumericParityCertified:false" in read("ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift")),
         ("46", "P0", "12 项真实手势/导入导出人工验收尚缺证据",
-         "result=not_run" in doc),
+         None),
     ]
     return [{"work_item": item, "priority": pri, "reason": reason,
-             "source_observation": ("confirmed" if found else "needs_recheck"),
+             "source_observation": ("requires_external_evidence" if found is None else
+                                    ("source_confirmed" if found else "needs_recheck")),
              "decision": "BLOCKED"} for item,pri,reason,found in probes]
 
 def main():
