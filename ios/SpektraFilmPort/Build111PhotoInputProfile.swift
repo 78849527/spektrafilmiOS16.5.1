@@ -16,6 +16,7 @@ enum Build111PhotoInputProfile {
     enum ColorKind:String {
         case sRGB = "sRGB"
         case displayP3 = "Display P3"
+        case extendedSRGB = "扩展 sRGB"
         case other = "其他 ICC 色彩空间"
         case untagged = "未标记色彩空间"
         case gray = "灰度/非 RGB"
@@ -30,6 +31,7 @@ enum Build111PhotoInputProfile {
         let color:ColorKind
         let exactColorName:String?
         let hasAlphaChannel:Bool
+        let floatingComponents:Bool
         let imageIOUsable:Bool
         let failureReason:String?
 
@@ -38,13 +40,29 @@ enum Build111PhotoInputProfile {
             let depth=declaredDepth>0 ? "\(declaredDepth)-bit" : "位深未知"
             return "\(entry.rawValue)｜\(format)｜\(depth)｜\(color.rawValue)｜\(dimensions)"
         }
-        var directCompatible:Bool {
-            failureReason == nil && imageIOUsable &&
-            declaredDepth==8 && decodedDepth==8 &&
-            color == .sRGB && !hasAlphaChannel &&
-            width>0 && height>0 &&
-            width<=8192 && height<=8192 &&
+        private var validDimensions:Bool {
+            width>0 && height>0 && width<=8192 && height<=8192 &&
             Double(width)*Double(height)<=16_000_000
+        }
+        var directCompatible:Bool {
+            guard failureReason == nil && imageIOUsable &&
+                  validDimensions else {return false}
+            // Preserve Build78 certified *transport* paths. This feature
+            // must not regress previously available 16-bit sRGB PNG/TIFF
+            // integer ingress or Float16/32 extended-sRGB TIFF ingress.
+            if !floatingComponents && declaredDepth==8 &&
+                decodedDepth==8 && color == .sRGB {
+                return !hasAlphaChannel
+            }
+            if !floatingComponents && declaredDepth==16 &&
+                decodedDepth==16 && color == .sRGB {
+                return format == "PNG" || format == "TIFF"
+            }
+            if floatingComponents && (decodedDepth==16 ||
+                decodedDepth==32) && color == .extendedSRGB {
+                return format == "TIFF"
+            }
+            return false
         }
         var convertibleP3:Bool {
             failureReason==nil && imageIOUsable &&
@@ -57,8 +75,11 @@ enum Build111PhotoInputProfile {
         var reason:String {
             if let failureReason {return failureReason}
             if !imageIOUsable {return "ImageIO 无法读取此照片"}
+            if directCompatible {
+                return "原版输入格式预检通过；高位深／Float32 仍按 Build78 原版通道校验，所有图像继续接受内存和处理参数检验。"
+            }
             if declaredDepth != 8 || decodedDepth != 8 {
-                return "这张照片不是经 8-bit 原版输入认证的格式；高位深走独立处理路径"
+                return "该位深/色彩空间组合未通过已认证的原版输入路径；16-bit sRGB PNG/TIFF 和 extended-sRGB 浮点 TIFF 保持独立支持。"
             }
             if width<=0 || height<=0 || width>8192 ||
                 height>8192 || Double(width)*Double(height)>16_000_000 {
@@ -69,6 +90,8 @@ enum Build111PhotoInputProfile {
             case .sRGB: return "已符合 8-bit sRGB 原版像素输入范围；后续仍须通过内存及光学参数校验"
             case .displayP3:
                 return "这是一张 8-bit Display P3 照片。原版输入只接受 sRGB；可选择明确的 Apple ColorSync P3→sRGB 转换副本，原文件不修改。部分超出 sRGB 的颜色会压缩到 sRGB 范围；不是 Python 原版转换数值认证。"
+            case .extendedSRGB:
+                return "仅 Float16/Float32 TIFF 的原版浮点输入路径接受扩展 sRGB，其他情况不支持。"
             case .other:
                 return "识别到其他 ICC 色彩空间；不允许悄悄改标签为 sRGB。此版不自动转换未知配置文件"
             case .untagged:
@@ -81,6 +104,7 @@ enum Build111PhotoInputProfile {
 
     private static let srgb=CGColorSpace(name:CGColorSpace.sRGB)!
     private static let p3=CGColorSpace(name:CGColorSpace.displayP3)!
+    private static let extended=CGColorSpace(name:CGColorSpace.extendedSRGB)!
 
     private static func kind(_ space:CGColorSpace?)->(ColorKind,String?) {
         guard let space else {return (.untagged,nil)}
@@ -88,6 +112,7 @@ enum Build111PhotoInputProfile {
         guard space.model == .rgb else {return (.gray,name)}
         if CFEqual(space,srgb) {return (.sRGB,name)}
         if CFEqual(space,p3) {return (.displayP3,name)}
+        if CFEqual(space,extended) {return (.extendedSRGB,name)}
         // Never silently relax source CFEqual(sRGB) acceptance.
         return (.other,name)
     }
@@ -107,7 +132,8 @@ enum Build111PhotoInputProfile {
         ) else {
             return Inspection(entry:entry,format:"UNKNOWN",width:0,height:0,
                 declaredDepth:0,decodedDepth:0,color:.untagged,
-                exactColorName:nil,hasAlphaChannel:false,imageIOUsable:false,
+                exactColorName:nil,hasAlphaChannel:false,
+                floatingComponents:false,imageIOUsable:false,
                 failureReason:"ImageIO 无法识别文件")
         }
         let format=codec(CGImageSourceGetType(imageSource))
@@ -122,7 +148,8 @@ enum Build111PhotoInputProfile {
             return Inspection(entry:entry,format:format,width:w,height:h,
                 declaredDepth:(props?[kCGImagePropertyDepth] as? NSNumber)?.intValue ?? 0,
                 decodedDepth:0,color:.untagged,exactColorName:nil,
-                hasAlphaChannel:false,imageIOUsable:false,
+                hasAlphaChannel:false,floatingComponents:false,
+                imageIOUsable:false,
                 failureReason:"ImageIO 无法解码原始图像")
         }
         let (color,name)=kind(image.colorSpace)
@@ -137,7 +164,9 @@ enum Build111PhotoInputProfile {
             width:image.width,height:image.height,
             declaredDepth:depth,decodedDepth:image.bitsPerComponent,
             color:color,exactColorName:name,
-            hasAlphaChannel:alphaChannel,imageIOUsable:true,
+            hasAlphaChannel:alphaChannel,
+            floatingComponents:image.bitmapInfo.contains(.floatComponents),
+            imageIOUsable:true,
             failureReason:nil)
     }
 

@@ -30,6 +30,8 @@ assert "CFEqual(space,p3)" in detector
 assert "ctx.setRenderingIntent(.relativeColorimetric)" in detector
 assert "CGImageDestinationAddImage(dest,output,options)" in detector
 assert "after.directCompatible" in detector
+assert "Preserve Build78 certified" in detector
+assert "color == .extendedSRGB" in detector
 assert "selectedPhotoDirectCompatible" in report
 assert "selectedPhotoP3ColorSyncConverted" in report
 assert 'MARKETING_VERSION: "1.8.77"' in project

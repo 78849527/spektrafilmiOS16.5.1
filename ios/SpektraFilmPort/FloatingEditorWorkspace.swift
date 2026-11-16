@@ -827,7 +827,7 @@ struct FloatingEditorWorkspace: View {
                         .font(.system(size:10,weight:.medium))
                         .lineLimit(1)
                     Text(model.photoDirectInputReady
-                         ? "原版 8-bit 像素输入可用"
+                         ? "原版像素输入预检通过"
                          : (model.photoP3ConversionPossible
                             ? "P3 需明确转换为 sRGB；点此转换"
                             : "原版像素输入不可用；点此查看原因"))
