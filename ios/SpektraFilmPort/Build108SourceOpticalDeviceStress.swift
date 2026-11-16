@@ -219,7 +219,7 @@ enum Build108SourceOpticalDeviceStress {
             // SAME pre-allocation source memory admission as production.
             let p=try Build91PhysicalMemory.plan(
                 width:g.width,height:g.height,
-                baseBytesPerPixel:Build106SourceMemoryLedger.baseBytesPerPixel,
+                baseBytesPerPixel:OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel,
                 additionalBytesPerPixel:bpp,
                 physicalMemory:ProcessInfo.processInfo.physicalMemory,
                 processAvailable:available()
@@ -334,6 +334,98 @@ enum Build108SourceOpticalDeviceStress {
                 "No 13MP full-frame render, unsupported original multiworker RNG and RAW/ICC/EXIF/XMP paths"
             ]
         )
+    }
+
+
+    // Build114: explicitly requested only. The previous 1/2MP combined
+    // diagnostics remain unchanged. On iPhone the full 13MP baseline still
+    // goes through the SAME preflight + same source renderer. Never claim
+    // success from geometry or memory budget alone.
+    struct Build114FourGateReport: Codable {
+        let schema:Int
+        let appVersion:String
+        let appBuild:String
+        let compiledSourceCommit:String
+        let osVersion:String
+        let physicalDevice:Bool
+        let generatedUTC:String
+        let thirteenMegapixel:OpticalCase
+        let thirteenMegapixelMemoryMeasured:Bool
+        let originalPythonWholeImageCertified:Bool
+        let raw16ICCEndToEndCertified:Bool
+        let defaultNumbaUnseededParallelCertified:Bool
+        let limitations:[String]
+    }
+
+    static func captureBuild114FourGates(
+        version:String,build:String,commit:String,
+        osVersion:String,physicalDevice:Bool
+    )->Build114FourGateReport {
+        let target=physicalDevice && osVersion=="16.5.1" &&
+            commit.count==40 && commit.allSatisfy {
+                "0123456789abcdef".contains($0)
+            }
+        let geometry=Geometry(
+            label:"13MP_5000x2600_Float64_Hanatos_DIR_Print_Scan_NoGrain",
+            width:5000,height:2600,grain:false
+        )
+        let result=target ? measure(geometry) : skipped(
+            geometry,"非绑定有效 Git SHA 的真实 iOS 16.5.1，禁止执行 13MP"
+        )
+        return Build114FourGateReport(
+            schema:1,appVersion:version,appBuild:build,
+            compiledSourceCommit:commit,osVersion:osVersion,
+            physicalDevice:physicalDevice,
+            generatedUTC:ISO8601DateFormatter().string(from:Date()),
+            thirteenMegapixel:result,
+            thirteenMegapixelMemoryMeasured:target &&
+                result.status=="real_source_float64_render_pass" &&
+                result.sampledPeakResidentBytes != nil,
+            originalPythonWholeImageCertified:false,
+            raw16ICCEndToEndCertified:false,
+            defaultNumbaUnseededParallelCertified:false,
+            limitations:[
+                "13MP only base no-grain synthetic sRGB; sampled RSS at 25ms may miss Jetsam high-watermark",
+                "Does not certify enabled grain/halation/FFT or 13MP colour-route variants",
+                "Python original 13MP whole-image output not present; do not claim complete source parity",
+                "RAW camera sensor to output/ICC/metadata reference corpus absent; high-bit ingress and container tests are partial",
+                "Default Numba unseeded multithread prange field not bit reproducible; seeded single-worker only"
+            ]
+        )
+    }
+
+    static func writeBuild114FourGates(
+        _ report:Build114FourGateReport,documents:URL
+    ) throws -> (log:URL,json:URL) {
+        let dir=documents.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true
+        )
+        try FileManager.default.createDirectory(
+            at:dir,withIntermediateDirectories:true
+        )
+        let prefix="Build114-four-gate-"+UUID().uuidString
+        let json=dir.appendingPathComponent(prefix+".json")
+        let log=dir.appendingPathComponent(prefix+".log")
+        let encoder=JSONEncoder()
+        encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
+        try encoder.encode(report).write(to:json,options:.atomic)
+        let test=report.thirteenMegapixel
+        let logText="""
+        Build114 four certification gates
+        App \(report.appVersion) Build\(report.appBuild) SHA \(report.compiledSourceCommit)
+        iOS \(report.osVersion), physical device \(report.physicalDevice)
+        13MP status: \(test.status)
+        13MP first error: \(test.firstFailure ?? "none")
+        13MP estimated bytes: \(test.estimatedProductionBudgetBytes.map(String.init) ?? "not_run")
+        13MP sampled RSS: \(test.sampledPeakResidentBytes.map(String.init) ?? "not_run")
+        13MP actual checksum: \(test.outputSampleChecksum.map(String.init) ?? "not_run")
+        Python full-image certification: \(report.originalPythonWholeImageCertified)
+        RAW/16-bit/ICC end-to-end certification: \(report.raw16ICCEndToEndCertified)
+        Default unseeded multithread Numba certification: \(report.defaultNumbaUnseededParallelCertified)
+        \(report.limitations.joined(separator:"\n"))
+        """
+        try logText.write(to:log,atomically:true,encoding:.utf8)
+        return (log,json)
     }
 
     static func logText(_ report:Report)->String {
