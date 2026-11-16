@@ -1,3 +1,4 @@
+# Build108: syntax-only preflight cannot read generated original Python manifests before generator runs.
 # Build108: CI against actual 1MP/2MP CPU Float64 optical production + Build106/107 combined on-device feedback.
 # Build107: same-source Build106 memory lifecycle + Build107 bounded RSS; single LOG+JSON truth-telling release.
 # Build107 source gate (carried-forward): source grain conditional missing-seed diagnostic hotfix; original algorithms unchanged.
@@ -45,7 +46,8 @@ jobs:
             ios/SpektraFilmPort/Build107CombinedDeviceFeedback.swift \
             ios/SpektraFilmPort/ContentView.swift \
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-          python ios/scripts/build108_feedback_source_audit.py
+          # Python audit needs generated original-source manifest, checked
+          # in the next source-reference step after original fixture generation.
       - name: Install original fixture generation source stack
         run: |
           python -m pip install --disable-pip-version-check --quiet \
