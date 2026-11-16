@@ -1,0 +1,56 @@
+name: Acceptance B - source RAW signature, original ICC actual disk files, metadata gaps (NO IPA)
+on:
+  push:
+    branches:
+      - acceptance/final-closure-B-raw-icc-metadata-ios1651
+    paths:
+      - ios/tests/FinalSource*
+      - ios/scripts/final_closure_B_*
+      - .github/workflows/final-closure-B-raw-icc-metadata-ios1651.yml
+      - docs/FINAL-CLOSURE-B-RAW-ICC-METADATA.md
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  existing-native-evidence:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Source-scoped acceptance, no code changed
+        run: |
+          python3 ios/scripts/final_closure_B_raw_icc_audit.py /tmp/final-B.json
+      - name: RAW signatures, 12 spoofs, original bytes SHA256
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build79RAWSignature.swift \
+            ios/SpektraFilmPort/Build79RAWStorage.swift \
+            ios/SpektraFilmPort/Build79NativeRAWBackend.swift \
+            ios/tests/Build79RAWSignatureValidation.swift \
+            ios/tests/FinalSourceRawPreservationValidation.swift \
+            -o /tmp/FinalRawEvidence
+          /tmp/FinalRawEvidence
+      - name: Generate five original source ICC profiles from pinned io.py
+        run: |
+          python3 ios/scripts/build90_generate_original_icc.py
+      - name: Native macOS JPEG PNG TIFF U8 U16 F32 ICC exact file readback
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build90GeneratedSourceICC.swift \
+            ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
+            ios/SpektraFilmPort/Build90NativeOutputWriter.swift \
+            ios/SpektraFilmPort/Build90OriginalICCContainer.swift \
+            ios/tests/Build90NativeImageIOValidation.swift \
+            -o /tmp/FinalImageIOEvidence
+          /tmp/FinalImageIOEvidence
+      - name: Archive honest evidence classification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Acceptance-B-original-RAW-ICC-evidence-not-certified
+          path: /tmp/final-B.json
+          if-no-files-found: warn
