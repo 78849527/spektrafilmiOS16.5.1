@@ -33,10 +33,10 @@ assert ui.count("value:$model.sourcePhysicalCAM16DefaultGamutEnabled")==0
 assert ui.count('Picker("原版光谱重建"')==1
 assert ui.count('value:$model.sourcePhysicalGrainEnabled')==1
 assert ui.count('value:$model.scannerCAM16Enabled')==1
-require("专业参数与待认证项目")
+require("专业参数与验证状态")
 require("13MP、RAW 与 Python 原版整图仍未认证")
-assert 'MARKETING_VERSION: "1.8.78"' in project
-assert 'CURRENT_PROJECT_VERSION: "112"' in project
+assert 'MARKETING_VERSION: "1.8.79"' in project
+assert 'CURRENT_PROJECT_VERSION: "113"' in project
 # The user-facing scanner switch has one owner; advanced retains only parameters.
 assert ui.count("value:$model.sourceScannerGlareEnabled")==1
 assert 'resetToggle("扫描眩光 · 受控单线程"' in ui
@@ -53,4 +53,16 @@ assert '快速 ACES RGC · 非原版 Float64 CAM16-UCS' in ui
 # The exact two existing physical route switches remain in the untouched model.
 require("@Published var sourcePhysicalInputOklchEnabled = false",model)
 require("@Published var sourcePhysicalCAM16DefaultGamutEnabled = false",model)
-print("PASS Build112 UI-only: floating two fixed-height notices; photo GeometryReader never changes vertical space; four route settings map only to existing model fields; no duplicate Oklch/CAM16/grain/scanner XYZ/CMY controls")
+memory=(r/"ios/SpektraFilmPort/SafeExportResolution.swift").read_text()
+require("static let intelligentMaximumBudget: UInt64 = 1_300_000_000",memory)
+require("static let intelligentBudgetPercent: UInt64 = 90",memory)
+require('Button("智能安全分辨率（最高 1200 万像素 · 预算最多 1300 MB）")')
+require('resetToggle("快速胶片散射"')
+require('resetToggle("快速胶片颗粒"')
+require('resetToggle("相纸显影曲线 s023"')
+require('resetToggle("黑白场校准"')
+require('resetToggle("扫描曝光参考"')
+require('resetToggle("印相曝光归一化"')
+require('resetToggle("印相曝光补偿"')
+require('尚未认证：13MP 全光学、Python 整图、RAW/高位深全链、默认多线程随机。')
+print("PASS Build113 fixed overlay, 4 source routes, smart 1300MB max, quick/process controls and separated certification labels")
