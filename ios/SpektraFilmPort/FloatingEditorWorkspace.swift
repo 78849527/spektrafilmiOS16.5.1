@@ -28,6 +28,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild104Grain: () -> Void
     let onRunBuild107CombinedFeedback: () -> Void
     let onRunBuild108FullFrameFeedback: () -> Void
+    let onRunBuild110GamutEvidence: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -862,6 +863,22 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
                     Text("执行原版 Float64 100 万像素（含九层颗粒）＋200 万像素（不含颗粒）真实逐像素显影／印相／扫描；25ms 采样 RSS。保留 Build103/104 的 48 阶段与 Build106/107 报告，一次分享 .log＋.json。测试可能耗时较长；不宣称 1300 万像素或默认并行 RNG。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild110GamutEvidence()
+                    } label: {
+                        Label("Build110：Oklch／CAM16 四模式真机＋综合报告",
+                              systemImage:"checkmark.shield")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("一次生成 LOG＋JSON：先记录当前原版像素／全光学／Hanatos 与两个开关，"
+                         + "再真实执行默认、仅 Oklch、仅 CAM16、两项同时开启四组 512×512 "
+                         + "Float64 显影/印相/扫描。记录逐模式耗时、RSS、输出指纹、"
+                         + "与默认值的差异；内含原 Build106–108 全部诊断。"
+                         + "本测试不是对已导入照片的逐像素 Python 原版认证。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()

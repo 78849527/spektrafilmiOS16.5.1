@@ -2046,6 +2046,9 @@ struct ContentView: View {
                 onRunBuild108FullFrameFeedback: {
                     runBuild108FullFrameFeedback()
                 },
+                onRunBuild110GamutEvidence: {
+                    runBuild110GamutEvidence()
+                },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -2362,6 +2365,88 @@ struct ContentView: View {
     /// SHA-bound readable LOG and JSON, shared in a single activity sheet.
     /// Build108 opt-in full-size source optical stress, separate from the
     /// original 16MiB bounded-memory diagnostic. Never run on app launch.
+
+    /// Build110: capture the live UI source mode BEFORE setting model.busy.
+    /// Four separate real Float64 executions prove each new option actually
+    /// changed output, unlike the older fixed-parameter Build108 diagnostic.
+    private func runBuild110GamutEvidence() {
+        guard !model.busy else {return}
+        let switches=Build110SourceGamutDeviceEvidence.SwitchSnapshot(
+            hasPhoto:model.hasPhoto,
+            pixelIOEnabled:model.sourcePixelIOEnabled,
+            fullPhysicalEnabled:model.sourcePhysicalDirectEnabled,
+            originalHanatosDoubleEnabled:model.hanatosOriginalPrecisionEnabled,
+            originalScannerEnabled:model.originalScannerEnabled,
+            cameraRawMethod:model.sourceCameraRawMethod.rawValue,
+            inputOklchToggle:model.sourcePhysicalInputOklchEnabled,
+            outputCAM16Toggle:model.sourcePhysicalCAM16DefaultGamutEnabled
+        )
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build110：正在验证 Oklch / CAM16 四组原版 Float64 真机输出…"
+        let bundle=Bundle.main
+        let version=bundle.object(
+            forInfoDictionaryKey:"CFBundleShortVersionString"
+        ) as? String ?? "unknown"
+        let build=bundle.object(
+            forInfoDictionaryKey:"CFBundleVersion"
+        ) as? String ?? "unknown"
+        let sha=bundle.object(
+            forInfoDictionaryKey:"SFSourceCommit"
+        ) as? String ?? "missing"
+        let device=UIDevice.current.model
+        let osVersion=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physicalDevice=false
+        #else
+        let physicalDevice=true
+        #endif
+        let manifest=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:Build101DeviceParityEvidence.fixture
+        )
+        let grain=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:"generated-source-grain-v1.8.48"
+        )?.deletingLastPathComponent()
+        Task { @MainActor in
+            defer {model.busy=false}
+            let report=await Task.detached(priority:.userInitiated) {
+                Build110SourceGamutDeviceEvidence.capture(
+                    version:version,build:build,commit:sha,
+                    device:device,osVersion:osVersion,
+                    physicalDevice:physicalDevice,
+                    coreManifest:manifest,grainDirectory:grain,
+                    switches:switches
+                )
+            }.value
+            do {
+                guard let documents=FileManager.default.urls(
+                    for:.documentDirectory,in:.userDomainMask
+                ).first else {
+                    throw ImageProcessingError.invalid(
+                        "Build110：无法访问文档目录"
+                    )
+                }
+                let pair=try Build110SourceGamutDeviceEvidence.write(
+                    report,documents:documents
+                )
+                model.status=report.status ==
+                    "build110_legacy_and_four_gamut_cases_pass_ios1651"
+                    ? "Build110 真机四模式 PASS；LOG＋JSON 已保存"
+                    : "Build110 部分未通过：首错与四模式证据已保存"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build110 报告写入失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
     private func runBuild108FullFrameFeedback() {
         guard !model.busy else {return}
         diagnosticDismissPending=true
