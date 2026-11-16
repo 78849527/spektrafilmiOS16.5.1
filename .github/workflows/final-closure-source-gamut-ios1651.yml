@@ -51,6 +51,18 @@ jobs:
             ios/tests/FinalSourceOklchValidation.swift \
             -o /tmp/FinalOklch
           /tmp/FinalOklch /tmp/final-source-input-oklch-python.json
+      - name: Original Python 2D Hanatos TC LUT xy / Oklch source parity (real production function)
+        run: |
+          set -euo pipefail
+          python ios/scripts/final_source_tc_lut_oracle.py /tmp/final-source-tc-lut.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
+            ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift \
+            ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift \
+            ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
+            ios/tests/FinalOriginalTCLUTValidation.swift \
+            -o /tmp/FinalSourceTC
+          /tmp/FinalSourceTC /tmp/final-source-tc-lut.json
       - name: Original 216-case Python CAM16-UCS independent native comparison
         run: |
           set -euo pipefail
@@ -70,5 +82,6 @@ jobs:
           name: final-closure-A-original-source-gamut-not-full-certified
           path: |
             /tmp/final-source-input-oklch-python.json
+            /tmp/final-source-tc-lut.json
             /tmp/final-source-cam16-python.json
           if-no-files-found: warn
