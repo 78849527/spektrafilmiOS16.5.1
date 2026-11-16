@@ -27,11 +27,15 @@ struct SafeExportResolutionValidation {
                     precondition(d.width == w && d.height == h)
                     precondition(!d.reduced)
                 } else {
-                    let percentage:UInt64 = mode == .safe ? 50 : 30
+                    let percentage:UInt64 = mode == .safe ? 90 : 30
                     let physicalBudget = min(UInt64(1_500_000_000),ram/3)
                     let effective = min(physicalBudget,1_500_000_000)
-                    let limit = (effective/100*percentage) /
+                    let allowance = mode == .safe
+                        ? min(UInt64(1_300_000_000),effective/100*percentage)
+                        : effective/100*percentage
+                    let limit = allowance /
                         SafeExportResolution.estimatedBytesPerPixel
+                    precondition(plan.allocationAllowanceBytes == allowance)
                     precondition(d.pixels <= limit)
                     precondition(plan.estimatedPeakBytes <= plan.allocationAllowanceBytes)
                     if mode == .safe {
@@ -53,7 +57,7 @@ struct SafeExportResolutionValidation {
         }
         // Even with an actual 1.5GB upper budget, output can be BELOW
         // the user-selected 12MP/7.2MP ceilings because the safety
-        // percentages and source-pipeline memory estimates take priority.
+        // dynamic live-headroom, 1.3GB smart cap and source-pipeline costs take priority.
         let adaptive = try SafeExportResolution.plan(
             width:6000,height:4000,physicalMemory:6_000_000_000,
             processAvailableMemory:1_500_000_000,mode:.safe
@@ -62,8 +66,9 @@ struct SafeExportResolutionValidation {
             width:6000,height:4000,physicalMemory:6_000_000_000,
             processAvailableMemory:1_500_000_000,mode:.economy
         )
-        precondition(adaptive.dimensions.pixels >= 7_000_000)
-        precondition(adaptive.dimensions.pixels <= 7_211_539)
+        precondition(adaptive.allocationAllowanceBytes == 1_300_000_000)
+        precondition(adaptive.dimensions.pixels >= 11_990_000)
+        precondition(adaptive.dimensions.pixels <= 12_000_000)
         precondition(economy.dimensions.pixels <= 7_200_000)
         precondition(economy.dimensions.pixels > 3_000_000)
         precondition(adaptive.dimensions.pixels > economy.dimensions.pixels)
@@ -128,6 +133,7 @@ struct SafeExportResolutionValidation {
             processAvailableMemory:420_000_000,mode:.safe
         )
         precondition(pressured.effectiveBudgetBytes == 420_000_000)
+        precondition(pressured.allocationAllowanceBytes == 378_000_000)
         precondition(pressured.dimensions.pixels < adaptive.dimensions.pixels)
         let tiny = try SafeExportResolution.plan(
             width:640,height:480,physicalMemory:4_000_000_000,
@@ -156,6 +162,24 @@ struct SafeExportResolutionValidation {
                 fatalError("Must reject invalid export inputs")
             } catch SafeExportResolution.Failure.invalid {}
         }
-        print("PASS Build76: source original unchanged, adaptive safe<=12MP, economy<=7.2MP, memory headroom and original aspect ratio protected")
+        // One device with 6GB RAM and >1.5GB process headroom receives
+        // at most 1.3GB smart allowance, without reserving that memory.
+        let requested=try SafeExportResolution.plan(
+            width:4032,height:3024,physicalMemory:5_899_403_264,
+            processAvailableMemory:3_140_000_000,mode:.safe,
+            estimatedBytesPerPixel:120
+        )
+        precondition(requested.allocationAllowanceBytes == 1_300_000_000)
+        precondition(requested.estimatedPeakBytes <= 1_300_000_000)
+        try SafeExportResolution.validateForHeadroom(
+            requested, processAvailableMemory:3_140_000_000)
+        // Headroom may drop before confirmation. Reject rather than
+        // silently shrinking a confirmed plan or changing the algorithm.
+        do {
+            try SafeExportResolution.validateForHeadroom(
+                requested, processAvailableMemory:100_000_000)
+            fatalError("Must reject changed headroom")
+        } catch SafeExportResolution.Failure.invalid {}
+        print("PASS Build113: smart <=1300MB, 90% process headroom, source Float64 estimate, original size unchanged, no silent fallback")
     }
 }
