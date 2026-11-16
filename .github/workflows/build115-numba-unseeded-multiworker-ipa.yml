@@ -1,3 +1,4 @@
+# Build115: Apple Silicon macos-15 builder-only retry; leave Numba source unchanged until a real failure.
 # Build115 Build103 GUI audit: retain laboratory route and source parameter checks under renamed Build114 UI.
 # Retry Build115 on the original development branch; single active attempt, unchanged Swift implementation.
 # Build115 final pinned test-and-release trigger after parallel grain source batch
