@@ -62,9 +62,15 @@ def main():
                                    np.full(n,0.4,np.float64))
     lognorm_a=source.fast_lognormal_from_mean_std(
         np.full(n,1.0,np.float64),np.full(n,0.3,np.float64))
+    # The iOS production sampler performs the same full-array
+    # Poisson(8) phase followed by binomial thinning with p=.4.
+    compound_a=source.fast_binomial(
+        source.fast_poisson(np.full(n,8.0,np.float64)),
+        np.full(n,0.4,np.float64))
     cases=[
         close("source_prange_Poisson_lambda8",poisson_a,8.0,8.0,0.12,0.35),
         close("source_prange_Binomial_n32_p0.4",binomial_a,12.8,7.68,0.12,0.35),
+        close("source_prange_compound_thinned_Poisson8_p04",compound_a,3.2,3.2,0.12,0.30),
         close("source_prange_lognormal_mean1_std0.3",lognorm_a,1.0,0.09,0.018,0.016)
     ]
     summary={
