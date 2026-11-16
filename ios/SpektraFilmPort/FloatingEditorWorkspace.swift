@@ -30,6 +30,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild108FullFrameFeedback: () -> Void
     let onRunBuild110GamutEvidence: () -> Void
     let onRunBuild114FourGates: () -> Void
+    let onRunBuild115ParallelGrain: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -991,7 +992,19 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
-                    Text("显式运行 5000×2600 基础 Float64 全光学，采样 RSS，写入 LOG＋JSON；高风险内存测试可能遭遇 Jetsam。只认证实测范围；Python 大图、RAW 全链、默认多线程 RNG 继续分别标记。")
+                    Text("显式运行 5000×2600 基础 Float64 全光学，采样 RSS，写入 LOG＋JSON；高风险内存测试可能遭遇 Jetsam。只认证实测范围。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild115ParallelGrain()
+                    } label: {
+                        Label("Build115：默认 Numba 多线程颗粒真机统计＋生产整合",
+                              systemImage:"cpu")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("实测 4 工作线程 Poisson/Binomial 和 lognormal 统计；执行两条真实三亚层颗粒路线（SciPy 与可选 fast_stats），导出 SHA 绑定的 LOG＋JSON。仅统计等价，不冒充随机像素逐位一致。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
@@ -1706,13 +1719,33 @@ struct FloatingEditorWorkspace: View {
                 }
             }
             if fullPhysicalMode {
-                resetToggle("原版三亚层颗粒 · 受控验证",
+                resetToggle("原版三亚层颗粒",
                             value:$model.sourcePhysicalGrainEnabled,
                             enabled:model.hasPhoto && !model.busy,
                             resetTo:false)
                     .onChange(of:model.sourcePhysicalGrainEnabled) { _ in
                         model.queueSpectralPreview()
                     }
+                if model.sourcePhysicalGrainEnabled {
+                    resetToggle("Numba 默认多线程 · 无固定种子",
+                                value:$model.sourceGrainUseUnseededParallel,
+                                enabled:model.hasPhoto && !model.busy,
+                                resetTo:false)
+                        .onChange(of:model.sourceGrainUseUnseededParallel) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    resetToggle("Numba fast_stats 粒子（原版可选）",
+                                value:$model.sourceGrainFastStatsEnabled,
+                                enabled:model.hasPhoto && !model.busy,
+                                resetTo:false)
+                        .onChange(of:model.sourceGrainFastStatsEnabled) { _ in
+                            model.queueSpectralPreview()
+                        }
+                    Text(model.sourceGrainUseUnseededParallel
+                         ? "实际多线程 RNG：OS 独立初态；每次冲印颗粒不同。原版随机分布测试中，不是 Python 无种子逐位重放。"
+                         : "固定 seed=8888：原版单线程受控数值已通过；适合复现/逐像素对照。")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
                 resetToggle("乳剂散射与背反射联动",
                             value:$model.sourceFilmHalationEnabled,
                             enabled:model.hasPhoto && !model.busy,resetTo:false)
@@ -1720,7 +1753,7 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
             }
-            Text("快速颗粒独立于精细三亚层颗粒；DIR/FIR/YVV 参数在高级。未播种多线程 RNG 仍未认证。")
+            Text("颗粒模式：快速近似／原版固定种子单线程／原版无固定种子多线程（统计验证）。三种模式严格分离。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
