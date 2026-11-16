@@ -157,6 +157,8 @@ enum SourcePhysicalImageParity {
         var checkedProductionGrain=false
         var checkedProductionPaperStages=false
         var activeMicroCases=0
+        var inactiveMicroSeedFreeCases=0
+        var activeMicroMissingSeedRejectedCases=0
         var fullGrainRGBChannels=0
         for fixture in manifest.cases {
             guard fixture.width>0 && fixture.height>0,
@@ -554,19 +556,44 @@ enum SourcePhysicalImageParity {
                 }
                 var denied=enabled
                 denied.sourceGrain.numbaSeed=nil
-                do {
-                    _=try OriginalSourcePhysicalImage.develop(
+                // The unmodified Python grain.py does NOT call Numba
+                // lognormal when microNM * 0.001 / pixelUM <= 0.05.
+                // Build103 used to demand a seed even for that legal
+                // no-draw branch: it stopped after the first 7 metrics.
+                if fixture.numba_micro_enabled {
+                    do {
+                        _=try OriginalSourcePhysicalImage.develop(
+                            frame,parameters:denied
+                        )
+                        throw Failure.invalid(
+                            "Source physical grain accepted implicit unseeded Numba"
+                        )
+                    } catch OriginalSourcePhysicalGrain.Failure.invalid {}
+                    activeMicroMissingSeedRejectedCases+=1
+                } else {
+                    // For inactive microstructure, SciPy nine-layer
+                    // sampling is seeded independently. A missing Numba
+                    // microstructure seed must NOT change a single RGB bit.
+                    let seedFree=try OriginalSourcePhysicalImage.develop(
                         frame,parameters:denied
                     )
-                    throw Failure.invalid("Source physical grain accepted implicit unseeded Numba")
-                } catch OriginalSourcePhysicalGrain.Failure.invalid {}
+                    guard seedFree.rgb == developed.rgb else {
+                        throw Failure.invalid(
+                            "Inactive original microstructure unexpectedly depends on Numba seed"
+                        )
+                    }
+                    inactiveMicroSeedFreeCases+=1
+                }
                 checkedProductionGrain=true
                 print(
-                    "PASS v1.8.50 ACTUAL full physical grain " +
-                    "9 SciPy layers→dye cloud→Numba controlled micro→FIR/YVV" +
+                    "PASS original full physical grain " +
+                    "9 SciPy layers→dye cloud→conditionally Numba micro→FIR/YVV" +
                     "→original enlarger/paper/scanner; " +
                     "\(after.count) CMY channels, source-order " +
-                    "optical RGB discrepancy max=\(worst), no seed rejected"
+                    "optical RGB discrepancy max=\(worst); " +
+                    (fixture.numba_micro_enabled
+                        ? "active microstructure missing seed rejected"
+                        : "inactive microstructure seed-free output bit-exact")
                 )
             }
             // Build77 02: ACTUAL 2D optical print production must expose
@@ -644,7 +671,10 @@ enum SourcePhysicalImageParity {
             throw Failure.invalid("No negative print fixture exercised source production scanner glare")
         }
         guard checkedProductionGrain,
-              activeMicroCases > 0,fullGrainRGBChannels > 0 else {
+              activeMicroCases==1,
+              inactiveMicroSeedFreeCases==3,
+              activeMicroMissingSeedRejectedCases==1,
+              fullGrainRGBChannels > 0 else {
             throw Failure.invalid(
                 "Missing full independent Python grain+paper RGB image " +
                 "with ACTUALLY ACTIVE Numba microstructure"
@@ -653,7 +683,9 @@ enum SourcePhysicalImageParity {
         print(
             "PASS original Python→Swift full 2D grain+optical RGB " +
             "\(fullGrainRGBChannels) channels, four upstream source " +
-            "image fixtures, active-micro cases \(activeMicroCases); " +
+            "image fixtures, active-micro cases \(activeMicroCases), " +
+            "inactive seed-free \(inactiveMicroSeedFreeCases), " +
+            "active seed rejection \(activeMicroMissingSeedRejectedCases); " +
             "strict fail-closed, no fast LUT fallback"
         )
         // Explicit memory guard: cannot silently scale the image, nor
