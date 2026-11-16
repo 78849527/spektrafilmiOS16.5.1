@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Scope/production-route guard: this is NOT complete source certification."""
 from pathlib import Path
+from build_ci_version_floor import minimum_build, minimum_minor
 r=Path(__file__).resolve().parents[2]
 def get(x):return (r/x).read_text()
 ui=get("ios/SpektraFilmPort/ContentView.swift")
@@ -23,7 +24,7 @@ assert "private static func cmaxNode(" in g
 assert "for _ in 0..<18" in g
 assert "0.05+0.95*Double(LIndex)/63.0" in g
 assert "Build89OriginalOutputGamut.Settings()" in ui
-assert 'MARKETING_VERSION: "1.8.78"' in project
-assert 'CURRENT_PROJECT_VERSION: "112"' in project
+assert minimum_minor(project, 78)
+assert minimum_build(project, 112)
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS FINAL CLOSURE A: source input Oklch native route and original CAM16 opt-in on exact physical engine; old defaults unchanged; no full-source certification.")
