@@ -37,7 +37,20 @@ require("专业参数与待认证项目")
 require("13MP、RAW 与 Python 原版整图仍未认证")
 assert 'MARKETING_VERSION: "1.8.78"' in project
 assert 'CURRENT_PROJECT_VERSION: "112"' in project
+# The user-facing scanner switch has one owner; advanced retains only parameters.
+assert ui.count("value:$model.sourceScannerGlareEnabled")==1
+assert 'resetToggle("扫描眩光 · 受控单线程"' in ui
+assert "固定 seed=8888 · 单线程受控" in ui
+assert "扫描 XYZ 眩光开关：工艺 → 扫描" in ui
+# The original enlarger controls now live in the paper process stage.
+assert ui.count('morphSlider("青色 C / CC"')==1
+assert ui.count('morphSlider("洋红 M / CC"')==1
+assert ui.count('morphSlider("黄色 Y / CC"')==1
+assert 'DisclosureGroup("滤色片 · C / M / Y")' in ui
+# Never confuse the old scanner CAM16 lookup with original Float64 CAM16-UCS.
+assert '快速 CAM16 LUT · 查表插值' in ui
+assert '快速 ACES RGC · 非原版 Float64 CAM16-UCS' in ui
 # The exact two existing physical route switches remain in the untouched model.
 require("@Published var sourcePhysicalInputOklchEnabled = false",model)
 require("@Published var sourcePhysicalCAM16DefaultGamutEnabled = false",model)
-print("PASS Build112 UI-only: floating two fixed-height notices; photo GeometryReader never changes vertical space; four route settings map only to existing model fields; no duplicate Oklch/CAM16/grain controls")
+print("PASS Build112 UI-only: floating two fixed-height notices; photo GeometryReader never changes vertical space; four route settings map only to existing model fields; no duplicate Oklch/CAM16/grain/scanner XYZ/CMY controls")
