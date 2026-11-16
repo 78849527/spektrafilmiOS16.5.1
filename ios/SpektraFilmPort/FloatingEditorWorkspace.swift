@@ -25,6 +25,7 @@ struct FloatingEditorWorkspace: View {
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
+    let onRunBuild104Grain: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -823,6 +824,18 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
                     Text("重新执行 4 组原版 Python 图的 28 个核心 Float64 阶段，保存每阶段 MAE／RMSE／最大误差与首错；另测固定种子单线程 Numba 统计和 8 MiB 实际触页。未验证多线程默认 RNG、13MP 整图、RAW／ICC。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild104Grain()
+                    } label: {
+                        Label("Build104：原版 20 颗粒阶段数值与两种随机分支报告",
+                              systemImage:"circle.hexagongrid")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("读取随 App 打包的 Python 原版 5 组颗粒整图参考，逐阶段对照 Swift Float64，测试无微结构种子分支与单层 SciPy 标志；导出绑定本机版本及提交 SHA 的真实结果 JSON。不是全分辨率/多线程 RNG 认证。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()

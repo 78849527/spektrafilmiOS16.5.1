@@ -27,3 +27,10 @@
 - 修复 `sublayers_active=true, use_fast_stats=true, microStd <= 0.05`：仅必须提供 `fastStatsSeed`，不应强制微结构 `numbaSeed`。当 `microStd > 0.05` 时，须在采样前验证两者同种子、连续流；禁止先抽样后发现种子错误。
 - 原版 `grain.py` 的 3 个 SciPy 小图基准不变，新增 2 个调用未修改原版 `grain.py` + `fast_stats.py` 的 Numba 单线程受控源码基准（微结构关闭 / 启用）；对 4 个颗粒中间阶段分别进行 Float64 全元素对照。
 - 新增 GitHub Actions Build104 独立 macOS Source Grain 5 图数值检测 + Linux 原版 36 张单层 SciPy 数值检测，及 Swift 解析检查。流程完成前仍不宣称本批 CI PASS、iPhoneOS 完整应用构建 PASS 或发新 IPA。
+
+## 真机验收包（Build104 v1.8.71）
+
+- 已确定先用 iPhone 16.5.1 验证 Build103 和 Build104 的累计改动，然后才继续 Build105。
+- 新增 `Build104DeviceGrainEvidence`：App 内读取 5 幅由原版 Python `grain.py`/`fast_stats.py` 生成的固定参考图，核验 20 个 Float64 中间阶段及 SHA256；真机原位测试 SciPy 单层 `use_fast_stats` 忽略分支、无微结构时不需 Numba 微结构种子、激活微结构时无种子应拒绝。导出 `Build104-device-grain-*.json`，记录版本、编译提交、首错及是否真机通过。
+- Build103 的 28 阶段、8MiB 和 RNG 诊断保留，不改变其范围及门槛；Build104 的完整科学认证仍为 false。
+- 新版 iPhoneOS CI 必须真实编译 arm64、核对 IPA 内 `SFSourceCommit`、iOS 最低 16.5，成功后仅发布明确未签名的实验 IPA；任何阶段失败均不得声称发布。

@@ -2015,6 +2015,7 @@ struct ContentView: View {
                     }
                 },
                 onRunBuild103Metrics: { runBuild103Metrics() },
+                onRunBuild104Grain: { runBuild104Grain() },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let file=diagnosticPendingShare {
@@ -2266,6 +2267,59 @@ struct ContentView: View {
                             message=error.localizedDescription
                         }
                     }
+    }
+
+    private func runBuild104Grain() {
+        guard !model.busy else { return }
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="正在执行 Build104 五组原版 3×3 颗粒和单层 SciPy 真机数值验证…"
+        let bundle=Bundle.main
+        let ver=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let revision=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        let device=UIDevice.current.model
+        let system=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physical=false
+        #else
+        let physical=true
+        #endif
+        let directory=bundle.url(
+            forResource:"manifest",withExtension:"json",
+            subdirectory:"generated-source-grain-v1.8.48"
+        )?.deletingLastPathComponent()
+        Task { @MainActor in
+            defer { model.busy=false }
+            let report=await Task.detached(priority:.userInitiated) {
+                Build104DeviceGrainEvidence.capture(
+                    version:ver,build:build,commit:revision,
+                    device:device,osVersion:system,
+                    physicalDevice:physical,directory:directory
+                )
+            }.value
+            do {
+                guard let documents=FileManager.default.urls(
+                    for:.documentDirectory,in:.userDomainMask
+                ).first else {
+                    throw ImageProcessingError.invalid(
+                        "无法保存 Build104 颗粒真机报告：文档目录不可访问")
+                }
+                let file=try Build104DeviceGrainEvidence.write(
+                    report,documents:documents
+                )
+                model.status=report.passedOnTarget
+                    ? "Build104 五组颗粒、20 阶段与单层双状态真机通过；整图大尺寸/并行仍未认证"
+                    : "Build104 真机未完全通过；首错已保留到 JSON"
+                enqueueDiagnosticShare(file)
+            } catch {
+                model.status="Build104 诊断保存失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
     }
 
     private func enqueueDiagnosticShare(_ url: URL) {
