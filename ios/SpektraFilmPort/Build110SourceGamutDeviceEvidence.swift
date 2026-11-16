@@ -66,6 +66,8 @@ enum Build110SourceGamutDeviceEvidence {
         let gamutCases: [GamutCase]
         let allFourRealCasesPassed: Bool
         let switchesEnabledAndPathActiveAtCapture: Bool
+        let effectiveUserInputOklch: Bool
+        let effectiveUserOutputCAM16: Bool
         let firstFailure: String?
         let status: String
         let fullPythonWholeImageCertified: Bool
@@ -365,6 +367,8 @@ enum Build110SourceGamutDeviceEvidence {
             inheritedBuild106To108:old,gamutCases:actual,
             allFourRealCasesPassed:newPassed,
             switchesEnabledAndPathActiveAtCapture:switchesActive,
+            effectiveUserInputOklch:switches.effectiveInputOklch,
+            effectiveUserOutputCAM16:switches.effectiveOutputCAM16,
             firstFailure:firstFailure,
             status:old.allControlledChecksPassedOnTarget &&
                 newPassed && switchesActive

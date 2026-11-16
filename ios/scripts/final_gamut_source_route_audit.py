@@ -23,7 +23,7 @@ assert "private static func cmaxNode(" in g
 assert "for _ in 0..<18" in g
 assert "0.05+0.95*Double(LIndex)/63.0" in g
 assert "Build89OriginalOutputGamut.Settings()" in ui
-assert 'MARKETING_VERSION: "1.8.75"' in project
-assert 'CURRENT_PROJECT_VERSION: "109"' in project
+assert 'MARKETING_VERSION: "1.8.76"' in project
+assert 'CURRENT_PROJECT_VERSION: "110"' in project
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS FINAL CLOSURE A: source input Oklch native route and original CAM16 opt-in on exact physical engine; old defaults unchanged; no full-source certification.")
