@@ -166,7 +166,8 @@ enum Build82OriginalSpectralRuntime {
         spectralGaussianBlur:Double=0,
         applyWindow:Bool=true,
         applySurface:Bool=true,
-        compressInputXY:Bool=true
+        compressInputXY:Bool=true,
+        inputGamutAlgorithm:Build81OriginalInputGamut.Algorithm = .xy
     ) throws -> [Double] {
         try filter.validate()
         guard grid.values.count==grid.side*grid.side*81,
@@ -255,7 +256,8 @@ enum Build82OriginalSpectralRuntime {
         }
         if compressInputXY {
             output=try bakeOriginalXYGamut(
-                output,side:count,referenceXY:profile.referenceXY
+                output,side:count,referenceXY:profile.referenceXY,
+                algorithm:inputGamutAlgorithm
             )
         }
         guard output.allSatisfy({$0.isFinite}) else {
@@ -267,7 +269,8 @@ enum Build82OriginalSpectralRuntime {
     /// Source gamut_compression.remap_tc_lut_for_compression:
     /// TC -> CIE xy -> default Reinhard radial xy -> TC -> bilinear nearest.
     static func bakeOriginalXYGamut(
-        _ original:[Double],side:Int,referenceXY:Point
+        _ original:[Double],side:Int,referenceXY:Point,
+        algorithm:Build81OriginalInputGamut.Algorithm = .xy
     ) throws -> [Double] {
         guard side>1,original.count==side*side*3 else {
             throw Failure.invalid("Hanatos 输入 gamut 源 LUT 维度错误")
@@ -283,7 +286,8 @@ enum Build82OriginalSpectralRuntime {
                 let xy=Build82OriginalHanatosSurface.quad2tri(tc)
                 let mapped=try Build81OriginalInputGamut
                     .compressUsingOriginalSpectralLocus(
-                        [.init(x:xy.x,y:xy.y)],white:white
+                        [.init(x:xy.x,y:xy.y)],white:white,
+                        algorithm:algorithm
                     )[0]
                 let compressed=Build82OriginalHanatosSurface.tri2quad(
                     Point(x:mapped.x,y:mapped.y)

@@ -533,6 +533,7 @@ struct SpectralPhysics {
          cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB,
          cameraBandpass: OriginalSourceCameraBandpass.Settings = .init(),
          hanatosSourceRecompute: Bool = false,
+         sourceInputGamutAlgorithm: Build81OriginalInputGamut.Algorithm = .xy,
          sourceColorReference: Build87OriginalColorReference.Settings? = nil,
          sourceFilmDensityMin: [Double] = [0.03,0.03,0.03]) throws {
         guard Self.supportedFilmIDs.contains(filmID),
@@ -558,8 +559,15 @@ struct SpectralPhysics {
         try cameraBandpass.validate()
         // Build82 recomputes original Hanatos spectral TC sensor LUT
         // rather than silently substituting Mallett or old unfiltered data.
+        if sourceInputGamutAlgorithm == .oklch &&
+           cameraRawMethod != .hanatos2025 {
+            throw PhysicsError.invalid(
+                "原版输入 Oklch 需要 Hanatos2025 Float64 光谱 LUT；不能走 Mallett 近似"
+            )
+        }
         let rebuildHanatos = cameraRawMethod == .hanatos2025 &&
-            (cameraBandpass.active || hanatosSourceRecompute)
+            (cameraBandpass.active || hanatosSourceRecompute ||
+             sourceInputGamutAlgorithm == .oklch)
         if rebuildHanatos {
             guard case .originalFloat64 = hanatosPrecision else {
                 throw PhysicsError.invalid(
@@ -591,7 +599,8 @@ struct SpectralPhysics {
             recomputedHanatos=try Build82OriginalSpectralRuntime.make(
                 profile:profile,grid:grid,filter:cameraBandpass,
                 spectralGaussianBlur:0,applyWindow:true,applySurface:true,
-                compressInputXY:true
+                compressInputXY:true,
+                inputGamutAlgorithm:sourceInputGamutAlgorithm
             )
         }
         let originalHanatos = try OriginalHanatosResponse(

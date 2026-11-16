@@ -99,6 +99,9 @@ final class PhotoEditorModel: ObservableObject {
     // on the Float64 source physical path. Legacy CI/ACES stays unchanged.
     // Not full gamut or device/image certification.
     @Published var sourcePhysicalCAM16DefaultGamutEnabled = false
+    // Independently tested upstream InputGamutCompressSpec(algorithm="oklch").
+    // Explicit opt-in; never silently replace the original default xy.
+    @Published var sourcePhysicalInputOklchEnabled = false
     // Independent opt-in deterministic original Python ScanningStage:
     // post-ACES LINEAR Gaussian lens blur and unsharp, before display CCTF.
     // Existing scannerFinishingEnabled includes unported stochastic glare.
@@ -541,6 +544,11 @@ final class PhotoEditorModel: ObservableObject {
                 bloomSize:printSourceDiffusionBloomSize
             )
         )
+        if sourcePhysicalInputOklchEnabled {
+            // Bake source Oklch into Hanatos TC LUT. Engine enforces
+            // actual Float64 recompute and rejects non-Hanatos input.
+            p.sourceInputGamutAlgorithm = .oklch
+        }
         if sourcePhysicalCAM16DefaultGamutEnabled {
             // Keep original ScannerStage: spectral paper XYZ → RAW linear
             // RGB → source OutputGamutCompressSpec() CAM16-UCS Double.

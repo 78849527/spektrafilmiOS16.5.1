@@ -9,3 +9,10 @@
 - 仍未解决 P0：RAW/rawpy 镜头、EXR/ICC/XMP、默认无种子多线程、13MP Jetsam、真实 GUI 12 项。
 
 该工程批次不构建 IPA，先生成独立 Python oracle + Swift 数值对照及完整 iPhoneOS 类型检查，合并剩余 P0 后集中构建。
+## 后续补线：原版 Oklch 实际生产路径
+
+- 仅在明确开启新 Oklch 控件时，`OriginalSourcePhysicalImage.Parameters.sourceInputGamutAlgorithm=.oklch`。
+- `SpectralPhysics` 重新计算 192×192 Hanatos Float64 光谱 TC LUT；`Build82OriginalSpectralRuntime.bakeOriginalXYGamut` 使用数值已通过的原版 Oklch chroma compressor，之后原样按照源 LUT 反射索引/双线性采样。
+- 默认 `.xy` 无参数变化；Mallett 路径明确拒绝 Oklch（不回退）；不触动固定颗粒种子。
+- 独立 Python Oklch 96 通道最大误差 `2.79e-14`，原版 CAM16 216 案例最大输出误差 `1.87e-14`。
+- **未完成**：实际 LUT 全表 Python 对照、UI iPhoneOS 编译与真机整图；因此不能宣称“完整原版输入压缩移植”。

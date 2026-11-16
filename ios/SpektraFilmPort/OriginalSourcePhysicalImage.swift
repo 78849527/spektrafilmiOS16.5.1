@@ -131,6 +131,9 @@ enum OriginalSourcePhysicalImage {
         // ProPhoto linear is a separate *numerical engine* source branch
         // until real ICC/raw ingress has passed independent verification.
         var cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB
+        /// Source InputGamutCompressSpec().algorithm. Default .xy unchanged.
+        /// .oklch REBUILDS the original Hanatos TC LUT (not post RGB).
+        var sourceInputGamutAlgorithm: Build81OriginalInputGamut.Algorithm = .xy
         var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
         /// Build83 literal original source post-optics film-reference photon
         /// multiplier. 1.0 is an explicit uncalibrated diagnostic default;
@@ -245,6 +248,7 @@ enum OriginalSourcePhysicalImage {
                 cameraInputColorSpace:cameraInputColorSpace,
                 cameraBandpass: cameraBandpass,
                 hanatosSourceRecompute: hanatosSourceRecompute,
+                sourceInputGamutAlgorithm:sourceInputGamutAlgorithm,
                 sourceColorReference: sourceColorReference.enabled
                     ? sourceColorReference : nil,
                 sourceFilmDensityMin: sourceGrain.densityMin

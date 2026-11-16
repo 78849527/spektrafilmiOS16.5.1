@@ -2165,6 +2165,23 @@ struct FloatingEditorWorkspace: View {
                             // never activate unseeded production prange.
                             sourceScannerGlareSettings
                             resetToggle(
+                                "原版输入 Oklch：重新烘焙 Hanatos LUT（实验）",
+                                value:$model.sourcePhysicalInputOklchEnabled,
+                                enabled:model.hasPhoto && !model.busy &&
+                                        model.sourcePixelIOEnabled &&
+                                        model.sourcePhysicalDirectEnabled &&
+                                        model.sourceCameraRawMethod == .hanatos2025,
+                                resetTo:false
+                            )
+                            .onChange(of:model.sourcePhysicalInputOklchEnabled) { _ in
+                                model.queueSpectralPreview()
+                            }
+                            Text("源 InputGamutCompressSpec：直接在 192×192 光谱 TC LUT" +
+                                 " 内执行 Oklch Cmax 和双线性重映射，Float64。" +
+                                 "默认 xy 分支不变；高位深/RAW 仍未贯通。")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            resetToggle(
                                 "原版默认输出 CAM16-UCS（逐像素 Float64 实验）",
                                 value:$model.sourcePhysicalCAM16DefaultGamutEnabled,
                                 enabled:model.hasPhoto && !model.busy &&

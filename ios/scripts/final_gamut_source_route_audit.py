@@ -13,6 +13,12 @@ assert "p.sourceOutputGamut=Build89OriginalOutputGamut.Settings()" in ui
 assert "sourcePhysicalCAM16DefaultGamutEnabled" in panel
 assert "sourceOutputGamut: Build89OriginalOutputGamut.Settings? = nil" in phys
 assert "return try compressOklch(xy,knee:knee,locus:locus)" in g
+assert "sourcePhysicalInputOklchEnabled = false" in ui
+assert "p.sourceInputGamutAlgorithm = .oklch" in ui
+assert "sourcePhysicalInputOklchEnabled" in panel
+assert "inputGamutAlgorithm:sourceInputGamutAlgorithm" in get("ios/SpektraFilmPort/SpectralPhysics.swift")
+assert "algorithm:inputGamutAlgorithm" in get("ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift")
+assert "var sourceInputGamutAlgorithm: Build81OriginalInputGamut.Algorithm = .xy" in phys
 assert "private static func cmaxNode(" in g
 assert "for _ in 0..<18" in g
 assert "0.05+0.95*Double(LIndex)/63.0" in g
