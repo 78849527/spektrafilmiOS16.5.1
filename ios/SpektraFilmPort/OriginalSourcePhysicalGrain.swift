@@ -239,6 +239,19 @@ enum OriginalSourcePhysicalGrain {
         }
         stageObserver?("sourceGrainDyeClouds",out)
 
+        // Build106: the 9-layer source interpolation field (9 Double/px),
+        // 3 Poisson/Binomial preparation fields (3 Double/px) and dye-cloud
+        // RGB workspace are dead after this final SciPy/fast_stats draw.
+        // Explicitly relinquish their storage BEFORE allocating Numba
+        // microstructure and the final Gaussian workspaces. This does not
+        // change RNG order, Float64 arithmetic or any observed stage data;
+        // diagnostic closures may independently retain their snapshots.
+        layerInputs.removeAll(keepingCapacity:false)
+        probabilities.removeAll(keepingCapacity:false)
+        rates.removeAll(keepingCapacity:false)
+        saturations.removeAll(keepingCapacity:false)
+        cloud.removeAll(keepingCapacity:false)
+
         // Upstream fast_lognormal_from_mean_std(mean=1,std=30nm/px);
         // only enabled if std > 0.05. Controlled Numba one-worker draw.
         let microStd=settings.microstructureNM*0.001/pixelUM

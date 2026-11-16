@@ -1,0 +1,97 @@
+import Foundation
+
+/// Build106: byte-accounting ledger shared by REAL source-physical predecode
+/// and the actual in-place optical renderer. This is a conservative bound,
+/// NOT an iPhone Jetsam/RSS measurement and NOT a new optical algorithm.
+/// Numeric coefficients preserve the Build91 production allowance except
+/// for the long-lived diagnostic observer that may capture many full images.
+enum Build106SourceMemoryLedger {
+    static let baseBytesPerPixel: UInt64 = 120
+    static let scannerFinishBytesPerPixel: UInt64 = 40
+    static let scannerGlareBytesPerPixel: UInt64 = 96
+    static let grainBytesPerPixel: UInt64 = 272
+    static let cameraLensBytesPerPixel: UInt64 = 40
+    static let filmHalationBytesPerPixel: UInt64 = 120
+    static let paperDiffusionBytesPerPixel: UInt64 = 40
+    // Up to 23 labelled production callbacks plus 4 grain stages, one of
+    // which is 9 channels (=3 standard RGB taps). Accommodates optional
+    // scanner/print taps, retained Array COW snapshots and headroom.
+    // If the caller retains stage buffers, 24 B/px is NOT sufficient.
+    // The source digital RGB array remains budgeted in the base 120 B/px.
+    static let stageObserverBytesPerPixel: UInt64 = 960
+    static let paperStageBytesPerPixel: UInt64 = 48
+
+    static func additional(
+        scannerFinish:Bool,
+        scannerGlare:Bool,
+        grain:Bool,
+        cameraLens:Bool,
+        filmHalation:Bool,
+        paperDiffusion:Bool,
+        stageObserver:Bool,
+        paperStageObserver:Bool
+    ) -> UInt64 {
+        var bytes:UInt64=0
+        if scannerFinish { bytes+=scannerFinishBytesPerPixel }
+        if scannerGlare { bytes+=scannerGlareBytesPerPixel }
+        if grain { bytes+=grainBytesPerPixel }
+        if cameraLens { bytes+=cameraLensBytesPerPixel }
+        if filmHalation { bytes+=filmHalationBytesPerPixel }
+        if paperDiffusion { bytes+=paperDiffusionBytesPerPixel }
+        if stageObserver { bytes+=stageObserverBytesPerPixel }
+        if paperStageObserver { bytes+=paperStageBytesPerPixel }
+        return bytes
+    }
+
+    /// Stable audit of the lifetime boundary in grain.py::apply_grain.
+    /// Sub-layer interpolation and particle-count preparations are consumed
+    /// BEFORE microstructure. They must NOT leak into the next whole-frame
+    /// Gaussian pass. This does not claim a measured process RSS peak.
+    struct Scratch {
+        let layerInputsBytes:UInt64
+        let particleFieldsBytes:UInt64
+        let cloudBytes:UInt64
+        let accumulatedDensityBytes:UInt64
+        let lateMicrostructureInputBytes:UInt64
+        let releasedBeforeMicrostructureBytes:UInt64
+    }
+    static func scratch(pixels:UInt64,withDyeCloud:Bool)->Scratch {
+        let layers=pixels*9*8
+        let fields=pixels*3*8
+        let cloud=withDyeCloud ? pixels*3*8 : 0
+        return Scratch(
+            layerInputsBytes:layers,
+            particleFieldsBytes:fields,
+            cloudBytes:cloud,
+            accumulatedDensityBytes:pixels*3*8,
+            lateMicrostructureInputBytes:pixels*3*8,
+            releasedBeforeMicrostructureBytes:layers+fields+cloud
+        )
+    }
+
+    struct Preview {
+        let pixels:UInt64
+        let additionalBytesPerPixel:UInt64
+        let estimatedWithoutFFT:UInt64
+        let totalWithFFT:UInt64
+        var estimatedMB:Double {Double(totalWithFFT)/1_000_000}
+    }
+    /// Pure dry-run arithmetic, never allocates the requested giant frame.
+    static func preview(width:Int,height:Int,
+                        additionalBytesPerPixel:UInt64,
+                        fftScratchBytes:UInt64=0) -> Preview? {
+        guard width>0,height>0,width<=8192,height<=8192,
+              width<=13_000_000/height,
+              additionalBytesPerPixel<=4096 else{return nil}
+        let pixels=UInt64(width)*UInt64(height)
+        let perPixel=baseBytesPerPixel+additionalBytesPerPixel
+        let without=pixels*perPixel
+        guard without<=UInt64.max-fftScratchBytes else{return nil}
+        return Preview(
+            pixels:pixels,
+            additionalBytesPerPixel:additionalBytesPerPixel,
+            estimatedWithoutFFT:without,
+            totalWithFFT:without+fftScratchBytes
+        )
+    }
+}

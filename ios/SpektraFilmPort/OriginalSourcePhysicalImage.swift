@@ -303,29 +303,19 @@ enum OriginalSourcePhysicalImage {
         let paperFFT:(settings:OriginalSourceDiffusion.Settings,
                       pixelUM:Double)? = activePrintDiffusion
             ? (parameters.printDiffusion,pixelUMForFFT) : nil
-        // Source Float64 peak-budget components; keeping each term
-        // typed avoids Swift's large-expression typecheck timeout.
-        var extraPeakBytesPerPixel:UInt64=0
-        if parameters.scannerOptics.active {
-            extraPeakBytesPerPixel+=scannerFinishExtraBytesPerPixel
-        }
-        if controlledScannerGlare {
-            extraPeakBytesPerPixel+=scannerGlareExtraBytesPerPixel
-        }
-        if controlledFilmGrain {
-            extraPeakBytesPerPixel+=OriginalSourcePhysicalGrain.extraBytesPerPixel
-        }
-        if parameters.cameraOptics.needsWholeImageBlur {
-            extraPeakBytesPerPixel+=cameraLensExtraBytesPerPixel
-        }
-        if parameters.filmHalation.active {
-            extraPeakBytesPerPixel+=filmHalationExtraBytesPerPixel
-        }
-        if parameters.printDiffusion.active {
-            extraPeakBytesPerPixel+=printDiffusionExtraBytesPerPixel
-        }
-        if capturePaperStages {extraPeakBytesPerPixel+=48}
-        if stageDoubleObserver != nil {extraPeakBytesPerPixel+=24}
+        // Build106: ONE audited feature ledger for both pre-decode and
+        // the actual in-place renderer. A diagnostic callback may retain
+        // every source Float64 tap, not just the latest three-channel tap.
+        let extraPeakBytesPerPixel=Build106SourceMemoryLedger.additional(
+            scannerFinish:parameters.scannerOptics.active,
+            scannerGlare:controlledScannerGlare,
+            grain:controlledFilmGrain,
+            cameraLens:parameters.cameraOptics.needsWholeImageBlur,
+            filmHalation:parameters.filmHalation.active,
+            paperDiffusion:parameters.printDiffusion.active,
+            stageObserver:stageDoubleObserver != nil,
+            paperStageObserver:capturePaperStages
+        )
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:extraPeakBytesPerPixel,
@@ -823,25 +813,20 @@ extension OriginalSourcePixelIO {
         let preflightPaper:(settings:OriginalSourceDiffusion.Settings,
                             pixelUM:Double)?=paperEnabled
             ? (parameters.printDiffusion,sourcePixelsUM):nil
-        var preflightAdditional:UInt64=0
-        if parameters.scannerOptics.active {
-            preflightAdditional+=OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
-        }
-        if parameters.scannerGlare.active && parameters.scannerGlare.percent>0 {
-            preflightAdditional+=OriginalSourcePhysicalImage.scannerGlareExtraBytesPerPixel
-        }
-        if parameters.sourceGrain.active {
-            preflightAdditional+=OriginalSourcePhysicalGrain.extraBytesPerPixel
-        }
-        if parameters.cameraOptics.needsWholeImageBlur {
-            preflightAdditional+=OriginalSourcePhysicalImage.cameraLensExtraBytesPerPixel
-        }
-        if parameters.filmHalation.active {
-            preflightAdditional+=OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel
-        }
-        if parameters.printDiffusion.active {
-            preflightAdditional+=OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel
-        }
+        // Build106: call the EXACT same source-feature ledger as the
+        // renderer; the export has no stage observer. No unsafe optimistic
+        // budget before ImageIO allocates full-resolution Float64 buffers.
+        let preflightAdditional=Build106SourceMemoryLedger.additional(
+            scannerFinish:parameters.scannerOptics.active,
+            scannerGlare:parameters.scannerGlare.active &&
+                parameters.scannerGlare.percent>0,
+            grain:parameters.sourceGrain.active,
+            cameraLens:parameters.cameraOptics.needsWholeImageBlur,
+            filmHalation:parameters.filmHalation.active,
+            paperDiffusion:parameters.printDiffusion.active,
+            stageObserver:false,
+            paperStageObserver:false
+        )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:targetW,height:targetH,
             additionalBytesPerPixel:preflightAdditional,
