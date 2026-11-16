@@ -5,6 +5,7 @@ This cannot replace physical iPhone Swift/Numba full-image execution.
 It catches Build103's false universal missing-seed assertion before IPA.
 """
 from pathlib import Path
+from build_ci_version_floor import minimum_build, minimum_minor
 import json
 
 root = Path(__file__).resolve().parents[2]
@@ -37,8 +38,8 @@ assert "inactiveMicroSeedFreeCases==3" in parity
 assert "activeMicroMissingSeedRejectedCases==1" in parity
 assert "requestedMicroStd>0.05" in grain
 assert "if settings.useFastStats && settings.fastStatsSeed != microSeed" in grain
-assert 'CURRENT_PROJECT_VERSION: "112"' in project
-assert 'MARKETING_VERSION: "1.8.78"' in project
+assert minimum_build(project, 112)
+assert minimum_minor(project, 78)
 print("PASS Build107 static SOURCE gate: 3 Python inactive-micro fixtures accept absent Numba seed with bit-exact RGB; 1 real active-micro fixture requires seed. Full device rerun REQUIRED.")
 
 # Build106+107 must be a single actual device report with TWO attachments.
@@ -67,8 +68,8 @@ assert 'code:103' in source
 assert 'stageObserverBytesPerPixel: UInt64 = 960' in ledger
 assert memory.count('Build106SourceMemoryLedger.additional(') == 2
 assert grain.index('stageObserver?("sourceGrainDyeClouds",out)') < grain.index('layerInputs.removeAll(keepingCapacity:false)') < grain.index('let microStd=settings.microstructureNM')
-assert 'MARKETING_VERSION: "1.8.78"' in project
-assert 'CURRENT_PROJECT_VERSION: "112"' in project
+assert minimum_minor(project, 78)
+assert minimum_build(project, 112)
 print("PASS Build107 combined device evidence contract: previous 28+20 parity, Build106 24 budget scenarios, Build107 bounded RSS, one UUID LOG+JSON; NEVER 13MP certification.")
 
 
