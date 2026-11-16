@@ -1,4 +1,5 @@
 # Build112 UI-only. Starts from the previously PASS Build111 CI and only changes version/UI verification/release identity.
+# Follow-up: scan XYZ single-thread control moved to Process/Scanner; CMY to Process/Paper; Build100 audit updated for original advanced controls.
 # Build111 fix: ship compatibility changes via the existing Build110 release branch, no extra release branch.
 # Build111 fast fail: real tagged P3/JPEG ColorSync fixture executes before original source generation.
 # Build111 Swift parser fix: use one interpolated accessibility label, preserving iOS16.5.1 behavior.
@@ -226,7 +227,7 @@ jobs:
             --fixtures ios/verification/generated-physical-v1.8.22 \
             --out /tmp/build92-real-source-48-stage-tapes.json
           test -s /tmp/build92-real-source-48-stage-tapes.json
-      - name: Validate carried-forward Build103 28-stage metrics and historical native regressions
+      - name: Validate updated Build112 UI navigation and carried-forward Build103 measured contracts
         run: |
           python ios/scripts/build103_device_metrics_audit.py \
             /tmp/build92-native-ui-static.json
@@ -548,7 +549,7 @@ jobs:
             /tmp/build92-real-source-48-stage-tapes.json
             /tmp/build92-native-ui-static.json
           if-no-files-found: error
-      - name: Publish ONLY experimental unsigned Build107 IPA after successful true iPhoneOS compile
+      - name: Publish ONLY experimental unsigned Build112 IPA after successful true iPhoneOS compile
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -565,6 +566,7 @@ jobs:
           SUM="$ASSET.sha256"
           ID=ios/build/release/verification-build112.json
           NOTES='Build112 v1.8.78 UI ONLY: status and input notices remain fixed-height image overlays, preventing portrait viewport bounce; four source Oklch CAM16 routes use same existing two flags; camera source method, source grain, and quick LUT CAM16 switches now grouped in process settings with duplicate controls removed. No algorithm, original defaults, precision or source order modified. 13MP/Python full image/RAW still unverified. Build111 v1.8.78: CAMERA/PHOTOS/FILES real image file color/depth/size preflight, always-visible in-editor compatibility banner, source pixel entry blocked on unsupported ICC. Explicit user-consented Apple ColorSync Display P3 to sRGB new JPEG copy, original unchanged, effective profile plus conversion provenance written in Build110 four mode paired JSON+LOG. Image-level P3 handling is not certified Python colorimetry; no silent conversion. Full original Float64 optical algorithms retained. Build110 v1.8.78: NEW in-device 4-mode real Float64 controlled source film/print/scanner, reports actual user Oklch/CAM16 toggle snapshots, sampled RSS, time, sample checksum, FNV64 output fingerprint and delta from XY baseline. Preserves Build106-108 previous core/grain/1MP/2MP diagnostics; one paired JSON+LOG via Advanced > Verification status. Source 47-item formal certification NOT complete, iPhoneOS only, unsigned IPA requires signing. Build109 v1.8.78 with original Oklch TC LUT production integration and optional Float64 CAM16-UCS real source optical path. Existing Build106-108 combined iPhone diagnostics preserved. Independent original Python Oklch 96 channels, actual Hanatos TC LUT xy/Oklch 4038 channels, CAM16 216 cases checked in CI. No 13MP/RAW/rawpy/XMP/EXR/default multithread RNG/full original certification; unsigned IPA must be signed for installation. Previous Build108 testing remains compatible. Other Build108 v1.8.78 minimum iOS16.5 arm64 EXPERIMENTAL UNSIGNED IPA. Real source algorithms preserved from Build107 source SHA and original Python fixtures; added opt-in 1MP Kodak Portra 400 to Endura with 3x3 SciPy density grain and 2MP full film/spatial DIR/paper/scan without grain. Both call real OriginalSourcePhysicalImage.developInPlace with Float64, no fake downsize or CI/Metal approximation. Build108 combined output contains previous Build103 28-core, Build104 20-grain, Build106 24 memory matrix, Build107 16MiB RSS and Build108 real 1/2MP measured RSS/time and failures in ONE paired .log + .json. This CI compiles actual iPhoneOS arm64 and verifies original numeric contracts but actual Build108 physical-device measurements NOT yet collected. 1/2MP input is SYNTHETIC sRGB, not ImageIO/RAW; no independent Python 1/2MP pixel-by-pixel parity and no 13MP or Jetsam certification. Requires signing before installation. SHA: '"$GITHUB_SHA"
+          NOTES="$NOTES"' Build112 final: opt-in seeded scanner XYZ glare resides in Process > Scan, original parameters remain Advanced; CMY enlarger controls are expandable in Process > Paper; old CAM16 LUT and Float64 CAM16-UCS are labeled separately. Three certification states not conflated. No engine changes.'
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
             gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
