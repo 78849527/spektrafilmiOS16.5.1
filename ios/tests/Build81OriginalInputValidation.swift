@@ -263,13 +263,16 @@ enum Build81OriginalInputValidation {
                 }
             }
         }
-        do {
-            _=try Build81OriginalInputGamut.compress(
-                [white],white:white,algorithm:.oklch,locus:locus
-            )
-            throw Failure.invalid("Unported Oklch mode silently succeeded")
-        } catch Build81OriginalInputGamut.Failure.invalid {
-            // Expected unsupported mode.
+        // Oklch now has its own pinned Python source oracle
+        // ios/scripts/build81_source_oklch_oracle.py. This older
+        // geometry fixture checks native dispatch, not its parity.
+        let perceptual=try Build81OriginalInputGamut.compress(
+            [white],white:white,algorithm:.oklch,locus:locus
+        )
+        guard perceptual.count==1,
+              perceptual[0].x.isFinite,
+              perceptual[0].y.isFinite else {
+            throw Failure.invalid("Original Oklch branch not connected")
         }
         print("PASS Build81 Python crop \(crops.count) fixtures / "
               + "\(croppedPixels) Float64 exact bits; "

@@ -95,6 +95,10 @@ final class PhotoEditorModel: ObservableObject {
     // Separate opt-in v1.8.22 REAL nonlinear image optics. Never default to
     // it or replace the user-validated v1.8.21 direct-DIR route.
     @Published var sourcePhysicalDirectEnabled = false
+    // 47-item integration: opt-in ACTUAL original CAM16-UCS default
+    // on the Float64 source physical path. Legacy CI/ACES stays unchanged.
+    // Not full gamut or device/image certification.
+    @Published var sourcePhysicalCAM16DefaultGamutEnabled = false
     // Independent opt-in deterministic original Python ScanningStage:
     // post-ACES LINEAR Gaussian lens blur and unsharp, before display CCTF.
     // Existing scannerFinishingEnabled includes unported stochastic glare.
@@ -498,7 +502,7 @@ final class PhotoEditorModel: ObservableObject {
         )
         sourceHalation.halationFirstSigmaUM=stockHalation.sigmaUM
         sourceHalation.halationStrength=stockHalation.strength
-        let p=OriginalSourcePhysicalImage.Parameters(
+        var p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
             dir:spatialDIRSettings,print:print,morph:morph,
@@ -537,6 +541,13 @@ final class PhotoEditorModel: ObservableObject {
                 bloomSize:printSourceDiffusionBloomSize
             )
         )
+        if sourcePhysicalCAM16DefaultGamutEnabled {
+            // Keep original ScannerStage: spectral paper XYZ → RAW linear
+            // RGB → source OutputGamutCompressSpec() CAM16-UCS Double.
+            // Legacy scannerCAM16Enabled is the separate 33³ LUT mode
+            // and remains blocked by sourcePhysicalParameters() guard.
+            p.sourceOutputGamut=Build89OriginalOutputGamut.Settings()
+        }
         try p.validate()
         return p
     }

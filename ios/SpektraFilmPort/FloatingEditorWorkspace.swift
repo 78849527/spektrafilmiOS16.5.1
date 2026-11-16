@@ -2164,6 +2164,22 @@ struct FloatingEditorWorkspace: View {
                             // source XYZ random glare is controlled only;
                             // never activate unseeded production prange.
                             sourceScannerGlareSettings
+                            resetToggle(
+                                "原版默认输出 CAM16-UCS（逐像素 Float64 实验）",
+                                value:$model.sourcePhysicalCAM16DefaultGamutEnabled,
+                                enabled:model.hasPhoto && !model.busy &&
+                                        model.sourcePixelIOEnabled &&
+                                        model.sourcePhysicalDirectEnabled,
+                                resetTo:false
+                            )
+                            .onChange(of:model.sourcePhysicalCAM16DefaultGamutEnabled) { _ in
+                                model.queueSpectralPreview()
+                            }
+                            Text("启用后实际进入原版 CAM16-UCS Float64 逐像素色域压缩；" +
+                                 "不是旧版 33³ CAM16 LUT。仅限 sRGB 源像素与 sRGB 输出，" +
+                                 "运算可能很慢；RAW、ICC 广色域和全图 Python 对照仍未认证。")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                             sourcePhysicalGrainSettings
                             resetToggle("原版扫描镜头 / Unsharp（Double）",
                                         value:$model.sourceScannerOpticalEnabled,
