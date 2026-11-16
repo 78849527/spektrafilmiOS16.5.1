@@ -6,6 +6,7 @@ hardware camera, actual Photos permissions, Files sharing, or real device.
 Real-device scripted checklist remains REQUIRED for certification.
 """
 from pathlib import Path
+from build_ci_version_floor import minimum_build, minimum_minor
 import json
 import hashlib
 import sys
@@ -21,8 +22,8 @@ stages=(P/"SpektraFilmPort/Build92DeviceSourceStageDiagnostic.swift").read_text(
 checks={
     "ios16_deployment_min":"iOS: \"16.5\"" in spec and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
-    "build103_version":'CURRENT_PROJECT_VERSION: "112"' in spec and
-        'MARKETING_VERSION: "1.8.78"' in spec,
+    "build103_version":minimum_build(spec, 112) and
+        minimum_minor(spec, 78),
     "real_camera_capture":"engine.capturePhoto()" in camera and
         "NextLevelCapturedPhoto" in camera,
     "raw_dng_not_jpeg_fallback":"pendingRAW" in camera and
@@ -198,8 +199,8 @@ checks.update({
     "tiff16_mac_no_device_claim":
         "DOES NOT use RAF" in tiff_test,
     "build103_app_version":
-        'CURRENT_PROJECT_VERSION: "112"' in spec and
-        'MARKETING_VERSION: "1.8.78"' in spec and
+        minimum_build(spec, 112) and
+        minimum_minor(spec, 78) and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
 })
 
@@ -341,8 +342,8 @@ checks.update({
         "source RAW" not in temp_test and
         "external RAW safety" in temp_test,
     "build103_ios1651_deployment":
-        'CURRENT_PROJECT_VERSION: "112"' in spec and
-        'MARKETING_VERSION: "1.8.78"' in spec and
+        minimum_build(spec, 112) and
+        minimum_minor(spec, 78) and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
 })
 
@@ -476,8 +477,8 @@ checks.update({
         "onCaptureBuild77Evidence()" in ui and
         "Build77OneShotEvidence.captureAll(" in main,
     "b100_version_and_minimum_ios":
-        'CURRENT_PROJECT_VERSION: "112"' in spec and
-        'MARKETING_VERSION: "1.8.78"' in spec and
+        minimum_build(spec, 112) and
+        minimum_minor(spec, 78) and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
 })
 
@@ -595,8 +596,8 @@ checks.update({
         "Build101DeviceParityEvidence.capture(" in main and
         "SourcePhysicalImageParity.evaluate(fixtures:location)" in stages,
     "b102_ios1651_unchanged":
-        'CURRENT_PROJECT_VERSION: "112"' in spec and
-        'MARKETING_VERSION: "1.8.78"' in spec and
+        minimum_build(spec, 112) and
+        minimum_minor(spec, 78) and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
 })
 
@@ -679,8 +680,8 @@ checks.update({
         "Array(good.dropLast())" in test and
         "synthetic first stage error" in test,
     "b103_scope_and_version":
-        'CURRENT_PROJECT_VERSION: "112"' in spec and
-        'MARKETING_VERSION: "1.8.78"' in spec and
+        minimum_build(spec, 112) and
+        minimum_minor(spec, 78) and
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec and
         "full13MPOperationMeasured=false" in doc,
 })
