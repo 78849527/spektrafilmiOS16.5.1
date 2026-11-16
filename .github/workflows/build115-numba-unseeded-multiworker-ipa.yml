@@ -78,10 +78,11 @@ jobs:
 
   group-compile-once:
     needs: runner-preflight
-    # Apple Silicon runner: do not use macos-15-intel.
-    # Xcode 16.4 builds the same generic iPhoneOS arm64 target.
-    # Python 3.11 + Numba 0.61.2 remains the tested source fixture stack.
-    runs-on: macos-15
+    # Intel runner: repeated Build115 jobs actually acquired this pool and
+    # executed 27 CI steps; 14 GB RAM versus standard M1 hosted runner's 7 GB.
+    # Pinned Python 3.11 + Numba 0.61.2 has compatible Intel wheels.
+    # Xcode 16.4 still targets iPhoneOS arm64 via cross-compilation.
+    runs-on: macos-15-intel
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
