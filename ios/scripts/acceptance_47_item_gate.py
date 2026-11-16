@@ -121,7 +121,13 @@ def main():
     a=p.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     roadmap = read("docs/MASTER-PORTING-ROADMAP-ios16.5.1.md")
-    # Only numbered scientific requirements in section B; section C repeats\n    # four entries in its illustrative planning prose.\n    begin=roadmap.index("## B. 路线图逐项执行")\n    end=roadmap.index("## C. 建议批次",begin)\n    specs = re.findall(r"(?m)^(0[1-9]|[1-3][0-9]|4[0-7])\.\s+(.+)$",roadmap[begin:end])
+    # Only numbered requirements in section B. Section C repeats numbers.
+    begin = roadmap.index("## B. 路线图逐项执行")
+    end = roadmap.index("## C. 建议批次", begin)
+    specs = re.findall(
+        r"(?m)^(0[1-9]|[1-3][0-9]|4[0-7])\.\s+(.+)$",
+        roadmap[begin:end],
+    )
     assert len(specs) == 47, f"roadmap changed: {len(specs)} instead of 47"
     assert [int(n) for n,_ in specs] == list(range(1,48)), "roadmap IDs drift"
     project=read("ios/project.yml")
