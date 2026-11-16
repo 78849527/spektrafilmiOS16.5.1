@@ -60,7 +60,10 @@ jobs:
 
   group-compile-once:
     needs: runner-preflight
-    runs-on: macos-15
+    # macos-15 is Apple Silicon; recent hosted ARM VM allocation failed
+    # before executing any step. Intel is a separate standard runner pool.
+    # Xcode 16.4 still builds the same generic iPhoneOS arm64 target.
+    runs-on: macos-15-intel
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
