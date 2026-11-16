@@ -92,9 +92,9 @@ enum Build106SourceMemoryLedgerValidation {
         try demand(b.preview(width:1000,height:1000,
                              additionalBytesPerPixel:4097)==nil,
                    "per pixel cap bypassed")
-        print("PASS Build106 source memory: 6 geometries x 4 scenarios,"
-              +" historical bpp unchanged, +960b/px callback guard,"
-              +" 228MB scratch release at 1.9MP, FFT budget and fail-closed geometry."
-              +" No physical-device RSS certification claimed.")
+        print("PASS Build106 source memory: 6 geometries x 4 scenarios," +
+              " historical bpp unchanged, +960b/px callback guard," +
+              " 228MB scratch release at 1.9MP, FFT budget and fail-closed geometry." +
+              " No physical-device RSS certification claimed.")
     }
 }
