@@ -47,6 +47,35 @@ jobs:
             ios/tests/Build90NativeImageIOValidation.swift \
             -o /tmp/FinalImageIOEvidence
           /tmp/FinalImageIOEvidence
+      - name: Source EXIF IPTC GPS metadata actual JPEG/TIFF disk roundtrip
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build90GeneratedSourceICC.swift \
+            ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
+            ios/SpektraFilmPort/Build90NativeOutputWriter.swift \
+            ios/SpektraFilmPort/Build90OriginalICCContainer.swift \
+            ios/tests/FinalSourceMetadataRoundTripValidation.swift \
+            -o /tmp/FinalSourceMetadata
+          /tmp/FinalSourceMetadata
+          touch /tmp/final-metadata-actually-passed
+      - name: Update metadata scope in evidence JSON (NO formal certification)
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('/tmp/final-B.json')
+          if p.exists():
+              d=json.loads(p.read_text())
+              d['EXIF_IPTC_GPS']=('MACOS_REAL_JPEG_TIFF_PASSED'
+                if Path('/tmp/final-metadata-actually-passed').exists()
+                else 'BLOCKED_REAL_METADATA_ROUNDTRIP_FAILED_OR_NOT_RUN')
+              d['formalCertificate']=False
+              p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
+              print('Metadata acceptance:',d['EXIF_IPTC_GPS'])
+          PY
       - name: Archive honest evidence classification
         if: always()
         uses: actions/upload-artifact@v4
