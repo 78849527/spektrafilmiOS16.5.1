@@ -141,7 +141,7 @@ enum Build107CombinedDeviceFeedback {
                 processAvailable:1
             )
             try Build91PhysicalMemory.validate(p)
-        } catch Build91PhysicalMemory.Failure.invalid {
+        } catch Build91PhysicalMemory.Failure.invalid(_) {
             lowRejected=true
         } catch {
             if failure==nil {failure=error.localizedDescription}
@@ -308,6 +308,7 @@ enum Build107CombinedDeviceFeedback {
         let measured=checkBuild107()
         let target=physicalDevice && osVersion=="16.5.1" && shaOK(commit)
         let passed=target && core.controlledCoreStagesPassedOnTarget &&
+            core.randomFirstFailure==nil && core.memoryFirstFailure==nil &&
             grain.passedOnTarget && budget.firstFailure==nil &&
             measured.firstFailure==nil &&
             measured.actuallyTouchedPages && measured.realResidentSampleAvailable
