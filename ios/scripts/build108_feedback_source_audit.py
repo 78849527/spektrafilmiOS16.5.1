@@ -90,6 +90,7 @@ assert 'full13MPOperationMeasured:false' in stress
 assert 'largeImagePythonNumericParityCertified:false' in stress
 assert 'fullPythonOriginalCertified:false' in stress
 assert 'Build106-107-108-device-feedback-' in stress
-assert 'runBuild108FullFrameFeedback()' in app and 'runBuild108FullFrameFeedback()' in ui
+assert 'runBuild108FullFrameFeedback()' in app
+assert 'onRunBuild108FullFrameFeedback()' in ui
 assert 'ActivitySheet(items: [log,json])' in app
 print("PASS Build108: actual production 1MP grain and 2MP native Float64 optical stage, conservative budget and 25ms RSS, 106-108 one-pair device feedback, no fake 13MP/Python big-frame certification.")

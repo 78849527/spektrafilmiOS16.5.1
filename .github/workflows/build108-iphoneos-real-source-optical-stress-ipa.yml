@@ -1,3 +1,4 @@
+# Build108 audit follow-up: check the actual SwiftUI callback name independently of the ContentView method name.
 # Build108: syntax-only preflight cannot read generated original Python manifests before generator runs.
 # Build108: CI against actual 1MP/2MP CPU Float64 optical production + Build106/107 combined on-device feedback.
 # Build107: same-source Build106 memory lifecycle + Build107 bounded RSS; single LOG+JSON truth-telling release.
