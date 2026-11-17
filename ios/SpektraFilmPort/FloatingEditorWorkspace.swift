@@ -3600,8 +3600,8 @@ private struct CompactOpticalSlider:UIViewRepresentable {
     func makeCoordinator()->Coordinator {Coordinator(self)}
     func makeUIView(context:Context)->CompactOpticalUISlider {
         let slider=CompactOpticalUISlider()
-        slider.minimumTrackTintColor=.systemBlue
-        slider.maximumTrackTintColor=.tertiaryLabel
+        slider.minimumTrackTintColor = .systemBlue
+        slider.maximumTrackTintColor = .tertiaryLabel
         slider.setThumbImage(Self.smallThumb,for:.normal)
         slider.setThumbImage(Self.smallThumb,for:.highlighted)
         slider.isContinuous=true
