@@ -62,6 +62,15 @@ enum Build111PhotoInputProfile {
                 decodedDepth==32) && color == .extendedSRGB {
                 return format == "TIFF"
             }
+            // Build129: iOS 16.5.1 ImageIO may report standard sRGB
+            // for a genuine RGBAf TIFF produced with extended sRGB.
+            // Accept ONLY TIFF with verified Float32 components and
+            // a genuine decoded sRGB profile; never relabel P3 or RAW,
+            // or treat integer 32-bit as floating-point RGB.
+            if floatingComponents && declaredDepth==32 &&
+                decodedDepth==32 && color == .sRGB {
+                return format == "TIFF"
+            }
             return false
         }
         var convertibleP3:Bool {
@@ -79,7 +88,7 @@ enum Build111PhotoInputProfile {
                 return "原版输入格式预检通过；高位深／Float32 仍按 Build78 原版通道校验，所有图像继续接受内存和处理参数检验。"
             }
             if declaredDepth != 8 || decodedDepth != 8 {
-                return "该位深/色彩空间组合未通过已认证的原版输入路径；16-bit sRGB PNG/TIFF 和 extended-sRGB 浮点 TIFF 保持独立支持。"
+                return "该位深/色彩空间组合未通过已认证的原版输入路径；支持 16-bit sRGB PNG/TIFF、Float32 sRGB TIFF 和 extended-sRGB 浮点 TIFF。"
             }
             if width<=0 || height<=0 || width>8192 ||
                 height>8192 || Double(width)*Double(height)>16_000_000 {
