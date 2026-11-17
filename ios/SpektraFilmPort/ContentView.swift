@@ -20,10 +20,13 @@ final class PhotoEditorModel: ObservableObject {
     /// Build111 admission result for the *currently committed* photo.
     @Published var photoInputProfile: Build111PhotoInputProfile.Inspection?
     @Published var photoInputConvertedFromP3 = false
+    /// Explicit true RAW source; never use compatible CI preview as optical input.
+    @Published var rawOriginalSourceActive = false
     private var photoOriginalBeforeColorConversion: Data?
     var photoDirectInputReady:Bool {
-        originalPhotoData != nil && !rawFastModeActive &&
-            photoInputProfile?.directCompatible == true
+        (originalPhotoData != nil && !rawFastModeActive &&
+            photoInputProfile?.directCompatible == true) ||
+            (rawOriginalSourceActive && capturedRAWURL != nil && source != nil)
     }
     var photoP3ConversionPossible:Bool {
         originalPhotoData != nil && !rawFastModeActive &&
@@ -31,6 +34,9 @@ final class PhotoEditorModel: ObservableObject {
     }
     var photoInputSummary:String {
         guard let p=photoInputProfile else {
+            if rawOriginalSourceActive && capturedRAWURL != nil {
+                return "RAW 原片直通｜ACES16｜精细光学真机测试"
+            }
             if rawFastModeActive && capturedRAWURL != nil {
                 return "真实 DNG / Apple RAW 已解码｜胶片效果可用"
             }
@@ -39,6 +45,11 @@ final class PhotoEditorModel: ObservableObject {
         return p.summary + (photoInputConvertedFromP3 ? "｜ColorSync 已转换" : "")
     }
     var photoInputExplanation:String {
+        if rawOriginalSourceActive && capturedRAWURL != nil {
+            return "精细冲印直接重读 RAW 原片并进行线性 ACES16 显影，" +
+                "不使用兼容预览或手动 TIFF 副本。" +
+                "rawpy 数值等价尚未认证；当前全光学 13MP 内存上限仍生效。"
+        }
         if rawFastModeActive && capturedRAWURL != nil {
             return "DNG 原片已完整保存，Apple RAW 高精度解码／兼容冲印可用。" +
                 "不是必须转 8-bit：可直接进行兼容光学处理并最终导出 TIFF16。" +
@@ -1033,6 +1044,7 @@ final class PhotoEditorModel: ObservableObject {
         let pendingRAWURL: URL?
         let needsRAWChoice: Bool
         let rawFastMode: Bool
+        let rawOriginal: Bool
         let originalPreview: UIImage?
         let processedPreview: UIImage?
         let dimensions: String
@@ -1048,6 +1060,7 @@ final class PhotoEditorModel: ObservableObject {
             source:source, sourceData:originalPhotoData,
             rawURL:capturedRAWURL, pendingRAWURL:pendingImportedRAWURL,
             needsRAWChoice:rawNeedsChoice, rawFastMode:rawFastModeActive,
+            rawOriginal:rawOriginalSourceActive,
             originalPreview:originalPreview, processedPreview:processedPreview,
             dimensions:photoDimensions,
             sourcePixel:sourcePixelIOEnabled,
@@ -1067,6 +1080,7 @@ final class PhotoEditorModel: ObservableObject {
         pendingImportedRAWURL=prior.pendingRAWURL
         rawNeedsChoice=prior.needsRAWChoice
         rawFastModeActive=prior.rawFastMode
+        rawOriginalSourceActive=prior.rawOriginal
         originalPreview=prior.originalPreview
         processedPreview=prior.processedPreview
         photoDimensions=prior.dimensions
@@ -1103,6 +1117,7 @@ final class PhotoEditorModel: ObservableObject {
         processedPreview=preview
         photoDimensions=dimensions
         rawFastModeActive=rawCompatible
+        rawOriginalSourceActive=false
         capturedRAWURL=rawURL
         do {
             try refresh()
@@ -1467,7 +1482,7 @@ final class PhotoEditorModel: ObservableObject {
     /// sensor file always remains byte-for-byte in Documents; CIImage is a
     /// lazily evaluated Apple *fast compatibility* development, never source
     /// Python Float64 / X-Trans rawpy parity. Unsupported compression fails.
-    func openPreservedRAWWithApple() {
+    func openPreservedRAWWithApple(preferOriginalSource:Bool=false) {
         guard let url=pendingImportedRAWURL ?? capturedRAWURL else {
             status="没有可打开的原始 RAW 文件"
             return
@@ -1490,6 +1505,7 @@ final class PhotoEditorModel: ObservableObject {
                     data:nil, rawURL:url, rawCompatible:true,
                     dimensions:"\(decoded.0.width) × \(decoded.0.height) · RAW Apple 兼容模式"
                 )
+                rawOriginalSourceActive=preferOriginalSource
                 status="已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；" +
                     "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
                     "不是 Python rawpy 原版数值等价。"
@@ -1497,6 +1513,48 @@ final class PhotoEditorModel: ObservableObject {
                 status="Apple RAW 兼容解码失败（原始 RAW 仍保留）：" +
                     error.localizedDescription
             }
+        }
+    }
+
+    /// Import preview remains independent from source-original RAW pixels.
+    func openPreservedRAWDirect() {
+        guard let url=pendingImportedRAWURL ?? capturedRAWURL else {
+            status="没有可用的 RAW 原片"
+            return
+        }
+        guard !busy else {return}
+        do {
+            guard let kind=try Build79RAWSignature.probeFile(url) else {
+                throw ImageProcessingError.invalid("禁止将内嵌 JPEG 冒充 RAW")
+            }
+            switch kind {
+            case .raf: openPreservedRAW16Bit(preferOriginalSource:true)
+            case .dng: openPreservedRAWWithApple(preferOriginalSource:true)
+            default:
+                throw ImageProcessingError.invalid(
+                    "RAW 原版直通目前仅开放 RAF/DNG；其他机型等待 rawpy 数值验收"
+                )
+            }
+        } catch {
+            status="RAW 原版准备失败，原片保留：" + error.localizedDescription
+        }
+    }
+
+    func enableDirectRAWSource() {
+        guard !busy,rawFastModeActive,source != nil,
+              let url=capturedRAWURL else {
+            status="请先导入真正的 RAW 原片"
+            return
+        }
+        do {
+            guard try Build79RAWSignature.probeFile(url) != nil else {
+                throw ImageProcessingError.invalid("RAW 原文件签名无效")
+            }
+            rawOriginalSourceActive=true
+            status="原 RAW 直通准备完成。点击「精细冲印」确认原版设置。" +
+                "精确处理将读取 RAW ACES16，而非兼容预览；数值仍待认证。"
+        } catch {
+            status="RAW 直通检查失败：" + error.localizedDescription
         }
     }
 
@@ -1539,7 +1597,7 @@ final class PhotoEditorModel: ObservableObject {
 
     /// Build95: explicit high-depth LibRaw Fujifilm path. The existing
     /// Build93 Apple RAW and Build94 RGB8 routes remain unchanged.
-    func openPreservedRAW16Bit() {
+    func openPreservedRAW16Bit(preferOriginalSource:Bool=false) {
         guard let url = pendingImportedRAWURL ?? capturedRAWURL else {
             status = "请先导入并保存富士 RAF 原始文件"
             return
@@ -1562,6 +1620,7 @@ final class PhotoEditorModel: ObservableObject {
                     data:nil, rawURL:url, rawCompatible:true,
                     dimensions:"\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB16"
                 )
+                rawOriginalSourceActive=preferOriginalSource
                 status = "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；" +
                     "输入为 16-bit sRGB 高位深兼容数据，最终 JPEG 仍为 8-bit；" +
                     "原始 RAF 不变，不代表 Python Float64 原版数值等价。"
@@ -3037,6 +3096,9 @@ struct ContentView: View {
                 isPresented: $model.rawNeedsChoice,
                 titleVisibility: .visible
             ) {
+                Button("RAW 原片直通精细冲印（P1 真机测试）") {
+                    model.openPreservedRAWDirect()
+                }
                 Button("使用 Apple RAW 兼容模式打开") {
                     model.openPreservedRAWWithApple()
                 }
@@ -3053,7 +3115,9 @@ struct ContentView: View {
                 Text("Apple RAW 使用系统解码；富士 LibRaw 可选 8-bit 快速" +
                      "或 16-bit 高位深 sRGB 兼容模式。导入时保持原尺寸，" +
                      "最终 JPEG 是 8-bit，绝不宣称 Python Float64 等价。" +
-                     "RAW 源文件始终保留，失败不切换为内嵌 JPEG。")
+                     "原片直通仅用兼容解码显示初始预览。" +
+                     "精细冲印重新读取 RAW ACES16，不经过 TIFF/JPEG；" +
+                     "rawpy 数值及真机尚未认证。失败不会切换为内嵌 JPEG。")
             }
             .sheet(item: $pendingExport) { proposal in
                 NavigationStack {

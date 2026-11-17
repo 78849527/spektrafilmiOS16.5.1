@@ -121,3 +121,13 @@ When original autoexposure is active, its Y matrix is generated using
 `colour.RGB_to_XYZ(...)` for sRGB encoded, ProPhoto linear, or ACES2065-1
 linear. Source meter defaults, colour science library version and exact
 Python fixture must pass the next full source numerical gate.
+
+## P1 explicit RAF/DNG UI source opt-in
+
+Added a RAW import choice for direct original-source processing. The
+existing Apple/LibRaw16 decoder only provides a temporary editor display
+preview. The precise mode rereads original RAW linear ACES16 and does NOT
+pass compatible sRGB pixels as source. Users must confirm existing precise
+mode settings before enabling them. `rawOriginalSourceActive` is reset
+with every new photo and included in snapshot/rollback. This is not proof
+of rawpy numerical parity or iPhoneOS success.

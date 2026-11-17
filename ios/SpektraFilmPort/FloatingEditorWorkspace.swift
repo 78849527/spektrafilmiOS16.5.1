@@ -841,6 +841,9 @@ struct FloatingEditorWorkspace: View {
             .confirmationDialog("原版像素输入检测",isPresented:$sourceInputCompatibilityAlert,
                                 titleVisibility:.visible) {
                 if model.rawFastModeActive && model.capturedRAWURL != nil && !model.busy {
+                    Button("RAW 原片直通精细冲印（不需 TIFF 副本）") {
+                        model.enableDirectRAWSource()
+                    }
                     Button("优先：生成 RAW 的 Float32 高位深 TIFF（保留 DNG）") {
                         model.convertActiveRAWToFloat32ExtendedSRGBCopy()
                     }
