@@ -200,8 +200,7 @@ final class PhotoEditorModel: ObservableObject {
                 // This is an in-memory backup of the previous source file,
                 // never an overwrite. Photos/Files original also remain.
                 photoOriginalBeforeColorConversion=originalBytes
-                photoInputConvertedFromP3=
-                    previousProfile.color == .displayP3
+                photoInputConvertedFromP3 = (previousProfile.color == .displayP3)
                 status="普通照片 Float32 " + result.admission.color.rawValue +
                     " TIFF 已通过输入预检，可在确认 DIR 和内存依赖后" +
                     "进入原版全光学。原照片没有改写；" +
