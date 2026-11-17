@@ -1,3 +1,4 @@
+# Build129 extra user-device bug: enable precision UI for input diagnostics and explicit ordinary Float32 bridge.
 # Build129: correct real Apple RAW Float32 TIFF color profile admission; preserve strict Float64 and 8bit.
 # Build128 final pass: include fast-to-advanced recipe input-format preflight fix.
 # Build128 early Swift parser now includes new Float32 RAW bridge (fail fast before fixtures).
@@ -94,6 +95,7 @@ jobs:
           python3 ios/scripts/build127_film_carousel_camera_raw_default_audit.py
           python3 ios/scripts/build128_raw_float32_original_tiff16_audit.py
           python3 ios/scripts/build129_float_srgb_compatibility_audit.py
+          python3 ios/scripts/build129_precise_mode_gate_audit.py
           python3 ios/scripts/validate_nextlevel_camera_integration.py
           # Fail-fast all carried-forward Build103/Build100 UI invariants before Mac source generation.
           python3 ios/scripts/build103_device_metrics_audit.py /tmp/build115-early-ui-audit.json
@@ -216,6 +218,7 @@ jobs:
           python ios/scripts/build127_film_carousel_camera_raw_default_audit.py
           python ios/scripts/build128_raw_float32_original_tiff16_audit.py
           python ios/scripts/build129_float_srgb_compatibility_audit.py
+          python ios/scripts/build129_precise_mode_gate_audit.py
           python ios/scripts/validate_nextlevel_camera_integration.py
           swiftc -frontend -parse \
             ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
