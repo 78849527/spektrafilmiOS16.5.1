@@ -53,7 +53,70 @@ enum Build129FloatSRGBIngressValidation {
             throw OriginalSourcePixelIO.Failure.invalid(message)
         }
     }
+    /// Exact Float32 transport, not global remapping: retain negative and
+    /// superwhite samples for the original spectral model's stage rules.
+    static func verifyUnchangedFloatValues() throws {
+        let sample:[Float] = [
+            -0.25, 0.375, 1.5, 1.0,
+            0.0,   0.50,  2.25, 1.0,
+            0.875, 1.25, -0.125,1.0,
+            1.0,   0.25,  0.375,1.0,
+            0.125, 0.375, 0.625,1.0,
+            1.25,  0.75,  1.5,  1.0
+        ]
+        var raw=Data()
+        for value in sample {
+            let bits=value.bitPattern
+            for byte in 0..<4 {
+                raw.append(UInt8(truncatingIfNeeded:bits >> (byte*8)))
+            }
+        }
+        guard let srgb=CGColorSpace(name:CGColorSpace.sRGB),
+              let provider=CGDataProvider(data:raw as CFData),
+              let image=CGImage(
+                  width:3,height:2,bitsPerComponent:32,bitsPerPixel:128,
+                  bytesPerRow:48,space:srgb,
+                  bitmapInfo:CGBitmapInfo(rawValue:
+                      CGBitmapInfo.floatComponents.rawValue |
+                      CGBitmapInfo.byteOrder32Little.rawValue |
+                      CGImageAlphaInfo.noneSkipLast.rawValue),
+                  provider:provider,decode:nil,
+                  shouldInterpolate:false,intent:.defaultIntent
+              ) else {
+            throw OriginalSourcePixelIO.Failure.invalid(
+                "无法创建真实 Float32 超范围 RGB 测试图")
+        }
+        let buffer=NSMutableData()
+        guard let dst=CGImageDestinationCreateWithData(
+            buffer as CFMutableData,UTType.tiff.identifier as CFString,1,nil
+        ) else {
+            throw OriginalSourcePixelIO.Failure.invalid("TIFF writer unavailable")
+        }
+        CGImageDestinationAddImage(dst,image,nil)
+        try require(CGImageDestinationFinalize(dst),
+                    "无法编码真实 Float32 范围测试图")
+        let data=buffer as Data
+        let profile=Build111PhotoInputProfile.inspect(data,entry:.converted)
+        try require(profile.directCompatible && profile.decodedDepth==32 &&
+                    profile.floatingComponents,"Float32 TIFF ICC/位深不合格")
+        let before=try OriginalSourcePixelIO.decode(data)
+        try require(before.rgb.count==18,"Float32 RGB 实测通道数错误")
+        for index in 0..<6 {
+            for channel in 0..<3 {
+                let expected=Double(sample[index*4+channel])
+                let got=before.rgb[index*3+channel]
+                try require(got==expected,
+                            "Float32 RGB 通道被裁切或重映射："+String(index)+"/"+String(channel))
+            }
+        }
+        try require(before.rgb.contains(where:{$0<0}) &&
+                    before.rgb.contains(where:{$0>1}),
+                    "Float32 负值与超白输入未原样保留")
+        print("PASS unaltered real TIFF32 negative/superwhite RGB → Float64 " +
+              "without remapping, clipping, JPEG8 or gamut relabel")
+    }
     static func main() throws {
+        try verifyUnchangedFloatValues()
         let bounds=CGRect(x:0,y:0,width:8,height:6)
         let input=CIImage(
             color:CIColor(red:0.1234567,green:0.3456789,blue:0.87654321)
@@ -104,7 +167,6 @@ enum Build129FloatSRGBIngressValidation {
                     "既有 JPEG8 sRGB 不应被误拒绝")
         try require(inspection(.sRGB,16,false).directCompatible,
                     "既有 sRGB 整数16 TIFF 不应回退")
-        try Build130Float32RangeCopyValidation.evaluate()
         print("PASS Build129 real CI RGBAf TIFF → actual " +
               actual.admission.color.rawValue +
               " ICC/Float32 8×6 ImageIO → Build78 CPU Double;" +
