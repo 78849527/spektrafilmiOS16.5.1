@@ -156,6 +156,63 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Build129: regular JPEG/HEIC/P3/PNG can request a *separate*
+    /// Float32 TIFF without changing the archived source bytes. The file
+    /// must have an independently identified RGB ICC profile; untagged,
+    /// unknown, grayscale and unverified input cannot be re-labelled.
+    var photoHighDepthCopyPossible:Bool {
+        guard hasPhoto,!rawFastModeActive,
+              originalPhotoData != nil,source != nil,
+              let p=photoInputProfile,p.imageIOUsable,
+              p.failureReason == nil,(!p.directCompatible ||
+                 !originalPixelInputAvailable) else {return false}
+        return p.color == .sRGB ||
+               p.color == .displayP3 ||
+               p.color == .extendedSRGB
+    }
+
+    func convertActivePhotoToFloat32Copy() {
+        guard !busy,photoHighDepthCopyPossible,
+              let originalBytes=originalPhotoData,
+              let image=source,let previousProfile=photoInputProfile else {
+            status="当前普通照片缺少已识别的 RGB ICC 或原文件；" +
+                "不能凭空生成原版像素数据，原编辑保持不变"
+            return
+        }
+        busy=true
+        status="正在明确生成普通照片的 Float32 TIFF 副本；" +
+            "保留原图、实际验证 ICC 和位深，不经过 JPEG8…"
+        Task { @MainActor in
+            defer {busy=false}
+            do {
+                let result=try await Task.detached(priority:.userInitiated) {
+                    try Build128RAWFloat32Transport.makeVerifiedCopy(image)
+                }.value
+                let decoded=try PhotoProcessor.decode(result.bytes)
+                let preview=try PhotoProcessor.preview(decoded,lut:nil,strength:0)
+                try commitDecodedPhoto(
+                    image:decoded,preview:preview,data:result.bytes,
+                    rawURL:nil,rawCompatible:false,
+                    dimensions:result.admission.dimensions +
+                        " · 普通照片→Float32 TIFF",
+                    inputProfile:result.admission
+                )
+                // This is an in-memory backup of the previous source file,
+                // never an overwrite. Photos/Files original also remain.
+                photoOriginalBeforeColorConversion=originalBytes
+                photoInputConvertedFromP3=
+                    previousProfile.color == .displayP3
+                status="普通照片 Float32 " + result.admission.color.rawValue +
+                    " TIFF 已通过输入预检，可在确认 DIR 和内存依赖后" +
+                    "进入原版全光学。原照片没有改写；" +
+                    "原版 Python 色彩数值等价尚未认证。"
+            } catch {
+                status="普通照片 Float32 副本生成失败；旧照片、参数、预览均保留：" +
+                    error.localizedDescription
+            }
+        }
+    }
+
     // Build126 recipes are a separate, opt-in persistence domain. The source
     // image, sensor DNG, simulated stage caches and preview are NOT persisted.
     @Published private(set) var savedRecipes:[Build126Recipe]=[]
