@@ -31,7 +31,7 @@ require("model.queueSpectralPreview()")
 assert ui.count("value:$model.sourcePhysicalInputOklchEnabled")==0
 assert ui.count("value:$model.sourcePhysicalCAM16DefaultGamutEnabled")==0
 assert ui.count('Picker("原版光谱重建"')==1
-assert ui.count('value:$model.sourcePhysicalGrainEnabled')==1
+assert ui.count('value:$model.sourcePhysicalGrainEnabled')==2
 assert ui.count('value:$model.scannerCAM16Enabled')==1
 require("验证状态与诊断")
 require("13MP 基础三亚层双路线已真机渲染")
