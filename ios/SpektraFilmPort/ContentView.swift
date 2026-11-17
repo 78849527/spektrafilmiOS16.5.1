@@ -2186,7 +2186,7 @@ struct ContentView: View {
                 model.queueSpectralPreview()
             }
             .fullScreenCover(isPresented: $cameraPresented) {
-                NextLevelCameraScreen(
+                NativeCameraScreen(
                     onCancel: { cameraPresented = false },
                     onCapture: { photo in
                         cameraPresented = false
