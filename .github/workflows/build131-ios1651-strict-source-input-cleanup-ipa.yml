@@ -1,3 +1,4 @@
+# Build135 UI audit keeps source controls/layout but derives smart budget from live OS headroom, not fixed 1300MB.
 # Build135 carry-forward UI audit updated to exercise dynamic preflight, not obsolete fixed MB literal contracts.
 # Build134 carried-forward GUI test updated to test the new real UIKit double tap and top status placement.
 # Build133 Swift typecheck fix: explicit multiline checkpoint strings and read-only source geometry.
