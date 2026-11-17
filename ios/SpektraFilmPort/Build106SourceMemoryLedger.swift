@@ -46,6 +46,31 @@ enum Build106SourceMemoryLedger {
         return bytes
     }
 
+    /// Build118: basic 3x3 grain-only phase budget; other optics unchanged.
+    /// 24B input + 24B output + 24B sublayers + 24B particle fields
+    /// + 16B cloud/scratch + 16B counts = 128B/px. Reserve 48B/px
+    /// allocator/CoW margin => 176B/px, or 184B/px for Numba workers.
+    /// This is a model, not measured 13MP Jetsam high-watermark.
+    static func productionAdditional(
+        scannerFinish:Bool,scannerGlare:Bool,grain:Bool,
+        grainSublayers:Bool,cameraActive:Bool,cameraLens:Bool,
+        filmHalation:Bool,paperDiffusion:Bool,stageObserver:Bool,
+        paperStageObserver:Bool,outputGamut:Bool,parallelGrain:Bool
+    ) -> UInt64 {
+        let conservative=additional(
+            scannerFinish:scannerFinish,scannerGlare:scannerGlare,
+            grain:grain,cameraLens:cameraLens,filmHalation:filmHalation,
+            paperDiffusion:paperDiffusion,stageObserver:stageObserver,
+            paperStageObserver:paperStageObserver,parallelGrain:parallelGrain
+        )
+        guard grain && grainSublayers && !scannerFinish && !scannerGlare &&
+              !cameraActive && !cameraLens && !filmHalation &&
+              !paperDiffusion && !stageObserver && !paperStageObserver &&
+              !outputGamut else {return conservative}
+        // Build114 source baseline is 112B/px.
+        return parallelGrain ? 72 : 64
+    }
+
     /// Stable audit of the lifetime boundary in grain.py::apply_grain.
     /// Sub-layer interpolation and particle-count preparations are consumed
     /// BEFORE microstructure. They must NOT leak into the next whole-frame
