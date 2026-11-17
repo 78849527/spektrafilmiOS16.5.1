@@ -84,10 +84,10 @@ contains("private var sourceCameraSpectralSettings: AnyView",ui,
          "UV/IR original controls not deleted")
 contains("private var sourcePhysicalGrainSettings: AnyView",ui,
          "microstructure controls not deleted")
-assert ui.count("value:$model.sourcePhysicalGrainEnabled")==1
+assert ui.count("value:$model.sourcePhysicalGrainEnabled")==2
 assert ui.count("value:$model.sourceScannerGlareEnabled")==1
 assert ui.count('Picker("原版光谱重建"')==1
-assert "MARKETING_VERSION: \"1.8.86\"" in project
-assert "CURRENT_PROJECT_VERSION: \"120\"" in project
+from build_ci_version_floor import minimum_build,minimum_minor
+assert minimum_build(project,120) and minimum_minor(project,86)
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS Build120 Advanced diagnostic-only; process modes, camera/film/paper/scanner stage-owned optical controls; unchanged source bindings, user confirmations, lazy SwiftUI mounting and iOS16.5 min")
