@@ -2662,9 +2662,9 @@ struct ContentView: View {
     }
 
 
-    /// Build116: explicit 1MP/2MP four-worker source-grain memory test.
+    /// Build116: one-tap 1/2/3/4/6/8/10/13MP x SciPy/Numba4 grain matrix.
     /// Preserve a checkpoint before the high-memory first allocation.
-    /// Never attempt a 13MP grain frame in this uncertified candidate.
+    /// Every geometry uses the existing source memory gate before allocation.
     private func runBuild116GrainMemory() {
         guard !model.busy else {return}
         let bundle=Bundle.main
@@ -2696,7 +2696,7 @@ struct ContentView: View {
             try FileManager.default.createDirectory(
                 at:folder,withIntermediateDirectories:true
             )
-            let initial="status=INCOMPLETE_OR_NOT_RUN\napp=\(version) build=\(build) sha=\(sha)\n1MP/2MP 多线程颗粒未完成；如闪退请保留本文件。\n"
+            let initial="status=INCOMPLETE_OR_NOT_RUN\napp=\(version) build=\(build) sha=\(sha)\n八档尺寸 × 双颗粒路线矩阵未完成；如闪退请保留本文件。\n"
             try initial.write(to:checkpoint,atomically:true,encoding:.utf8)
         } catch {
             model.status="Build116 无法保存颗粒内存测试检查点："+error.localizedDescription
@@ -2704,25 +2704,26 @@ struct ContentView: View {
         }
         diagnosticDismissPending=true
         model.busy=true
-        model.status="Build116：真实运行 1MP／2MP Float64 三亚层多线程颗粒并采样 RSS…"
+        model.status="Build116：一次验证 1／2／3／4／6／8／10／13MP 的 SciPy／Numba 三亚层颗粒（逐项内存预检）…"
         Task { @MainActor in
             defer {model.busy=false}
             let proof=await Task.detached(priority:.userInitiated) {
                 Build108SourceOpticalDeviceStress.captureBuild116GrainMemory(
                     version:version,build:build,commit:sha,
-                    osVersion:system,physicalDevice:physical
+                    osVersion:system,physicalDevice:physical,
+                    checkpointURL:checkpoint
                 )
             }.value
             do {
                 let pair=try Build108SourceOpticalDeviceStress.writeBuild116GrainMemory(
                     proof,documents:docs
                 )
-                let passed=proof.allMeasuredCasesPassed
-                let finished="status=\(passed ? "GRAIN_1MP_2MP_MEASURED" : "FAILED_OR_INCOMPLETE")\napp=\(version) build=\(build) sha=\(sha)\n"
+                let passed=proof.allAdmittedCasesPassed
+                let finished="status=\(passed ? "GRAIN_MATRIX_ADMITTED_PASS" : "FAILED_OR_INCOMPLETE")\napp=\(version) build=\(build) sha=\(sha)\n"
                 try finished.write(to:checkpoint,atomically:true,encoding:.utf8)
                 model.status=passed
-                    ? "Build116 1MP／2MP 多线程颗粒真机实测通过；13MP 仍拒绝执行"
-                    : "Build116 颗粒内存实测失败或未完成；首错已保存"
+                    ? "Build116 矩阵完成：实测通过 \(proof.measuredCaseCount) 项、内存拒绝 \(proof.refusedCaseCount) 项；不代表被拒绝尺寸通过"
+                    : "Build116 颗粒矩阵未全部完成；失败／拒绝／未执行均已记录"
                 if diagnosticDismissPending {
                     diagnosticPendingFeedback=pair
                 } else {
