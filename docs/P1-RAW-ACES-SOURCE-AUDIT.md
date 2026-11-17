@@ -131,3 +131,18 @@ pass compatible sRGB pixels as source. Users must confirm existing precise
 mode settings before enabling them. `rawOriginalSourceActive` is reset
 with every new photo and included in snapshot/rollback. This is not proof
 of rawpy numerical parity or iPhoneOS success.
+
+## P1 direct original RAW runtime integration
+
+`PhotoEditorModel.refresh()` routes explicitly selected original RAF/DNG
+into `P1OriginalRawACESIngress.developSourceCandidate` and displays the
+same Double optical result. JPEG and TIFF16 precision exports use the same
+real RAW source and existing `Build90NativeOutputWriter` exact ICC path.
+The old CI/Apple preview is NOT the physical input. No new optical engine
+or fallback is used; preview/export failures explicitly invalidate output.
+
+Current guard: full-size only, <=13MP, current memory budget checked
+before rendering; RAW at 40MP is rejected explicitly. This is a known
+P1 limitation requiring real device peak-memory / larger-source geometry
+engineering, not full RAW input parity. The code must pass native macOS
+compile and real iPhone numeric/device tests before feature certification.
