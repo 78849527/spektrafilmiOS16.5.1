@@ -1,3 +1,4 @@
+# Build125 regression gate: inspect real 8-bit certificate, no non-existent RAW marker.
 # Build125: explicit Apple RAW-to-verified sRGB8 copy; no automatic RAW degradation.
 # Build125 test-only correction: comment text is not an embedded JPEG decoding call.
 # Build125 trigger after merged DNG route, version and regression audits.
