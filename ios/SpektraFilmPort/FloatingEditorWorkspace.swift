@@ -3594,7 +3594,7 @@ private struct CompactOpticalSlider:UIViewRepresentable {
         let render=UIGraphicsImageRenderer(size:CGSize(width:12,height:12))
         return render.image { ctx in
             UIColor.systemBlue.setFill()
-            ctx.fillEllipse(in:CGRect(x:0.5,y:0.5,width:11,height:11))
+            ctx.cgContext.fillEllipse(in:CGRect(x:0.5,y:0.5,width:11,height:11))
         }
     }()
     func makeCoordinator()->Coordinator {Coordinator(self)}
