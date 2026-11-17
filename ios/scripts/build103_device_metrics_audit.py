@@ -24,9 +24,9 @@ checks={
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
     "build103_version":minimum_build(spec, 112) and
         minimum_minor(spec, 78),
-    "real_camera_capture":"engine.capturePhoto()" in camera and
+    "real_camera_capture":"output.capturePhoto(with:settings,delegate:processor)" in camera and
         "NextLevelCapturedPhoto" in camera,
-    "raw_dng_not_jpeg_fallback":"pendingRAW" in camera and
+    "raw_dng_not_jpeg_fallback":"photo.isRawPhoto" in camera and
         '拒绝静默拍成 JPEG' in camera,
     "camera_auth":"AVCaptureDevice.requestAccess" in camera,
     "photo_picker":"PhotosPickerItem" in main and
