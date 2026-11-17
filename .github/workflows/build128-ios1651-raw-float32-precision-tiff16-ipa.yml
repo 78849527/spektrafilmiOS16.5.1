@@ -1,3 +1,4 @@
+# Build128 audit correction: Apple RAW Float32 is preferred while legacy 8-bit remains opt-in.
 # Build128: retain Apple RAW Float32 ingress and exact source Float64 TIFF16 output without mandatory JPEG8.
 # Build127 retry: remove stray Swift quote from absorbed recipe menu; algorithms unchanged.
 # Build127: UI-only full-name film card browsing, favorites/recents/recipes and native camera RAW default.
