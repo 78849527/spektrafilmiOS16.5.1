@@ -34,7 +34,9 @@ checks={
     "file_import":"func loadPhotoFile(" in main,
     "lut_import":"func loadLUTFile(" in main,
     "floating_editor_suspended_original":
-        "StableImageHoldRecognizer(isHolding: $originalHeld)" in ui,
+        "StableImageHoldRecognizer(" in ui and
+        "isHolding:$originalHeld,onDoubleTap:togglePhotoZoom" in ui and
+        "doubleTap.numberOfTapsRequired=2" in ui,
     "floating_edit_doubletap":ui.count(".onTapGesture(count: 2)")>=6,
     "film_paper_wheels":"compactFilmStock" in main and
         "compactPaperStock" in main,
@@ -390,7 +392,7 @@ checks.update({
         "photoScale=1" in ui,
     "b99_source_preview_during_pending":
         "model.processedPreview ?? model.originalPreview" in ui and
-        "当前效果正在更新 · 暂时显示原图" in ui,
+        "当前效果正在更新 · 按住看原图" in ui,
     "b99_split_drag_and_doubletap":
         "DragGesture(minimumDistance: 8)" in ui and
         "TapGesture(count: 2).onEnded" in ui and

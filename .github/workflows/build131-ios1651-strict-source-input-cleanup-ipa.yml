@@ -1,3 +1,4 @@
+# Build134 carried-forward GUI test updated to test the new real UIKit double tap and top status placement.
 # Build133 Swift typecheck fix: explicit multiline checkpoint strings and read-only source geometry.
 # Build133 current memory ledger is 104 B/px after source scratch reuse; retained full FIR/YVV parity.
 # Build133 compile fix: RAW JPEG optional confirmedPlan explicitly unwrapped, fail closed before export; no source optical change.
