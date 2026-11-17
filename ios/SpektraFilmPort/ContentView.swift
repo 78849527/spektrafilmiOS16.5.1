@@ -2668,14 +2668,15 @@ final class PhotoEditorModel: ObservableObject {
                 guard sourcePhysicalDirectEnabled,
                       resolution == .original,
                       let rawURL=capturedRAWURL,
-                      confirmedPlan.mode==resolution,
-                      confirmedPlan.sourceWidth==Int(imageSource.extent.integral.width),
-                      confirmedPlan.sourceHeight==Int(imageSource.extent.integral.height) else {
+                      let plan=confirmedPlan,
+                      plan.mode==resolution,
+                      plan.sourceWidth==Int(imageSource.extent.integral.width),
+                      plan.sourceHeight==Int(imageSource.extent.integral.height) else {
                     throw ImageProcessingError.invalid(
                         "RAW 精细 JPEG 必须使用当前原片、已确认的原尺寸；禁止兼容回退"
                     )
                 }
-                try SafeExportResolution.validateBeforeRender(confirmedPlan)
+                try SafeExportResolution.validateBeforeRender(plan)
                 let optical=try sourcePhysicalParameters()
                 let url=try await Task.detached(priority:.userInitiated) {
                     let result=try P1OriginalRawACESIngress.developSourceCandidate(
