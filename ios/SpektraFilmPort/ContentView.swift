@@ -667,11 +667,18 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
-    /// Keep RAW bytes separately in Documents. The original optical stage
-    /// only accepts processed JPEG/HEIC input, never pretends to develop DNG.
+    /// RAW camera captures enter the editor through a real DNG decoder.
+    /// The camera's companion JPEG is never used as the RAW source.
+    /// Preserve DNG bytes before decoding; failure keeps the prior edit.
     func loadCapturedPhoto(_ capture: NextLevelCapturedPhoto) {
+        guard !busy else {
+            status="相机照片处理中，拒绝重复导入；原编辑保持不变"
+            return
+        }
         do {
-            var rawFile: URL?
+            if capture.format.contains("RAW") && capture.rawDNG == nil {
+                throw ImageProcessingError.invalid("RAW 模式没有返回 DNG；禁止把 JPEG 当作 RAW")
+            }
             if let raw = capture.rawDNG {
                 guard !raw.isEmpty else {
                     throw ImageProcessingError.invalid("DNG 数据为空；拒绝保存假 RAW")
@@ -685,19 +692,44 @@ final class PhotoEditorModel: ObservableObject {
                 try FileManager.default.createDirectory(
                     at: folder, withIntermediateDirectories: true
                 )
-                let output = folder.appendingPathComponent(
+                let rawFile = folder.appendingPathComponent(
                     "SF-RAW-" + UUID().uuidString + ".dng"
                 )
-                try raw.write(to: output, options: .atomic)
-                rawFile = output
+                try raw.write(to: rawFile, options: .atomic)
+                busy=true
+                status="DNG 原片已无损保存，正在以 Apple RAW 解码传感器数据；不采用 JPEG 伴随片…"
+                Task { @MainActor in
+                    defer { busy=false }
+                    do {
+                        let decoded=try await Task.detached(priority:.userInitiated) {
+                            let actual=try Build93AppleRAWImport.open(rawFile)
+                            let preview=try PhotoProcessor.preview(
+                                actual.image,lut:nil,strength:0
+                            )
+                            return (actual,preview)
+                        }.value
+                        try commitDecodedPhoto(
+                            image:decoded.0.image,preview:decoded.1,
+                            data:nil,rawURL:rawFile,rawCompatible:true,
+                            dimensions:"\(decoded.0.width) × \(decoded.0.height) · 相机 DNG / Apple RAW"
+                        )
+                        status="已从真实 DNG 解码并进入胶片／相纸冲印；原片无损保存。" +
+                            "当前为 Apple RAW 兼容显影，非 Python rawpy 精确等价；" +
+                            "JPEG 伴随片没有进入编辑器。"
+                    } catch {
+                        pendingImportedRAWURL=rawFile
+                        rawNeedsChoice=true
+                        status="DNG 已无损保存，但 RAW 显影未成功：" +
+                            error.localizedDescription +
+                            "。原编辑保持不变，未回退 JPEG；可稍后重新选择 RAW 解码方式。"
+                    }
+                }
+                return
             }
             try loadPhoto(capture.processed,entry:.camera)
-            capturedRAWURL = rawFile
-            status = rawFile == nil
-                ? "\(capture.format) 拍摄完成，已进入当前胶片／相纸冲印"
-                : "DNG 原片已保留在「文件」/ SpektraFilm RAW，JPEG 伴随片进入冲印；尚非 RAW 显影"
+            status="\(capture.format) 拍摄完成，照片已进入当前胶片／相纸冲印"
         } catch {
-            status = "相机照片处理失败：" + error.localizedDescription
+            status="相机照片处理失败：" + error.localizedDescription
         }
     }
 
