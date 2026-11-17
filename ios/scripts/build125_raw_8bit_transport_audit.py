@@ -48,10 +48,11 @@ for proof in [
     assert proof in app,proof
 
 assert "if rawFastModeActive && capturedRAWURL != nil" in app
-assert "8-bit 原版像素直连要求另有经过检测" in app
-assert "生成 RAW 的 8-bit sRGB 副本（保留 DNG）" in ui
+assert "旧 8-bit 副本仍为可选" in app
+assert "可直接进行兼容光学处理并最终导出 TIFF16" in app
+assert "兼容：生成 RAW 的 8-bit sRGB JPEG（保留 DNG）" in ui
 assert "model.convertActiveRAWTo8BitSRGBCopy()" in ui
-assert "胶片效果正常；8-bit 原版直连需生成明确副本" in ui
+assert "RAW 可直接冲印；精确直连优先选 Float32 TIFF 副本" in ui
 assert "if rawCompatible || inputProfile?.directCompatible != true" in app
 assert "rawFastModeActive=rawCompatible" in app
 assert "rawDNG" in (root/"ios/SpektraFilmPort/NextLevelCamera.swift").read_text()
