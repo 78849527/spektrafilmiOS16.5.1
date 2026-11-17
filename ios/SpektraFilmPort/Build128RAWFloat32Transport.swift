@@ -5,8 +5,10 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// Build128, explicitly user-selected precision bridge:
-/// actual Apple CIRAWFilter developed pixels -> 32-bit floating extended-sRGB
-/// TIFF -> existing Build78 Float TIFF ImageIO-to-Double admission.
+/// actual Apple CIRAWFilter developed pixels -> IEEE Float32 TIFF.
+/// Request extended-sRGB rendering, then inspect the REAL file profile:
+/// iOS may report sRGB or extended-sRGB. Both have separately validated
+/// float-only admission; no fabricated extended label or implicit JPEG8.
 /// This is not sensor Bayer samples, rawpy parity or a lossless round trip
 /// to camera DNG. No UInt8/JPEG, clipping, hidden resizing or mode fallback.
 enum Build128RAWFloat32Transport {
@@ -73,8 +75,10 @@ enum Build128RAWFloat32Transport {
         defer {try? FileManager.default.removeItem(at:file)}
         do {
             // RGBAf = IEEE754 Float32 PER component, not RGBA8/16.
-            // The color-managed conversion targets explicit extended sRGB
-            // because Build78 refuses extended-LINEAR TIFF as encoded RGB.
+            // The renderer requests encoded extended-sRGB. ImageIO on
+            // iOS16.5.1 may expose its actual TIFF profile as sRGB.
+            // Build129 admits both ONLY if real IEEE Float32 + ICC
+            // verification passes; it never rewrites TIFF profile tags.
             try context.writeTIFFRepresentation(
                 of:normalized,to:file,format:.RGBAf,
                 colorSpace:extended,options:[:]
@@ -93,11 +97,14 @@ enum Build128RAWFloat32Transport {
                   profile.format=="TIFF",profile.width==w,
                   profile.height==h,profile.declaredDepth==32,
                   profile.decodedDepth==32,profile.floatingComponents,
-                  profile.color == .extendedSRGB else {
+                  (profile.color == .extendedSRGB ||
+                   profile.color == .sRGB) else {
                 throw Failure.invalid(
                     "Apple RAW 浮点 TIFF 没有通过 Build78/111 真实位深、" +
                     "色彩空间和图像尺寸检查：" +
                     profile.summary+"；"+profile.reason +
+                    "；Float32标志="+String(profile.floatingComponents) +
+                    "；实际ICC="+(profile.exactColorName ?? "无") +
                     "。拒绝冒充 Float32 或自动改为 8-bit"
                 )
             }
