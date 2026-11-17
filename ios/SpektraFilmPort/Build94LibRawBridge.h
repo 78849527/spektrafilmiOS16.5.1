@@ -43,6 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// exception and MUST be surfaced, never downgraded to JPEG.
 + (nullable NSString *)startPhotoOutput:(AVCapturePhotoOutput *)output
                                settings:(AVCapturePhotoSettings *)settings
-                               delegate:(id<AVCapturePhotoCaptureDelegate>)delegate;
+                               delegate:(id<AVCapturePhotoCaptureDelegate>)delegate
+    NS_SWIFT_NAME(startPhotoOutput(_:settings:delegate:));
 @end
 NS_ASSUME_NONNULL_END
