@@ -1,3 +1,4 @@
+# Build122 UIKit thumb draw: use UIGraphicsImageRendererContext.cgContext.fillEllipse (Apple-supported API).
 # Build122 Swift parser fix: compact UIKit slider tint assignments now use explicit infix whitespace.
 # Build122 CI: preserve historical double-tap reset source convention with 8 actual handlers.
 # Build122 retry: optical source-mode audit now tests real sourcePhysicalDirectEnabled instead of stale placeholder.
