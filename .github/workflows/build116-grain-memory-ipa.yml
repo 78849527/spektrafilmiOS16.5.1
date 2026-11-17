@@ -184,8 +184,8 @@ jobs:
           workflow=Path(".github/workflows/build116-grain-memory-ipa.yml").read_text()
           # Search the actual YAML step heading (not this Python assertion
           # string, which also contains the same step-name text).
-          start=workflow.rfind("\\n      - name: Build104 run independent ")
-          end=workflow.find("\\n      - name: Build104 on-device ",start+1)
+          start=workflow.rfind("      - name: Build104 run independent original Python grain.py 5 x 4 stage Float64 source parity")
+          end=workflow.find("      - name: Build104 on-device diagnostic source and manifest/static integration",start+1)
           assert start>=0 and end>start, "Build104 compile step boundaries missing"
           standalone=workflow[start:end]
           assert "SourceGrainScalarGaussian.swift" in standalone, "Build104 standalone compile missing scalar dependency"
