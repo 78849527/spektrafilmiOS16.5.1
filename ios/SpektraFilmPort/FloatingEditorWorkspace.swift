@@ -837,7 +837,10 @@ struct FloatingEditorWorkspace: View {
             .confirmationDialog("原版像素输入检测",isPresented:$sourceInputCompatibilityAlert,
                                 titleVisibility:.visible) {
                 if model.rawFastModeActive && model.capturedRAWURL != nil && !model.busy {
-                    Button("生成 RAW 的 8-bit sRGB 副本（保留 DNG）") {
+                    Button("优先：生成 RAW 的 Float32 高位深 TIFF（保留 DNG）") {
+                        model.convertActiveRAWToFloat32ExtendedSRGBCopy()
+                    }
+                    Button("兼容：生成 RAW 的 8-bit sRGB JPEG（保留 DNG）") {
                         model.convertActiveRAWTo8BitSRGBCopy()
                     }
                 }
@@ -1161,7 +1164,7 @@ struct FloatingEditorWorkspace: View {
                     Text(model.photoDirectInputReady
                          ? "原版像素输入预检通过"
                          : (model.rawFastModeActive
-                            ? "胶片效果正常；8-bit 原版直连需生成明确副本"
+                            ? "RAW 可直接冲印；精确直连优先选 Float32 TIFF 副本"
                             : (model.photoP3ConversionPossible
                                 ? "P3 需明确转换为 sRGB；点此转换"
                                 : "原版像素输入不可用；点此查看原因")))
