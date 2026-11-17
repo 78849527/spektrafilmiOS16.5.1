@@ -1,0 +1,917 @@
+# Build125: explicit Apple RAW-to-verified sRGB8 copy; no automatic RAW degradation.
+# Build125 test-only correction: comment text is not an embedded JPEG decoding call.
+# Build125 trigger after merged DNG route, version and regression audits.
+# Build123 iOS16.5.1: explicit NS_SWIFT_NAME avoids Swift 5 Objective-C method-name inference mismatch for RAW exception wrapper.
+# Build123: inherited static GUI checks now require guarded Apple AVFoundation capture instead of direct unguarded call.
+# Build122 UIKit thumb draw: use UIGraphicsImageRendererContext.cgContext.fillEllipse (Apple-supported API).
+# Build122 Swift parser fix: compact UIKit slider tint assignments now use explicit infix whitespace.
+# Build122 CI: preserve historical double-tap reset source convention with 8 actual handlers.
+# Build122 retry: optical source-mode audit now tests real sourcePhysicalDirectEnabled instead of stale placeholder.
+# Build121 retry: corrected Swift interpolated switch notice strings; require parse and all source parity before release.
+# Build120 final UI-only batch: four stage-owned optical panels and diagnostics-only Advanced; source numeric routes unchanged.
+# Build119 CI: carried-forward Build117 source gate now checks remaining allocation, not pre-resident frame bytes.\n# Build118 CI: re-run after historical Build107 shared-memory planner gate updated to productionAdditional.
+# Build117: dynamic iOS 80%-headroom admission, 3-sublayer grain buffers, carried-forward source/UI checks, full 16-case device matrix.
+# Build115 Build103 GUI audit: retain laboratory route and source parameter checks under renamed Build114 UI.
+# Retry Build115 on the original development branch; single active attempt, unchanged Swift implementation.
+# Build115 final pinned test-and-release trigger after parallel grain source batch
+# Final source includes worker state + production 3x3 grain + UI/diagnostic + memory ledger + Python/Swift cross checks.
+# Full-size Python, RAW/ICC and arbitrary unseeded prange bitstream remain explicitly NOT CERTIFIED.
+# Build114 UI-only. Starts from the previously PASS Build111 CI and only changes version/UI verification/release identity.
+# Follow-up: scan XYZ single-thread control moved to Process/Scanner; CMY to Process/Paper; Build100 audit updated for original advanced controls.
+# Build111 fix: ship compatibility changes via the existing Build110 release branch, no extra release branch.
+# Build111 fast fail: real tagged P3/JPEG ColorSync fixture executes before original source generation.
+# Build111 Swift parser fix: use one interpolated accessibility label, preserving iOS16.5.1 behavior.
+# Build111 release source after preserving original Build78 16-bit PNG/TIFF and Float TIFF inputs.
+# Build108 audit follow-up: check the actual SwiftUI callback name independently of the ContentView method name.
+# Build108: syntax-only preflight cannot read generated original Python manifests before generator runs.
+# Build108: CI against actual 1MP/2MP CPU Float64 optical production + Build106/107 combined on-device feedback.
+# Build107: same-source Build106 memory lifecycle + Build107 bounded RSS; single LOG+JSON truth-telling release.
+# Build107 source gate (carried-forward): source grain conditional missing-seed diagnostic hotfix; original algorithms unchanged.
+# Build104 retry: fix diagnostic Swift multiline infix source parser error, verified with swiftc -frontend -parse.
+# Build101 retry: corrected Swift XCTest-host equality parser newline.
+# Build98 minimal Xcode Swift concurrency fix: @MainActor FastSettingsSnapshot.
+# Build102: fix real iPhone Build101 first failure caused by skipped colour-science
+# Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
+# Production optical pipeline/tolerances remain exactly unchanged.
+name: Build125 iOS16.5.1 explicit RAW-to-8bit sRGB image transport IPA
+
+on:
+  push:
+    branches:
+      - 'work/build125-raw-8bit-explicit-transport-ios1651'
+    paths:
+      # Batch only: source-file commits must NOT start another Xcode build.
+      # Re-run explicitly via workflow_dispatch after multi-module changes.
+      - '.github/workflows/build125-ios1651-native-dng-editor-ipa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Only the newest explicit CI trigger should claim a macOS runner.
+concurrency:
+  group: build125-ios1651-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A separate public-repository Ubuntu runner tests whether runner
+  # provisioning works at all, before spending time in the macOS queue.
+  # Failure to start both runners is an Actions/account-level blocker,
+  # not a Swift compile diagnostic.
+  runner-preflight:
+    name: Linux runner + Build123 iOS16.5 Bayer RAW exception and staged diagnostics contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Linux runner acquired and audit source before macOS
+        run: |
+          set -euo pipefail
+          echo "RUNNER_OS=$RUNNER_OS RUNNER_NAME=$RUNNER_NAME SHA=$GITHUB_SHA"
+          python3 ios/scripts/build115_unseeded_parallel_source_audit.py
+          python3 ios/scripts/build116_grain_memory_matrix_audit.py
+          python3 ios/scripts/build117_dynamic_memory_audit.py
+          python3 ios/scripts/build118_separate_large_memory_audit.py
+          python3 ios/scripts/build119_committed_memory_audit.py
+          python3 ios/scripts/build120_process_ui_restructure_audit.py
+          python3 ios/scripts/build121_switch_explanation_audit.py
+          python3 ios/scripts/build122_compact_native_camera_audit.py
+          python3 ios/scripts/build123_native_raw_capture_safety_audit.py
+          python3 ios/scripts/build124_native_dng_editor_ingress_audit.py
+          python3 ios/scripts/build125_raw_8bit_transport_audit.py
+          python3 ios/scripts/validate_nextlevel_camera_integration.py
+          # Fail-fast all carried-forward Build103/Build100 UI invariants before Mac source generation.
+          python3 ios/scripts/build103_device_metrics_audit.py /tmp/build115-early-ui-audit.json
+          python3 ios/scripts/build111_photo_input_audit.py
+          python3 ios/scripts/final_gamut_source_route_audit.py
+          python3 ios/scripts/build110_source_gamut_device_audit.py
+          python3 -m compileall -q ios/scripts
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'ios/scripts')
+          from build_ci_version_floor import minimum_build, minimum_minor
+          project=Path('ios/project.yml').read_text()
+          assert minimum_build(project,125)
+          assert minimum_minor(project,91)
+          assert not minimum_build(project,126)
+          assert not minimum_minor(project,92)
+          print('PASS current 1.8.91/125 and all carried-forward minimum release contracts')
+          PY
+          git diff --exit-code
+
+  group-compile-once:
+    needs: runner-preflight
+    # Required by AGENTS.md: Apple Silicon macOS 15 (verified full Build112 baseline).
+    # Never switch to Intel or macos-latest without explicit user approval.
+    # iPhoneOS arm64 target, minimum iOS 16.5 / iOS 16.5.1 compatibility.
+    runs-on: macos-15
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact bulk source revision
+        uses: actions/checkout@v4
+      - name: Use Xcode iPhoneOS SDK and report real source SHA
+        run: |
+          # Fail immediately if the host accidentally changes to Intel.
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          git rev-parse HEAD
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build108 immediate Swift syntax gate for 1MP/2MP real renderer and source UI
+        run: |
+          set -euo pipefail
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift \
+            ios/SpektraFilmPort/Build107CombinedDeviceFeedback.swift \
+          ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/SourceGrainScalarGaussian.swift
+          # Python audit needs generated original-source manifest, checked
+          # in the next source-reference step after original fixture generation.
+      - name: Build114 process/optics UI and safe-memory preflight
+        run: |
+          set -euo pipefail
+          python ios/scripts/build112_ui_only_audit.py
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/ContentView.swift
+          git fetch --no-tags --depth=1 origin c02d84b54f5c7f384eb256ac4ca2f01d1a0b214c
+          python - <<'PY'
+          import subprocess
+          changed=subprocess.check_output(['git','diff','--name-only',
+            'c02d84b54f5c7f384eb256ac4ca2f01d1a0b214c','HEAD'],text=True).splitlines()
+          forbidden=[x for x in changed if x.startswith('ios/SpektraFilmPort/')
+            and x.endswith('.swift')
+            and x not in {
+                'ios/SpektraFilmPort/FloatingEditorWorkspace.swift',
+                'ios/SpektraFilmPort/SafeExportResolution.swift',
+                'ios/SpektraFilmPort/ContentView.swift',
+              'ios/SpektraFilmPort/NextLevelCamera.swift',
+                'ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift',
+                'ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift',
+                'ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift',
+                'ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift',
+                'ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift',
+                'ios/SpektraFilmPort/Build115ParallelNumbaEvidence.swift',
+                'ios/SpektraFilmPort/SourceGrainScalarGaussian.swift',
+                'ios/SpektraFilmPort/Build106SourceMemoryLedger.swift',
+                'ios/SpektraFilmPort/Build91PhysicalMemory.swift'
+              }]
+          assert not forbidden, 'Build116 unexpectedly changed unapproved original modules: '+str(forbidden)
+          print('PASS Build115 scoped original parallel stochastic work with strictly separate controlled seed mode')
+          PY
+
+      - name: Build115 source parallel original-grain production contract and Swift syntax
+        run: |
+          set -euo pipefail
+          python ios/scripts/build115_unseeded_parallel_source_audit.py
+          python ios/scripts/build116_grain_memory_matrix_audit.py
+          python ios/scripts/build117_dynamic_memory_audit.py
+          python ios/scripts/build118_separate_large_memory_audit.py
+          python ios/scripts/build119_committed_memory_audit.py
+          python ios/scripts/build120_process_ui_restructure_audit.py
+          python ios/scripts/build121_switch_explanation_audit.py
+          python ios/scripts/build122_compact_native_camera_audit.py
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/build124_native_dng_editor_ingress_audit.py
+          python ios/scripts/build125_raw_8bit_transport_audit.py
+          python ios/scripts/validate_nextlevel_camera_integration.py
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/SpektraFilmPort/Build115ParallelNumbaEvidence.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+
+      - name: Build117 original Float64 scalar dye-cloud bit-exact FIR/YVV parity
+        run: |
+          set -euo pipefail
+          swiftc -O -D SOURCE_GRAIN_STANDALONE -parse-as-library \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/SourceGrainScalarGaussian.swift \
+            ios/tests/Build116GrainScalarGaussianValidation.swift \
+            -o /tmp/build116-grain-parity
+          /tmp/build116-grain-parity
+          python3 - <<'PY'
+          from pathlib import Path
+          grain=Path("ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift").read_text()
+          physical=Path("ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift").read_text()
+          device=Path("ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift").read_text()
+          ui=Path("ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+          assert "SourceGrainScalarGaussian.blurInPlace(" in grain
+          assert "cloud[p*3]=" not in grain
+          assert "static let extraBytesPerPixel: UInt64 = 224" in grain
+          assert "static let unseededParallelExtraBytesPerPixel: UInt64 = 56" in grain
+          assert "diffused.removeAll(keepingCapacity:false)" in physical
+          assert "captureBuild116GrainMemory(" in device
+          assert "onRunBuild116GrainMemory()" in ui
+          assert "captureBuild116GrainMemory(" in device
+          assert 'for parallel in [false,true]' in device
+          assert 'matrixCases:results,plannedCaseCount:cases.count' in device
+          workflow=Path(".github/workflows/build123-ios1651-native-raw-safety-ipa.yml").read_text()
+          # Search the actual YAML step heading (not this Python assertion
+          # string, which also contains the same step-name text).
+          start=workflow.rfind("      - name: Build104 run independent original Python grain.py 5 x 4 stage Float64 source parity")
+          end=workflow.find("      - name: Build104 on-device diagnostic source and manifest/static integration",start+1)
+          assert start>=0 and end>start, "Build104 compile step boundaries missing"
+          standalone=workflow[start:end]
+          assert "SourceGrainScalarGaussian.swift" in standalone, "Build104 standalone compile missing scalar dependency"
+          print("PASS Build117 dynamic admission, 8x2 matrix, scalar grain, 3-layer production buffer")
+          PY
+
+      - name: Build117 dynamic memory budget source test and original grain-stream parity
+        run: |
+          set -euo pipefail
+          python ios/scripts/build117_dynamic_memory_audit.py
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/Build91PhysicalMemory.swift \
+            ios/tests/Build91PhysicalMemoryMatrixValidation.swift \
+            -o /tmp/Build117MemoryValidation
+          /tmp/Build117MemoryValidation
+      - name: Build118 separate 8-10-13MP UI, phase RSS and memory source budget
+        run: |
+          set -euo pipefail
+          python ios/scripts/build118_separate_large_memory_audit.py
+          python ios/scripts/build119_committed_memory_audit.py
+          python ios/scripts/build120_process_ui_restructure_audit.py
+          python ios/scripts/build121_switch_explanation_audit.py
+          python ios/scripts/build122_compact_native_camera_audit.py
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/validate_nextlevel_camera_integration.py
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/Build91PhysicalMemory.swift \
+            ios/SpektraFilmPort/Build106SourceMemoryLedger.swift \
+            ios/tests/Build118LargeGrainMemoryValidation.swift \
+            -o /tmp/Build118LargeGrainMemory
+          /tmp/Build118LargeGrainMemory
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+      - name: Build119 13MP Numba inner committed frame double-count and guarded headroom test
+        run: |
+          set -euo pipefail
+          python ios/scripts/build119_committed_memory_audit.py
+          python ios/scripts/build120_process_ui_restructure_audit.py
+          python ios/scripts/build121_switch_explanation_audit.py
+          python ios/scripts/build122_compact_native_camera_audit.py
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/validate_nextlevel_camera_integration.py
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/Build91PhysicalMemory.swift \
+            ios/tests/Build119CommittedFrameMemoryValidation.swift \
+            -o /tmp/Build119CommittedMemory
+          /tmp/Build119CommittedMemory
+      - name: Build120 stage-owned camera film paper scanner UI and diagnostic-only Advanced
+        run: |
+          set -euo pipefail
+          python ios/scripts/build120_process_ui_restructure_audit.py
+          python ios/scripts/build121_switch_explanation_audit.py
+          python ios/scripts/build122_compact_native_camera_audit.py
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/validate_nextlevel_camera_integration.py
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/ContentView.swift
+      - name: Build121 all switch off/locked reasons and tappable exclamation compile guard
+        run: |
+          set -euo pipefail
+          python ios/scripts/build121_switch_explanation_audit.py
+          python ios/scripts/build122_compact_native_camera_audit.py
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/validate_nextlevel_camera_integration.py
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/ContentView.swift
+      - name: Build122 compact slider numeric editor and native camera Swift parse gate
+        run: |
+          set -euo pipefail
+          python ios/scripts/build122_compact_native_camera_audit.py
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/validate_nextlevel_camera_integration.py
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/NextLevelCamera.swift \
+            ios/SpektraFilmPort/ContentView.swift
+      - name: Build123 iOS16.5.1 RAW NSException bridge and native session gate
+        run: |
+          set -euo pipefail
+          python ios/scripts/build123_native_raw_capture_safety_audit.py
+          xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/NextLevelCamera.swift \
+            ios/SpektraFilmPort/ContentView.swift
+          xcrun --sdk iphoneos clang \
+            -target arm64-apple-ios16.5 -fobjc-arc -fsyntax-only \
+            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            -I ios/SpektraFilmPort \
+            ios/SpektraFilmPort/SFNativeCaptureSafety.m
+      - name: Build114 deterministic 1300MB safe output and late headroom rejection
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library -O \
+            ios/SpektraFilmPort/SafeExportResolution.swift \
+            ios/tests/SafeExportResolutionValidation.swift \
+            -o /tmp/Build114SafeExportValidation
+          /tmp/Build114SafeExportValidation
+
+      - name: Build114 bit-exact original FIR/YVV versus in-place all channel full-frame regression
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift').read_text()
+          assert 'func diffuseInPlaceMemoryBounded(' in source
+          old=source.split('    /// Original 2D RGB per-channel Gaussian',1)[0]
+          old=old.replace('import CoreImage\n','').replace('import CoreGraphics\n','')
+          Path('/tmp/Build114DIRCore.swift').write_text(old+'\n}\n')
+          physical=Path('ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift').read_text()
+          assert 'estimatedPeakBytesPerPixel: UInt64 = 112' in physical
+          assert 'diffuseInPlaceMemoryBounded(' in physical
+          PY
+          swiftc -O -parse-as-library \
+            /tmp/Build114DIRCore.swift \
+            ios/tests/Build114InPlaceDIRValidation.swift \
+            -o /tmp/Build114DIRValidation
+          /tmp/Build114DIRValidation
+
+      - name: Build111 actual tagged P3 to sRGB ColorSync bytes plus unified image admission audit
+        run: |
+          set -euo pipefail
+          python ios/scripts/build111_photo_input_audit.py
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build111PhotoInputProfile.swift \
+            ios/tests/Build111PhotoInputProfileValidation.swift \
+            -o /tmp/Build111PhotoInputValidation
+          /tmp/Build111PhotoInputValidation
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build111PhotoInputProfile.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/Build110SourceGamutDeviceEvidence.swift
+
+      - name: Install original fixture generation source stack
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
+            'matplotlib==3.10.7' 'numba==0.61.2' 'opt_einsum==3.4.0' \
+            'scikit-image==0.25.2'
+      - name: Build115 fail-fast original Numba fixture generation with isolated JIT caches
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          set -euo pipefail
+          # The upstream source uses @njit(cache=True) and is dynamically
+          # imported under different names by successive fixture generators.
+          # Avoid restoring an incompatible <dynamic> module from another step.
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_numba_fast_counts.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_scanner_glare.py
+          test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
+      - name: Build114 real original Python Numba 4-worker unseeded statistical gate
+        env:
+          NUMBA_NUM_THREADS: '4'
+          NUMBA_THREADING_LAYER: 'workqueue'
+        run: |
+          set -euo pipefail
+          python ios/scripts/build114_unseeded_numba_statistical_gate.py
+      - name: Build115 run real Swift 4-worker unseeded Numba distribution, state and Python cross comparison
+        run: |
+          set -euo pipefail
+          # OriginalSourceMT19937.validateReference resolves this generated
+          # type at typecheck time; omitting it always breaks this swiftc link.
+          python ios/scripts/generate_source_mt19937.py
+          test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
+            ios/tests/Build115ParallelNumbaValidation.swift \
+            -o /tmp/Build115ParallelNumbaValidation
+          BUILD115_PARALLEL_STATS_OUTPUT=ios/build/release/build115-swift-parallel-stats.json \
+            /tmp/Build115ParallelNumbaValidation
+          python ios/scripts/build115_compare_parallel_moments.py
+          test -s ios/build/release/build115-swift-parallel-stats.json
+          test -s ios/build/release/build115-python-swift-parallel-statistics.json
+
+
+      - name: Generate original film, print, scanner, random and physical data
+        run: |
+          set -euo pipefail
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_camera_batch.py
+          python ios/scripts/generate_compact_catalog.py
+          python ios/scripts/generate_spectral_data.py
+          python ios/scripts/generate_original_optics.py
+          python ios/scripts/generate_hanatos.py
+          python ios/scripts/generate_build77_stock_halation.py
+          python ios/scripts/generate_dir.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_hd_interpolation_reference.py
+          python ios/scripts/generate_dir_spatial.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_spatial_dir_2d.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_full_frame.py
+          python ios/scripts/generate_sublayer_grain.py
+          python ios/scripts/generate_original_metal_grain.py
+          python ios/scripts/generate_original_source_rng.py
+          python ios/scripts/generate_source_iir.py
+          python ios/scripts/generate_source_mt19937.py
+          python ios/scripts/generate_original_scipy_rng.py
+          python ios/scripts/generate_source_replay.py
+          python ios/scripts/generate_source_microstructure.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
+            NUMBA_THREADING_LAYER=workqueue \
+            python ios/scripts/generate_source_physical_grain.py
+          python ios/scripts/generate_source_rgb_parity.py
+          python ios/scripts/generate_source_print_scanner_parity.py
+          python ios/scripts/generate_source_negative_print_chain.py
+          python ios/scripts/generate_source_film_dir_print_chain.py
+          python ios/scripts/generate_source_camera_film_print_chain.py
+          python ios/scripts/validate_source_float64_original.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" NUMBA_NUM_THREADS=1 \
+            NUMBA_THREADING_LAYER=workqueue \
+            python ios/scripts/generate_source_physical_frame.py
+          python ios/scripts/generate_build77_rgb_pre_original.py
+          python ios/scripts/generate_scanner_reference.py
+          python ios/scripts/build90_generate_original_icc.py
+          python ios/scripts/generate_cam16_gamut.py
+          python ios/scripts/generate_print_morph.py
+          python ios/scripts/generate_print_optics.py
+          test -s ios/SpektraFilmPort/GeneratedSpectralData.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
+          test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
+          test -s ios/SpektraFilmPort/GeneratedDIRData.swift
+      - name: Independent Python original Oklch 96, actual TC LUT 4038, CAM16 216 numerical parity
+        run: |
+          set -euo pipefail
+          python ios/scripts/build81_generate_source_locus.py --output ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift
+          python ios/scripts/final_source_oklch_oracle.py --output /tmp/build109-original-oklch.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
+            ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift \
+            ios/tests/FinalSourceOklchValidation.swift -o /tmp/Build109Oklch
+          /tmp/Build109Oklch /tmp/build109-original-oklch.json
+          python ios/scripts/final_source_tc_lut_oracle.py /tmp/build109-original-tc.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build81OriginalInputGamut.swift \
+            ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift \
+            ios/SpektraFilmPort/Build82OriginalHanatosSurface.swift \
+            ios/SpektraFilmPort/Build82OriginalSpectralRuntime.swift \
+            ios/tests/FinalOriginalTCLUTValidation.swift -o /tmp/Build109TC
+          /tmp/Build109TC /tmp/build109-original-tc.json
+          python ios/scripts/build89_real_cam16_original_oracle.py /tmp/build109-original-cam16.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            ios/SpektraFilmPort/Build89OriginalCAM16.swift \
+            ios/tests/Build89NativeSourceCAM16Validation.swift -o /tmp/Build109CAM16
+          /tmp/Build109CAM16 /tmp/build109-original-cam16.json
+          python ios/scripts/final_gamut_source_route_audit.py
+      - name: Build110 real device four-mode report, source and UI integration contract
+        run: |
+          set -euo pipefail
+          python ios/scripts/build110_source_gamut_device_audit.py
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build110SourceGamutDeviceEvidence.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+      - name: Build107 source gate (carried-forward) validate previous device false-failure against 4 real Python original fixtures
+        run: |
+          set -euo pipefail
+          python ios/scripts/build108_feedback_source_audit.py
+      - name: Build107 independently validate Build106 24 memory matrix and shared production ledger
+        run: |
+          set -euo pipefail
+          xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/Build106SourceMemoryLedger.swift \
+            ios/tests/Build106SourceMemoryLedgerValidation.swift \
+            -o /tmp/Build107SourceMemoryLedger
+          /tmp/Build107SourceMemoryLedger
+          python ios/scripts/build108_feedback_source_audit.py
+      - name: Build104 run independent original Python grain.py 5 x 4 stage Float64 source parity
+        run: |
+          set -euo pipefail
+          test -s ios/verification/generated-source-grain-v1.8.48/manifest.json
+          xcrun swiftc -Onone -parse-as-library -D SOURCE_GRAIN_STANDALONE \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPySampler.swift \
+            ios/SpektraFilmPort/GeneratedOriginalSciPyRNGReference.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
+            ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
+            ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/SourceGrainScalarGaussian.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/tests/SourcePhysicalGrainValidation.swift \
+            -o /tmp/Build104FiveOriginalGrainFrames
+          /tmp/Build104FiveOriginalGrainFrames
+      - name: Build104 on-device diagnostic source and manifest/static integration
+        run: |
+          set -euo pipefail
+          test -s ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
+          test -s ios/verification/generated-source-grain-v1.8.48/fast_stats_no_micro.final.f64le
+          test -s ios/verification/generated-source-grain-v1.8.48/fast_stats_micro_active.final.f64le
+          grep -Fq 'verification/generated-source-grain-v1.8.48' ios/project.yml
+          grep -Fq 'Build104DeviceGrainEvidence.capture(' ios/SpektraFilmPort/ContentView.swift
+          grep -Fq 'Build104-device-grain-' ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
+          grep -Fq 'onRunBuild104Grain()' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+          grep -Fq 'MARKETING_VERSION: "1.8.91"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "125"' ios/project.yml
+      - uses: actions/setup-python@v5
+        with:
+          # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
+          # Stable on Apple Silicon and avoids changing source RNG versions mid-build.
+          python-version: '3.11'
+      - name: Audit 4 original-Python 12-stage reference tapes (Build92 baseline)
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import numba, numpy, scipy, llvmlite
+          assert numba.__version__ == '0.61.2', numba.__version__
+          assert numpy.__version__ == '1.26.4', numpy.__version__
+          assert scipy.__version__ == '1.15.3', scipy.__version__
+          print('PASS pinned Apple Silicon Numba/llvmlite source stack', llvmlite.__version__)
+          PY
+          python ios/scripts/build92_source_stage_tapes_audit.py \
+            --fixtures ios/verification/generated-physical-v1.8.22 \
+            --out /tmp/build92-real-source-48-stage-tapes.json
+          test -s /tmp/build92-real-source-48-stage-tapes.json
+      - name: Build114 explicit four-certification-gates source/fixture matrix
+        run: |
+          set -euo pipefail
+          python ios/scripts/build114_four_gate_matrix.py
+          test -s ios/build/release/build114-four-gate-certification-ledger.json
+          test -s ios/build/release/build114-unseeded-numba-source-statistics.json
+
+      - name: Validate updated Build114 UI navigation and carried-forward Build103 measured contracts
+        run: |
+          python ios/scripts/build103_device_metrics_audit.py \
+            /tmp/build92-native-ui-static.json
+      - name: Source full-scientific/physical-device certificate gate
+        id: precision_certificate
+        continue-on-error: true
+        run: |
+          python ios/scripts/verify_precision_release.py
+      - name: Generate original exact Numba fast-count and glare source tables
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          # Earlier source reference generation uses the same pinned original
+          # 3.11 + 0.61.2 stack; keep reference RNG/toolchain stable.
+          python - <<'PY'
+          import numba, numpy
+          assert numba.__version__ == '0.61.2', numba.__version__
+          assert numpy.__version__ == '1.26.4', numpy.__version__
+          PY
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_numba_fast_counts.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_scanner_glare.py
+          python ios/scripts/build81_generate_source_locus.py \
+            --output ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift
+          python ios/scripts/build82_generate_profiles.py \
+            --output ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
+          test -s ios/SpektraFilmPort/Build82GeneratedHanatosProfiles.swift
+      - name: Verify Build103 carried-forward stage metric capture and all prior original source contracts
+        run: |
+          test -s docs/BUILD87-PRINT-OPTICS-REFERENCE-29-34-BULK.md
+          test -s docs/BUILD88-SCANNER-SPECTRUM-GLARE-OPTICS-35-37-BULK.md
+          test -s docs/BUILD89-ORIGINAL-GAMUT-SPACE-38-39-BULK.md
+          test -s docs/BUILD89B-ALL-SIX-SOURCE-GAMUT-PARITY.md
+          test -s docs/BUILD90-FILE-OUTPUT-ICC-LUT-40-41-BULK.md
+          test -s docs/BUILD91-DOUBLE-FFT-METAL-MEMORY-42-44-BULK.md
+          test -s docs/BUILD92-SOURCE-45-47-EVIDENCE-AND-RELEASE.md
+          test -s docs/BUILD93-XT5-RAW-IMPORT-IOS1651.md
+          test -s docs/BUILD94-LIBRAW-XT5-COMPRESSED-RAF.md
+          test -s docs/BUILD95-RAW16-XT5-MEMORY-PORT.md
+          test -s docs/BUILD96-RAW-TIFF16-MEMORY-EXPORT.md
+          test -s docs/BUILD97-P0-PRODUCTION-HARDENING.md
+          test -s docs/BUILD98-UI-STATE-DIAGNOSTICS-TEMP-FILES.md
+          test -s docs/BUILD99-PREVIEW-GESTURE-EXPORT-RECOVERY.md
+          test -s docs/BUILD100-PRODUCTION-CANDIDATE-VERIFICATION.md
+          test -s docs/BUILD101-REAL-DEVICE-SOURCE-PARITY-EVIDENCE.md
+          test -s docs/BUILD102-SCANNER-CCTF-IPHONE-FAILURE.md
+          test -s docs/BUILD103-REAL-DEVICE-METRICS-RNG-MEMORY.md
+          test -s ios/SpektraFilmPort/Build103VerificationEvidence.swift
+          test -s ios/tests/Build103DeviceMetricsValidation.swift
+          test -s ios/scripts/build103_device_metrics_audit.py
+          grep -Fq 'onBuild103StageMetric?(Build103VerificationEvidence.StageMetric(' ios/tests/SourcePhysicalImageParity.swift
+          test -s ios/tests/Build102ScannerCCTFValidation.swift
+          test -s ios/scripts/build102_scanner_cctf_device_audit.py
+          grep -Fq 'let expectedEncoded=OriginalScannerMath.sourceCCTFEncoding(' ios/tests/SourcePhysicalImageParity.swift
+          test -s ios/SpektraFilmPort/Build101DeviceParityEvidence.swift
+          test -s ios/tests/Build101MeasuredParityEvidenceValidation.swift
+          test -s ios/scripts/build101_device_parity_audit.py
+          grep -Fq 'SFSourceCommit: "$(SF_SOURCE_COMMIT)"' ios/project.yml
+          test -s ios/SpektraFilmPort/Build100Readiness.swift
+          test -s ios/tests/Build100ReadinessValidation.swift
+          test -s ios/scripts/build100_readiness_ui_audit.py
+          test -s ios/SpektraFilmPort/Build99InteractionRules.swift
+          test -s ios/tests/Build99InteractionRulesValidation.swift
+          test -s ios/scripts/build99_preview_export_audit.py
+          test -s ios/SpektraFilmPort/Build98ExportTemporaryFiles.swift
+          test -s ios/tests/Build98TemporaryExports.swift
+          test -s ios/scripts/build98_production_audit.py
+          test -s ios/SpektraFilmPort/Build97FilterContract.swift
+          test -s ios/tests/Build97P0SafetyValidation.swift
+          test -s ios/scripts/build97_p0_production_audit.py
+          test -s ios/SpektraFilmPort/Build96TIFF16Writer.swift
+          test -s ios/tests/Build96TIFF16Validation.swift
+          test -s ios/scripts/build96_tiff16_raw_gui_audit.py
+          test -s ios/SpektraFilmPort/Build95LibRaw16Ingress.swift
+          test -s ios/tests/Build95RGB16Transport.swift
+          test -s ios/scripts/build95_raw16_gui_audit.py
+          test -s ios/SpektraFilmPort/Build94LibRawBridge.h
+          test -s ios/SpektraFilmPort/Build94LibRawBridge.mm
+          test -s ios/SpektraFilmPort/Build94LibRawIngress.swift
+          test -s ios/scripts/build94_compile_libraw_ios.sh
+          test -s ios/SpektraFilmPort/Build93AppleRAWImport.swift
+          test -s ios/scripts/build93_raw_gui_audit.py
+          test -s ios/SpektraFilmPort/Build92DeviceSourceStageDiagnostic.swift
+          test -s ios/scripts/build92_source_stage_tapes_audit.py
+          test -s ios/scripts/build92_gui_regression_audit.py
+          grep -Fq 'tests/SourcePhysicalImageParity.swift' ios/project.yml
+          grep -Fq 'generated-physical-v1.8.22' ios/project.yml
+          grep -Fq 'Build92DeviceSourceStageDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
+          grep -Fq 'MARKETING_VERSION: "1.8.91"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "125"' ios/project.yml
+          test -s ios/SpektraFilmPort/Build91PhysicalMemory.swift
+          test -s ios/SpektraFilmPort/Build91MemoryProductionDiagnostic.swift
+          test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
+          test -s ios/tests/Build91DoubleFFTBenchmark.swift
+          grep -q 'Build91PhysicalMemory.plan' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'extraPeakBytesPerPixel' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'preflightAdditional' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'cachedPipelineStats' ios/SpektraFilmPort/OriginalMetalIIR.swift
+          grep -q 'Build91MemoryProductionDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
+          grep -q 'withUnsafeMutableBufferPointer' ios/SpektraFilmPort/OriginalSourceDiffusion.swift
+          test -s ios/SpektraFilmPort/Build90OriginalLUT.swift
+          test -s ios/SpektraFilmPort/Build90OriginalLUTCache.swift
+          grep -q 'applyOriginalSourceLUTPreview' ios/SpektraFilmPort/OriginalSourcePixelIO.swift
+          grep -q 'exportPhysicalOriginalFile' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          test -s ios/SpektraFilmPort/Build90SourceOutputQuantization.swift
+          test -s ios/SpektraFilmPort/Build90NativeOutputWriter.swift
+          test -s ios/SpektraFilmPort/Build90OriginalICCContainer.swift
+          test -s ios/SpektraFilmPort/Build90GeneratedSourceICC.swift
+          grep -q 'exportPhysicalOriginalFile' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'sourceOutputGamut' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          test -s ios/SpektraFilmPort/Build89bOriginalOklabGamut.swift
+          test -s ios/SpektraFilmPort/Build89bOriginalJzAzBz.swift
+          test -s ios/scripts/build89b_original_oklch_oklrab_oracle.py
+          test -s ios/scripts/build89b_original_jzazbz_oracle.py
+          grep -q 'sourceOklabXYZToLMS' ios/scripts/generate_scanner_reference.py
+          grep -q 'sourceJzXYZToLMS' ios/scripts/generate_scanner_reference.py
+          grep -q 'case .jzazbz' ios/SpektraFilmPort/Build89OriginalOutputGamut.swift
+          test -s ios/SpektraFilmPort/Build89OriginalCAM16.swift
+          test -s ios/SpektraFilmPort/Build89OriginalOutputGamut.swift
+          test -s ios/SpektraFilmPort/Build89OutputGamutProductionDiagnostic.swift
+          grep -q 'sourceOutputRGBToXYZ' ios/scripts/generate_scanner_reference.py
+          grep -q 'sourceOutputGamut' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          test -s ios/SpektraFilmPort/Build88OriginalScannerSpectrum.swift
+          test -s ios/SpektraFilmPort/Build88ScannerCombinedProductionDiagnostic.swift
+          test -s ios/SpektraFilmPort/OriginalSourceScannerGlare.swift
+          test -s ios/SpektraFilmPort/OriginalSourceScannerOptics.swift
+          grep -q 'sourceLinearIdentityRGBMatrix' ios/scripts/generate_scanner_reference.py
+          grep -q 'mixed.rgb != encoded.rgb' ios/SpektraFilmPort/Build88ScannerCombinedProductionDiagnostic.swift
+          test -s ios/SpektraFilmPort/Build87OriginalColorReference.swift
+          test -s ios/SpektraFilmPort/Build87PrintScanProductionDiagnostic.swift
+          test -s ios/SpektraFilmPort/OriginalPrintMorph.swift
+          test -s ios/SpektraFilmPort/OriginalSourceDiffusion.swift
+          test -s ios/SpektraFilmPort/OriginalPrintOptics.swift
+          swiftc -frontend -parse ios/SpektraFilmPort/*.swift
+      # Retry with Swift Foundation Data/count bridge fix, source commit 834fc74.
+      - name: Prove real UInt16 RGB48 CGImage / CIImage transport on macOS
+        run: |
+          set -euo pipefail
+          swiftc -O -o /tmp/build95-rgb16-transport ios/tests/Build95RGB16Transport.swift
+          /tmp/build95-rgb16-transport
+      - name: Prove REAL 16-bit TIFF ImageIO on disk with IFD and CGImage roundtrip
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build96-tiff16
+          cp ios/tests/Build96TIFF16Validation.swift /tmp/build96-tiff16/main.swift
+          swiftc -O -o /tmp/build96-tiff16/test \
+            ios/SpektraFilmPort/SafeExportResolution.swift \
+            ios/SpektraFilmPort/Build96TIFF16Writer.swift \
+            /tmp/build96-tiff16/main.swift
+          /tmp/build96-tiff16/test
+      - name: Build97 REAL Core Image fail-closed kernels and original JPEG memory acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build97-p0
+          cp ios/tests/Build97P0SafetyValidation.swift /tmp/build97-p0/main.swift
+          swiftc -O -o /tmp/build97-p0/test \
+            ios/SpektraFilmPort/Build97FilterContract.swift \
+            ios/SpektraFilmPort/SpatialOptics.swift \
+            ios/SpektraFilmPort/ScannerFinishing.swift \
+            ios/SpektraFilmPort/SafeExportResolution.swift \
+            /tmp/build97-p0/main.swift
+          /tmp/build97-p0/test
+      - name: Prove REAL Build98 temporary file lifecycle without deleting unrelated files
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build98-exports
+          cp ios/tests/Build98TemporaryExports.swift /tmp/build98-exports/main.swift
+          swiftc -O -o /tmp/build98-exports/test \
+            ios/SpektraFilmPort/Build98ExportTemporaryFiles.swift \
+            /tmp/build98-exports/main.swift
+          /tmp/build98-exports/test
+      - name: Execute Build99 real zoom and stale material generation/export guards
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build99-interaction
+          cp ios/tests/Build99InteractionRulesValidation.swift /tmp/build99-interaction/main.swift
+          swiftc -O -o /tmp/build99-interaction/test \
+            ios/SpektraFilmPort/Build99InteractionRules.swift \
+            /tmp/build99-interaction/main.swift
+          /tmp/build99-interaction/test
+      - name: Build100 prove real on-disk iPhone acceptance JSON and no fake Python parity
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build100-acceptance
+          cp ios/tests/Build100ReadinessValidation.swift /tmp/build100-acceptance/main.swift
+          swiftc -O -o /tmp/build100-acceptance/test \
+            ios/SpektraFilmPort/Build100Readiness.swift \
+            /tmp/build100-acceptance/main.swift
+          /tmp/build100-acceptance/test
+      - name: Build101 REAL persisted SHA-bound measured parity JSON and failure-injection regression
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build101-parity
+          cp ios/tests/Build101MeasuredParityEvidenceValidation.swift /tmp/build101-parity/main.swift
+          swiftc -O -o /tmp/build101-parity/test \
+            ios/SpektraFilmPort/Build101DeviceParityEvidence.swift \
+            /tmp/build101-parity/main.swift
+          /tmp/build101-parity/test
+      - name: Build102 execute ORIGINAL colour-science 3x3+CCTF scanner stage against old scalar bug
+        run: |
+          set -euo pipefail
+          test -s ios/SpektraFilmPort/GeneratedScannerReference.swift
+          mkdir -p /tmp/build102-cctf
+          cp ios/tests/Build102ScannerCCTFValidation.swift /tmp/build102-cctf/main.swift
+          swiftc -O -o /tmp/build102-cctf/test \
+            ios/SpektraFilmPort/OriginalScannerMath.swift \
+            ios/SpektraFilmPort/GeneratedScannerReference.swift \
+            /tmp/build102-cctf/main.swift
+          /tmp/build102-cctf/test
+      - name: Retain Build103 execute seeded MT19937, 8MiB real memory and 28-stage JSON negative regressions
+        run: |
+          set -euo pipefail
+          test -s ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift
+          mkdir -p /tmp/build103-metrics
+          cp ios/tests/Build103DeviceMetricsValidation.swift /tmp/build103-metrics/main.swift
+          swiftc -O -o /tmp/build103-metrics/test \
+            ios/SpektraFilmPort/GeneratedSourceMT19937Reference.swift \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/Build103VerificationEvidence.swift \
+            /tmp/build103-metrics/main.swift
+          /tmp/build103-metrics/test
+      - name: Build pinned LibRaw 0.22 Fuji compressed X-Trans as real iPhoneOS arm64 static library
+        run: |
+          bash ios/scripts/build94_compile_libraw_ios.sh
+          test -s ios/build/vendor/LibRaw/lib/libraw.a
+          xcrun lipo -archs ios/build/vendor/LibRaw/lib/libraw.a | grep -w arm64
+      - name: Generate Xcode project and compile all merged native modules ONCE
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate --spec project.yml
+          cd ..
+          xcodebuild -project ios/SpektraFilmPort.xcodeproj \
+            -scheme SpektraFilmPort -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/DerivedData \
+            SF_SOURCE_COMMIT="$GITHUB_SHA" CODE_SIGNING_ALLOWED=NO build
+      - name: Verify Build103 actual iPhoneOS arm64 source and exact Git/IPA identity
+        run: |
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          test -s "$APP/SpektraFilmPort"
+          test -s "$APP/default.metallib"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.91
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 125
+          /usr/libexec/PlistBuddy -c 'Print :SFSourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
+          # Native libraw symbols must actually be linked, no stub.
+          xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_dcraw_process'
+          xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_set_output_bps'
+          xcrun lipo -archs "$APP/SpektraFilmPort" | grep -w arm64
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist" | grep -E '^16[.]5([.]0)?$'
+
+          test -s "$APP/generated-physical-v1.8.22/manifest.json"
+          test -s "$APP/generated-physical-v1.8.22/kodak_grain_micro_yvv.grainPrinted.f64le"
+          test -s "$APP/generated-source-grain-v1.8.48/manifest.json"
+          test -s "$APP/generated-source-grain-v1.8.48/fast_stats_micro_active.final.f64le"
+          test -s "$APP/generated-source-grain-v1.8.48/fast_stats_no_micro.final.f64le"
+          echo 'Build110 native ARM64 iPhoneOS Release PASS; bundled source optical reference tapes; physical iOS16.5.1 validation NOT run.'
+
+      - name: Package this exact Build108 unsigned iPhoneOS app as actual IPA
+        run: |
+          set -euo pipefail
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
+          ROOT=ios/build/Build92Package
+          mkdir -p "$ROOT/Payload" ios/build/release
+          ditto "$APP" "$ROOT/Payload/SpektraFilmPort.app"
+          (cd "$ROOT" && zip -q -r -X \
+             ../release/SpektraFilm-1.8.91-Build125-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
+          IPA=ios/build/release/SpektraFilm-1.8.91-Build125-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+          test -s "$IPA"
+          unzip -t "$IPA" | tail -1 | grep -F 'No errors detected'
+          unzip -Z -1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
+          shasum -a 256 "$IPA" | tee "$IPA.sha256"
+          echo "Build110 real unsigned IPA size=$(stat -f %z "$IPA") bytes"
+      - name: Verify final IPA version, arch and SAME committed source SHA
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib,os,plistlib,subprocess,json
+          package=Path('ios/build/release/SpektraFilm-1.8.91-Build125-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
+          commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert commit==os.environ['GITHUB_SHA'], 'app sources/IPA do not match action commit'
+          with ZipFile(package) as z:
+              p=plistlib.loads(z.read('Payload/SpektraFilmPort.app/Info.plist'))
+              assert p['CFBundleIdentifier']=='com.twogou.spektrafilmport'
+              assert p['CFBundleShortVersionString']=='1.8.91'
+              assert p['CFBundleVersion']=='125'
+              assert p.get('SFSourceCommit')==commit, 'IPA embedded Git SHA is missing or incorrect'
+              assert p['MinimumOSVersion'].startswith('16.5')
+              assert 'Payload/SpektraFilmPort.app/default.metallib' in z.namelist()
+              assert 'Payload/SpektraFilmPort.app/generated-physical-v1.8.22/manifest.json' in z.namelist()
+              assert 'Payload/SpektraFilmPort.app/generated-source-grain-v1.8.48/manifest.json' in z.namelist()
+              assert 'Payload/SpektraFilmPort.app/generated-source-grain-v1.8.48/fast_stats_micro_active.final.f64le' in z.namelist()
+          identity={
+              'commit_sha':commit,
+              'ipa_name':package.name,
+              'ipa_sha256':hashlib.sha256(package.read_bytes()).hexdigest(),
+              'ipa_size_bytes':package.stat().st_size,
+              'version':'1.8.91',
+              'build':'125',
+              'ios_minimum':'16.5',
+              'architecture':'arm64',
+              'signing':'UNSIGNED; requires user signing to install',
+              'certification':'EXPERIMENTAL: Build125 source verifies camera Bayer DNG reaches Apple CIRAWFilter, not JPEG. iOS16.5.1 device RAW ingestion and original rawpy parity NOT CERTIFIED; prior source optics gates carried forward',
+              'release_authority':'actual GitHub Actions xcodebuild -sdk iphoneos',
+          }
+          Path('ios/build/release/verification-build125.json').write_text(
+              json.dumps(identity,indent=2,sort_keys=True)+'\n')
+          print('PASS exact signed-off source SHA/IPA identity',identity)
+          PY
+          cat ios/build/release/verification-build125.json
+      - name: Upload Build111 input color-profile plus old four-mode experimental unsigned IPA and source tapes
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build125-1.8.91-arm64-native-dng-editor-unsigned-unverified
+          path: |
+            ios/build/release/*.ipa
+            ios/build/release/*.sha256
+            ios/build/release/verification-build125.json
+            ios/build/release/build114-four-gate-certification-ledger.json
+            ios/build/release/build114-unseeded-numba-source-statistics.json
+            ios/build/release/build115-swift-parallel-stats.json
+            ios/build/release/build115-python-swift-parallel-statistics.json
+            /tmp/build92-real-source-48-stage-tapes.json
+            /tmp/build92-native-ui-static.json
+          if-no-files-found: error
+      - name: Publish ONLY experimental unsigned Build125 IPA after successful true iPhoneOS compile
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH=work/build125-raw-8bit-explicit-transport-ios1651
+          TAG=ios1651-v1.8.91-build125-raw-8bit-UNSIGNED-UNVERIFIED
+          HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
+          if [ "$HEAD" != "$GITHUB_SHA" ]; then
+            echo "::error::Release forbidden: latest branch $HEAD differs from tested $GITHUB_SHA"
+            exit 1
+          fi
+          ASSET=ios/build/release/SpektraFilm-1.8.91-Build125-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+          SUM="$ASSET.sha256"
+          ID=ios/build/release/verification-build125.json
+          NOTES='Build125 v1.8.91 keeps Build124 DNG capture and adds only an explicit Apple RAW to verified JPEG8 sRGB copy for original pixel transport: a captured real Bayer DNG is preserved byte-identically, checked using DNG signature and decoded via the Apple Core Image CIRAWFilter path into a valid RAW-derived preview and edit source. The paired JPEG is not used as RAW fallback. Decode failures leave the previous edit intact and retain the DNG. Build123 native RAW capture crash guards remain. Original Python rawpy numerical equivalence and actual repeated device DNG import remain NOT CERTIFIED. Optical engine, RNG, memory controls, exports, compact UI untouched. UNSIGNED IPA requires signing. Exact SHA: '"$GITHUB_SHA"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
+            gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
+          else
+            gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
+              --target "$GITHUB_SHA" --prerelease \
+              --title "Build125 iOS16.5.1 explicit RAW to 8-bit sRGB original-pixel transport - unsigned unverified" \
+              --notes "$NOTES"
+          fi
+          gh release view "$TAG" --json tagName,url,assets
+          echo "PASS Build118 separate large-frame Float64 source grain experimental unsigned IPA at SHA $GITHUB_SHA."
