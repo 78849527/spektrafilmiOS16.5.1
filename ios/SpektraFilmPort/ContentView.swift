@@ -127,6 +127,21 @@ final class PhotoEditorModel: ObservableObject {
         let desiredName:String
     }
     private var recipeUndo:RecipeUndo?
+    // One-shot suppression: SwiftUI's @AppStorage reacts to recipe stock
+    // changes, but the recipe transaction already owns the optical render.
+    private var recipeFilmSelectionToIgnore:String?
+    private var recipePaperSelectionToIgnore:String?
+
+    func consumeRecipeFilmSelection(_ id:String) -> Bool {
+        let skip=recipeFilmSelectionToIgnore==id
+        recipeFilmSelectionToIgnore=nil
+        return skip
+    }
+    func consumeRecipePaperSelection(_ id:String) -> Bool {
+        let skip=recipePaperSelectionToIgnore==id
+        recipePaperSelectionToIgnore=nil
+        return skip
+    }
 
     init() {
         do {
@@ -538,6 +553,8 @@ final class PhotoEditorModel: ObservableObject {
         )
         isRecipeApplying=true
         setRecipeValues(recipe)
+        recipeFilmSelectionToIgnore=recipe.filmID
+        recipePaperSelectionToIgnore=recipe.paperID
         UserDefaults.standard.set(recipe.filmID,forKey:"compactFilmStock")
         UserDefaults.standard.set(recipe.paperID,forKey:"compactPaperStock")
         if let saved=recipe.embeddedLUT {
@@ -576,6 +593,8 @@ final class PhotoEditorModel: ObservableObject {
         invalidateSimulation()
         originalMetalPreviewVersion &+= 1
         setRecipeValues(undo.settings)
+        recipeFilmSelectionToIgnore=undo.settings.filmID
+        recipePaperSelectionToIgnore=undo.settings.paperID
         UserDefaults.standard.set(undo.settings.filmID,
                                   forKey:"compactFilmStock")
         UserDefaults.standard.set(undo.settings.paperID,
@@ -2782,11 +2801,17 @@ struct ContentView: View {
                     model.dismissPendingRAWChoice()
                 }
             }
-            .onChange(of: selectedFilmID) { _ in
-                if !model.isRecipeApplying { model.queueSpectralPreview() }
+            .onChange(of: selectedFilmID) { id in
+                if !model.consumeRecipeFilmSelection(id) &&
+                    !model.isRecipeApplying {
+                    model.queueSpectralPreview()
+                }
             }
-            .onChange(of: selectedPaperID) { _ in
-                if !model.isRecipeApplying { model.queueSpectralPreview() }
+            .onChange(of: selectedPaperID) { id in
+                if !model.consumeRecipePaperSelection(id) &&
+                    !model.isRecipeApplying {
+                    model.queueSpectralPreview()
+                }
             }
             .fullScreenCover(isPresented: $cameraPresented) {
                 NativeCameraScreen(
