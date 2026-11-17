@@ -1,3 +1,4 @@
+# Build122 CI: preserve historical double-tap reset source convention with 8 actual handlers.
 # Build122 retry: optical source-mode audit now tests real sourcePhysicalDirectEnabled instead of stale placeholder.
 # Build121 retry: corrected Swift interpolated switch notice strings; require parse and all source parity before release.
 # Build120 final UI-only batch: four stage-owned optical panels and diagnostics-only Advanced; source numeric routes unchanged.
