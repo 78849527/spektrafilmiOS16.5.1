@@ -1,3 +1,4 @@
+# Build120 final UI-only batch: four stage-owned optical panels and diagnostics-only Advanced; source numeric routes unchanged.
 # Build119 CI: carried-forward Build117 source gate now checks remaining allocation, not pre-resident frame bytes.\n# Build118 CI: re-run after historical Build107 shared-memory planner gate updated to productionAdditional.
 # Build117: dynamic iOS 80%-headroom admission, 3-sublayer grain buffers, carried-forward source/UI checks, full 16-case device matrix.
 # Build115 Build103 GUI audit: retain laboratory route and source parameter checks under renamed Build114 UI.
