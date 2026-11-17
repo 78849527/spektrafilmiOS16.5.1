@@ -42,7 +42,7 @@ on:
     paths:
       # Batch only: source-file commits must NOT start another Xcode build.
       # Re-run explicitly via workflow_dispatch after multi-module changes.
-      - '.github/workflows/build125-ios1651-native-dng-editor-ipa.yml'
+      - '.github/workflows/build125-ios1651-raw-8bit-ipa.yml'
   workflow_dispatch:
 
 permissions:
