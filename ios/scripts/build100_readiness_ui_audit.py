@@ -418,15 +418,15 @@ checks.update({
         "editorTab(.workflow)" in ui and
         "editorTab(.laboratory)" not in ui,
     "b100_advanced_lab_preserved":
-        'Button("实验性原版参数（未认证）")' in ui and
+        'Button("验证概况")' in ui and
         "selectEditorPage(.laboratory)" in ui and
         "case .laboratory: return AnyView(advancedControls)" in ui,
     "b100_no_source_algorithm_deleted":
         "private var activeSettings: AnyView" in ui and
-        'Text("实验性原版参数 · 保留但未完成全链认证")' in ui,
+        'Text("高级 · 验证与诊断")' in ui,
     "b100_scope_in_status_sheet":
         "source_float64_experimental" in readiness and
-        "Float64 光学（实验、未认证）" in ui and
+        "原版 Float64 光学（受控 PASS，整图未认证）" in ui and
         "源码阶段参考与自动测试 ≠ 真机整图等价认证" in ui,
     "b100_device_evidence_accessible":
         "onShareBuild100Readiness: () -> Void" in ui and
