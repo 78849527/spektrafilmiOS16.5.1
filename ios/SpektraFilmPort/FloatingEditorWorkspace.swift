@@ -2586,7 +2586,7 @@ struct FloatingEditorWorkspace: View {
                     .background(Color.primary.opacity(0.07),in:Capsule())
                 }
                 .buttonStyle(.plain)
-                .onTapGesture(count:2) {
+                .onTapGesture(count: 2) {
                     guard ready else{return}
                     value.wrappedValue=resetTo
                     changed()
@@ -3436,7 +3436,7 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption2)
                     .frame(maxWidth:.infinity,alignment:.leading)
                     .contentShape(Rectangle())
-                    .onTapGesture(count:2) {
+                    .onTapGesture(count: 2) {
                         guard enabled else{return}
                         value.wrappedValue=resetTo
                     }
@@ -3475,7 +3475,7 @@ struct FloatingEditorWorkspace: View {
             HStack(spacing:4) {
                 Text(title).font(.caption2)
                     .contentShape(Rectangle())
-                    .onTapGesture(count:2) {
+                    .onTapGesture(count: 2) {
                         guard enabled && !model.busy else{return}
                         value.wrappedValue=0
                         onCommit()
@@ -3512,7 +3512,7 @@ struct FloatingEditorWorkspace: View {
             HStack(spacing:4) {
                 Text(title).font(.caption2)
                     .contentShape(Rectangle())
-                    .onTapGesture(count:2) {
+                    .onTapGesture(count: 2) {
                         guard model.hasPhoto && !model.busy else{return}
                         value.wrappedValue=resetTo
                         model.queueSpectralPreview()
@@ -3547,7 +3547,7 @@ struct FloatingEditorWorkspace: View {
             HStack(spacing:4) {
                 Text(title).font(.caption2)
                     .contentShape(Rectangle())
-                    .onTapGesture(count:2) {
+                    .onTapGesture(count: 2) {
                         guard model.hasPhoto && !model.busy else{return}
                         value.wrappedValue=resetTo
                         onRefresh()
