@@ -34,6 +34,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild115ParallelGrain: () -> Void
     let onRunBuild116GrainMemory: () -> Void
     let onRunBuild118LargeMemory: (Int) -> Void
+    let onRunBuild133RAWMemory: (Int) -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -1353,6 +1354,28 @@ struct FloatingEditorWorkspace: View {
                         .disabled(model.busy)
                     }
                     Text("8／10／13MP 三个独立按钮。每次只测选中的一个尺寸，两条原版三亚层颗粒路线，分别导出 LOG＋JSON；保留独立闪退检查点。阶段 RSS 与耗时仅代表实测，仍可能遭遇 Jetsam。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Divider()
+                    Text("Build133：真实 RAW 逐级内存诊断（每档独立）")
+                        .font(.subheadline)
+                    ForEach(0..<5,id:\.self) { level in
+                        Button {
+                            statusReportPresented=false
+                            onRunBuild133RAWMemory(level)
+                        } label: {
+                            Label([
+                                "0 · 原尺寸预算准入（不解码）",
+                                "1 · 真实 LibRaw ACES16 解码",
+                                "2 · RAW 中心 1MP 原版 Float64",
+                                "3 · RAW 中心 4MP 原版 Float64",
+                                "4 · RAW 原尺寸原版 Float64"
+                            ][level],systemImage:"memorychip")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.busy || !model.rawOriginalSourceActive)
+                    }
+                    Text("先在图像输入检测选择「RAW 原片直通」。每次只执行选定的一档，自动采样 RSS／可分配内存，记录阶段与首错，保存闪退检查点并分享同编号 LOG＋JSON。1MP／4MP 是无插值的真实 RAW 中心裁切，仅用于诊断；第 4 档始终执行生产内存保护，禁止偷偷降精度或缩图。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()

@@ -376,13 +376,14 @@ enum SourceSpatialDIRConvolution {
         var filtered=[Double](repeating:0,count:pixels)
         // No RGB result array. One channel's original input is kept until
         // all four Gaussian passes have consumed it, then written back.
-        var channelSource=[Double](repeating:0,count:pixels)
+        // Build133: read the still-unmodified interleaved inhibitor channel
+        // directly; no separate 8 B/px source snapshot is needed.
         var accumulated=[Double](repeating:0,count:pixels)
 
         func gaussianChannel(_ channel:Int,sigma:Double) {
             if sigma <= 0 {
                 for p in 0..<pixels {
-                    filtered[p]=channelSource[p]
+                    filtered[p]=input[p*3+channel]
                 }
                 return
             }
@@ -396,7 +397,7 @@ enum SourceSpatialDIRConvolution {
                         var sum=0.0
                         for k in -radius...radius {
                             let yy=reflect(y+k,height)
-                            sum+=channelSource[yy*width+x] *
+                            sum+=input[(yy*width+x)*3+channel] *
                                 kernel[k+radius]
                         }
                         intermediate[y*width+x]=sum
@@ -418,11 +419,11 @@ enum SourceSpatialDIRConvolution {
             // and replicated-edge initial states as the original yvv().
             let (B,B1,B2,B3)=yvvCoefficients(sigma:sigma)
             for y in 0..<height {
-                var s1=channelSource[y*width]
+                var s1=input[(y*width)*3+channel]
                 var s2=s1,s3=s1
                 for x in 0..<width {
                     let p=y*width+x
-                    let v=B*channelSource[p]+B1*s1+B2*s2+B3*s3
+                    let v=B*input[p*3+channel]+B1*s1+B2*s2+B3*s3
                     intermediate[p]=v
                     s3=s2;s2=s1;s1=v
                 }
@@ -461,7 +462,6 @@ enum SourceSpatialDIRConvolution {
             (tailWeight*$0.0,tailSigma*$0.1)
         })
         for c in 0..<3 {
-            for p in 0..<pixels { channelSource[p]=input[p*3+c] }
             for (pass,(gain,sigma)) in sourcePasses.enumerated() {
                 let actualSigma:Double
                 if pass==0 {

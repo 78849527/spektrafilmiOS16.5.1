@@ -2878,6 +2878,13 @@ final class PhotoEditorModel: ObservableObject {
         return result.url
     }
 
+    /// Build133: expose the currently chosen true-original settings to the
+    /// diagnostic only; no independent approximate settings are fabricated.
+    func rawMemoryDiagnosticParameters() throws
+        -> OriginalSourcePhysicalImage.Parameters {
+        try sourcePhysicalParameters()
+    }
+
     /// Export a truthful MACHINE-READABLE checklist. Runtime metadata is
     /// observed here; all manual true-device/source parity gates remain
     /// not_run until verifiable signed evidence is supplied.
@@ -3097,6 +3104,7 @@ struct ContentView: View {
                 onRunBuild115ParallelGrain: { runBuild115ParallelGrain() },
                 onRunBuild116GrainMemory: { runBuild116GrainMemory() },
                 onRunBuild118LargeMemory: { mp in runBuild118LargeMemory(mp) },
+                onRunBuild133RAWMemory: { level in runBuild133RAWMemory(level) },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -3794,6 +3802,80 @@ struct ContentView: View {
                 }
             } catch {
                 model.status="Build119 报告保存失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
+    /// Each level is opt-in and independent. Persist a checkpoint before
+    /// LibRaw/Float64 allocation so a Jetsam leaves inspectable evidence.
+    private func runBuild133RAWMemory(_ level:Int) {
+        guard !model.busy,(0...4).contains(level),
+              let rawURL=model.capturedRAWURL,
+              model.rawOriginalSourceActive else {
+            model.status="Build133 需要先选择 RAW 原片直通精细冲印"
+            return
+        }
+        let parameters:OriginalSourcePhysicalImage.Parameters
+        do {
+            parameters=try model.rawMemoryDiagnosticParameters()
+        } catch {
+            model.status="Build133 原版光学参数不完整："+error.localizedDescription
+            return
+        }
+        guard let dims=model.source?.extent.integral,
+              dims.width>0,dims.height>0,
+              let docs=FileManager.default.urls(
+                for:.documentDirectory,in:.userDomainMask).first else {
+            model.status="Build133 RAW 原图尺寸或文件目录无效"
+            return
+        }
+        let folder=docs.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true)
+        let checkpoint=folder.appendingPathComponent(
+            "Build133-RAW-level\(level)-last-checkpoint.txt")
+        let bundle=Bundle.main
+        let version=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let commit=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        do {
+            try FileManager.default.createDirectory(
+                at:folder,withIntermediateDirectories:true)
+            try "Build133 level=\(level) status=INCOMPLETE_OR_NOT_RUN\n"
+                .write(to:checkpoint,atomically:true,encoding:.utf8)
+        } catch {
+            model.status="Build133 无法建立闪退检查点："+error.localizedDescription
+            return
+        }
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build133 RAW 档位 \(level) 真实内存分级测试运行中"
+        let w=Int(dims.width),h=Int(dims.height)
+        let os=UIDevice.current.systemVersion
+        let device=UIDevice.current.model
+        Task { @MainActor in
+            defer {model.busy=false}
+            let report=await Task.detached(priority:.userInitiated) {
+                Build133RAWMemoryLadder.capture(
+                    level:level,rawURL:rawURL,sourceWidth:w,sourceHeight:h,
+                    parameters:parameters,version:version,build:build,
+                    commit:commit,osVersion:os,deviceModel:device,
+                    checkpointURL:checkpoint)
+            }.value
+            do {
+                let pair=try Build133RAWMemoryLadder.write(report,documents:docs)
+                model.status="Build133 RAW 档位 \(level)："+report.status+
+                    (report.firstFailure.map { "｜"+$0 } ?? "")
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build133 RAW 报告保存失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }

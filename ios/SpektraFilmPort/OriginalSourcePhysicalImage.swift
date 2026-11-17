@@ -32,9 +32,11 @@ enum OriginalSourcePhysicalImage {
     // Build114: full-frame DIR now uses an in-place channel accumulator.
     // The original conservative 120 B/pixel was reduced by ONLY the 8 B/pixel
     // measured-array peak delta from replacing the 3-channel result array
-    // with per-channel source + accumulator. The 13MP safety gate still
-    // requires independent real-device RSS/Jetsam evidence.
-    static let estimatedPeakBytesPerPixel: UInt64 = 112
+    // with per-channel source + accumulator. Build133 removes the remaining
+    // 1-channel source snapshot (8 B/px), without changing FIR/YVV order.
+    // Total retained reduction against the prior 120 B/px baseline is 16.
+    // Real-device RSS/Jetsam evidence is still required.
+    static let estimatedPeakBytesPerPixel: UInt64 = 104
     // Full-size scanner finish requires an additional 3-channel Double
     // filtered result and two 1-channel Double Gaussian workspaces.
     static let scannerFinishExtraBytesPerPixel: UInt64 = 40
