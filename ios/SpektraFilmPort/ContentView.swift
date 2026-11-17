@@ -1138,6 +1138,9 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     var hasPhoto: Bool { source != nil }
+    /// Read-only actual source geometry for independent Build133 RAW probes.
+    /// The private CIImage and its backed pixels never leave the model.
+    var rawMemorySourceExtent: CGRect? { source?.extent.integral }
     /// RAW-compatible CI images do NOT satisfy direct source pixel input.
     /// Full high-depth/ICC validation still runs inside the exact pipeline.
     var originalPixelInputAvailable: Bool {
@@ -3823,7 +3826,7 @@ struct ContentView: View {
             model.status="Build133 原版光学参数不完整："+error.localizedDescription
             return
         }
-        guard let dims=model.source?.extent.integral,
+        guard let dims=model.rawMemorySourceExtent,
               dims.width>0,dims.height>0,
               let docs=FileManager.default.urls(
                 for:.documentDirectory,in:.userDomainMask).first else {
@@ -3867,8 +3870,8 @@ struct ContentView: View {
             }.value
             do {
                 let pair=try Build133RAWMemoryLadder.write(report,documents:docs)
-                model.status="Build133 RAW 档位 \(level)："+report.status+
-                    (report.firstFailure.map { "｜"+$0 } ?? "")
+                model.status = "Build133 RAW 档位 \(level)：" + report.status +
+                    (report.firstFailure.map { "｜" + $0 } ?? "")
                 if diagnosticDismissPending {
                     diagnosticPendingFeedback=pair
                 } else {

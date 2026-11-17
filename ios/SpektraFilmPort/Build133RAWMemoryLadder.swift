@@ -138,10 +138,12 @@ enum Build133RAWMemoryLadder {
                 phase:label,seconds:Date().timeIntervalSince(started),
                 residentBytes:resident(),processAvailableBytes:available()
             ))
-            let checkpoint="Build133 RAW diagnostic\n"+
-                "level=\(level) phase=\(label) status=INCOMPLETE\n"+
-                "source=\(sourceWidth)x\(sourceHeight) commit=\(commit)\n"+
-                "If iOS terminates this process, preserve this checkpoint.\n"
+            let checkpoint = [
+                "Build133 RAW diagnostic",
+                "level=\(level) phase=\(label) status=INCOMPLETE",
+                "source=\(sourceWidth)x\(sourceHeight) commit=\(commit)",
+                "If iOS terminates this process, preserve this checkpoint."
+            ].joined(separator:"\n") + "\n"
             try? checkpoint.write(to:checkpointURL,atomically:true,encoding:.utf8)
         }
         sampler.start()
@@ -217,10 +219,12 @@ enum Build133RAWMemoryLadder {
         mark("finished")
         let observations=sampler.finish()
         let endingHeadroom=available()
-        let final="Build133 level=\(level) status=\(status)\n"+
-            "firstFailure=\(failure ?? "none")\n"+
-            "lastPhase=\(phaseSamples.last?.phase ?? "none")\n"+
-            "sampledPeakRSS=\(observations.peak.map(String.init) ?? "not_measured")\n"
+        let final = [
+            "Build133 level=\(level) status=\(status)",
+            "firstFailure=\(failure ?? "none")",
+            "lastPhase=\(phaseSamples.last?.phase ?? "none")",
+            "sampledPeakRSS=\(observations.peak.map { String($0) } ?? "not_measured")"
+        ].joined(separator:"\n") + "\n"
         try? final.write(to:checkpointURL,atomically:true,encoding:.utf8)
         return Report(
             schema:1,version:version,build:build,sourceCommit:commit,
@@ -250,20 +254,20 @@ enum Build133RAWMemoryLadder {
         let encoder=JSONEncoder()
         encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
         try encoder.encode(report).write(to:json,options:.atomic)
-        var lines=[
+        var lines:[String] = [
             "Build133 original RAW staged memory test",
             "App \(report.version) Build\(report.build) SHA \(report.sourceCommit)",
             "Level \(report.level), status \(report.status)",
             "RAW \(report.sourceWidth)x\(report.sourceHeight), tested \(report.testedWidth ?? 0)x\(report.testedHeight ?? 0)",
             "First failure: \(report.firstFailure ?? "none")",
-            "Headroom before/after: \(report.beforeHeadroom.map(String.init) ?? "none") / \(report.afterHeadroom.map(String.init) ?? "none")",
-            "Peak sampled RSS: \(report.sampledPeakRSS.map(String.init) ?? "none")",
-            "Minimum headroom: \(report.lowestHeadroom.map(String.init) ?? "none")",
+            "Headroom before/after: \(report.beforeHeadroom.map { String($0) } ?? "none") / \(report.afterHeadroom.map { String($0) } ?? "none")",
+            "Peak sampled RSS: \(report.sampledPeakRSS.map { String($0) } ?? "none")",
+            "Minimum headroom: \(report.lowestHeadroom.map { String($0) } ?? "none")",
             "RSS samples: \(report.sampleCount)",
-            "Checksum: \(report.outputChecksum.map(String.init) ?? "none")"
+            "Checksum: \(report.outputChecksum.map { String($0) } ?? "none")"
         ]
         for phase in report.phases {
-            lines.append("\(phase.phase): t=\(phase.seconds)s rss=\(phase.residentBytes.map(String.init) ?? "none") available=\(phase.processAvailableBytes.map(String.init) ?? "none")")
+            lines.append("\(phase.phase): t=\(phase.seconds)s rss=\(phase.residentBytes.map { String($0) } ?? "none") available=\(phase.processAvailableBytes.map { String($0) } ?? "none")")
         }
         lines.append(contentsOf:report.limitations)
         try lines.joined(separator:"\n").write(

@@ -1,3 +1,4 @@
+# Build133 Swift typecheck fix: explicit multiline checkpoint strings and read-only source geometry.
 # Build133 current memory ledger is 104 B/px after source scratch reuse; retained full FIR/YVV parity.
 # Build133 compile fix: RAW JPEG optional confirmedPlan explicitly unwrapped, fail closed before export; no source optical change.
 # Build133 P1 signed ACES/ProPhoto meter: preserve actual colour-science Y coefficients incl zero/negative; no invented positive-only admission.
