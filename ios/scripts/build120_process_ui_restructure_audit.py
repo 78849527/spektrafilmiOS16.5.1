@@ -41,6 +41,10 @@ contains('sourceModeControl("8-bit 原版 DIR 像素直连（实验）",mode:.pi
 contains('processingModeBar.padding(.horizontal,10)',workflow,
          "mode selection remains in workflow")
 contains("requestSourceMode(.physical)",ui,"physical mode confirm")
+contains('DisclosureGroup("原版色域路线 · Oklch / CAM16-UCS")',camera,
+         "source gamut on demand in camera stage")
+contains('sourceColorRouteControls',camera,"source gamut bound in camera")
+assert 'sourceColorRouteControls\n                        .padding(.horizontal,10)' not in workflow, "large gamut selector must not occupy fixed dock header"
 contains('primaryButton: .default(Text("确认并切换"))',ui,
          "existing confirmation dependencies")
 for label in ["光谱重建 · UV / IR 参数","摄影扩散 · 原版 PSF 参数",
