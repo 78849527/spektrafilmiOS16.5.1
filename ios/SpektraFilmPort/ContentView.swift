@@ -144,10 +144,10 @@ final class PhotoEditorModel: ObservableObject {
                     dimensions:"\(result.admission.dimensions) · Apple RAW → Float32 TIFF",
                     inputProfile:result.admission
                 )
-                status="RAW→Float32 "+result.admission.color.rawValue+
+                status = "RAW→Float32 " + result.admission.color.rawValue +
                     " TIFF 已通过真实位深／ICC 入口验证，" +
-                    "可在符合 DIR／全光学前置条件时使用 Float64 像素路径；"
-                    + "没有 8-bit 中间 JPEG。原 DNG 无损保留。" +
+                    "可在符合 DIR／全光学前置条件时使用 Float64 像素路径；" +
+                    "没有 8-bit 中间 JPEG。原 DNG 无损保留。" +
                     "注意：Apple RAW 去马赛克／色彩管理与 Python rawpy 不保证等价。"
             } catch {
                 status="RAW→Float32 高位深入口拒绝／失败，原照片、冲印与 DNG 保留：" +
