@@ -84,7 +84,7 @@ check('title:"效果强度",value:Binding(' in ui and
 check("Text(\"点右侧数值精确输入 · 双击左侧名称复原\")" in ui,
       "explicit new numeric semantics")
 check('primaryButton: .default(Text("确认并切换"))' in ui and
-      "originalSource" in main,"optical model not switched")
+      "sourcePhysicalDirectEnabled" in main,"original precision mode confirmation unchanged")
 check("private func switchInfoButton(" in ui and
       "private func resetToggle(" in ui,"Build121 ! preserved")
 check("private var photoFloatingNotices:some View" in ui and
