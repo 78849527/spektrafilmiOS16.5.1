@@ -374,10 +374,10 @@ enum OriginalSourcePhysicalImage {
         guard nonFinite==0,outOfRange==0 else {
             throw Failure.invalid(
                 "逐像素原版显影 RGB 检测不通过：" +
-                " min="+String(minimum)+
-                " max="+String(maximum)+
-                " 超出0～1通道="+String(outOfRange)+
-                " 非有限通道="+String(nonFinite)+
+                " min=" + String(minimum) +
+                " max=" + String(maximum) +
+                " 超出0～1通道=" + String(outOfRange) +
+                " 非有限通道=" + String(nonFinite) +
                 "。Float32 高动态输入可在「精细冲印」明确生成" +
                 "0～1 映射工作副本（保留浮点位深但改变输入颜色值）。" +
                 "不会自动裁切、转 8-bit 或切换快速模式。"
