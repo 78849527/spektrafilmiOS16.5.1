@@ -7,18 +7,13 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.87"
-    CURRENT_PROJECT_VERSION: "121"
-packages:
-  NextLevel:
-    path: Vendor/NextLevel
+    MARKETING_VERSION: "1.8.88"
+    CURRENT_PROJECT_VERSION: "122"
 targets:
   SpektraFilmPort:
     type: application
     platform: iOS
     deploymentTarget: "16.5"
-    dependencies:
-      - package: NextLevel
     sources:
       - path: SpektraFilmPort
         excludes:
