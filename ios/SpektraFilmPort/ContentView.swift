@@ -1744,7 +1744,9 @@ final class PhotoEditorModel: ObservableObject {
                     title: "实测光谱 · \(selectionDescription) (实验)",
                     dimension: 17, rgbaFloatData: result.0
                 )
-                strength = 1.0
+                // A saved recipe's explicit strength is authoritative.
+                // Normal stock selection retains the original 100% default.
+                if !isRecipeApplying { strength = 1.0 }
                 do {
                     try refresh()
                 } catch {
@@ -1757,25 +1759,34 @@ final class PhotoEditorModel: ObservableObject {
                     throw error
                 }
                 simulationAwaitingCurrentSettings=false
-                status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。" +
-                    (requiresSpatialDIRStage
-                        ? "DIR 空间抑制扩散 → 显影密度 → 光谱印相已启用。"
-                        : (requiresGrainStage
-                            ? "显影密度颗粒 → 原版印相链路已启用。"
-                            : "原版光谱链路已启用。"))
+                if isRecipeApplying {
+                    // Exact/Metal/DIR previews finish asynchronously. Keep
+                    // the undo snapshot until the real preview is available.
+                    if processedPreview != nil { finishRecipePreview() }
+                } else {
+                    status = "已应用 \(selectionDescription)，胶片 \(String(format: "%+.2f", cameraExposure)) EV。" +
+                        (requiresSpatialDIRStage
+                            ? "DIR 空间抑制扩散 → 显影密度 → 光谱印相已启用。"
+                            : (requiresGrainStage
+                                ? "显影密度颗粒 → 原版印相链路已启用。"
+                                : "原版光谱链路已启用。"))
+                }
             } catch {
                 guard Build99InteractionRules.acceptsPreview(
                     generation:generation, current:renderGeneration
                 ) else { return }
-                // Keep dirty state: a stale LUT cannot be exported under
-                // the currently selected film/paper label.
-                processedPreview=nil
-                status = "当前胶片/相纸模拟失败，导出已锁定：" +
-                    error.localizedDescription
+                if isRecipeApplying {
+                    rejectRecipePreview(error.localizedDescription)
+                } else {
+                    // A stale LUT must never export under the new stock.
+                    processedPreview=nil
+                    status = "当前胶片/相纸模拟失败，导出已锁定：" +
+                        error.localizedDescription
+                }
             }
             if activeSimulationGeneration == generation {
                 activeSimulationGeneration=nil
-                busy=false
+                if !isRecipeApplying { busy=false }
             }
         }
     }
@@ -1833,12 +1844,18 @@ final class PhotoEditorModel: ObservableObject {
                         self.status=(physical == nil
                             ? "原版 8-bit 像素直连预览成功 · "
                             : "逐像素原版光学预览成功 · ") + self.photoDimensions
+                        self.finishRecipePreview()
                     }
                 } catch {
                     await MainActor.run {
                         guard revision==self.originalMetalPreviewVersion else {return}
-                        self.processedPreview=nil
-                        self.status = "原版 8-bit 像素直连失败（禁止回退）：" + error.localizedDescription
+                        if self.isRecipeApplying {
+                            self.rejectRecipePreview(error.localizedDescription)
+                        } else {
+                            self.processedPreview=nil
+                            self.status = "原版 8-bit 像素直连失败（禁止回退）：" +
+                                error.localizedDescription
+                        }
                     }
                 }
             }
@@ -1873,14 +1890,19 @@ final class PhotoEditorModel: ObservableObject {
                             ? "SciPy 原版序列 + Metal 显影预览完成 · "
                             : "原版 Metal 颗粒预览完成 · ") +
                             self.photoDimensions
+                        self.finishRecipePreview()
                     }
                 } catch {
                     await MainActor.run {
                         guard revision == self.originalMetalPreviewVersion
                         else { return }
-                        self.processedPreview=nil
-                        self.status = "原版 Metal 显影失败（未退回快速模式）：" +
-                            error.localizedDescription
+                        if self.isRecipeApplying {
+                            self.rejectRecipePreview(error.localizedDescription)
+                        } else {
+                            self.processedPreview=nil
+                            self.status = "原版 Metal 显影失败（未退回快速模式）：" +
+                                error.localizedDescription
+                        }
                     }
                 }
             }
@@ -1911,13 +1933,18 @@ final class PhotoEditorModel: ObservableObject {
                         guard revision==self.originalMetalPreviewVersion else {return}
                         self.processedPreview=preview
                         self.status="原版空间 DIR FIR/YVV 预览完成 · "+self.photoDimensions
+                        self.finishRecipePreview()
                     }
                 } catch {
                     await MainActor.run {
                         guard revision==self.originalMetalPreviewVersion else {return}
-                        self.processedPreview=nil
-                        self.status="原版空间 DIR 失败（没有降级 CI 近似）：" +
-                            error.localizedDescription
+                        if self.isRecipeApplying {
+                            self.rejectRecipePreview(error.localizedDescription)
+                        } else {
+                            self.processedPreview=nil
+                            self.status="原版空间 DIR 失败（没有降级 CI 近似）：" +
+                                error.localizedDescription
+                        }
                     }
                 }
             }
