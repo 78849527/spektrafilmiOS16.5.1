@@ -43,19 +43,21 @@ enum Build78FloatTIFFIngress {
                 "Build78 TIFF 不是可验证的 IEEE754 Float16/Float32 通道"
             )
         }
-        // ImageIO represents float-channel TIFF sRGB pixels with the
-        // explicitly named EXTENDED sRGB ICC model to preserve negative
-        // and above-white values. This is extended-encoded sRGB, NOT
-        // extendedLinearSRGB and not an untagged/Display P3 profile.
-        // Numeric samples are passed through untouched to Float64; the
-        // downstream original spectral model still independently guards
-        // unsupported out-of-[0,1] ranges (no quiet clipping).
+        // Build129: iOS 16.5.1 sometimes exposes an explicitly
+        // color-managed RGBAf TIFF as *standard* sRGB after ImageIO.
+        // The proof is its real TIFF container, IEEE Float32 bitmap
+        // samples, and CFEqual-decoded ICC profile. Accept standard sRGB
+        // ONLY for Float32; Float16 remains extended sRGB only.
+        // Neither path re-tags bytes, clips out-of-range values, converts
+        // ICC, or treats P3/untagged/extended-linear as encoded sRGB.
         guard let colour=image.colorSpace,colour.model == .rgb,
               let extended=CGColorSpace(name:CGColorSpace.extendedSRGB),
-              CFEqual(colour,extended) else {
+              let srgb=CGColorSpace(name:CGColorSpace.sRGB),
+              (CFEqual(colour,extended) ||
+               (image.bitsPerComponent==32 && CFEqual(colour,srgb))) else {
             throw Failure.invalid(
-                "Build78 Float32 TIFF 必须明确标注 extended sRGB；"
-                + "未标记、P3 或 extended-linear 不能暗中当作编码 sRGB"
+                "Build78 Float32 TIFF 必须真实标注 sRGB 或 extended sRGB；"
+                + "Float16 只接受 extended sRGB，未标记/P3/extended-linear 拒绝"
             )
         }
         try OriginalSourcePixelIO.validatePixelDimensions(
