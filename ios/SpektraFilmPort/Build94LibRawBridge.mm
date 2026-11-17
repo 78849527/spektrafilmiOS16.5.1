@@ -113,7 +113,7 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
             w * h > (uint64_t)maximumAllowedPixels) {
             SFBuild94Fail(error, 11, [NSString stringWithFormat:
                 @"P1：真实 RAW 为 %llu×%llu，超过本机当前全光学 %ld 像素上限；"
-                 "解包前拒绝，不降尺寸、不改数据、不转快速模式",
+                 @"解包前拒绝，不降尺寸、不改数据、不转快速模式",
                 (unsigned long long)w, (unsigned long long)h,
                 (long)maximumAllowedPixels]);
             break;

@@ -33,6 +33,10 @@ targets:
         buildPhase: resources
       - path: tests/SourcePhysicalImageParity.swift
         buildPhase: sources
+      # P1 test-only RAW input oracle compare is compiled in the same iPhoneOS
+      # module; it is NOT a release parity certificate until real RAW taps run.
+      - path: tests/P1RawpySourcePixelComparison.swift
+        buildPhase: sources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.twogou.spektrafilmport

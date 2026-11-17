@@ -89,3 +89,7 @@ The existing sRGB fast routes and decoder-only RAW pixel comparison use
 This prevents allocating a 40MP RAW frame only to fail the current
 full-optical memory/geometry check. It does NOT implement 40MP optical
 processing or establish optical engine RAW parity.
+
+The comparison helper now participates in the iPhoneOS target source list
+for a real Swift compile gate at the next **combined P1** build. Adding it
+to a target does not execute RAW reference comparisons or certify parity.
