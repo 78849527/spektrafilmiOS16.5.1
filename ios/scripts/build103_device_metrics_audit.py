@@ -168,8 +168,12 @@ checks.update({
         "bytes <= available / 100 * 70" in tiff and
         "width <= 45_000_000 / height" in tiff,
     "tiff16_not_original_float64_fallback":
-        "tiff16 && sourcePixelIOEnabled" in main and
-        "guard !sourcePixelIOEnabled else" in main,
+        "if tiff16 && sourcePixelIOEnabled &&" in main and
+        "guard sourcePhysicalDirectEnabled else" in main and
+        "try OriginalSourcePixelIO.exportPhysicalOriginalFile(" in main and
+        "bytes,parameters:physical,format:.tiff," in main and
+        "bitDepth:16,outputSpace:\"sRGB\"" in main and
+        "if tiff16 && !sourcePixelIOEnabled" in main,
     "tiff16_processed_existing_chain":
         "static func exportTIFF16(" in processor and
         "let image = try apply(" in processor and
