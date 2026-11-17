@@ -25,7 +25,7 @@ numba=json.loads(numba_path.read_text())
 assert numba["source_default_unseeded_prange_statistical_gate"]=="PASS"
 assert numba["ios_source_unseeded_parallel_rng_certified"] is False
 for blob,term in [
-    (src,"estimatedPeakBytesPerPixel: UInt64 = 112"),
+    (src,"estimatedPeakBytesPerPixel: UInt64 = 104"),
     (src,"diffuseInPlaceMemoryBounded("),
     (conv,"func diffuseInPlaceMemoryBounded("),
     (test,"reference[k].bitPattern != inPlace[k].bitPattern"),
@@ -51,7 +51,7 @@ report={
     },
     "certification_gates":[
         {"name":"13MP source optical",
-         "ci_status":"inplace_source_112Bpx_and_7_case_bitwise_regression",
+         "ci_status":"inplace_source_104Bpx_and_7_case_bitwise_regression",
          "required_real_device":"5000x2600 measured RSS/Jetsam with no-grain baseline; extra feature combinations separate",
          "fully_certified":False},
         {"name":"Python original whole-image",
