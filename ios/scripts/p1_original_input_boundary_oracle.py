@@ -8,23 +8,39 @@ import json
 from pathlib import Path
 import sys
 import types
-import importlib.util
+import ast
 import numpy as np
+import colour
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src/spektrafilm/utils/spectral_upsampling.py"
-# The original package root eagerly imports optional RAW/exiv2 bindings.
-# CI already validates the original light-weight optical modules without
-# those optional dependencies by setting namespace package search paths.
-# Do not reimplement the source algorithm or silently install new packages.
+# This standalone ORIGINAL spectral-input oracle executes byte-for-byte
+# function definitions parsed from the pinned Python source files. Importing
+# the entire spektrafilm package eagerly pulls EXIF/RAW codecs (exiv2,
+# OpenImageIO), which are irrelevant to the D55 _rgb_to_tc_b stage and are
+# not installed in the fixed CI NumPy/colour stack. Do not replace the
+# original equations or invent an illuminant; select exact original AST
+# functions and their ORIGINAL observer constants, with no modifications.
 package_root = ROOT / "src/spektrafilm"
-for name, directory in (
-    ("spektrafilm", package_root),
-    ("spektrafilm.utils", package_root / "utils"),
-):
-    package = types.ModuleType(name)
-    package.__path__ = [str(directory)]
-    sys.modules[name] = package
+namespace_package = types.ModuleType("spektrafilm")
+namespace_package.__path__ = [str(package_root)]
+sys.modules["spektrafilm"] = namespace_package
+
+
+def load_original_functions(path: Path, names: tuple[str, ...], scope: dict) -> None:
+    tree=ast.parse(path.read_text(),filename=str(path))
+    picked=[
+        node for node in tree.body
+        if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef))
+        and node.name in names
+    ]
+    if set(names)!={node.name for node in picked}:
+        raise RuntimeError("Pinned Python original functions changed: "+str(names))
+    # Compile ORIGINAL AST, preserving every expression, branch and constant.
+    function_module=ast.Module(body=picked,type_ignores=[])
+    ast.fix_missing_locations(function_module)
+    exec(compile(function_module,str(path),"exec"),scope)
+
 
 # Negative, superwhite, zero, out-of-gamut and ordinary inputs.
 # Keep values verbatim; source only bounds final TC LUT lookup, not raw RGB.
@@ -46,14 +62,23 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
 
-    module_name = "spektrafilm.utils.spectral_upsampling"
-    spec = importlib.util.spec_from_file_location(module_name, SOURCE)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Cannot load pinned Python original optical source")
-    original = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = original
-    spec.loader.exec_module(original)
-    _rgb_to_tc_b = original._rgb_to_tc_b
+    from spektrafilm.config import SPECTRAL_SHAPE, STANDARD_OBSERVER_CMFS
+    scope={
+        "np":np,"colour":colour,
+        "SPECTRAL_SHAPE":SPECTRAL_SHAPE,
+        "STANDARD_OBSERVER_CMFS":STANDARD_OBSERVER_CMFS,
+    }
+    # The D55 branch of original standard_illuminant does not use
+    # optional lens filters or metadata I/O; no dependency is mocked.
+    load_original_functions(
+        package_root / "model" / "illuminants.py",
+        ("black_body_spectrum","standard_illuminant"),scope
+    )
+    load_original_functions(
+        SOURCE,("_tri2quad","_illuminant_to_xy","_rgb_to_tc_b"),scope
+    )
+    _rgb_to_tc_b=scope["_rgb_to_tc_b"]
+    assert len(scope["standard_illuminant"]("D55"))==len(SPECTRAL_SHAPE.wavelengths)
     cases = []
     for color_space, cctf in [
         ("sRGB", True),
