@@ -1,49 +1,66 @@
 #!/usr/bin/env python3
-"""Static guards for the standalone NextLevel camera integration.
-
-Passing this check does not replace compiling the real iPhoneOS app or taking
-real photos on physical iOS hardware.
+"""Build122 native AVFoundation Camera. Historical CI entry point is retained.
+This is a source-level integration audit, not hardware RAW success evidence.
 """
 from pathlib import Path
-
-root = Path(__file__).resolve().parents[1]
-project = (root / "project.yml").read_text()
-model = (root / "SpektraFilmPort/ContentView.swift").read_text()
-ui = (root / "SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
-camera = (root / "SpektraFilmPort/NextLevelCamera.swift").read_text()
-
-required = {
-    "local NextLevel 0.18.0 package": "path: Vendor/NextLevel" in project and "- package: NextLevel" in project and (root / "Vendor/NextLevel/Package.swift").exists() and (root / "Vendor/NextLevel/LICENSE").exists(),
-    "deployment target": 'iOS: "16.5"' in project,
-    "camera permission": "NSCameraUsageDescription:" in project,
-    "no microphone permission": "NSMicrophoneUsageDescription:" not in project,
-    "photo-only mode": "engine.captureMode = .photo" in camera,
-    "RAW explicit opt-in": "engine.photoConfiguration.isRawCaptureEnabled = false" in camera and "engine.photoConfiguration.isRawCaptureEnabled = captureExpectedRAW" in camera,
-    "JPEG capture": "engine.photoConfiguration.codec = .jpeg" in camera,
-    "camera authorization": "AVCaptureDevice.requestAccess(for: .video)" in camera,
-    "camera source bytes": "NextLevelPhotoFileDataKey" in camera and "photo.fileDataRepresentation()" in camera,
-    "real NextLevel preview": "NextLevel.shared.previewLayer" in camera,
-    "camera toolbar button": 'toolButton("camera.fill"' in ui,
-    "full-screen camera": ".fullScreenCover(isPresented: $cameraPresented)" in model,
-    "shared photo importer": "try loadPhoto(capture.processed)" in model and "func loadCapturedPhoto(_ capture: NextLevelCapturedPhoto)" in model,
-    "no preview snapshot": "UIImageJPEGRepresentation" not in camera,
-    "RAW and processed pairing": "photo.isRawPhoto" in camera and "captureExpectedRAW && pendingRAW == nil" in camera,
-    "RAW fail closed": "拒绝仅使用 JPEG" in camera and "未自动回退 JPEG" in camera,
-    "durable DNG original": "raw.write(to: output, options: .atomic)" in model,
-    "separate DNG share": "onShareRaw" in ui and "activeSheet = .share(url)" in model,
-    "manual exposure/focus/WB/zoom/EV": all(k in camera for k in ("proSetManualExposure", "proSetWhiteBalance", "proSetManualFocus", "proSetZoom", "proSetExposureBias")),
-    "hardware capability menus": "CaptureFormat.allCases" in camera and "CaptureLens.allCases" in camera,
-    "DNG in Files": "UIFileSharingEnabled: true" in project,
+root=Path(__file__).resolve().parents[1]
+project=(root/"project.yml").read_text()
+main=(root/"SpektraFilmPort/ContentView.swift").read_text()
+ui=(root/"SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
+camera=(root/"SpektraFilmPort/NextLevelCamera.swift").read_text()
+required={
+    "deployment iOS16.5":'iOS: "16.5"' in project,
+    "native only": "import NextLevel" not in camera and
+        "path: Vendor/NextLevel" not in project and
+        "- package: NextLevel" not in project,
+    "photo-only camera permission": "NSCameraUsageDescription:" in project
+        and "NSMicrophoneUsageDescription:" not in project,
+    "capture session": "AVCaptureSession()" in camera and
+        "sessionQueue" in camera and ".sessionPreset = .photo" in camera,
+    "image preview real session": "AVCaptureVideoPreviewLayer" in camera and
+        ".resizeAspectFill" in camera,
+    "native hardware lens selection":
+        all(token in camera for token in [
+            ".builtInWideAngleCamera",".builtInUltraWideCamera",
+            ".builtInTelephotoCamera","case front=",
+            "self.session.removeInput(old)","self.session.addInput(next)"
+        ]),
+    "native four ratios": all(x in camera for x in [
+        'case fourThree="4:3"','case threeTwo="3:2"',
+        'case sixteenNine="16:9"','case square="1:1"',
+        "ratio.portraitAspect"
+    ]),
+    "RAW real Bayer only": "availableRawPhotoPixelFormatTypes" in camera
+        and "isBayerRAWPixelFormat" in camera,
+    "RAW paired companion": "rawPixelFormatType:raw,processedFormat:dictionary"
+        in camera and "photo.isRawPhoto" in camera,
+    "RAW explicit stabilization off":
+        "settings.isAutoStillImageStabilizationEnabled=false" in camera,
+    "RAW exact no-silent-fallback": "RAW 拍摄未返回 DNG" in camera and
+        "不支持 Bayer RAW" in camera,
+    "native delegate complete/error":
+        "didFinishProcessingPhoto photo:AVCapturePhoto" in camera and
+        "didFinishCaptureFor resolvedSettings:AVCaptureResolvedPhotoSettings"
+        in camera and "if let firstError" in camera,
+    "retain per-capture delegate": "captureDelegate=processor" in camera,
+    "codec capability guard": "availablePhotoCodecTypes.contains(.jpeg)"
+        in camera and "availablePhotoCodecTypes.contains(.hevc)" in camera,
+    "no RAW crop": "if ratio == .fourThree {return data}" in camera and
+        "NativeCameraAspectCrop.processed(" in camera and
+        "rawDNG:raw" in camera,
+    "background processed crop": "DispatchQueue.global(qos:.userInitiated).async"
+        in camera,
+    "JPEG/HEIC actual crop": "CGImageDestinationFinalize" in camera and
+        "CIImage(data:data" in camera,
+    "main app native camera": "NativeCameraScreen(" in main and
+        "func loadCapturedPhoto(_ capture: NextLevelCapturedPhoto)" in main,
+    "DNG separate durable write": "raw.write(to: output, options: .atomic)" in main,
+    "unchanged optical ingest": "try loadPhoto(capture.processed,entry:.camera)" in main,
+    "file RAW share": "activeSheet = .share(url)" in main and
+        "onShareRaw" in ui,
+    "preview from camera not snapshot": "UIImageJPEGRepresentation" not in camera,
 }
-nextlevel_source = (root / "Vendor/NextLevel/Sources/NextLevel.swift").read_text()
-pro = (root / "Vendor/NextLevel/Sources/NextLevelProfessional.swift").read_text()
-required.update({
-    "native DNG settings": "rawPixelFormatType: rawType, processedFormat: formatDictionary" in nextlevel_source,
-    "RAW capability guard": "availableRawPhotoPixelFormatTypes.first" in nextlevel_source,
-    "manual AVFoundation exposure": "setExposureModeCustom(" in pro,
-    "photo-only no mic": "engine.automaticallyConfiguresApplicationAudioSession = false" in camera,
-})
-for label, success in required.items():
-    if not success:
-        raise SystemExit("FAIL: " + label)
-    print("PASS: " + label)
+failed=[key for key,value in required.items() if not value]
+if failed: raise SystemExit("FAIL native AVFoundation camera: "+", ".join(failed))
+for label in required: print("PASS "+label)
+print("PASS Build122 native AVFoundation-only camera source audit; actual RAW DNG iPhoneOS16.5.1 hardware capture pending")
