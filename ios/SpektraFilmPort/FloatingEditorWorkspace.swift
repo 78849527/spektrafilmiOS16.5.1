@@ -830,6 +830,11 @@ struct FloatingEditorWorkspace: View {
             }
             .confirmationDialog("原版像素输入检测",isPresented:$sourceInputCompatibilityAlert,
                                 titleVisibility:.visible) {
+                if model.rawFastModeActive && model.capturedRAWURL != nil && !model.busy {
+                    Button("生成 RAW 的 8-bit sRGB 副本（保留 DNG）") {
+                        model.convertActiveRAWTo8BitSRGBCopy()
+                    }
+                }
                 if model.photoP3ConversionPossible && !model.busy {
                     Button("转换 P3 为 sRGB 副本") {
                         do {
@@ -1149,9 +1154,11 @@ struct FloatingEditorWorkspace: View {
                         .lineLimit(1)
                     Text(model.photoDirectInputReady
                          ? "原版像素输入预检通过"
-                         : (model.photoP3ConversionPossible
-                            ? "P3 需明确转换为 sRGB；点此转换"
-                            : "原版像素输入不可用；点此查看原因"))
+                         : (model.rawFastModeActive
+                            ? "胶片效果正常；8-bit 原版直连需生成明确副本"
+                            : (model.photoP3ConversionPossible
+                                ? "P3 需明确转换为 sRGB；点此转换"
+                                : "原版像素输入不可用；点此查看原因")))
                         .font(.system(size:10))
                         .lineLimit(1)
                 }
