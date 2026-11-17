@@ -53,6 +53,7 @@ struct FloatingEditorWorkspace: View {
     // Confirm before changing any OTHER user-selected settings.
     @State private var pendingSourceMode: SourceModeChange?
     @State private var sourceInputCompatibilityAlert=false
+    @State private var float32RangeCopyConfirmation=false
     // Build121: diagnostic copy is transient UI state, never a new optical
     // preference or a way to bypass the existing production dependencies.
     @State private var switchExplanation:SwitchExplanation?
@@ -853,6 +854,11 @@ struct FloatingEditorWorkspace: View {
                         model.convertActivePhotoToFloat32Copy()
                     }
                 }
+                if model.float32RangeWorkingCopyPossible && !model.busy {
+                    Button("Float32 RGB 超出 0～1？明确生成范围映射 TIFF 工作副本") {
+                        float32RangeCopyConfirmation=true
+                    }
+                }
                 if model.photoP3ConversionPossible && !model.busy {
                     Button("转换 P3 为 sRGB 副本") {
                         do {
@@ -865,6 +871,21 @@ struct FloatingEditorWorkspace: View {
                 Button("关闭",role:.cancel) {}
             } message: {
                 Text(model.photoInputSummary+"。"+model.photoInputExplanation)
+            }
+            .confirmationDialog(
+                "Float32 TIFF 数值范围映射（会改变颜色数据）",
+                isPresented:$float32RangeCopyConfirmation,
+                titleVisibility:.visible
+            ) {
+                Button("确认生成新的 Float32 0～1 范围映射副本") {
+                    model.convertFloat32ToBoundedWorkingCopy()
+                }
+                Button("取消",role:.cancel) {}
+            } message: {
+                Text("原版显影只接受 0～1 RGB；原始 Float32 TIFF 可能含负值和大于 1 的高光。" +
+                     "明确转换将使用全图统一线性映射，保留 Float32、通道顺序和 RGB 相对次序，" +
+                     "但会改变原始颜色和曝光数值，因此不属于输入数值完全等价。" +
+                     "源照片/DNG 保留，不会自动裁切、转 JPEG 或降低位深。")
             }
             .alert(item: $pendingSourceMode) { mode in
                 Alert(
@@ -2065,6 +2086,17 @@ struct FloatingEditorWorkspace: View {
                 // MUST open the RAW/ordinary-photo compatibility dialog.
                 .disabled(!model.hasPhoto || model.busy)
                 .accessibilityHint("点击后检查照片输入；不符合时提供 RAW Float32 或普通照片高位深副本选项；条件符合后再确认光学依赖")
+            }
+            if model.float32RangeWorkingCopyPossible {
+                Button {
+                    float32RangeCopyConfirmation=true
+                } label: {
+                    Text("Float32 颜色范围错误？明确生成 0～1 高位深工作副本")
+                        .font(.caption2)
+                        .frame(maxWidth:.infinity,alignment:.leading)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityHint("必须确认会改变输入 RGB 数值；保留原 TIFF 和 DNG，不会降低到 8-bit")
             }
             if !model.originalPixelInputAvailable && model.hasPhoto {
                 Text("原版像素尚未认证。点「精细冲印」打开输入检测，可明确生成高位深 TIFF 副本；不会自动降为 8-bit。")
