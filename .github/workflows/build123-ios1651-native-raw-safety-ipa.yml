@@ -1,3 +1,4 @@
+# Build123 iOS16.5.1: explicit NS_SWIFT_NAME avoids Swift 5 Objective-C method-name inference mismatch for RAW exception wrapper.
 # Build123: inherited static GUI checks now require guarded Apple AVFoundation capture instead of direct unguarded call.
 # Build122 UIKit thumb draw: use UIGraphicsImageRendererContext.cgContext.fillEllipse (Apple-supported API).
 # Build122 Swift parser fix: compact UIKit slider tint assignments now use explicit infix whitespace.
