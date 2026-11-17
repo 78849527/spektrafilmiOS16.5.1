@@ -236,6 +236,7 @@ jobs:
                 # historical strict source-scope regression.
                 'ios/SpektraFilmPort/Build94LibRawIngress.swift',
                 'ios/SpektraFilmPort/P1OriginalRawACESIngress.swift',
+      'ios/SpektraFilmPort/Build133RAWMemoryLadder.swift',
                 'ios/SpektraFilmPort/OriginalHanatosResponse.swift',
                 'ios/SpektraFilmPort/OriginalSourceCameraOptics.swift',
                 'ios/SpektraFilmPort/SpectralPhysics.swift'
