@@ -30,4 +30,19 @@ NS_ASSUME_NONNULL_BEGIN
                                      error:(NSError * _Nullable * _Nullable)error
     NS_SWIFT_NAME(decode(_:bitsPerComponent:));
 @end
+
+/// Build123: Objective-C AVFoundation immediate settings-validation guard.
+/// capturePhoto(with:delegate:) may raise NSInvalidArgumentException rather
+/// than return a Swift Error when the RAW settings combination is illegal.
+/// This wrapper catches ONLY the synchronous call. It cannot catch
+/// asynchronous camera-process or iOS Jetsam crashes; those remain explicit.
+@class AVCapturePhotoOutput, AVCapturePhotoSettings;
+@protocol AVCapturePhotoCaptureDelegate;
+@interface SFNativeCaptureSafety : NSObject
+/// Nil means the request was submitted. Non-nil describes the validation
+/// exception and MUST be surfaced, never downgraded to JPEG.
++ (nullable NSString *)startPhotoOutput:(AVCapturePhotoOutput *)output
+                               settings:(AVCapturePhotoSettings *)settings
+                               delegate:(id<AVCapturePhotoCaptureDelegate>)delegate;
+@end
 NS_ASSUME_NONNULL_END
