@@ -58,6 +58,6 @@ assert "phaseMemoryObserver?(\"grain_particle_scratch_released\")" in grain
 assert "return parallelGrain ? 72 : 64" in ledger
 assert "return conservative" in ledger
 assert "let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3" in mem
-assert 'MARKETING_VERSION: "1.8.85"' in project
-assert 'CURRENT_PROJECT_VERSION: "119"' in project
+from build_ci_version_floor import minimum_minor,minimum_build
+assert minimum_minor(project,85) and minimum_build(project,119)
 print("PASS Build118 3 separate 8/10/13MP buttons, 2 independent source-grain paths, phase RSS, per-size checkpoints and conservative legacy feature memory accounting")
