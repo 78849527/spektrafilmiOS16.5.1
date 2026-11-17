@@ -27,6 +27,8 @@ def selftest() -> None:
 
 
 def generate(raw_path: Path, out_dir: Path) -> None:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
     from spektrafilm.utils.raw_file_processor import load_and_process_raw_file
     import rawpy
     if not raw_path.is_file():
@@ -51,7 +53,8 @@ def generate(raw_path: Path, out_dir: Path) -> None:
     target = out_dir / "rawpy-linear-aces-f32le.rgb"
     manifest = out_dir / "rawpy-linear-aces.json"
     target.write_bytes(data)
-    source_bytes_sha = hashlib.file_digest(raw_path.open("rb"), "sha256").hexdigest()
+    with raw_path.open("rb") as source_file:
+        source_bytes_sha = hashlib.file_digest(source_file, "sha256").hexdigest()
     payload = {
         "source": "src/spektrafilm/utils/raw_file_processor.py",
         "white_balance": "as_shot",

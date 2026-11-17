@@ -54,3 +54,14 @@ same unmodified RAW and verified orientation/matrix settings.
 
 No source RAW corpus is committed yet. Therefore no real image comparison
 or whole-pipeline certification has been executed.
+
+## Source HDR and negative-value boundary fixture
+
+`python ios/scripts/p1_original_input_boundary_oracle.py --out /tmp/p1-boundary.json`
+invokes the actual pinned `_rgb_to_tc_b` for 7 RGB vectors across four
+input color/CCTF branches. Samples include negative RGB, superwhite, zero,
+neutral and out-of-gamut values. The oracle records per-sample TC lookup
+coordinates and physical brightness **without** modifying original input.
+The Swift source tap must be measured against this fixture before removing
+the existing iOS-only input-range rejection. This test has not been run
+against a macOS/iPhone build and is not a certification by itself.
