@@ -46,7 +46,9 @@ assert "OriginalSourceSciPySampler.drawLayer(" in grain
 assert "seed:UInt32(ch+sl*10)" in grain
 # No automatic branch change or global precision/renderer changes.
 assert "useUnseededParallel = true" not in grain
-# Historical contracts stay valid across the new Build116 revision.
-assert 'MARKETING_VERSION: "1.8.82"' in read("ios/project.yml")
-assert 'CURRENT_PROJECT_VERSION: "116"' in read("ios/project.yml")
+# Build115 was introduced by 1.8.81/115. Subsequent builds preserve
+# these source contracts; do not pin this audit to one release number.
+from build_ci_version_floor import minimum_build, minimum_minor
+project=read("ios/project.yml")
+assert minimum_minor(project,82) and minimum_build(project,116)
 print("PASS Build115: genuine per-worker random streams, Poisson->Binomial->lognormal, SciPy and seeded replay preserved; UI opt-in; 56B/px additional preflight")
