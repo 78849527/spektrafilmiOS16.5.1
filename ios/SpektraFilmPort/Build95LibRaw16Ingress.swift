@@ -34,12 +34,8 @@ enum Build95LibRaw16Ingress {
         // Sensor unpack, original 4-channel image, LibRaw processed output,
         // copied NSData and CoreGraphics transport, plus fixed decoder scratch.
         let estimate = pixels * UInt64(bits == 16 ? 28 : 18) + 96_000_000
-        guard estimate <= 1_400_000_000 else {
-            throw Failure.invalid(
-                "LibRaw 预计峰值约 " + String(estimate / 1_000_000) +
-                " MB，超过 1400 MB 的高位深保护预算；不会自动转成 8-bit"
-            )
-        }
+        // LibRaw native pre-unpack already checked live headroom.
+        // Avoid charging already allocated source bytes a second time.
         return estimate
     }
 

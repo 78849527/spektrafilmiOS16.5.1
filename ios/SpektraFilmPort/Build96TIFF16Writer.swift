@@ -33,24 +33,14 @@ enum Build96TIFF16Writer {
 
     static func validateBudget(width: Int, height: Int) throws {
         let bytes = try estimate(width: width, height: height)
-        let physical = ProcessInfo.processInfo.physicalMemory
-        let fixedLimit = min(1_500_000_000, physical / 3)
-        guard bytes <= fixedLimit else {
+        let headroom = SafeExportResolution.currentProcessHeadroom()
+            ?? ProcessInfo.processInfo.physicalMemory / 3
+        guard headroom > 0,bytes <= headroom / 100 * 70 else {
             throw Failure.invalid(
-                "TIFF16 原尺寸需要预估 " + String(bytes / 1_000_000) +
-                "MB，设备保守上限 " + String(fixedLimit / 1_000_000) +
-                "MB；请明确选择智能安全分辨率，不自动缩图或降为 JPEG"
+                "TIFF16 预计使用 " + String(bytes/1_000_000) +
+                " MB，当前可分配 " + String(headroom/1_000_000) +
+                " MB；需要 30% 安全余量，禁止自动缩图或降位深"
             )
-        }
-        if let available = SafeExportResolution.currentProcessHeadroom() {
-            // HEADROOM is an advisory snapshot, not reserved memory.
-            guard available > 0, bytes <= available / 100 * 70 else {
-                throw Failure.invalid(
-                    "TIFF16 当前进程可用内存 " +
-                    String(available / 1_000_000) +
-                    "MB，不足以安全渲染；请选安全/省内存输出"
-                )
-            }
         }
     }
 

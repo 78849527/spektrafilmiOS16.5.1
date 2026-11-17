@@ -43,21 +43,14 @@ enum Build128RAWFloat32Transport {
         // Float32 TIFF, decoding, and later CPU Double buffers. This is an
         // admission estimate, not a claim that jetsam is impossible.
         let estimate=UInt64(w)*UInt64(h)*96+96_000_000
-        let limit=min(1_500_000_000,ProcessInfo.processInfo.physicalMemory/3)
-        guard estimate<=limit else {
+        let headroom=SafeExportResolution.currentProcessHeadroom()
+            ?? ProcessInfo.processInfo.physicalMemory/3
+        guard headroom>0,estimate<=headroom/100*70 else {
             throw Failure.invalid(
-                "RAW Float32 原尺寸转换预估 " +
-                String(estimate/1_000_000) + "MB，设备预算 " +
-                String(limit/1_000_000) +
-                "MB；已取消，不截断像素、不降低位深，也不转 JPEG"
+                "RAW Float32 预计使用 " + String(estimate/1_000_000) +
+                "MB，当前可分配 " + String(headroom/1_000_000) +
+                "MB；需要 30% 安全余量，DNG 不变，不转 JPEG"
             )
-        }
-        if let headroom=SafeExportResolution.currentProcessHeadroom() {
-            guard headroom>0,estimate<=headroom/100*70 else {
-                throw Failure.invalid(
-                    "RAW Float32 当前可用进程内存不足，保留原 DNG 及 Apple RAW 冲印"
-                )
-            }
         }
         guard let extended=CGColorSpace(name:CGColorSpace.extendedSRGB)
         else {

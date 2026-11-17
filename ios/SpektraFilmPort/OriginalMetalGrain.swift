@@ -673,15 +673,14 @@ enum OriginalMetalGrain {
             )
         }
         let projectedBytes = UInt64(width) * UInt64(height) * 16 * 5
-        let memoryBudget = min(
-            UInt64(1_500_000_000),
-            ProcessInfo.processInfo.physicalMemory / 3
-        )
-        guard projectedBytes <= memoryBudget else {
+        let memoryBudget = SafeExportResolution.currentProcessHeadroom()
+            ?? ProcessInfo.processInfo.physicalMemory / 3
+        guard memoryBudget > 0,
+              projectedBytes <= (memoryBudget / 100) * 70 else {
             throw Failure.invalid(
                 "原版 Metal 全图 IIR：高清图像需要约 " +
                 "\(projectedBytes / 1_000_000) MB GPU 工作空间，" +
-                "超过本机安全预算 \(memoryBudget / 1_000_000) MB；" +
+                "当前可分配内存预算以实时系统余量为准；" +
                 "为保持原版全图递归和 Float32，已停止而非降质。"
             )
         }

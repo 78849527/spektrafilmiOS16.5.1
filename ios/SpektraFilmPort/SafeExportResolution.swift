@@ -6,7 +6,7 @@ import os
 /// User chooses resolution explicitly; original must never silently shrink.
 enum ExportResolutionMode: Equatable {
     case original
-    case safe      // adaptive up to 1.3GB, up to 12MP; live headroom enforced
+    case safe      // adaptive up to 12MP, live headroom enforced
     case economy   // adaptive 30% of live memory, up to 7.2MP
 
     var title: String {
@@ -22,21 +22,17 @@ enum ExportResolutionMode: Equatable {
 /// For a given source, chosen mode and captured budget, the planned output
 /// is stable. Never retry at a lower resolution after an allocation failure.
 ///
-/// The physical 1.5GB budget is NOT free RAM. On iPhone, Apple's
-/// os_proc_available_memory() also caps the estimate with CURRENT PROCESS
-/// memory headroom. The app may still be killed by jetsam: this is a
-/// conservative heuristic, not a memory reservation or a guarantee.
-/// The 1.3GB smart allowance is a HARD UPPER CEILING, not a target
-/// allocation, and can be lowered by live headroom and optical stages.
+/// No arbitrary MB ceiling: live OS process headroom governs all modes.
+/// This is an advisory snapshot, not a memory reservation or a guarantee
+/// against iOS Jetsam. Without the OS API, physicalRAM/3 is the fallback.
 enum SafeExportResolution {
     // User-selected size ceilings, NOT guaranteed output dimensions.
     // Live memory and exact original per-pixel staging still take priority.
     static let safeMaximumPixels: UInt64 = 12_000_000
     static let economyMaximumPixels: UInt64 = 7_200_000
     static let estimatedBytesPerPixel: UInt64 = 104
-    static let physicalMaximumBudget: UInt64 = 1_500_000_000
+    static let originalBudgetPercent: UInt64 = 70
     static let intelligentBudgetPercent: UInt64 = 90
-    static let intelligentMaximumBudget: UInt64 = 1_300_000_000
     static let economyBudgetPercent: UInt64 = 30
 
     struct Dimensions: Equatable {
@@ -51,7 +47,7 @@ enum SafeExportResolution {
         let sourceWidth: Int
         let sourceHeight: Int
         let dimensions: Dimensions
-        /// min(1.5GB, physicalRAM/3, measured process headroom if available).
+        /// Live process headroom, with physicalRAM/3 fallback.
         let effectiveBudgetBytes: UInt64
         let processHeadroomBytes: UInt64?
         /// Maximum projected peak for this export, NOT pre-allocated memory.
@@ -110,26 +106,21 @@ enum SafeExportResolution {
             throw Failure.invalid("输出分辨率：原图尺寸或设备内存数据无效")
         }
         let sourcePixels = UInt64(width) * UInt64(height)
-        let physicalBudget = min(
-            physicalMaximumBudget, physicalMemory / 3
-        )
-        let budget = min(physicalBudget,
-                         processAvailableMemory ?? physicalBudget)
+        // No fixed MB budget. Headroom is updated for each export request.
+        let budget = processAvailableMemory ?? physicalMemory / 3
         let percentage: UInt64
         switch mode {
-        case .original: percentage = 100
+        case .original: percentage = originalBudgetPercent
         case .safe: percentage = intelligentBudgetPercent
         case .economy: percentage = economyBudgetPercent
         }
         let allowance: UInt64
         switch mode {
         case .original:
-            allowance = physicalBudget
+            allowance = (budget / 100) * percentage
         case .safe:
-            // User-requested 1.3GB MAXIMUM, bounded by measured free
-            // process headroom with 10% left unused for UIKit/Jetsam.
-            allowance = min(intelligentMaximumBudget,
-                            (budget / 100) * percentage)
+            // Explicit 12MP geometry and 90% live headroom; no fixed MB cap.
+            allowance = (budget / 100) * percentage
         case .economy:
             allowance = (budget / 100) * percentage
         }
@@ -210,7 +201,7 @@ enum SafeExportResolution {
         if let current {
             let fraction: UInt64
             switch plan.mode {
-            case .original: fraction = 70
+            case .original: fraction = originalBudgetPercent
             case .safe: fraction = intelligentBudgetPercent
             case .economy: fraction = economyBudgetPercent
             }

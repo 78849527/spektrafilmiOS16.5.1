@@ -131,12 +131,8 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
         const uint64_t pixels = w * h;
         const uint64_t estimatedBytes =
             pixels * (bits == 16 ? 28ull : 18ull) + 96000000ull;
-        if (estimatedBytes > 1400000000ull) {
-            SFBuild94Fail(error, 7, [NSString stringWithFormat:
-                @"LibRaw %@-bit 估算内存 %.0f MB 超过 1400 MB 上限；原始 RAF 保留",
-                @(bits), (double)estimatedBytes / 1000000.0]);
-            break;
-        }
+        // Fixed 1400MB removed. The native pre-unpack live
+        // headroom safety guard below remains in force.
         // Build96: genuine iPhoneOS process headroom admission BEFORE
         // LibRaw allocates full X-Trans sensor, RGB, and temporary images.
         // This is advisory; never promise jetsam-free 40MP processing.

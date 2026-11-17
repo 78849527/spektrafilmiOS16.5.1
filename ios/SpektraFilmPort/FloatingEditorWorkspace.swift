@@ -1028,7 +1028,7 @@ struct FloatingEditorWorkspace: View {
                 Button("原始分辨率（不缩小）") {
                     onSaveToPhotos(.original)
                 }
-                Button("智能安全分辨率（最高 1200 万像素 · 预算最多 1300 MB）") {
+                Button("智能安全分辨率（最高 1200 万像素 · 根据可用内存）") {
                     onSaveToPhotos(.safe)
                 }
                 Button("省内存分辨率（最高 720 万像素）") {
@@ -1046,7 +1046,7 @@ struct FloatingEditorWorkspace: View {
                 Button("原始分辨率（不缩小）") {
                     onExport(.original)
                 }
-                Button("智能安全分辨率（最高 1200 万像素 · 预算最多 1300 MB）") {
+                Button("智能安全分辨率（最高 1200 万像素 · 根据可用内存）") {
                     onExport(.safe)
                 }
                 Button("省内存分辨率（最高 720 万像素）") {
