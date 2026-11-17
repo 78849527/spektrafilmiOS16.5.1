@@ -1,3 +1,4 @@
+# Build122 retry: optical source-mode audit now tests real sourcePhysicalDirectEnabled instead of stale placeholder.
 # Build121 retry: corrected Swift interpolated switch notice strings; require parse and all source parity before release.
 # Build120 final UI-only batch: four stage-owned optical panels and diagnostics-only Advanced; source numeric routes unchanged.
 # Build119 CI: carried-forward Build117 source gate now checks remaining allocation, not pre-resident frame bytes.\n# Build118 CI: re-run after historical Build107 shared-memory planner gate updated to productionAdditional.
