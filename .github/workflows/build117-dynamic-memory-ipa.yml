@@ -140,7 +140,7 @@ jobs:
                 'ios/SpektraFilmPort/Build115ParallelNumbaEvidence.swift',
                 'ios/SpektraFilmPort/SourceGrainScalarGaussian.swift',
                 'ios/SpektraFilmPort/Build106SourceMemoryLedger.swift',
-      'ios/SpektraFilmPort/Build91PhysicalMemory.swift'
+                'ios/SpektraFilmPort/Build91PhysicalMemory.swift'
               }]
           assert not forbidden, 'Build116 unexpectedly changed unapproved original modules: '+str(forbidden)
           print('PASS Build115 scoped original parallel stochastic work with strictly separate controlled seed mode')
