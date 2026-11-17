@@ -1,618 +1,533 @@
 import AVFoundation
+import CoreImage
 import ImageIO
-import NextLevel
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
-/// A source JPEG/HEIC companion and an optional sensor Bayer DNG are NEVER
-/// merged or confused. The current optical processor receives only processed
-/// input; RAW file bytes remain unmodified for later source RAW development.
+/// Build122 uses AVFoundation directly. Kept the existing photo contract
+/// name to avoid touching the proven optical importer / RAW byte archiver.
 struct NextLevelCapturedPhoto {
-    let processed: Data
-    let rawDNG: Data?
-    let format: String
+    let processed:Data
+    let rawDNG:Data?
+    let format:String
 }
 
-private enum CaptureFormat: String, CaseIterable, Identifiable {
-    case jpeg = "JPEG"
-    case heic = "HEIC"
-    case raw = "RAW DNG + JPEG"
-    var id: String { rawValue }
+private enum NativePhotoFormat:String,CaseIterable,Identifiable {
+    case jpeg="JPEG"
+    case heic="HEIC"
+    case raw="RAW DNG＋JPEG"
+    var id:String {rawValue}
 }
-
-private enum CaptureLens: String, CaseIterable, Identifiable {
-    case ultra = "0.5× 超广角"
-    case wide = "1× 主摄"
-    case tele = "长焦"
-    case front = "前置"
-    var id: String { rawValue }
-    var deviceType: NextLevelDeviceType {
+private enum NativeCameraLens:String,CaseIterable,Identifiable {
+    case ultra="0.5×"
+    case wide="1×"
+    case tele="长焦"
+    case front="前置"
+    var id:String {rawValue}
+    var position:AVCaptureDevice.Position { self == .front ? .front : .back }
+    var deviceType:AVCaptureDevice.DeviceType {
         switch self {
-        case .ultra: return .ultraWideAngleCamera
-        case .wide, .front: return .wideAngleCamera
-        case .tele: return .telephotoCamera
+        case .ultra:return .builtInUltraWideCamera
+        case .wide,.front:return .builtInWideAngleCamera
+        case .tele:return .builtInTelephotoCamera
         }
     }
-    var position: AVCaptureDevice.Position { self == .front ? .front : .back }
+}
+private enum NativeCameraRatio:String,CaseIterable,Identifiable {
+    case fourThree="4:3"
+    case threeTwo="3:2"
+    case sixteenNine="16:9"
+    case square="1:1"
+    var id:String {rawValue}
+    var landscapeRatio:CGFloat {
+        switch self {
+        case .fourThree:return 4.0/3
+        case .threeTwo:return 3.0/2
+        case .sixteenNine:return 16.0/9
+        case .square:return 1
+        }
+    }
+    var portraitAspect:CGFloat {1/landscapeRatio}
 }
 
-struct NextLevelCameraScreen: View {
-    let onCancel: () -> Void
-    let onCapture: (NextLevelCapturedPhoto) -> Void
-    @StateObject private var camera = NextLevelCameraController()
-    @State private var showPro = false
+/// One capture produces an unmodified Bayer DNG and a separately processed
+/// companion photo; only the JPEG/HEIC companion receives framing crop.
+/// A failure anywhere is reported, NOT replaced by a fake JPEG RAW.
+private enum NativeCameraAspectCrop {
+    enum Failure:LocalizedError {
+        case invalid(String)
+        var errorDescription:String? {if case .invalid(let x)=self{return x};return nil}
+    }
+    static func processed(_ data:Data,format:NativePhotoFormat,
+                          ratio:NativeCameraRatio)throws->Data {
+        if ratio == .fourThree {return data}
+        guard let input=CIImage(data:data,options:[.applyOrientationProperty:true]) else {
+            throw Failure.invalid("无法读取伴随照片；已保留 RAW 拍摄错误，不回退预览快照")
+        }
+        let bounds=input.extent
+        guard bounds.width>0,bounds.height>0 else {
+            throw Failure.invalid("相机照片无有效像素尺寸")
+        }
+        let required=bounds.height>bounds.width
+            ? ratio.portraitAspect : ratio.landscapeRatio
+        var crop=bounds
+        if bounds.width/bounds.height>required {
+            crop.size.width=floor(bounds.height*required)
+            crop.origin.x=floor(bounds.midX-crop.width/2)
+        } else {
+            crop.size.height=floor(bounds.width/required)
+            crop.origin.y=floor(bounds.midY-crop.height/2)
+        }
+        guard crop.width>0,crop.height>0 else {
+            throw Failure.invalid("当前画幅裁切尺寸不合法")
+        }
+        let context=CIContext(options:[.cacheIntermediates:false])
+        guard let srgb=CGColorSpace(name:CGColorSpace.sRGB),
+              let cg=context.createCGImage(input.cropped(to:crop),
+                                           from:crop,format:.RGBA8,
+                                           colorSpace:srgb) else {
+            throw Failure.invalid("无法生成实际画幅的完整像素照片")
+        }
+        let output=NSMutableData()
+        let uti=(format == .heic ? UTType.heic : UTType.jpeg).identifier
+        guard let destination=CGImageDestinationCreateWithData(
+            output,uti as CFString,1,nil
+        ) else {
+            throw Failure.invalid("无法创建画幅照片编码器")
+        }
+        CGImageDestinationAddImage(
+            destination,cg,
+            [kCGImageDestinationLossyCompressionQuality:0.96] as CFDictionary
+        )
+        guard CGImageDestinationFinalize(destination) else {
+            throw Failure.invalid("画幅照片编码失败")
+        }
+        return output as Data
+    }
+}
 
-    var body: some View {
+private final class NativePreviewSurface:UIView {
+    override class var layerClass:AnyClass {AVCaptureVideoPreviewLayer.self}
+    var previewLayer:AVCaptureVideoPreviewLayer {
+        layer as! AVCaptureVideoPreviewLayer
+    }
+}
+private struct NativeCameraPreview:UIViewRepresentable {
+    let session:AVCaptureSession
+    func makeUIView(context:Context)->NativePreviewSurface {
+        let view=NativePreviewSurface()
+        view.backgroundColor = .black
+        view.previewLayer.session=session
+        view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.connection?.videoOrientation = .portrait
+        return view
+    }
+    func updateUIView(_ view:NativePreviewSurface,context:Context) {
+        if view.previewLayer.session !== session {view.previewLayer.session=session}
+    }
+}
+
+/// The capture delegate lives until didFinishCaptureFor, not until the
+/// first RAW/JPEG didFinishProcessing callback. No NextLevel singleton.
+private final class NativePhotoCaptureDelegate:NSObject,AVCapturePhotoCaptureDelegate {
+    private let format:NativePhotoFormat
+    private let ratio:NativeCameraRatio
+    private let done:(Result<NextLevelCapturedPhoto,Error>)->Void
+    private var companion:Data?
+    private var dng:Data?
+    private var firstError:Error?
+    init(format:NativePhotoFormat,ratio:NativeCameraRatio,
+         done:@escaping(Result<NextLevelCapturedPhoto,Error>)->Void) {
+        self.format=format;self.ratio=ratio;self.done=done
+    }
+    private func fail(_ message:String)->Error {
+        NativeCameraAspectCrop.Failure.invalid(message)
+    }
+    func photoOutput(_ output:AVCapturePhotoOutput,
+                     didFinishProcessingPhoto photo:AVCapturePhoto,
+                     error:Error?) {
+        if let error {firstError=error;return}
+        guard let bytes=photo.fileDataRepresentation(),!bytes.isEmpty else {
+            firstError=fail("相机照片回调没有返回完整文件数据")
+            return
+        }
+        if photo.isRawPhoto {dng=bytes}
+        else {companion=bytes}
+    }
+    func photoOutput(_ output:AVCapturePhotoOutput,
+                     didFinishCaptureFor resolvedSettings:AVCaptureResolvedPhotoSettings,
+                     error:Error?) {
+        if let error {firstError=error}
+        if let firstError {
+            DispatchQueue.main.async {self.done(.failure(firstError))}
+            return
+        }
+        guard let companion else {
+            DispatchQueue.main.async {
+                self.done(.failure(self.fail("相机未返回 JPEG/HEIC 主照片")))
+            }
+            return
+        }
+        if format == .raw && dng == nil {
+            DispatchQueue.main.async {
+                self.done(.failure(self.fail("RAW 拍摄未返回 DNG；未静默回退 JPEG")))
+            }
+            return
+        }
+        let raw=dng
+        let format=selectorName
+        DispatchQueue.global(qos:.userInitiated).async {
+            do {
+                let processed=try NativeCameraAspectCrop.processed(
+                    companion,format:self.format,ratio:self.ratio
+                )
+                let photo=NextLevelCapturedPhoto(
+                    processed:processed,rawDNG:raw,format:format
+                )
+                DispatchQueue.main.async {self.done(.success(photo))}
+            } catch {
+                DispatchQueue.main.async {self.done(.failure(error))}
+            }
+        }
+    }
+    private var selectorName:String {
+        format.rawValue+" · "+ratio.rawValue
+    }
+}
+
+private final class NativeCameraController:NSObject,ObservableObject {
+    @Published private(set) var ready=false
+    @Published private(set) var capturing=false
+    @Published private(set) var rawAvailable=false
+    @Published private(set) var heicAvailable=false
+    @Published private(set) var flashAvailable=false
+    @Published private(set) var selectedLens:NativeCameraLens = .wide
+    @Published private(set) var availableLenses:Set<NativeCameraLens> = [.wide]
+    @Published private(set) var format:NativePhotoFormat = .jpeg
+    @Published private(set) var ratio:NativeCameraRatio = .fourThree
+    @Published private(set) var flashEnabled=false
+    @Published var errorMessage:String?
+    var onCapture:((NextLevelCapturedPhoto)->Void)?
+    let session=AVCaptureSession()
+    private let sessionQueue=DispatchQueue(label:"sf.native.camera.capture-session")
+    private let output=AVCapturePhotoOutput()
+    private var videoInput:AVCaptureDeviceInput?
+    private var captureDelegate:NativePhotoCaptureDelegate?
+    private var active=false
+
+    func start() {
+        guard !active else {return}
+        active=true
+        switch AVCaptureDevice.authorizationStatus(for:.video) {
+        case .authorized:configure()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for:.video) {[weak self] allowed in
+                DispatchQueue.main.async {
+                    guard let self,self.active else{return}
+                    if allowed {self.configure()}
+                    else {self.errorMessage="未获得摄像头权限，请在系统设置中授权"}
+                }
+            }
+        case .restricted,.denied:
+            errorMessage="相机访问受限。请检查 iOS 的相机授权。"
+        @unknown default:errorMessage="无法读取相机权限状态"
+        }
+    }
+    func stop() {
+        active=false
+        ready=false
+        onCapture=nil
+        sessionQueue.async {[weak self] in
+            guard let self else{return}
+            if self.session.isRunning {self.session.stopRunning()}
+            self.captureDelegate=nil
+        }
+    }
+    private func report(_ message:String) {
+        DispatchQueue.main.async {[weak self] in self?.errorMessage=message}
+    }
+    private func cameraDevice(_ lens:NativeCameraLens)->AVCaptureDevice? {
+        AVCaptureDevice.default(lens.deviceType,for:.video,position:lens.position)
+    }
+    private func configure() {
+        sessionQueue.async {[weak self] in
+            guard let self else{return}
+            guard let device=self.cameraDevice(.wide) ??
+                self.cameraDevice(.front) else {
+                self.report("当前设备没有可用摄像头")
+                return
+            }
+            do {
+                let input=try AVCaptureDeviceInput(device:device)
+                self.session.beginConfiguration()
+                self.session.sessionPreset = .photo
+                guard self.session.canAddInput(input),
+                      self.session.canAddOutput(self.output) else {
+                    self.session.commitConfiguration()
+                    self.report("相机捕获会话不支持当前镜头和照片输出组合")
+                    return
+                }
+                self.session.addInput(input)
+                self.session.addOutput(self.output)
+                self.output.isHighResolutionCaptureEnabled=true
+                // Must be decided BEFORE startRunning; toggling during
+                // capture can cause an expensive session rebuild.
+                self.output.maxPhotoQualityPrioritization = .balanced
+                self.session.commitConfiguration()
+                self.videoInput=input
+                self.session.startRunning()
+                self.refreshCapabilities(device:device)
+            } catch {self.report("相机启动失败："+error.localizedDescription)}
+        }
+    }
+    private func refreshCapabilities(device:AVCaptureDevice) {
+        let lenses=Set(NativeCameraLens.allCases.filter{
+            self.cameraDevice($0) != nil
+        })
+        let hasBayer=output.availableRawPhotoPixelFormatTypes.contains {
+            AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
+        }
+        let heic=output.availablePhotoCodecTypes.contains(.hevc)
+        let flash=device.hasFlash
+        DispatchQueue.main.async {[weak self] in
+            guard let self,self.active else{return}
+            self.selectedLens=NativeCameraLens.allCases.first(where:{
+                $0.deviceType == device.deviceType && $0.position == device.position
+            }) ?? .wide
+            self.availableLenses=lenses
+            self.rawAvailable=hasBayer
+            self.heicAvailable=heic
+            self.flashAvailable=flash
+            self.ready=self.session.isRunning
+        }
+    }
+    func selectLens(_ lens:NativeCameraLens) {
+        guard !capturing,availableLenses.contains(lens) else{return}
+        ready=false
+        sessionQueue.async {[weak self] in
+            guard let self, let device=self.cameraDevice(lens) else {
+                self?.report("摄像头不可用")
+                return
+            }
+            do {
+                let next=try AVCaptureDeviceInput(device:device)
+                self.session.beginConfiguration()
+                if let old=self.videoInput {self.session.removeInput(old)}
+                if self.session.canAddInput(next) {
+                    self.session.addInput(next)
+                    self.videoInput=next
+                } else {
+                    if let old=self.videoInput {self.session.addInput(old)}
+                    self.session.commitConfiguration()
+                    self.report("此镜头不能加入当前照片会话，原镜头已保留")
+                    self.refreshCapabilities(device:self.videoInput?.device ?? device)
+                    return
+                }
+                self.session.commitConfiguration()
+                self.refreshCapabilities(device:device)
+            } catch {self.report("镜头切换失败："+error.localizedDescription)}
+        }
+    }
+    func selectRatio(_ value:NativeCameraRatio) {
+        guard !capturing else {return}
+        ratio=value
+    }
+    func selectFormat(_ value:NativePhotoFormat) {
+        guard !capturing else{return}
+        guard value != .raw || rawAvailable else {
+            errorMessage="当前镜头不支持 Bayer RAW DNG，不会回退为 JPEG"
+            return
+        }
+        guard value != .heic || heicAvailable else {
+            errorMessage="当前镜头不支持 HEIC 格式"
+            return
+        }
+        format=value
+    }
+    func toggleFlash() {
+        guard !capturing,flashAvailable else{return}
+        flashEnabled.toggle()
+    }
+    func capture() {
+        guard active,ready,!capturing else {
+            errorMessage="相机尚未准备好"
+            return
+        }
+        capturing=true
+        let wantedFormat=format,wantedRatio=ratio,flash=flashEnabled
+        sessionQueue.async {[weak self] in
+            guard let self else{return}
+            let jpegAllowed=self.output.availablePhotoCodecTypes.contains(.jpeg)
+            let heicAllowed=self.output.availablePhotoCodecTypes.contains(.hevc)
+            let raw=self.output.availableRawPhotoPixelFormatTypes.first {
+                AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
+            }
+            guard self.session.isRunning else {
+                self.finishFailure("相机拍摄会话已停止")
+                return
+            }
+            guard jpegAllowed && (wantedFormat != .heic || heicAllowed) else {
+                self.finishFailure("当前照片输出不支持请求的 JPEG/HEIC 编码")
+                return
+            }
+            if wantedFormat == .raw && raw == nil {
+                self.finishFailure("当前镜头不支持 Bayer RAW；未静默拍成 JPEG")
+                return
+            }
+            let codec:AVVideoCodecType=wantedFormat == .heic ? .hevc : .jpeg
+            let dictionary:[String:Any]=[AVVideoCodecKey:codec]
+            let settings:AVCapturePhotoSettings
+            if wantedFormat == .raw,let raw {
+                settings=AVCapturePhotoSettings(
+                    rawPixelFormatType:raw,processedFormat:dictionary
+                )
+                settings.isAutoStillImageStabilizationEnabled=false
+                settings.flashMode = .off
+            } else {
+                settings=AVCapturePhotoSettings(format:dictionary)
+                if flash && self.videoInput?.device.hasFlash == true {
+                    settings.flashMode = .on
+                }
+            }
+            settings.isHighResolutionPhotoEnabled=true
+            settings.photoQualityPrioritization = .balanced
+            let processor=NativePhotoCaptureDelegate(
+                format:wantedFormat,ratio:wantedRatio
+            ) {[weak self] outcome in
+                guard let self else{return}
+                self.capturing=false
+                self.captureDelegate=nil
+                switch outcome {
+                case .success(let photo):self.onCapture?(photo)
+                case .failure(let error):
+                    self.errorMessage="原生拍摄失败："+error.localizedDescription
+                }
+            }
+            self.captureDelegate=processor
+            self.output.capturePhoto(with:settings,delegate:processor)
+        }
+    }
+    private func finishFailure(_ message:String) {
+        DispatchQueue.main.async {[weak self] in
+            self?.capturing=false
+            self?.errorMessage=message
+        }
+    }
+}
+
+struct NativeCameraScreen:View {
+    let onCancel:()->Void
+    let onCapture:(NextLevelCapturedPhoto)->Void
+    @StateObject private var camera=NativeCameraController()
+    var body:some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            NextLevelCameraPreview(onFocus: { point in
-                camera.focus(at: point)
-            })
-            .ignoresSafeArea()
-
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Button(action: onCancel) {
-                        Image(systemName: "xmark")
-                            .frame(width: 42, height: 42)
+            VStack(spacing:10) {
+                HStack {
+                    Button(action:onCancel) {
+                        Image(systemName:"xmark")
+                            .frame(width:44,height:44)
                     }
                     Spacer()
-                    Text("SpektraFilm · NextLevel")
-                        .font(.system(size: 14, weight: .semibold))
+                    Text("SpektraFilm · 原生相机")
+                        .font(.system(size:14,weight:.semibold))
                     Spacer()
-                    Button {
-                        camera.cycleFlash()
-                    } label: {
-                        Image(systemName: camera.flashMode == 0
-                            ? "bolt.slash" : camera.flashMode == 1
-                            ? "bolt.fill" : "bolt.badge.a")
-                            .frame(width: 42, height: 42)
+                    Button {camera.toggleFlash()} label: {
+                        Image(systemName:camera.flashEnabled
+                            ? "bolt.fill" : "bolt.slash")
+                            .frame(width:44,height:44)
                     }
-                    .disabled(!camera.ready || !camera.flashAvailable)
-                    .accessibilityLabel("闪光灯：关闭／开启／自动")
+                    .disabled(!camera.flashAvailable || camera.capturing ||
+                              camera.format == .raw)
                 }
-                .padding(.horizontal, 12)
-                .background(.black.opacity(0.35))
-
-                HStack(spacing: 10) {
+                .padding(.horizontal,12)
+                HStack(spacing:12) {
                     Menu {
-                        ForEach(CaptureFormat.allCases) { f in
-                            Button(f.rawValue) { camera.setFormat(f) }
-                                .disabled(camera.capturing || (f == .raw && !camera.rawAvailable))
+                        ForEach(NativePhotoFormat.allCases) { option in
+                            Button(option.rawValue) {camera.selectFormat(option)}
+                                .disabled(camera.capturing ||
+                                    (option == .raw && !camera.rawAvailable) ||
+                                    (option == .heic && !camera.heicAvailable))
                         }
                     } label: {
-                        Text(camera.captureFormat.rawValue)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .background(.black.opacity(0.65), in: Capsule())
+                        Text(camera.format.rawValue).font(.caption.weight(.medium))
                     }
-                    .accessibilityLabel("拍摄格式")
-
-                    Menu {
-                        ForEach(CaptureLens.allCases) { lens in
-                            Button(lens.rawValue) { camera.selectLens(lens) }
-                                .disabled(!camera.availableLenses.contains(lens) || camera.capturing)
-                        }
-                    } label: {
-                        Text(camera.selectedLens.rawValue)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .background(.black.opacity(0.65), in: Capsule())
-                    }
-                    .accessibilityLabel("选择摄像头镜头")
                     Spacer()
-                    Button { showPro.toggle() } label: {
-                        Text(showPro ? "收起参数" : "专业参数")
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(8)
-                            .background(.black.opacity(0.65), in: Capsule())
-                    }
-                    .disabled(!camera.ready)
+                    Text(camera.format == .raw
+                         ? "DNG 原片保留完整传感器像素"
+                         : "画幅作用于照片输出")
+                        .font(.caption2).foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 12)
-
-                Spacer()
-
-                if showPro {
-                    proPanel
-                        .padding(.horizontal, 12)
-                }
-
-                VStack(spacing: 8) {
-                    HStack(spacing: 12) {
-                        Text(String(format: "%.1f×", camera.zoom))
-                            .font(.system(size: 12, design: .monospaced))
-                            .frame(width: 40)
-                        Slider(value: $camera.zoom, in: camera.zoomRange)
-                            .onChange(of: camera.zoom) { new in
-                                camera.setZoom(new)
-                            }
-                            .disabled(!camera.ready || camera.capturing)
+                .padding(.horizontal,17)
+                Spacer(minLength:0)
+                NativeCameraPreview(session:camera.session)
+                    .aspectRatio(camera.ratio.portraitAspect,contentMode:.fit)
+                    .frame(maxWidth:.infinity)
+                    .clipped()
+                    .background(Color.black)
+                Spacer(minLength:0)
+                HStack(spacing:8) {
+                    ForEach(NativeCameraRatio.allCases) { shape in
+                        Button(shape.rawValue) {camera.selectRatio(shape)}
+                            .font(.system(size:12,weight:.semibold))
+                            .frame(maxWidth:.infinity,minHeight:36)
+                            .background(camera.ratio == shape
+                                ? Color.accentColor.opacity(0.5)
+                                : Color.white.opacity(0.13),
+                                        in:RoundedRectangle(cornerRadius:8))
                     }
-                    Text(camera.ready
-                        ? "拍照后直接冲印 · RAW 原片另存 DNG"
-                        : "正在启动相机…")
-                        .font(.caption2)
-                        .lineLimit(2)
-                    HStack(alignment: .center) {
-                        Text(camera.rawAvailable ? "RAW 可用" : "此镜头无 RAW")
-                            .font(.caption2)
-                            .frame(width: 80)
-                        Spacer()
-                        Button { camera.capture() } label: {
-                            Circle()
-                                .strokeBorder(.white, lineWidth: 5)
-                                .background(Circle().fill(camera.capturing
-                                    ? Color.gray : Color.white).padding(7))
-                                .frame(width: 74, height: 74)
+                }
+                .padding(.horizontal,16)
+                HStack(spacing:8) {
+                    ForEach(NativeCameraLens.allCases) { lens in
+                        if camera.availableLenses.contains(lens) {
+                            Button(lens.rawValue) {camera.selectLens(lens)}
+                                .font(.system(size:12,weight:.semibold))
+                                .frame(maxWidth:.infinity,minHeight:36)
+                                .background(camera.selectedLens == lens
+                                    ? Color.accentColor.opacity(0.5)
+                                    : Color.white.opacity(0.13),
+                                            in:RoundedRectangle(cornerRadius:8))
+                                .disabled(!camera.ready || camera.capturing)
                         }
-                        .disabled(!camera.ready || camera.capturing)
-                        .accessibilityLabel("拍照并冲印")
-                        Spacer()
-                        Button {
-                            camera.selectLens(camera.selectedLens == .front
-                                ? .wide : .front)
-                        } label: {
-                            Image(systemName: "camera.rotate")
-                                .font(.system(size: 23))
-                                .frame(width: 80, height: 55)
-                        }
-                        .disabled(!camera.ready || camera.capturing)
-                        .accessibilityLabel("前后摄像头切换")
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 17)
-                .background(.black.opacity(0.5))
+                .padding(.horizontal,16)
+                HStack {
+                    Spacer()
+                    Button {camera.capture()} label: {
+                        Circle().strokeBorder(.white,lineWidth:5)
+                            .background(Circle().fill(camera.capturing
+                                ? .gray : .white).padding(7))
+                            .frame(width:74,height:74)
+                    }
+                    .disabled(!camera.ready || camera.capturing)
+                    .accessibilityLabel("拍摄照片")
+                    Spacer()
+                }
+                Text(camera.capturing ? "正在写入照片…" :
+                     camera.ready ? "RAW 保留 DNG 全幅，非 4:3 仅裁切 JPEG/HEIC" :
+                     "正在启动相机…")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
             }
             .foregroundColor(.white)
+            .padding(.vertical,12)
         }
         .onAppear {
-            camera.onCapture = onCapture
+            camera.onCapture=onCapture
             camera.start()
         }
-        .onDisappear { camera.stop() }
-        .alert("相机提示", isPresented: Binding(
-            get: { camera.errorMessage != nil },
-            set: { if !$0 { camera.errorMessage = nil } }
+        .onDisappear {camera.stop()}
+        .alert("原生相机提示",isPresented:Binding(
+            get:{camera.errorMessage != nil},
+            set:{if !$0 {camera.errorMessage=nil}}
         )) {
-            Button("确定", role: .cancel) { camera.errorMessage = nil }
-            Button("打开设置") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
+            Button("确定",role:.cancel){camera.errorMessage=nil}
         } message: {
             Text(camera.errorMessage ?? "")
         }
-    }
-
-    private var proPanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("专业拍摄").font(.caption.weight(.bold))
-                Spacer()
-                Toggle("手动曝光", isOn: $camera.manualExposure)
-                    .labelsHidden()
-                    .onChange(of: camera.manualExposure) { camera.changeExposureMode($0) }
-                Text("M").font(.caption)
-            }
-            if camera.manualExposure {
-                HStack {
-                    Text("ISO \(Int(camera.iso))")
-                        .frame(width: 78, alignment: .leading)
-                    Slider(value: $camera.iso, in: camera.isoRange)
-                        .onChange(of: camera.iso) { _ in camera.updateManualExposure() }
-                }
-                HStack {
-                    Text(String(format: "快门 1/%.0f", 1.0 / pow(2.0, camera.shutterLog2)))
-                        .frame(width: 100, alignment: .leading)
-                    Slider(value: $camera.shutterLog2, in: camera.shutterRange)
-                        .onChange(of: camera.shutterLog2) { _ in camera.updateManualExposure() }
-                }
-            } else {
-                HStack {
-                    Text(String(format: "曝光 %+.1f EV", camera.exposureBias))
-                        .frame(width: 105, alignment: .leading)
-                    Slider(value: $camera.exposureBias, in: camera.exposureBiasRange)
-                        .onChange(of: camera.exposureBias) { camera.setExposureBias($0) }
-                }
-            }
-            HStack {
-                Toggle("手动对焦", isOn: $camera.manualFocus)
-                    .onChange(of: camera.manualFocus) { camera.changeFocusMode($0) }
-                    .font(.caption)
-                if camera.manualFocus {
-                    Slider(value: $camera.focusPosition, in: 0...1)
-                        .onChange(of: camera.focusPosition) {
-                            camera.updateManualFocus($0)
-                        }
-                }
-            }
-            HStack {
-                Toggle("手动白平衡", isOn: $camera.manualWhiteBalance)
-                    .onChange(of: camera.manualWhiteBalance) {
-                        camera.changeWhiteBalanceMode($0)
-                    }
-                    .font(.caption)
-                if camera.manualWhiteBalance {
-                    Text("\(Int(camera.temperature)) K").font(.caption)
-                }
-            }
-            if camera.manualWhiteBalance {
-                Slider(value: $camera.temperature, in: 2500...10000)
-                    .onChange(of: camera.temperature) { _ in camera.updateWhiteBalance() }
-                HStack {
-                    Text(String(format: "色调 %+.0f", camera.tint)).font(.caption)
-                    Slider(value: $camera.tint, in: -150...150)
-                        .onChange(of: camera.tint) { _ in camera.updateWhiteBalance() }
-                }
-            }
-            Text("点按画面自动对焦/测光；手动模式下不自动覆盖参数。")
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.78))
-        }
-        .font(.system(size: 12))
-        .padding(10)
-        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
-        .disabled(camera.capturing || !camera.ready)
-    }
-}
-
-/// Touchable preview layer with capture-device coordinate mapping.
-private final class NextLevelPreviewSurface: UIView {
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        NextLevel.shared.previewLayer.frame = bounds
-    }
-}
-private struct NextLevelCameraPreview: UIViewRepresentable {
-    var onFocus: (CGPoint) -> Void
-    final class Coordinator: NSObject {
-        var onFocus: (CGPoint) -> Void
-        init(_ onFocus: @escaping (CGPoint) -> Void) { self.onFocus = onFocus }
-        @objc func tapped(_ recognizer: UITapGestureRecognizer) {
-            guard let view = recognizer.view else { return }
-            let point = recognizer.location(in: view)
-            let cameraPoint = NextLevel.shared.previewLayer
-                .captureDevicePointConverted(fromLayerPoint: point)
-            onFocus(cameraPoint)
-        }
-    }
-    func makeCoordinator() -> Coordinator { Coordinator(onFocus) }
-    func makeUIView(context: Context) -> NextLevelPreviewSurface {
-        let v = NextLevelPreviewSurface()
-        v.backgroundColor = .black
-        let preview = NextLevel.shared.previewLayer
-        preview.videoGravity = .resizeAspectFill
-        preview.removeFromSuperlayer()
-        v.layer.addSublayer(preview)
-        v.addGestureRecognizer(UITapGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.tapped(_:))
-        ))
-        return v
-    }
-    func updateUIView(_ v: NextLevelPreviewSurface, context: Context) {
-        context.coordinator.onFocus = onFocus
-        v.setNeedsLayout()
-    }
-    static func dismantleUIView(_ v: NextLevelPreviewSurface, coordinator: Coordinator) {
-        if NextLevel.shared.previewLayer.superlayer === v.layer {
-            NextLevel.shared.previewLayer.removeFromSuperlayer()
-        }
-    }
-}
-
-private final class NextLevelCameraController: NSObject,
-    ObservableObject, NextLevelDelegate, NextLevelPhotoDelegate {
-    @Published private(set) var ready = false
-    @Published private(set) var capturing = false
-    @Published private(set) var rawAvailable = false
-    @Published private(set) var flashAvailable = false
-    @Published private(set) var flashMode = 0
-    @Published private(set) var captureFormat: CaptureFormat = .jpeg
-    @Published private(set) var selectedLens: CaptureLens = .wide
-    @Published private(set) var availableLenses: Set<CaptureLens> = [.wide, .front]
-    @Published var zoom = 1.0
-    @Published var zoomRange: ClosedRange<Double> = 1...8
-    @Published var iso = 100.0
-    @Published var isoRange: ClosedRange<Double> = 25...800
-    @Published var shutterLog2 = -7.0
-    @Published var shutterRange: ClosedRange<Double> = -12...0
-    @Published var exposureBias = 0.0
-    @Published var exposureBiasRange: ClosedRange<Double> = -2...2
-    @Published var focusPosition = 0.5
-    @Published var temperature = 5500.0
-    @Published var tint = 0.0
-    @Published var manualExposure = false
-    @Published var manualFocus = false
-    @Published var manualWhiteBalance = false
-    @Published var errorMessage: String?
-
-    var onCapture: ((NextLevelCapturedPhoto) -> Void)?
-    private let engine = NextLevel.shared
-    private var active = false
-    private var pendingProcessed: Data?
-    private var pendingRAW: Data?
-    private var captureExpectedRAW = false
-    private var captureFormatLabel = "JPEG"
-
-    func start() {
-        guard !active else { return }
-        active = true
-        availableLenses = Set(CaptureLens.allCases.filter { lens in
-            AVCaptureDevice.default(lens.deviceType.avfoundationType, for: .video,
-                                    position: lens.position) != nil
-        })
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            configure()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                DispatchQueue.main.async {
-                    guard let self = self, self.active else { return }
-                    if granted { self.configure() }
-                    else { self.errorMessage = "未获得相机权限，请在系统设置中授权。" }
-                }
-            }
-        case .denied, .restricted:
-            errorMessage = "相机访问受限，请检查 iOS 设置中的相机权限。"
-        @unknown default:
-            errorMessage = "无法读取当前相机权限。"
-        }
-    }
-
-    private func configure() {
-        guard active else { return }
-        engine.delegate = self
-        engine.photoDelegate = self
-        engine.photoCaptureFailureHandler = { [weak self] reason in
-            DispatchQueue.main.async {
-                self?.capturing = false
-                self?.errorMessage = reason
-            }
-        }
-        engine.automaticallyConfiguresApplicationAudioSession = false
-        engine.captureMode = .photo
-        engine.devicePosition = .back
-        engine.deviceOrientation = .portrait
-        engine.photoConfiguration.preset = .photo
-        engine.photoConfiguration.codec = .jpeg
-        engine.photoConfiguration.isHighResolutionEnabled = true
-        engine.photoConfiguration.photoQualityPrioritization = .quality
-        engine.photoConfiguration.generateThumbnail = false
-        engine.photoConfiguration.isRawCaptureEnabled = false
-        do { try engine.start() }
-        catch { errorMessage = "相机启动失败：" + error.localizedDescription }
-    }
-
-    func stop() {
-        active = false
-        ready = false
-        capturing = false
-        if engine.delegate === self { engine.delegate = nil }
-        if engine.photoDelegate === self { engine.photoDelegate = nil }
-        engine.photoCaptureFailureHandler = nil
-        engine.stop()
-        onCapture = nil
-        pendingRAW = nil
-        pendingProcessed = nil
-    }
-
-    private func updateCapabilities() {
-        guard let device = engine.proCaptureDevice else { return }
-        rawAvailable = engine.proRAWAvailable
-        flashAvailable = engine.isFlashAvailable
-        zoomRange = Double(device.minAvailableVideoZoomFactor) ...
-            max(Double(device.minAvailableVideoZoomFactor),
-                min(12.0, Double(device.activeFormat.videoMaxZoomFactor)))
-        zoom = min(max(Double(device.videoZoomFactor),zoomRange.lowerBound),zoomRange.upperBound)
-        isoRange = Double(device.activeFormat.minISO) ... Double(device.activeFormat.maxISO)
-        iso = min(max(Double(device.iso),isoRange.lowerBound),isoRange.upperBound)
-        let minDuration = max(0.00001,
-            CMTimeGetSeconds(device.activeFormat.minExposureDuration))
-        let maxDuration = max(minDuration,
-            CMTimeGetSeconds(device.activeFormat.maxExposureDuration))
-        shutterRange = log2(minDuration) ... log2(maxDuration)
-        shutterLog2 = min(max(log2(max(minDuration,CMTimeGetSeconds(device.exposureDuration))),
-            shutterRange.lowerBound),shutterRange.upperBound)
-        exposureBiasRange = Double(device.minExposureTargetBias) ...
-            Double(device.maxExposureTargetBias)
-        exposureBias = min(max(Double(device.exposureTargetBias),
-            exposureBiasRange.lowerBound),exposureBiasRange.upperBound)
-        focusPosition = Double(device.lensPosition)
-        temperature = Double(engine.whiteBalanceTemperature)
-        tint = Double(engine.whiteBalanceTint)
-    }
-
-    func setFormat(_ format: CaptureFormat) {
-        guard !capturing else { return }
-        if format == .raw && !rawAvailable {
-            errorMessage = "当前镜头不支持原生 Bayer RAW DNG，未自动回退 JPEG。"
-            return
-        }
-        captureFormat = format
-    }
-
-    func selectLens(_ lens: CaptureLens) {
-        guard active && ready && !capturing && availableLenses.contains(lens) else { return }
-        if lens.position != engine.devicePosition {
-            engine.flashMode = .off
-            engine.devicePosition = lens.position
-        }
-        do {
-            try engine.changeCaptureDeviceIfAvailable(captureDevice:lens.deviceType)
-            selectedLens = lens
-            flashMode = 0
-            // Device reconfiguration runs on NextLevel's session queue.
-            // Never advertise DNG support from the old camera.
-            ready = false
-            rawAvailable = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                guard let self = self, self.active else { return }
-                self.updateCapabilities()
-                self.ready = self.engine.isRunning
-            }
-        } catch {
-            errorMessage = "该镜头不可用：" + error.localizedDescription
-        }
-    }
-
-    func cycleFlash() {
-        guard ready && flashAvailable else { return }
-        flashMode = (flashMode + 1) % 3
-        engine.flashMode = flashMode == 1 ? .on : flashMode == 2 ? .auto : .off
-    }
-
-    func focus(at point: CGPoint) {
-        guard active && ready && !capturing else { return }
-        if !manualFocus && !manualExposure && !manualWhiteBalance {
-            engine.focusExposeAndAdjustWhiteBalance(atAdjustedPoint: point)
-        } else if !manualFocus {
-            engine.focusAtAdjustedPointOfInterest(adjustedPoint: point)
-        }
-    }
-
-    func setZoom(_ value: Double) {
-        guard ready && !capturing else { return }
-        do { try engine.proSetZoom(CGFloat(value)) }
-        catch { errorMessage = error.localizedDescription }
-    }
-
-    func changeExposureMode(_ manual: Bool) {
-        guard ready else { return }
-        do {
-            if manual { try engine.proSetManualExposure(
-                iso: Float(iso), shutterSeconds: pow(2.0,shutterLog2)
-            ) } else {
-                try engine.proReturnToAutoExposure()
-            }
-        } catch { errorMessage = error.localizedDescription }
-    }
-    func updateManualExposure() {
-        if manualExposure && ready && !capturing {
-            changeExposureMode(true)
-        }
-    }
-    func setExposureBias(_ value: Double) {
-        guard !manualExposure && ready && !capturing else { return }
-        do { try engine.proSetExposureBias(Float(value)) }
-        catch { errorMessage = error.localizedDescription }
-    }
-    func changeFocusMode(_ manual: Bool) {
-        guard ready else { return }
-        do {
-            if manual { try engine.proSetManualFocus(position:Float(focusPosition)) }
-            else { try engine.proReturnToAutoFocus() }
-        } catch { errorMessage = error.localizedDescription }
-    }
-    func updateManualFocus(_ value: Double) {
-        guard manualFocus && ready && !capturing else { return }
-        do { try engine.proSetManualFocus(position:Float(value)) }
-        catch { errorMessage = error.localizedDescription }
-    }
-    func changeWhiteBalanceMode(_ manual: Bool) {
-        guard ready else { return }
-        do {
-            if manual { try engine.proSetWhiteBalance(
-                temperature:Float(temperature),tint:Float(tint)) }
-            else { try engine.proReturnToAutoWhiteBalance() }
-        } catch { errorMessage = error.localizedDescription }
-    }
-    func updateWhiteBalance() {
-        if manualWhiteBalance && ready && !capturing {
-            changeWhiteBalanceMode(true)
-        }
-    }
-
-    func capture() {
-        guard active && ready && !capturing && engine.canCapturePhoto else {
-            errorMessage = "相机未准备好，或设备剩余空间不足。"
-            return
-        }
-        if captureFormat == .raw && !engine.proRAWAvailable {
-            errorMessage = "原生 RAW DNG 不受当前镜头支持；拒绝静默拍成 JPEG。"
-            return
-        }
-        pendingRAW = nil
-        pendingProcessed = nil
-        captureExpectedRAW = captureFormat == .raw
-        captureFormatLabel = captureFormat.rawValue
-        engine.photoConfiguration.codec = captureFormat == .heic ? .hevc : .jpeg
-        engine.photoConfiguration.isRawCaptureEnabled = captureExpectedRAW
-        capturing = true
-        engine.capturePhoto()
-    }
-
-    func nextLevel(_ n: NextLevel,
-                   didUpdateVideoConfiguration c: NextLevelVideoConfiguration) {}
-    func nextLevel(_ n: NextLevel,
-                   didUpdateAudioConfiguration c: NextLevelAudioConfiguration) {}
-    func nextLevelSessionWillStart(_ n: NextLevel) {}
-    func nextLevelSessionDidStart(_ n: NextLevel) {
-        guard active else { return }
-        updateCapabilities()
-        ready = true
-    }
-    func nextLevelSessionDidStop(_ n: NextLevel) { ready = false }
-    func nextLevelSessionWasInterrupted(_ n: NextLevel) {
-        ready = false
-        capturing = false
-        if active { errorMessage = "相机被系统中断，请重新打开相机。" }
-    }
-    func nextLevelSessionInterruptionEnded(_ n: NextLevel) {}
-    func nextLevelCaptureModeWillChange(_ n: NextLevel) { ready = false }
-    func nextLevelCaptureModeDidChange(_ n: NextLevel) {}
-
-    func nextLevel(_ n: NextLevel, output: AVCapturePhotoOutput,
-                   willBeginCaptureFor settings: AVCaptureResolvedPhotoSettings,
-                   photoConfiguration: NextLevelPhotoConfiguration) {}
-    func nextLevel(_ n: NextLevel, output: AVCapturePhotoOutput,
-                   willCapturePhotoFor settings: AVCaptureResolvedPhotoSettings,
-                   photoConfiguration: NextLevelPhotoConfiguration) {}
-    func nextLevel(_ n: NextLevel, output: AVCapturePhotoOutput,
-                   didCapturePhotoFor settings: AVCaptureResolvedPhotoSettings,
-                   photoConfiguration: NextLevelPhotoConfiguration) {}
-    func nextLevel(_ n: NextLevel, didFinishProcessingPhoto photo: AVCapturePhoto,
-                   photoDict: [String: Any], photoConfiguration: NextLevelPhotoConfiguration) {
-        guard active && capturing else { return }
-        guard let data = (photoDict[NextLevelPhotoFileDataKey] as? Data)
-            ?? photo.fileDataRepresentation(), !data.isEmpty else {
-            errorMessage = "照片数据为空；已拒绝使用预览快照替代。"
-            return
-        }
-        if photo.isRawPhoto {
-            pendingRAW = data
-        } else if let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  CGImageSourceGetCount(source) > 0 {
-            pendingProcessed = data
-        } else {
-            errorMessage = "相机未返回可解码的 JPEG/HEIC。"
-        }
-    }
-    func nextLevelDidCompletePhotoCapture(_ n: NextLevel) {
-        guard active && capturing else { return }
-        capturing = false
-        guard let companion = pendingProcessed else {
-            errorMessage = "拍摄失败：没有收到 JPEG/HEIC 主图，未进入冲印。"
-            return
-        }
-        if captureExpectedRAW && pendingRAW == nil {
-            errorMessage = "RAW+DNG 拍摄失败：未收到原始 DNG，拒绝仅使用 JPEG。"
-            return
-        }
-        let result = NextLevelCapturedPhoto(
-            processed:companion,
-            rawDNG:captureExpectedRAW ? pendingRAW : nil,
-            format:captureFormatLabel
-        )
-        pendingRAW = nil
-        pendingProcessed = nil
-        let handoff = onCapture
-        onCapture = nil
-        handoff?(result)
     }
 }
