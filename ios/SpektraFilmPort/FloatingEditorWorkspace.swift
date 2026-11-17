@@ -494,14 +494,14 @@ struct FloatingEditorWorkspace: View {
         if abs(model.strength - 1.0) > 1e-9 {
             changes.append("效果强度恢复为 100%")
         }
-        if mode == .physical {
-            if !model.spatialDIREnabled { changes.append("启用胶片层间扩散") }
-            if !model.spatialDIRSourceConvolutionEnabled {
-                changes.append("启用原版空间扩散计算")
-            }
-            if !model.sourcePixelIOEnabled {
-                changes.append("启用原版像素通道")
-            }
+        if !model.spatialDIREnabled {
+            changes.append("启用胶片层间扩散")
+        }
+        if !model.spatialDIRSourceConvolutionEnabled {
+            changes.append("启用原版 FIR/YVV 空间扩散计算")
+        }
+        if mode == .physical && !model.sourcePixelIOEnabled {
+            changes.append("启用原版像素通道")
         }
         if model.grainEnabled { changes.append("关闭随机密度颗粒") }
         if model.scannerFinishingEnabled { changes.append("关闭旧版扫描锐化") }
@@ -551,10 +551,14 @@ struct FloatingEditorWorkspace: View {
         // physical mode may prepare prerequisites only after confirmation.
         // A source-exact pixel path requires original photo bytes. Decoded
         // Apple/LibRaw CI images cannot be relabeled as Python Float64.
-        guard model.lut != nil, model.originalPixelInputAvailable else { return }
-        if mode == .pixel &&
-            (!model.spatialDIREnabled ||
-             !model.spatialDIRSourceConvolutionEnabled) { return }
+        // Build129: one-step precise mode can confirm+enable DIR
+        // prerequisites. An unavailable LUT reports its real dependency
+        // instead of leaving an apparently dead/disabled "精细冲印".
+        guard model.lut != nil, model.originalPixelInputAvailable else {
+            model.status="精细冲印尚缺胶片／相纸模拟 LUT 或已认证原图像素。" +
+                model.photoInputSummary+"。请在图像输入检测中查看转换方案。"
+            return
+        }
         if requiredChanges(for: mode).isEmpty {
             commitSourceMode(mode)
         } else {
@@ -595,6 +599,8 @@ struct FloatingEditorWorkspace: View {
         model.grainEnabled = false
         model.scannerFinishingEnabled = false
         if mode == .pixel {
+            model.spatialDIREnabled = true
+            model.spatialDIRSourceConvolutionEnabled = true
             model.scatterEnabled = false
             model.halationEnabled = false
             model.sourcePixelIOEnabled = true
@@ -619,14 +625,12 @@ struct FloatingEditorWorkspace: View {
                                    mode: SourceModeChange) -> some View {
         let isOn = mode == .pixel
             ? model.sourcePixelIOEnabled : model.sourcePhysicalDirectEnabled
-        let prerequisite = model.spatialDIREnabled &&
-            model.spatialDIRSourceConvolutionEnabled &&
-            model.lut != nil && model.originalPixelInputAvailable &&
+        let prerequisite = model.hasPhoto && model.lut != nil &&
+            model.originalPixelInputAvailable &&
             (mode == .pixel || model.sourcePixelIOEnabled)
-        let blocked = model.busy || (!isOn && (!model.hasPhoto ||
-            model.lut == nil || !model.spatialDIREnabled ||
-            !model.spatialDIRSourceConvolutionEnabled ||
-            (mode == .physical && !model.sourcePixelIOEnabled)))
+        // Keep mode switch actionable so a failed source can open
+        // the input diagnostic and full optical can confirm prerequisites.
+        let blocked = model.busy || !model.hasPhoto
         let reason:String? = {
             if !model.hasPhoto { return "先从相册或文件打开照片。" }
             if model.busy { return "正在处理照片，完成后即可操作。" }
@@ -641,7 +645,7 @@ struct FloatingEditorWorkspace: View {
                 return "原图没有可直连的已认证像素输入；查看图像输入检测或明确进行 P3 → sRGB 副本转换。"
             }
             if mode == .physical && !model.sourcePixelIOEnabled {
-                return "请先启用 8-bit DIR 原版像素通道；精细冲印模式切换仍需确认依赖。"
+                return "点击精细冲印，可一次确认启用原版像素通道、DIR、扫描与 Float64。"
             }
             return nil
         }()
@@ -842,6 +846,11 @@ struct FloatingEditorWorkspace: View {
                     }
                     Button("兼容：生成 RAW 的 8-bit sRGB JPEG（保留 DNG）") {
                         model.convertActiveRAWTo8BitSRGBCopy()
+                    }
+                }
+                if model.photoHighDepthCopyPossible && !model.busy {
+                    Button("优先：普通照片生成 Float32 高位深 TIFF 副本") {
+                        model.convertActivePhotoToFloat32Copy()
                     }
                 }
                 if model.photoP3ConversionPossible && !model.busy {
@@ -2052,12 +2061,13 @@ struct FloatingEditorWorkspace: View {
                             in:RoundedRectangle(cornerRadius:8))
                 }
                 .buttonStyle(.plain)
-                .disabled(!model.hasPhoto || model.busy ||
-                          model.lut == nil || !model.originalPixelInputAvailable)
-                .accessibilityHint("需要已认证原始照片字节、胶片/相纸与完整 DIR。RAW 兼容图不能进入原版精确模式；变更前确认")
+                // Do not disable when source admission fails: the tap
+                // MUST open the RAW/ordinary-photo compatibility dialog.
+                .disabled(!model.hasPhoto || model.busy)
+                .accessibilityHint("点击后检查照片输入；不符合时提供 RAW Float32 或普通照片高位深副本选项；条件符合后再确认光学依赖")
             }
             if !model.originalPixelInputAvailable && model.hasPhoto {
-                Text("当前输入无原版像素直连数据；继续使用快速冲印，不会假装为 Float64 精确路径。")
+                Text("原版像素尚未认证。点「精细冲印」打开输入检测，可明确生成高位深 TIFF 副本；不会自动降为 8-bit。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if directPixelMode && !fullPhysicalMode {
                 Text("当前为 8-bit DIR 像素处理；精细冲印需要另外确认原版全光学依赖。")
