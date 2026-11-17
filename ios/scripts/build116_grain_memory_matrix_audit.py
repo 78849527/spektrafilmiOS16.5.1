@@ -44,9 +44,9 @@ for code in [
 assert 'useFastStats=true' in device
 assert 'useUnseededParallel=true' in device
 assert 'numbaSeed=8888' in device
-assert 'static let extraBytesPerPixel: UInt64 = 272' in grain
+assert 'static let extraBytesPerPixel: UInt64 = 224' in grain
 assert 'static let unseededParallelExtraBytesPerPixel: UInt64 = 56' in grain
-assert 'let allowed=min(1_500_000_000,physicalMemory/3)' in mem
+assert 'let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3' in mem
 assert "onRunBuild116GrainMemory()" in ui
 assert "checkpointURL:checkpoint" in content
 assert "proof.allAdmittedCasesPassed" in content

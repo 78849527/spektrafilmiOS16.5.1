@@ -139,7 +139,10 @@ enum Build91PhysicalMemory {
             paperFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0
         )
         let estimated=basePeak+additionalFFT
-        let allowed=min(1_500_000_000,physicalMemory/3)
+        // Build117: the device-reported process headroom is authoritative.
+        // No invented 1500 MB ceiling. If unavailable, retain the safer
+        // physical-memory-third fallback rather than permit unbounded use.
+        let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3
         return Plan(
             width:width,height:height,pixels:pixels,
             basePeakBytes:basePeak,additionalFFTBytes:additionalFFT,
@@ -148,8 +151,8 @@ enum Build91PhysicalMemory {
             cameraFFT:cameraFFT,paperFFT:paperFFT
         )
     }
-    /// Same physicalMemory/3 cap and process 80% headroom rule as
-    /// existing v1.8.58 production memory guard, using UInt64.
+    /// Real process headroom governs admission; physicalMemory/3 is only
+    /// the fallback when the OS cannot report current process headroom.
     static func validate(_ plan:Plan) throws {
         let headroomOK=plan.processAvailableBytes.map{
             $0>0 && plan.estimatedPeakBytes<=($0/10)*8

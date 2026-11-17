@@ -19,19 +19,19 @@ enum Build106SourceMemoryLedgerValidation {
             cameraLens:true,filmHalation:true,paperDiffusion:true,
             stageObserver:false,paperStageObserver:false
         )
-        try demand(all==608,"previous production feature budget changed")
+        try demand(all==560,"previous production feature budget changed")
         let grain=b.additional(
             scannerFinish:false,scannerGlare:false,grain:true,
             cameraLens:false,filmHalation:false,paperDiffusion:false,
             stageObserver:false,paperStageObserver:false
         )
-        try demand(grain==272,"source 3x3 grain scratch mis-budgeted")
+        try demand(grain==224,"source 3x3 grain scratch mis-budgeted")
         let observed=b.additional(
             scannerFinish:true,scannerGlare:true,grain:true,
             cameraLens:true,filmHalation:true,paperDiffusion:true,
             stageObserver:true,paperStageObserver:true
         )
-        try demand(observed==1616,"diagnostic observer peak budget changed")
+        try demand(observed==1568,"diagnostic observer peak budget changed")
         // Both entrypoints must compute same feature plan for same knobs.
         let predecode=b.additional(
             scannerFinish:true,scannerGlare:true,grain:true,
@@ -43,16 +43,16 @@ enum Build106SourceMemoryLedgerValidation {
             stageObserver:false,paperStageObserver:false)
         try demand(predecode==renderer,"predecode/renderer ledger drift")
         let scratch=b.scratch(pixels:1_900_000,withDyeCloud:true)
-        try demand(scratch.layerInputsBytes==136_800_000,
-                   "9 Double layer field wrong")
+        try demand(scratch.layerInputsBytes==45_600_000,
+                   "Production 3 Double layer field wrong")
         try demand(scratch.particleFieldsBytes==45_600_000,
                    "3 Double particle scratch wrong")
-        try demand(scratch.cloudBytes==45_600_000,
-                   "3-channel dye cloud wrong")
-        try demand(scratch.releasedBeforeMicrostructureBytes==228_000_000,
+        try demand(scratch.cloudBytes==15_200_000,
+                   "Scalar dye cloud wrong")
+        try demand(scratch.releasedBeforeMicrostructureBytes==106_400_000,
                    "scratch not eligible to release before microstructure")
         try demand(b.scratch(pixels:1_900_000,withDyeCloud:false)
-                    .releasedBeforeMicrostructureBytes==182_400_000,
+                    .releasedBeforeMicrostructureBytes==91_200_000,
                    "no dye-cloud must not allocate unused cloud buffer")
         let cases:[(Int,Int)]=[
             (1000,1000),(1600,1250),(2000,2000),
@@ -68,9 +68,9 @@ enum Build106SourceMemoryLedgerValidation {
                                additionalBytesPerPixel:all)!
             try demand(none.estimatedWithoutFFT==pixels*120,
                        "Build91 base estimate changed")
-            try demand(dense.totalWithFFT==pixels*392,
+            try demand(dense.totalWithFFT==pixels*344,
                        "Build91 3x3 density estimate changed")
-            try demand(full.totalWithFFT==pixels*728,
+            try demand(full.totalWithFFT==pixels*680,
                        "Build91 all-feature estimate changed")
             let tapped=b.preview(width:w,height:h,
                                  additionalBytesPerPixel:observed)!
@@ -81,7 +81,7 @@ enum Build106SourceMemoryLedgerValidation {
         let fftPlan=b.preview(width:1000,height:1000,
                               additionalBytesPerPixel:grain,
                               fftScratchBytes:fft)!
-        try demand(fftPlan.totalWithFFT==432_000_000,
+        try demand(fftPlan.totalWithFFT==384_000_000,
                    "FFT scratch double-account or hidden")
         try demand(b.preview(width:5000,height:2601,
                              additionalBytesPerPixel:0)==nil,
@@ -94,7 +94,7 @@ enum Build106SourceMemoryLedgerValidation {
                    "per pixel cap bypassed")
         print("PASS Build106 source memory: 6 geometries x 4 scenarios," +
               " historical bpp unchanged, +960b/px callback guard," +
-              " 228MB scratch release at 1.9MP, FFT budget and fail-closed geometry." +
+              " 106.4MB scratch release at 1.9MP, FFT budget and fail-closed geometry." +
               " No physical-device RSS certification claimed.")
     }
 }

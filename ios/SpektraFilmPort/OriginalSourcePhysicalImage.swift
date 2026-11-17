@@ -45,7 +45,6 @@ enum OriginalSourcePhysicalImage {
     static let cameraLensExtraBytesPerPixel: UInt64 = 40
     static let filmHalationExtraBytesPerPixel: UInt64 = 120
     static let printDiffusionExtraBytesPerPixel: UInt64 = 40
-    static let maximumSourceMemoryBudget: UInt64 = 1_500_000_000
 
     static func validateMemoryBudget(
         width:Int,height:Int,

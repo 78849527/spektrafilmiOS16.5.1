@@ -9,7 +9,7 @@ enum Build106SourceMemoryLedger {
     static let baseBytesPerPixel: UInt64 = 120
     static let scannerFinishBytesPerPixel: UInt64 = 40
     static let scannerGlareBytesPerPixel: UInt64 = 96
-    static let grainBytesPerPixel: UInt64 = 272
+    static let grainBytesPerPixel: UInt64 = 224
     static let parallelGrainExtraBytesPerPixel: UInt64 = 56
     static let cameraLensBytesPerPixel: UInt64 = 40
     static let filmHalationBytesPerPixel: UInt64 = 120
@@ -59,9 +59,12 @@ enum Build106SourceMemoryLedger {
         let releasedBeforeMicrostructureBytes:UInt64
     }
     static func scratch(pixels:UInt64,withDyeCloud:Bool)->Scratch {
-        let layers=pixels*9*8
+        // Production holds 3 layers per pixel; observed 9-layer snapshots
+        // are charged to stageObserverBytesPerPixel separately.
+        let layers=pixels*3*8
         let fields=pixels*3*8
-        let cloud=withDyeCloud ? pixels*3*8 : 0
+        // Build116 scalar dye-cloud blur holds only one Double channel.
+        let cloud=withDyeCloud ? pixels*8 : 0
         return Scratch(
             layerInputsBytes:layers,
             particleFieldsBytes:fields,

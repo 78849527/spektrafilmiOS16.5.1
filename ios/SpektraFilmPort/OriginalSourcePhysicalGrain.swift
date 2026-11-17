@@ -91,8 +91,10 @@ enum OriginalSourcePhysicalGrain {
     }
 
     /// For parent pre-decode safety budget. Additional whole-frame Double
-    /// sublayer field + SciPy counts + blur scratch; do not auto-resize.
-    static let extraBytesPerPixel: UInt64 = 272
+    /// Production no-observer input holds 3 rather than 9 layer values
+    /// per pixel (48 B/px less); other conservative scratch stays budgeted.
+    /// Stage-observer captures retain all 9 fields and are charged separately.
+    static let extraBytesPerPixel: UInt64 = 224
     /// Extra retained worker-local particle input/count copies at
     /// concurrency boundaries, over the existing seeded grain ledger.
     static let unseededParallelExtraBytesPerPixel: UInt64 = 56
@@ -170,26 +172,34 @@ enum OriginalSourcePhysicalGrain {
                 }
             }
         }
-        // Interpolate all 9 sublayers BEFORE SciPy RNG; the source uses
-        // this measured inversion, not total CMY RGB surrogates.
-        var layerInputs=[Double](repeating:0,count:pixels*9)
+        // Original measured inversion is deterministic, before each
+        // channel's SciPy/Numba draws. Preserve full nine-field layout when
+        // an observer requires the exact Python sublayer stage snapshot.
+        // Normal production retains only the current channel's 3 sublayers.
+        // RNG order remains ch outer / sl inner; no Float32 or tiling.
+        let retainAllSublayers=stageObserver != nil
+        var layerInputs=[Double](
+            repeating:0,count:pixels*(retainAllSublayers ? 9 : 3)
+        )
         var inputCMY=[Double](repeating:0,count:3)
         var layerScratch=[Double](repeating:0,count:9)
-        for p in 0..<pixels {
-            let k=p*3
-            for ch in 0..<3 { inputCMY[ch]=densityCMY[k+ch] }
-            if let sublayersInto=measured.sublayersInto {
-                try sublayersInto(inputCMY,&layerScratch)
-            } else {
-                layerScratch=try measured.sublayers(inputCMY)
+        if retainAllSublayers {
+            for p in 0..<pixels {
+                let k=p*3
+                for ch in 0..<3 { inputCMY[ch]=densityCMY[k+ch] }
+                if let sublayersInto=measured.sublayersInto {
+                    try sublayersInto(inputCMY,&layerScratch)
+                } else {
+                    layerScratch=try measured.sublayers(inputCMY)
+                }
+                guard layerScratch.count==9,
+                      layerScratch.allSatisfy({$0.isFinite}) else {
+                    throw Failure.invalid("原版胶片三亚层密度未完整计算")
+                }
+                for i in 0..<9 {layerInputs[p*9+i]=layerScratch[i]}
             }
-            guard layerScratch.count==9,
-                  layerScratch.allSatisfy({$0.isFinite}) else {
-                throw Failure.invalid("原版胶片三亚层密度未完整计算")
-            }
-            for i in 0..<9 { layerInputs[p*9+i]=layerScratch[i] }
+            stageObserver?("sourceGrainSublayers",layerInputs)
         }
-        stageObserver?("sourceGrainSublayers",layerInputs)
 
         // The original density_min is added to *each sublayer* before
         // probability-of-development. Accumulate sublayer particle
@@ -226,11 +236,32 @@ enum OriginalSourcePhysicalGrain {
                   )
                 : nil
         for ch in 0..<3 {
+            if !retainAllSublayers {
+                // Recompute the pure measured inversion once per channel.
+                // Keep 3 Float64 layers per pixel, not 9. No random draw
+                // occurs here; RNG consumption is unchanged.
+                for p in 0..<pixels {
+                    let k=p*3
+                    for c in 0..<3 {inputCMY[c]=densityCMY[k+c]}
+                    if let sublayersInto=measured.sublayersInto {
+                        try sublayersInto(inputCMY,&layerScratch)
+                    } else {
+                        layerScratch=try measured.sublayers(inputCMY)
+                    }
+                    guard layerScratch.count==9,
+                          layerScratch.allSatisfy({$0.isFinite}) else {
+                        throw Failure.invalid("原版胶片三亚层密度未完整计算")
+                    }
+                    for sl in 0..<3 {
+                        layerInputs[p*3+sl]=layerScratch[sl*3+ch]
+                    }
+                }
+            }
             for sl in 0..<3 {
                 let li=sl*3+ch
                 let n=particleN[li],od=densityOD[li]
                 for p in 0..<pixels {
-                    let sourceD=layerInputs[p*9+li]+minLayers[li]
+                    let sourceD=layerInputs[retainAllSublayers ? p*9+li : p*3+sl]+minLayers[li]
                     let probability=min(1.0-1e-6,max(1e-6,sourceD/densityMax[li]))
                     let saturation=1.0-probability*settings.uniformity[ch]*(1.0-1e-6)
                     probabilities[p]=probability
@@ -282,7 +313,7 @@ enum OriginalSourcePhysicalGrain {
         }
         stageObserver?("sourceGrainDyeClouds",out)
 
-        // Build106: the 9-layer source interpolation field (9 Double/px),
+        // Build117: release the current 3-layer (or observed 9-layer) field,
         // 3 Poisson/Binomial preparation fields (3 Double/px) and dye-cloud
         // RGB workspace are dead after this final SciPy/fast_stats draw.
         // Explicitly relinquish their storage BEFORE allocating Numba
