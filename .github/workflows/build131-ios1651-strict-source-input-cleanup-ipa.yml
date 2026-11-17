@@ -1,3 +1,4 @@
+# Build132 scoped retry: add only upstream-based P1 RAW/ACES source files to historical Build116 original-module diff gate.
 # Build132 retry: preserve original named RAW import entry points for Build103/95 historical GUI source audit.
 # Build131 strict-original cleanup: drop Build131 non-original global Float32 remapping; source/ICC transport preserved, full original parity pending.
 # Build131 retry after Swift parser correction in explicit RGB input-range diagnostic; same branch, full TIFF32 test and arm64 packaging.
@@ -209,7 +210,15 @@ jobs:
                 # Build129 only: independent real-image source ICC admission.
                 # Numerical rendering sources remain scoped unchanged.
                 'ios/SpektraFilmPort/Build111PhotoInputProfile.swift',
-                'ios/SpektraFilmPort/Build78FloatTIFFIngress.swift'
+                'ios/SpektraFilmPort/Build78FloatTIFFIngress.swift',
+                # P1 explicitly approved original RAW/ACES input modules.
+                # Do NOT expand to every Swift file; keep Build116's
+                # historical strict source-scope regression.
+                'ios/SpektraFilmPort/Build94LibRawIngress.swift',
+                'ios/SpektraFilmPort/P1OriginalRawACESIngress.swift',
+                'ios/SpektraFilmPort/OriginalHanatosResponse.swift',
+                'ios/SpektraFilmPort/OriginalSourceCameraOptics.swift',
+                'ios/SpektraFilmPort/SpectralPhysics.swift'
               }]
           assert not forbidden, 'Build116 unexpectedly changed unapproved original modules: '+str(forbidden)
           print('PASS Build115 scoped original parallel stochastic work with strictly separate controlled seed mode')
