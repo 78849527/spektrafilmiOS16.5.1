@@ -54,8 +54,9 @@ required={
         "CIImage(data:data" in camera,
     "main app native camera": "NativeCameraScreen(" in main and
         "func loadCapturedPhoto(_ capture: NextLevelCapturedPhoto)" in main,
-    "DNG separate durable write": "raw.write(to: output, options: .atomic)" in main,
-    "unchanged optical ingest": "try loadPhoto(capture.processed,entry:.camera)" in main,
+    "DNG separate durable write": "raw.write(to: rawFile, options: .atomic)" in main,
+    "non-RAW JPEG/HEIC ingest": "try loadPhoto(capture.processed,entry:.camera)" in main,
+    "RAW DNG editor ingest": "Build93AppleRAWImport.open(rawFile)" in main,
     "file RAW share": "activeSheet = .share(url)" in main and
         "onShareRaw" in ui,
     "preview from camera not snapshot": "UIImageJPEGRepresentation" not in camera,
