@@ -29,9 +29,7 @@ struct Build116GrainScalarGaussianValidation {
                 for p in 0..<n {
                     guard scalar[p].bitPattern==reference[p*3].bitPattern else {
                         fatalError(
-                            "Build116 numerical parity FAIL w=\(w) h=\(h) "+
-                            "sigma=\(sigma) p=\(p) new=\(scalar[p]) "+
-                            "old=\(reference[p*3])"
+                            "Build116 numerical parity FAIL w=\(w) h=\(h) sigma=\(sigma) p=\(p) new=\(scalar[p]) old=\(reference[p*3])"
                         )
                     }
                 }
@@ -45,9 +43,9 @@ struct Build116GrainScalarGaussianValidation {
         let pixels:UInt64=13_000_000
         let originalScratchBytesPerPixel:UInt64=64
         let scalarScratchBytesPerPixel:UInt64=16
-        guard originalScratchBytesPerPixel-scalarScratchBytesPerPixel==48,
-              (originalScratchBytesPerPixel-scalarScratchBytesPerPixel)*pixels
-                  ==624_000_000 else {
+        let savedPerPixel=originalScratchBytesPerPixel-scalarScratchBytesPerPixel
+        guard savedPerPixel == 48,
+              savedPerPixel * pixels == 624_000_000 else {
             fatalError("Build116 scratch accounting changed")
         }
 
@@ -60,10 +58,6 @@ struct Build116GrainScalarGaussianValidation {
         } catch SourceGrainScalarGaussian.Failure.invalid {
             // Required fail closed: no automatic downscale.
         }
-        print(
-            "PASS Build116 original scalar full-frame FIR/YVV "+
-            "bit-exact \(cases)/\(cases) against prior RGB source; "+
-            "48 B/px local peak scratch reduction; no 13MP certification"
-        )
+        print("PASS Build116 original scalar full-frame FIR/YVV bit-exact \(cases)/\(cases) against prior RGB source; 48 B/px local peak scratch reduction; no 13MP certification")
     }
 }
