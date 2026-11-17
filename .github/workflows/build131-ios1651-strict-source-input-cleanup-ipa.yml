@@ -79,7 +79,7 @@ on:
         description: "macOS build host (App target remains iPhoneOS arm64)"
         required: false
         type: choice
-        default: macos-15
+        default: macos-15-intel
         options:
           - macos-15-intel
           - macos-15
@@ -155,10 +155,10 @@ jobs:
   group-compile-once:
     needs: runner-preflight
     # Owner decision: any macOS host architecture is allowed.
-    # Push uses GitHub's generic macOS 15 pool, not an Intel-only label.
+    # Push defaults to the previously verified Intel host; dispatch still permits ARM64.
     # Only host changes. The compiled iPhoneOS arm64 target, Xcode, original
     # optical sources, versions, RNG and parity tests remain unchanged.
-    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
+    runs-on: ${{ inputs.macos_runner || 'macos-15-intel' }}
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
