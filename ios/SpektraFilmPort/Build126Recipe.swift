@@ -154,7 +154,7 @@ struct Build126Recipe: Codable, Identifiable {
         }
         guard inputContract == nil ||
               ["uint8SRGB","uint16SRGB","float16ExtendedSRGB",
-               "float32ExtendedSRGB"].contains(inputContract!) else {
+               "float32ExtendedSRGB","float32SRGB"].contains(inputContract!) else {
             throw ImageProcessingError.invalid(
                 "配方输入格式契约未知，拒绝不兼容模式或静默降级"
             )
