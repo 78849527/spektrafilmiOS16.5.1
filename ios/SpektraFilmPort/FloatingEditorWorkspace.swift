@@ -65,10 +65,15 @@ struct FloatingEditorWorkspace: View {
     @State private var statusReportPresented = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
+    // Build127: material browsing state never alters optical settings.
+    // IDs only, no cached photos/processed images.
+    @AppStorage("sf.build127.filmFavorites") private var favoriteFilmIDsStored=""
+    @AppStorage("sf.build127.recentFilms") private var recentFilmIDsStored=""
+    @State private var recipeApplyError:String?
 
     // View-only grouping: changing a page does not change source algorithms.
     private enum EditorPage: String {
-        case film = "胶卷"
+        case film = "胶片与配方"
         case adjustment = "调整"
         case workflow = "工艺"
         case laboratory = "实验室"
@@ -742,15 +747,15 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
+    // Show the full source catalog, not only currently renderable IDs.
+    // Non-renderable stock cards are visible but cannot change the selection.
     private var films: [MeasuredStock] {
-        SpectralPhysics.supportedFilmIDs.compactMap { id in
-            GeneratedMeasuredProfiles.entries.first { $0.id == id }
+        GeneratedMeasuredProfiles.entries.filter {
+            $0.medium == "film" && $0.stage == "filming"
         }
     }
     private var media: [MeasuredStock] {
-        SpectralPhysics.supportedPaperIDs.compactMap { id in
-            GeneratedMeasuredProfiles.entries.first { $0.id == id }
-        }
+        GeneratedMeasuredProfiles.entries.filter { $0.stage == "printing" }
     }
     private var isReversal: Bool {
         SpectralPhysics.isPositiveFilm(selectedFilmID)
@@ -1449,17 +1454,7 @@ struct FloatingEditorWorkspace: View {
                                     in:Capsule())
                 }
                 .accessibilityLabel("高级菜单：仅验证状态与开发者诊断")
-                Button(action:onOpenRecipes) {
-                    Text("配方")
-                        .font(.system(size:12,weight:.semibold))
-                        .foregroundColor(.primary)
-                        .frame(height:34)
-                        .padding(.horizontal,7)
-                        .background(Color.primary.opacity(0.06),
-                                    in:Capsule())
-                }
-                .accessibilityLabel("打开我的冲印配方，不保存原始照片")
-                Spacer(minLength: 0)
+"                Spacer(minLength: 0)
                 if selectedEditorPage == .adjustment {
                     Button {
                         model.applyMeasuredSimulation()
@@ -1529,92 +1524,307 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    /// Each horizontal page swipe CHANGES the active material binding.
-    /// Unlike a scroll-only carousel, there is no second tap to select.
-    /// The parent ContentView uses selection changes to recalculate
-    /// the real source preview and persist the currently selected stock.
-    private var filmSelectionContent: AnyView {
+    // Build127: the horizontal gestures BROWSE. Only tapping a validated
+    // card changes an active film/paper, so no speculative render per swipe.
+    private var favoriteFilmIDs:[String] {
+        favoriteFilmIDsStored.split(separator:"|").map(String.init)
+    }
+    private var recentFilmIDs:[String] {
+        recentFilmIDsStored.split(separator:"|").map(String.init)
+    }
+    private func isFavoriteFilm(_ id:String)->Bool {
+        favoriteFilmIDs.contains(id)
+    }
+    private func toggleFavoriteFilm(_ id:String) {
+        var ids=favoriteFilmIDs
+        if ids.contains(id) {
+            ids.removeAll(where:{$0==id})
+        } else {
+            ids.insert(id,at:0)
+        }
+        favoriteFilmIDsStored=ids.prefix(20).joined(separator:"|")
+    }
+    private func recordRecentFilm(_ id:String) {
+        guard films.contains(where:{$0.id==id}) else{return}
+        let updated=[id]+recentFilmIDs.filter{$0 != id}
+        let saved=updated.prefix(5).joined(separator:"|")
+        if saved != recentFilmIDsStored {recentFilmIDsStored=saved}
+    }
+    private var quickFilmStocks:[MeasuredStock] {
+        let ids=favoriteFilmIDs+recentFilmIDs
+        var unique:Set<String>=[]
+        return ids.compactMap { id -> MeasuredStock? in
+            guard !unique.contains(id),
+                  SpectralPhysics.supportedFilmIDs.contains(id),
+                  let stock=films.first(where:{$0.id==id}) else{return nil}
+            unique.insert(id)
+            return stock
+        }.prefix(5).map{$0}
+    }
+    private var quickSavedRecipes:[Build126Recipe] {
+        Array(model.savedRecipes.sorted {
+            if $0.favorite != $1.favorite {return $0.favorite}
+            return $0.modifiedAt > $1.modifiedAt
+        }.prefix(2))
+    }
+
+    private func selectRecipeFromShelf(_ recipe:Build126Recipe) {
+        do {
+            // Build126 preflights input/RAW8/DIR before mutating any setting.
+            // The successful call owns the ONE optical render and rollback.
+            try model.applySavedRecipe(recipe)
+            selectedFilmID=recipe.filmID
+            selectedPaperID=recipe.paperID
+        } catch {
+            recipeApplyError=error.localizedDescription +
+                "\n配方未应用；保留原照片、参数与预览。"
+        }
+    }
+
+    private var filmSelectionContent:AnyView {
         AnyView(
-            VStack(alignment: .leading, spacing: 11) {
-                horizontalMaterialPicker("胶卷 FILM", items: films,
-                                         selection: $selectedFilmID,
-                                         defaultID: "kodak_portra_400")
-                Divider().padding(.horizontal, 10)
-                if isReversal {
-                    HStack(spacing: 7) {
-                        Image(systemName: "film")
-                        Text("反转片直接扫描 · 无需相纸")
-                            .font(.caption)
-                    }
-                    .padding(.horizontal, 13)
-                    .frame(height: 46)
-                } else {
-                    horizontalMaterialPicker("相纸 PAPER", items: media,
-                                             selection: $selectedPaperID,
-                                             defaultID: "kodak_portra_endura")
-                }
-                Button(action: onOpenCatalog) {
-                    Text("全部 28 款材料")
+            ScrollView(.vertical) {
+                VStack(alignment:.leading,spacing:9) {
+                    materialCardRow("胶片 · FILM",
+                                    items:films,selection:$selectedFilmID,
+                                    film:true)
+                    if isReversal {
+                        HStack(spacing:6) {
+                            Image(systemName:"film")
+                            Text("反转片：原版直扫，不使用相纸")
+                        }
                         .font(.caption2)
-                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal,5)
+                        .frame(minHeight:31)
+                    } else {
+                        materialCardRow("相纸 · PAPER",
+                                        items:media,selection:$selectedPaperID,
+                                        film:false)
+                    }
+                    HStack(spacing:5) {
+                        Text("常用胶片")
+                            .font(.caption2).fontWeight(.semibold)
+                        Spacer()
+                        Text("收藏优先 · 最近使用")
+                            .font(.system(size:10)).foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal,4)
+                    if quickFilmStocks.isEmpty {
+                        Text("点胶片卡片右上角 ☆ 收藏，选择过的胶片也会显示在这里。")
+                            .font(.system(size:10))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal,4)
+                    } else {
+                        ScrollView(.horizontal,showsIndicators:false) {
+                            LazyHStack(spacing:6) {
+                                ForEach(quickFilmStocks) { stock in
+                                    Button {
+                                        guard !model.busy else {return}
+                                        recordRecentFilm(stock.id)
+                                        if selectedFilmID != stock.id {
+                                            selectedFilmID=stock.id
+                                        }
+                                    } label: {
+                                        Text(stock.name)
+                                            .font(.system(size:11,weight:.medium))
+                                            .fixedSize(horizontal:false,vertical:true)
+                                            .padding(.horizontal,10)
+                                            .frame(minHeight:30)
+                                            .background(selectedFilmID==stock.id
+                                                ? Color.accentColor.opacity(0.16)
+                                                : Color.primary.opacity(0.06),
+                                                in:RoundedRectangle(cornerRadius:8))
+                                    }
+                                    .disabled(model.busy)
+                                    .accessibilityLabel("选择常用胶片 " + stock.name)
+                                }
+                            }
+                        }
+                    }
+                    Divider()
+                    HStack(spacing:5) {
+                        Text("我的冲印配方")
+                            .font(.caption2).fontWeight(.semibold)
+                        Spacer()
+                        Button("查看全部／保存") {onOpenRecipes()}
+                            .font(.system(size:11,weight:.semibold))
+                            .accessibilityLabel("打开所有自定义冲印配方及保存当前效果")
+                    }
+                    .padding(.horizontal,4)
+                    if quickSavedRecipes.isEmpty {
+                        Text("调出满意照片后，可在这里保存完整冲印参数。")
+                            .font(.system(size:10))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal,4)
+                    } else {
+                        ForEach(quickSavedRecipes) { recipe in
+                            Button {selectRecipeFromShelf(recipe)} label: {
+                                HStack(spacing:7) {
+                                    if let data=recipe.coverJPEG,
+                                       let preview=UIImage(data:data) {
+                                        Image(uiImage:preview)
+                                            .resizable().scaledToFill()
+                                            .frame(width:33,height:33)
+                                            .clipped()
+                                            .cornerRadius(5)
+                                    } else {
+                                        Image(systemName:"camera.filters")
+                                            .frame(width:33,height:33)
+                                    }
+                                    Text(recipe.name)
+                                        .font(.system(size:11,weight:.medium))
+                                        .fixedSize(horizontal:false,vertical:true)
+                                        .frame(maxWidth:.infinity,alignment:.leading)
+                                    if recipe.favorite {
+                                        Image(systemName:"star.fill")
+                                            .font(.caption2)
+                                    }
+                                    Text("应用")
+                                        .font(.caption2).fontWeight(.semibold)
+                                }
+                                .padding(6)
+                                .background(Color.primary.opacity(0.06),
+                                            in:RoundedRectangle(cornerRadius:8))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!model.hasPhoto || model.busy ||
+                                      model.isRecipeApplying ||
+                                      model.simulationAwaitingCurrentSettings)
+                            .accessibilityLabel("应用保存的冲印配方 " + recipe.name)
+                        }
+                    }
+                    Button(action:onOpenCatalog) {
+                        HStack {
+                            Image(systemName:"list.bullet.rectangle")
+                            Text("查看全部 28 款原版材料及参数")
+                        }
+                        .font(.caption2)
+                        .frame(maxWidth:.infinity,minHeight:27)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                Spacer(minLength: 0)
+                .padding(.horizontal,9)
+                .padding(.top,8)
+                .padding(.bottom,14)
             }
-            .padding(.top, 7)
+            .frame(maxHeight:.infinity)
+            .onAppear {recordRecentFilm(selectedFilmID)}
+            .onChange(of:selectedFilmID) { id in recordRecentFilm(id) }
+            .alert("配置不兼容",isPresented:Binding(
+                get:{recipeApplyError != nil},
+                set:{if !$0 {recipeApplyError=nil}}
+            )) {
+                Button("关闭",role:.cancel){recipeApplyError=nil}
+            } message: {
+                Text(recipeApplyError ?? "")
+            }
         )
     }
 
-    private func horizontalMaterialPicker(
-        _ title: String, items: [MeasuredStock],
-        selection: Binding<String>, defaultID: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+    private func materialCardRow(
+        _ title:String,items:[MeasuredStock],
+        selection:Binding<String>,film:Bool
+    )->some View {
+        VStack(alignment:.leading,spacing:4) {
+            HStack {
                 Text(title)
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        selection.wrappedValue = defaultID
-                    }
+                    .font(.caption2).fontWeight(.semibold)
                 Spacer()
-                Text("左右滑动切换 · 双击名称复原")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                Text("左右滑动浏览 · 点卡片选择")
+                    .font(.system(size:10)).foregroundColor(.secondary)
             }
-            .padding(.horizontal, 12)
-            TabView(selection: selection) {
-                ForEach(items) { stock in
-                    HStack(spacing: 12) {
-                        Image(systemName: "chevron.left")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Spacer(minLength: 3)
-                        Text(shortName(stock))
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                            .foregroundColor(.accentColor)
-                        Spacer(minLength: 3)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+            .padding(.horizontal,4)
+            ScrollViewReader { scroll in
+                ScrollView(.horizontal,showsIndicators:false) {
+                    LazyHStack(spacing:8) {
+                        ForEach(items) { stock in
+                            materialCard(
+                                stock,film:film,
+                                selected:selection.wrappedValue==stock.id,
+                                supported:film
+                                    ? SpectralPhysics.supportedFilmIDs.contains(stock.id)
+                                    : SpectralPhysics.supportedPaperIDs.contains(stock.id)
+                            ) {
+                                guard !model.busy else{return}
+                                if film {recordRecentFilm(stock.id)}
+                                if selection.wrappedValue != stock.id {
+                                    selection.wrappedValue=stock.id
+                                }
+                            }
+                            .id(stock.id)
+                        }
                     }
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Color.accentColor.opacity(0.13),
-                                in: RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal, 13)
-                    .tag(stock.id)
-                    .accessibilityLabel(title + " " + shortName(stock))
+                    .padding(.vertical,3)
+                }
+                .onAppear {
+                    scroll.scrollTo(selection.wrappedValue,anchor:.center)
+                }
+                .onChange(of:selection.wrappedValue) { newID in
+                    withAnimation(.easeInOut(duration:0.15)) {
+                        scroll.scrollTo(newID,anchor:.center)
+                    }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 54)
-            .accessibilityHint("向左或向右滑动切换当前材料")
+        }
+    }
+
+    private func materialCard(
+        _ stock:MeasuredStock,film:Bool,selected:Bool,
+        supported:Bool,onSelect:@escaping ()->Void
+    )->some View {
+        ZStack(alignment:.topTrailing) {
+            Button(action:onSelect) {
+                VStack(alignment:.leading,spacing:3) {
+                    Text(stock.name)
+                        .font(.system(size:12,weight:.semibold))
+                        .foregroundColor(supported ? .primary : .secondary)
+                        .fixedSize(horizontal:false,vertical:true)
+                        .frame(maxWidth:.infinity,alignment:.leading)
+                        .padding(.trailing,film ? 20 : 0)
+                    Spacer(minLength:0)
+                    Text(supported
+                         ? (selected ? "✓ 当前使用" : "点击选择 · 可模拟")
+                         : "仅目录数据 · 暂不可用")
+                        .font(.system(size:10))
+                        .foregroundColor(supported ? .secondary : .secondary)
+                }
+                .padding(.horizontal,10)
+                .padding(.vertical,8)
+                .frame(width:206,height:91,alignment:.topLeading)
+                .background(selected
+                    ? Color.accentColor.opacity(0.20)
+                    : Color.primary.opacity(supported ? 0.07 : 0.035),
+                    in:RoundedRectangle(cornerRadius:10))
+                .overlay(RoundedRectangle(cornerRadius:10)
+                    .stroke(selected ? Color.accentColor
+                           : Color.primary.opacity(0.07),lineWidth:1))
+            }
+            .buttonStyle(.plain)
+            .disabled(!supported || model.busy)
+            .accessibilityLabel(
+                (film ? "胶片 " : "相纸 ") + stock.name +
+                (supported ? (selected ? "，当前选择" : "，点击选择")
+                           : "，仅目录数据，不可模拟")
+            )
+            if film {
+                Button {
+                    toggleFavoriteFilm(stock.id)
+                } label: {
+                    Image(systemName:isFavoriteFilm(stock.id)
+                          ? "star.fill" : "star")
+                        .font(.caption2)
+                        .foregroundColor(isFavoriteFilm(stock.id)
+                                         ? .accentColor : .secondary)
+                        .frame(width:29,height:29)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    (isFavoriteFilm(stock.id) ? "取消收藏胶片 " : "收藏胶片 ")
+                    + stock.name
+                )
+            }
         }
     }
 
