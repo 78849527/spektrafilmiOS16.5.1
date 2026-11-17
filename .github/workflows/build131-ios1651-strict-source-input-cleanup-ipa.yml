@@ -243,6 +243,8 @@ jobs:
                 'ios/SpektraFilmPort/P1OriginalRawACESIngress.swift',
                 'ios/SpektraFilmPort/Build133RAWMemoryLadder.swift',
                 'ios/SpektraFilmPort/Build134LocalRAWManager.swift',
+                'ios/SpektraFilmPort/OriginalSourcePixelIO.swift',
+                'ios/SpektraFilmPort/PhotoProcessor.swift',
                 'ios/SpektraFilmPort/OriginalHanatosResponse.swift',
                 'ios/SpektraFilmPort/OriginalSourceCameraOptics.swift',
                 'ios/SpektraFilmPort/SpectralPhysics.swift'
