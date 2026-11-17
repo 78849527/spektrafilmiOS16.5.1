@@ -37,3 +37,20 @@ Hanatos accepts `.acesLinear` without decoding sRGB CCTF.
 Non-sRGB Mallett paths still fail closed. Production RAW direct rendering
 is not enabled: Python/Swift numeric parity, full-resolution memory,
 and a real iOS16.5.1 build remain unverified.
+
+## Actual RAW reference fixture and one-to-one comparison
+
+`python ios/scripts/p1_rawpy_input_golden.py --selftest` checks seven
+independent UInt16/Float32 bit patterns. With a real RAW file,
+`--raw camera.raf --out /tmp/p1-raw-golden` uses the frozen original Python
+processor and records its actual RGB Float32 bytes plus input/output SHA,
+dimensions, source parameters and decoder versions.
+
+The new test-only Swift `P1RawpySourcePixelComparison.evaluate` consumes
+the actual 16-bit linear ACES LibRaw buffer and original Python Float32
+reference bytes **without TIFF/sRGB conversion**. It reports all-channel
+exact count, MAE, RMSE and maximum difference. Both devices must use the
+same unmodified RAW and verified orientation/matrix settings.
+
+No source RAW corpus is committed yet. Therefore no real image comparison
+or whole-pipeline certification has been executed.
