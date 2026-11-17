@@ -526,8 +526,8 @@ jobs:
           grep -Fq 'Build104DeviceGrainEvidence.capture(' ios/SpektraFilmPort/ContentView.swift
           grep -Fq 'Build104-device-grain-' ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
           grep -Fq 'onRunBuild104Grain()' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.89"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "123"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.90"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "124"' ios/project.yml
       - uses: actions/setup-python@v5
         with:
           # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
@@ -644,8 +644,8 @@ jobs:
           grep -Fq 'tests/SourcePhysicalImageParity.swift' ios/project.yml
           grep -Fq 'generated-physical-v1.8.22' ios/project.yml
           grep -Fq 'Build92DeviceSourceStageDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.89"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "123"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.90"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "124"' ios/project.yml
           test -s ios/SpektraFilmPort/Build91PhysicalMemory.swift
           test -s ios/SpektraFilmPort/Build91MemoryProductionDiagnostic.swift
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
