@@ -34,7 +34,7 @@ assert "onRunBuild133RAWMemory: (Int) -> Void" in ui
 assert "onRunBuild133RAWMemory(level)" in ui
 assert "runBuild133RAWMemory(_ level:Int)" in app
 assert "diagnosticPendingFeedback=pair" in app
-assert 'MARKETING_VERSION: "1.8.99"' in project
-assert 'CURRENT_PROJECT_VERSION: "133"' in project
+from build_ci_version_floor import minimum_build,minimum_minor
+assert minimum_build(project,133) and minimum_minor(project,99)
 print("PASS Build133 real RAW 0/1/2/3/4 independent source checkpoints and 8 B/px original Double buffer elimination")
 print("NO CERTIFICATION: iOS RAW end-to-end, actual Jetsam high-watermark and Python full-frame equivalence await device LOG+JSON")

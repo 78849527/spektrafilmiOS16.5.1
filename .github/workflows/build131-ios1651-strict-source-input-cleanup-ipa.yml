@@ -60,7 +60,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-name: Build133 iOS16.5.1 staged RAW memory diagnostic test IPA
+name: Build134 iOS16.5.1 RAW cleanup UI and native memory test IPA
 
 on:
   push:
@@ -126,6 +126,7 @@ jobs:
           python3 ios/scripts/p1_hanatos_aces_source_audit.py
           python3 ios/scripts/p1_direct_raw_production_audit.py
           python3 ios/scripts/build133_raw_memory_stage_audit.py
+          python3 ios/scripts/build134_raw_cleanup_ui_audit.py
           python3 ios/scripts/validate_nextlevel_camera_integration.py
           # Fail-fast all carried-forward Build103/Build100 UI invariants before Mac source generation.
           python3 ios/scripts/build103_device_metrics_audit.py /tmp/build115-early-ui-audit.json
@@ -139,11 +140,11 @@ jobs:
           sys.path.insert(0,'ios/scripts')
           from build_ci_version_floor import minimum_build, minimum_minor
           project=Path('ios/project.yml').read_text()
-          assert minimum_build(project,133)
-          assert minimum_minor(project,99)
-          assert not minimum_build(project,134)
-          assert not minimum_minor(project,100)
-          print('PASS current 1.8.99/133 and all carried-forward minimum release contracts')
+          assert minimum_build(project,134)
+          assert minimum_minor(project,100)
+          assert not minimum_build(project,135)
+          assert not minimum_minor(project,101)
+          print('PASS current 1.8.100/134 and all carried-forward minimum release contracts')
           PY
           git diff --exit-code
 
@@ -175,6 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           xcrun swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build134LocalRAWManager.swift \
             ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift \
             ios/SpektraFilmPort/Build107CombinedDeviceFeedback.swift \
           ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
@@ -239,6 +241,7 @@ jobs:
                 'ios/SpektraFilmPort/Build94LibRawIngress.swift',
                 'ios/SpektraFilmPort/P1OriginalRawACESIngress.swift',
                 'ios/SpektraFilmPort/Build133RAWMemoryLadder.swift',
+                'ios/SpektraFilmPort/Build134LocalRAWManager.swift',
                 'ios/SpektraFilmPort/OriginalHanatosResponse.swift',
                 'ios/SpektraFilmPort/OriginalSourceCameraOptics.swift',
                 'ios/SpektraFilmPort/SpectralPhysics.swift'
@@ -624,8 +627,8 @@ jobs:
           grep -Fq 'Build104DeviceGrainEvidence.capture(' ios/SpektraFilmPort/ContentView.swift
           grep -Fq 'Build104-device-grain-' ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
           grep -Fq 'onRunBuild104Grain()' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.99"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "133"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.100"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "134"' ios/project.yml
       - uses: actions/setup-python@v5
         with:
           # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
@@ -742,8 +745,8 @@ jobs:
           grep -Fq 'tests/SourcePhysicalImageParity.swift' ios/project.yml
           grep -Fq 'generated-physical-v1.8.22' ios/project.yml
           grep -Fq 'Build92DeviceSourceStageDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.99"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "133"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.100"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "134"' ios/project.yml
           test -s ios/SpektraFilmPort/Build91PhysicalMemory.swift
           test -s ios/SpektraFilmPort/Build91MemoryProductionDiagnostic.swift
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
@@ -897,8 +900,8 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -s "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.99
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 133
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.100
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 134
           /usr/libexec/PlistBuddy -c 'Print :SFSourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
           # Native libraw symbols must actually be linked, no stub.
           xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_dcraw_process'
@@ -921,8 +924,8 @@ jobs:
           mkdir -p "$ROOT/Payload" ios/build/release
           ditto "$APP" "$ROOT/Payload/SpektraFilmPort.app"
           (cd "$ROOT" && zip -q -r -X \
-             ../release/SpektraFilm-1.8.99-Build133-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
-          IPA=ios/build/release/SpektraFilm-1.8.99-Build133-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+             ../release/SpektraFilm-1.8.100-Build134-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
+          IPA=ios/build/release/SpektraFilm-1.8.100-Build134-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           test -s "$IPA"
           unzip -t "$IPA" | tail -1 | grep -F 'No errors detected'
           unzip -Z -1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
@@ -935,14 +938,14 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           import hashlib,os,plistlib,subprocess,json
-          package=Path('ios/build/release/SpektraFilm-1.8.99-Build133-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
+          package=Path('ios/build/release/SpektraFilm-1.8.100-Build134-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
           commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           assert commit==os.environ['GITHUB_SHA'], 'app sources/IPA do not match action commit'
           with ZipFile(package) as z:
               p=plistlib.loads(z.read('Payload/SpektraFilmPort.app/Info.plist'))
               assert p['CFBundleIdentifier']=='com.twogou.spektrafilmport'
-              assert p['CFBundleShortVersionString']=='1.8.99'
-              assert p['CFBundleVersion']=='133'
+              assert p['CFBundleShortVersionString']=='1.8.100'
+              assert p['CFBundleVersion']=='134'
               assert p.get('SFSourceCommit')==commit, 'IPA embedded Git SHA is missing or incorrect'
               assert p['MinimumOSVersion'].startswith('16.5')
               assert 'Payload/SpektraFilmPort.app/default.metallib' in z.namelist()
@@ -954,27 +957,27 @@ jobs:
               'ipa_name':package.name,
               'ipa_sha256':hashlib.sha256(package.read_bytes()).hexdigest(),
               'ipa_size_bytes':package.stat().st_size,
-              'version':'1.8.99',
-              'build':'133',
+              'version':'1.8.100',
+              'build':'134',
               'ios_minimum':'16.5',
               'architecture':'arm64',
               'signing':'UNSIGNED; requires user signing to install',
               'certification':'P1 candidate: rawpy-style LibRaw ACES16 direct RAW -> Float64 optical preview / source JPEG/TIFF16 for RAF/DNG <=13MP, no TIFF intermediate and no source RGB global [0,1] clipping. Linux static gates and Python synthetic reference may pass; actual RAW pixel/colour and full-stage parity, X-T5 40MP memory, iOS16.5.1 device tests and signed installation NOT CERTIFIED',
               'release_authority':'actual GitHub Actions xcodebuild -sdk iphoneos',
           }
-          Path('ios/build/release/verification-build133.json').write_text(
+          Path('ios/build/release/verification-build134.json').write_text(
               json.dumps(identity,indent=2,sort_keys=True)+'\n')
           print('PASS exact signed-off source SHA/IPA identity',identity)
           PY
-          cat ios/build/release/verification-build133.json
+          cat ios/build/release/verification-build134.json
       - name: Upload Build111 input color-profile plus old four-mode experimental unsigned IPA and source tapes
         uses: actions/upload-artifact@v4
         with:
-          name: Build133-1.8.99-arm64-p1-raw-aces-test-unsigned-unverified
+          name: Build134-1.8.100-arm64-raw-local-management-unsigned-unverified
           path: |
             ios/build/release/*.ipa
             ios/build/release/*.sha256
-            ios/build/release/verification-build133.json
+            ios/build/release/verification-build134.json
             ios/build/release/build114-four-gate-certification-ledger.json
             ios/build/release/build114-unseeded-numba-source-statistics.json
             ios/build/release/build115-swift-parallel-stats.json
@@ -989,23 +992,23 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH=work/build129-raw-float32-srgb-icc-admission-ios1651
-          TAG=ios1651-v1.8.99-build133-raw-memory-ladder-UNSIGNED-UNVERIFIED
+          TAG=ios1651-v1.8.100-build134-raw-cleanup-zoom-memory-UNSIGNED-UNVERIFIED
           HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
           if [ "$HEAD" != "$GITHUB_SHA" ]; then
             echo "::error::Release forbidden: latest branch $HEAD differs from tested $GITHUB_SHA"
             exit 1
           fi
-          ASSET=ios/build/release/SpektraFilm-1.8.99-Build133-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+          ASSET=ios/build/release/SpektraFilm-1.8.100-Build134-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
-          ID=ios/build/release/verification-build133.json
-          NOTES='Build133 v1.8.99 original RAW memory test candidate. Adds five independent real RAW memory gates with checkpointed RSS/headroom LOG+JSON, removes one reused 8 B/px Float64 source scratch without changing FIR/YVV values; preserves production OS memory protections. Prior Build132 P1 test candidate. Adds explicit RAF/DNG RAW->LibRaw ACES16->Float64 full optical source preview and JPEG/TIFF16, without JPEG/TIFF intermediate files; removes non-original global source RGB range gate and adds ACES/ProPhoto CAT16/Y source matrices. Original Python rawpy pixel-perfect parity and 40MP full-image optical memory are NOT certified. This unsigned IPA is for iOS16.5.1 hardware testing only. No scientific equivalence or signed installation claimed.'
+          ID=ios/build/release/verification-build134.json
+          NOTES='Build134 v1.8.100 unsigned iPhoneOS arm64 test IPA. Adds in-app deletion for only SpektraFilm-owned local RAW copies with confirmation and current-edit teardown, fixes iOS16.5.1 double-tap on UIKit hold layer and positions gesture hint beneath status notices. Raw source Float64 pipeline and size unchanged; releases Core Image transient caches before normal original RAW export and bounds the resident UI preview to 1600 pixels, while preserving full-resolution export. Build133 original 5-level real RAW device evidence still applies to that prior binary; Build134 device export and deletion interaction tests remain NOT RUN until tested on iPhone. Not signed.'
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
             gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
           else
             gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
               --target "$GITHUB_SHA" --prerelease \
-              --title "Build133 iOS16.5.1 P1 RAW ACES device test - unsigned unverified" \
+              --title "Build134 iOS16.5.1 RAW cleanup zoom and memory test - unsigned unverified" \
               --notes "$NOTES"
           fi
           gh release view "$TAG" --json tagName,url,assets

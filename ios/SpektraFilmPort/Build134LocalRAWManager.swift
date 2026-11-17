@@ -25,7 +25,7 @@ enum Build134LocalRAWStorage {
         }
         return url.standardizedFileURL
     }
-    private static func accepted(_ url:URL,documents root:URL)->(camera:Bool)? {
+    private static func accepted(_ url:URL,documents root:URL)->Bool? {
         let file=url.standardizedFileURL
         let parent=file.deletingLastPathComponent()
         let camera=root.appendingPathComponent("SpektraFilm RAW").standardizedFileURL
@@ -34,13 +34,13 @@ enum Build134LocalRAWStorage {
         let ext=file.pathExtension.lowercased()
         if parent == camera,ext == "dng",name.hasPrefix("SF-RAW-"),
            UUID(uuidString:String(name.dropFirst(7))) != nil {
-            return (camera:true)
+            return true
         }
         // Build79 imports are uniquely named UUID.<actual RAW kind>.
         // No freeform filenames, nested paths or external locations.
         if parent == imported,UUID(uuidString:name) != nil,
            ["dng","raf","arw","nef","cr2","cr3","orf","rw2"].contains(ext) {
-            return (camera:false)
+            return false
         }
         return nil
     }
@@ -68,7 +68,7 @@ enum Build134LocalRAWStorage {
                 entries.append(Entry(
                     url:url,bytes:Int64(values.fileSize ?? 0),
                     updated:values.contentModificationDate,
-                    cameraCapture:kind.camera
+                    cameraCapture:kind
                 ))
             }
         }
