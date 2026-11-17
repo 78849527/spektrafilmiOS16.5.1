@@ -1,0 +1,75 @@
+name: Build116 original Float64 grain memory parity (Apple Silicon)
+
+on:
+  push:
+    branches:
+      - 'work/build116-grain-memory-float64-ios1651'
+    paths:
+      - 'ios/SpektraFilmPort/SourceGrainScalarGaussian.swift'
+      - 'ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift'
+      - 'ios/tests/Build116GrainScalarGaussianValidation.swift'
+      - 'docs/BUILD116-GRAIN-MEMORY-STAGED-ACCEPTANCE.md'
+      - '.github/workflows/build116-grain-memory-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build116-grain-memory-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject wrong runner, missing source or weakened memory gate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift").read_text()
+          s=Path("ios/SpektraFilmPort/SourceGrainScalarGaussian.swift").read_text()
+          assert "SourceGrainScalarGaussian.blurInPlace(" in p
+          assert "cloud[p]=Double(counts[p])*od*saturations[p]" in p
+          assert "cloud[p*3]=" not in p
+          assert "static let extraBytesPerPixel: UInt64 = 272" in p, "memory guard lowered before RSS data"
+          assert "static let unseededParallelExtraBytesPerPixel: UInt64 = 56" in p
+          assert "sourceGrainDyeClouds" in p and "sourceGrainFinalDensity" in p
+          assert "if sigma<3.0" in s and "reflect(" in s and "yvvCoefficients(" in s
+          assert "Float32" not in s or "No crop" in s
+          assert Path("ios/tests/Build116GrainScalarGaussianValidation.swift").exists()
+          print("PASS Build116 fail-closed original memory budget and Float64 grain structure")
+          PY
+          python3 ios/scripts/build115_unseeded_parallel_source_audit.py
+
+  original-grain-parity:
+    needs: static-preflight
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require Apple Silicon and Xcode 16.4
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          swiftc --version
+          xcodebuild -version
+      - name: Compile real previous RGB source and Build116 scalar grain filter
+        run: |
+          set -euo pipefail
+          swiftc -O -D SOURCE_GRAIN_STANDALONE -parse-as-library \
+            ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/SourceGrainScalarGaussian.swift \
+            ios/tests/Build116GrainScalarGaussianValidation.swift \
+            -o /tmp/build116-grain-scalar-parity
+          /tmp/build116-grain-scalar-parity
+      - name: Parse actual Build116 production source
+        run: |
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
+            ios/SpektraFilmPort/SourceGrainScalarGaussian.swift
+          echo 'PASS Build116 syntax; Xcode iPhoneOS build and real-device RSS remain PENDING'
