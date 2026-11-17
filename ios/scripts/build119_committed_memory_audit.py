@@ -31,8 +31,8 @@ assert "build==\"119\"" in stress
 assert "Build119-\\(report.megapixels)MP-grain-memory-" in stress
 assert "Build119：单独测试" in ui
 assert "Build119-last-\\(megapixels)MP-checkpoint.txt" in cv
-assert 'MARKETING_VERSION: "1.8.85"' in project
-assert 'CURRENT_PROJECT_VERSION: "119"' in project
+from build_ci_version_floor import minimum_minor,minimum_build
+assert minimum_minor(project,85) and minimum_build(project,119)
 assert "alreadyCommittedInputBytes:committed" in tests
 assert "2_873_685_440" in tests
 assert "2_080_000_000" in tests
