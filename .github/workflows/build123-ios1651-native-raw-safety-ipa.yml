@@ -1,3 +1,4 @@
+# Build124 trigger after merged DNG route, version and regression audits.
 # Build123 iOS16.5.1: explicit NS_SWIFT_NAME avoids Swift 5 Objective-C method-name inference mismatch for RAW exception wrapper.
 # Build123: inherited static GUI checks now require guarded Apple AVFoundation capture instead of direct unguarded call.
 # Build122 UIKit thumb draw: use UIGraphicsImageRendererContext.cgContext.fillEllipse (Apple-supported API).
@@ -30,7 +31,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-name: Build123 iOS16.5.1 native Bayer RAW capture exception safety IPA
+name: Build124 iOS16.5.1 captured DNG-to-editor native Apple RAW IPA
 
 on:
   push:
@@ -47,7 +48,7 @@ permissions:
 
 # Only the newest explicit CI trigger should claim a macOS runner.
 concurrency:
-  group: build123-ios1651-${{ github.ref }}
+  group: build124-ios1651-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -74,6 +75,7 @@ jobs:
           python3 ios/scripts/build121_switch_explanation_audit.py
           python3 ios/scripts/build122_compact_native_camera_audit.py
           python3 ios/scripts/build123_native_raw_capture_safety_audit.py
+          python3 ios/scripts/build124_native_dng_editor_ingress_audit.py
           python3 ios/scripts/validate_nextlevel_camera_integration.py
           # Fail-fast all carried-forward Build103/Build100 UI invariants before Mac source generation.
           python3 ios/scripts/build103_device_metrics_audit.py /tmp/build115-early-ui-audit.json
@@ -87,11 +89,11 @@ jobs:
           sys.path.insert(0,'ios/scripts')
           from build_ci_version_floor import minimum_build, minimum_minor
           project=Path('ios/project.yml').read_text()
-          assert minimum_build(project,123)
-          assert minimum_minor(project,89)
-          assert not minimum_build(project,124)
-          assert not minimum_minor(project,90)
-          print('PASS current 1.8.89/123 and all carried-forward minimum release contracts')
+          assert minimum_build(project,124)
+          assert minimum_minor(project,90)
+          assert not minimum_build(project,125)
+          assert not minimum_minor(project,91)
+          print('PASS current 1.8.90/124 and all carried-forward minimum release contracts')
           PY
           git diff --exit-code
 
@@ -175,6 +177,7 @@ jobs:
           python ios/scripts/build121_switch_explanation_audit.py
           python ios/scripts/build122_compact_native_camera_audit.py
           python ios/scripts/build123_native_raw_capture_safety_audit.py
+          python ios/scripts/build124_native_dng_editor_ingress_audit.py
           python ios/scripts/validate_nextlevel_camera_integration.py
           swiftc -frontend -parse \
             ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
@@ -795,8 +798,8 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -s "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.89
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 123
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.90
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 124
           /usr/libexec/PlistBuddy -c 'Print :SFSourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
           # Native libraw symbols must actually be linked, no stub.
           xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_dcraw_process'
@@ -819,8 +822,8 @@ jobs:
           mkdir -p "$ROOT/Payload" ios/build/release
           ditto "$APP" "$ROOT/Payload/SpektraFilmPort.app"
           (cd "$ROOT" && zip -q -r -X \
-             ../release/SpektraFilm-1.8.89-Build123-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
-          IPA=ios/build/release/SpektraFilm-1.8.89-Build123-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+             ../release/SpektraFilm-1.8.90-Build124-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
+          IPA=ios/build/release/SpektraFilm-1.8.90-Build124-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           test -s "$IPA"
           unzip -t "$IPA" | tail -1 | grep -F 'No errors detected'
           unzip -Z -1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
@@ -833,14 +836,14 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           import hashlib,os,plistlib,subprocess,json
-          package=Path('ios/build/release/SpektraFilm-1.8.89-Build123-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
+          package=Path('ios/build/release/SpektraFilm-1.8.90-Build124-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
           commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           assert commit==os.environ['GITHUB_SHA'], 'app sources/IPA do not match action commit'
           with ZipFile(package) as z:
               p=plistlib.loads(z.read('Payload/SpektraFilmPort.app/Info.plist'))
               assert p['CFBundleIdentifier']=='com.twogou.spektrafilmport'
-              assert p['CFBundleShortVersionString']=='1.8.89'
-              assert p['CFBundleVersion']=='123'
+              assert p['CFBundleShortVersionString']=='1.8.90'
+              assert p['CFBundleVersion']=='124'
               assert p.get('SFSourceCommit')==commit, 'IPA embedded Git SHA is missing or incorrect'
               assert p['MinimumOSVersion'].startswith('16.5')
               assert 'Payload/SpektraFilmPort.app/default.metallib' in z.namelist()
@@ -852,27 +855,27 @@ jobs:
               'ipa_name':package.name,
               'ipa_sha256':hashlib.sha256(package.read_bytes()).hexdigest(),
               'ipa_size_bytes':package.stat().st_size,
-              'version':'1.8.89',
-              'build':'123',
+              'version':'1.8.90',
+              'build':'124',
               'ios_minimum':'16.5',
               'architecture':'arm64',
               'signing':'UNSIGNED; requires user signing to install',
-              'certification':'EXPERIMENTAL: Build106/107 controlled iOS16.5.1 feedback previously PASS; Build108 real 1MP+2MP source optics needs new device LOG. No 13MP RSS, default multithread RNG or RAW/ICC certification',
+              'certification':'EXPERIMENTAL: Build124 source verifies camera Bayer DNG reaches Apple CIRAWFilter, not JPEG. iOS16.5.1 device RAW ingestion and original rawpy parity NOT CERTIFIED; prior source optics gates carried forward',
               'release_authority':'actual GitHub Actions xcodebuild -sdk iphoneos',
           }
-          Path('ios/build/release/verification-build123.json').write_text(
+          Path('ios/build/release/verification-build124.json').write_text(
               json.dumps(identity,indent=2,sort_keys=True)+'\n')
           print('PASS exact signed-off source SHA/IPA identity',identity)
           PY
-          cat ios/build/release/verification-build123.json
+          cat ios/build/release/verification-build124.json
       - name: Upload Build111 input color-profile plus old four-mode experimental unsigned IPA and source tapes
         uses: actions/upload-artifact@v4
         with:
-          name: Build123-1.8.89-arm64-dynamic-memory-grain-unsigned-unverified
+          name: Build124-1.8.90-arm64-native-dng-editor-unsigned-unverified
           path: |
             ios/build/release/*.ipa
             ios/build/release/*.sha256
-            ios/build/release/verification-build123.json
+            ios/build/release/verification-build124.json
             ios/build/release/build114-four-gate-certification-ledger.json
             ios/build/release/build114-unseeded-numba-source-statistics.json
             ios/build/release/build115-swift-parallel-stats.json
@@ -880,30 +883,30 @@ jobs:
             /tmp/build92-real-source-48-stage-tapes.json
             /tmp/build92-native-ui-static.json
           if-no-files-found: error
-      - name: Publish ONLY experimental unsigned Build123 IPA after successful true iPhoneOS compile
+      - name: Publish ONLY experimental unsigned Build124 IPA after successful true iPhoneOS compile
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BRANCH=work/build123-native-raw-capture-safety-ios1651
-          TAG=ios1651-v1.8.89-build123-raw-safety-UNSIGNED-UNVERIFIED
+          BRANCH=work/build124-native-dng-editor-ingress-ios1651
+          TAG=ios1651-v1.8.90-build124-native-dng-editor-UNSIGNED-UNVERIFIED
           HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
           if [ "$HEAD" != "$GITHUB_SHA" ]; then
             echo "::error::Release forbidden: latest branch $HEAD differs from tested $GITHUB_SHA"
             exit 1
           fi
-          ASSET=ios/build/release/SpektraFilm-1.8.89-Build123-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+          ASSET=ios/build/release/SpektraFilm-1.8.90-Build124-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
-          ID=ios/build/release/verification-build123.json
-          NOTES='Build123 v1.8.89 is an iOS16.5.1 RAW crash mitigation focused only on the Apple AVFoundation native capture path: validates active video/photo connection and true Bayer RAW capability, disables processed high-resolution and stabilization for RAW, uses speed priority, preserves original RAW DNG bytes and associated JPEG, and catches synchronous capturePhoto NSException via an Objective-C bridge to show an error instead of terminating the process. A minimal persistent last-phase breadcrumb distinguishes immediate validation failure from other process termination. The optical engine, grain RNG, Float64 modes, memory limits, export and compact numeric UI remain unchanged from Build122. A CI pass does not certify device RAW crash recovery: actual iOS16.5.1 repeated RAW captures and .ips crash log if it persists are required. UNSIGNED IPA requires signing. Exact source SHA: '"$GITHUB_SHA"
+          ID=ios/build/release/verification-build124.json
+          NOTES='Build124 v1.8.90 changes only the camera-to-editor entry point: a captured real Bayer DNG is preserved byte-identically, checked using DNG signature and decoded via the Apple Core Image CIRAWFilter path into a valid RAW-derived preview and edit source. The paired JPEG is not used as RAW fallback. Decode failures leave the previous edit intact and retain the DNG. Build123 native RAW capture crash guards remain. Original Python rawpy numerical equivalence and actual repeated device DNG import remain NOT CERTIFIED. Optical engine, RNG, memory controls, exports, compact UI untouched. UNSIGNED IPA requires signing. Exact SHA: '"$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
             gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
           else
             gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
               --target "$GITHUB_SHA" --prerelease \
-              --title "Build123 iOS16.5.1 native RAW settings validation, exception interception, DNG evidence and diagnostic breadcrumbs - unsigned unverified" \
+              --title "Build124 iOS16.5.1 captured RAW DNG routed into Apple RAW editor - unsigned unverified" \
               --notes "$NOTES"
           fi
           gh release view "$TAG" --json tagName,url,assets
