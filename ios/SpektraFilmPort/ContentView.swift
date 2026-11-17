@@ -2359,10 +2359,12 @@ final class PhotoEditorModel: ObservableObject {
                 "当前胶片/相纸仍在模拟或已失败；禁止使用旧 LUT 导出"
             )
         }
-        if tiff16 && sourcePixelIOEnabled {
+        if tiff16 && sourcePixelIOEnabled &&
+            !sourcePhysicalDirectEnabled {
             throw ImageProcessingError.invalid(
-                "逐像素原版 Float64 不允许静默转入 CI TIFF16。" +
-                "此 TIFF16 只用于普通/Apple RAW/LibRaw 兼容编辑；原版数值 TIFF 使用 Build90 独立链"
+                "普通像素 DIR 模式尚未接入源 Float64 TIFF16；" +
+                "可明确切换逐像素全光学以使用 Build90 原版 TIFF16。" +
+                "不允许静默转入 CI 或 8-bit JPEG。"
             )
         }
         if sourcePixelIOEnabled {
@@ -2391,9 +2393,9 @@ final class PhotoEditorModel: ObservableObject {
             width: Int(bounds.width), height: Int(bounds.height),
             mode: resolution,
             estimatedBytesPerPixel:
-                tiff16 ? Build96TIFF16Writer.estimatedBytesPerPixel :
                 sourcePixelIOEnabled && sourcePhysicalDirectEnabled
                 ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
+                   (tiff16 ? 24 : 0) +
                    (sourceScannerOpticalEnabled
                     ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel
                     : 0) +
@@ -2420,6 +2422,7 @@ final class PhotoEditorModel: ObservableObject {
             try OriginalSourcePhysicalImage.validateMemoryBudget(
                 width:plan.dimensions.width,height:plan.dimensions.height,
                 additionalBytesPerPixel:
+                    (tiff16 ? 24 : 0) +
                     (sourceScannerOpticalEnabled
                         ? OriginalSourcePhysicalImage.scannerFinishExtraBytesPerPixel : 0) +
                     (sourceScannerGlareEnabled && sourceScannerGlarePercent>0
@@ -2436,11 +2439,10 @@ final class PhotoEditorModel: ObservableObject {
                         ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0)
             )
         }
-        if tiff16 {
-            // Before presenting the selected size, reject a 40 MP render
-            // that would exceed the user's current process headroom.
+        if tiff16 && !sourcePixelIOEnabled {
+            // Compatibility CI TIFF16 has a separate renderer/budget.
             try Build96TIFF16Writer.validateBudget(
-                width: plan.dimensions.width, height: plan.dimensions.height
+                width: plan.dimensions.width,height: plan.dimensions.height
             )
         }
         // Include original JPEG in the same early admission; the source
@@ -2542,9 +2544,9 @@ final class PhotoEditorModel: ObservableObject {
         return output.url
     }
 
-    /// Build96: actual processed 16-bit TIFF for ordinary/Apple/LibRaw
-    /// compatible CI images. The source-exact Float64 pixel engine remains
-    /// isolated: it must never silently reroute via Core Image.
+    /// Build128: compatibility CI remains Build96 TIFF16; source-exact
+    /// physical mode now invokes the EXISTING Build90 original Float64
+    /// TIFF16 writer. No 8-bit intermediary or CI fallback.
     func exportTIFF16(
         resolution: ExportResolutionMode,
         confirmedPlan: SafeExportResolution.Plan
@@ -2558,10 +2560,37 @@ final class PhotoEditorModel: ObservableObject {
             throw ImageProcessingError.invalid("胶片/相纸尚未匹配当前选项，无法导出旧效果")
         }
         try requireConfiguredGrain()
-        guard !sourcePixelIOEnabled else {
-            throw ImageProcessingError.invalid(
-                "原版 Float64 当前没有经验证的直连 TIFF16，禁止自动转为兼容 CI"
-            )
+        if sourcePixelIOEnabled {
+            guard sourcePhysicalDirectEnabled else {
+                throw ImageProcessingError.invalid(
+                    "普通 DIR 直连不能冒充全光学 TIFF16；已放弃，无兼容 CI 回退"
+                )
+            }
+            let (bytes, _)=try validateSourcePixelIO()
+            let physical=try sourcePhysicalParameters()
+            guard confirmedPlan.mode==resolution,
+                  confirmedPlan.sourceWidth==Int(imageSource.extent.integral.width),
+                  confirmedPlan.sourceHeight==Int(imageSource.extent.integral.height) else {
+                throw ImageProcessingError.invalid(
+                    "原版 TIFF16 确认尺寸与当前图像不一致，必须重新确认"
+                )
+            }
+            try SafeExportResolution.validateBeforeRender(confirmedPlan)
+            let target=confirmedPlan.dimensions
+            let reduced:(width:Int,height:Int)?=resolution == .original
+                ? nil : (width:target.width,height:target.height)
+            let result=try await Task.detached(priority:.userInitiated) {
+                try OriginalSourcePixelIO.exportPhysicalOriginalFile(
+                    bytes,parameters:physical,format:.tiff,
+                    bitDepth:16,outputSpace:"sRGB",
+                    cctfEncoded:physical.sourceOutputCCTFEncoding,
+                    resizedTo:reduced
+                )
+            }.value
+            status="原版 Float64 全光学→16-bit TIFF 成功，"
+                + "源计算未经过 JPEG8/CI 降级；ICC 与位深经 Build90 文件验证。" +
+                "Apple RAW 输入仍不是 Python rawpy 数值等价。"
+            return result
         }
         if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
             guard grainSublayersEnabled, densityGrainStage != nil,
