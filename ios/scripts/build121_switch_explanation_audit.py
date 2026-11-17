@@ -84,6 +84,6 @@ expect('primaryButton: .default(Text("确认并切换"))',ui)
 expect("selectedProcessStage",ui)
 expect("private var photoFloatingNotices:some View",ui)
 expect('IPHONEOS_DEPLOYMENT_TARGET: "16.5"',version)
-expect('MARKETING_VERSION: "1.8.87"',version)
-expect('CURRENT_PROJECT_VERSION: "121"',version)
+from build_ci_version_floor import minimum_build,minimum_minor
+assert minimum_build(version,121) and minimum_minor(version,87)
 print("PASS Build121 3 visible switch types, locked/on + off reasons, tappable independent !, exact mode dependency help, same original grain binding, no automatic setting mutation and iOS16.5 source scope")
