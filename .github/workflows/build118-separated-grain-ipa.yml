@@ -1,3 +1,4 @@
+# Build118 CI: re-run after historical Build107 shared-memory planner gate updated to productionAdditional.
 # Build117: dynamic iOS 80%-headroom admission, 3-sublayer grain buffers, carried-forward source/UI checks, full 16-case device matrix.
 # Build115 Build103 GUI audit: retain laboratory route and source parameter checks under renamed Build114 UI.
 # Retry Build115 on the original development branch; single active attempt, unchanged Swift implementation.
