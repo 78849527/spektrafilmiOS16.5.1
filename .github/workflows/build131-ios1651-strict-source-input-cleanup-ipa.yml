@@ -248,6 +248,11 @@ jobs:
                 'ios/SpektraFilmPort/Build134LocalRAWManager.swift',
                 'ios/SpektraFilmPort/OriginalSourcePixelIO.swift',
                 'ios/SpektraFilmPort/PhotoProcessor.swift',
+                # Build135 memory-admission-only changes; no optical
+                # numerical kernels or original film algorithms changed.
+                'ios/SpektraFilmPort/Build95LibRaw16Ingress.swift',
+                'ios/SpektraFilmPort/Build96TIFF16Writer.swift',
+                'ios/SpektraFilmPort/OriginalMetalGrain.swift',
                 'ios/SpektraFilmPort/OriginalHanatosResponse.swift',
                 'ios/SpektraFilmPort/OriginalSourceCameraOptics.swift',
                 'ios/SpektraFilmPort/SpectralPhysics.swift'
