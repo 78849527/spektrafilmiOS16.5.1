@@ -16,7 +16,13 @@ assert minimum_build(project,126) and minimum_minor(project,92)
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 
 fields=re.findall(r'^\s*@Published var (\w+)\s*=\s*(true|false|-?\d+(?:\.\d+)?)\s*$',app,re.M)
-excluded={"busy","rawNeedsChoice","rawFastModeActive","photoInputConvertedFromP3"}
+# These are transient per-input editor states, never film/print recipe options.
+# RAW source selection must not be serialized into a recipe and later
+# re-applied to unrelated photos or substitute a fake raw input.
+excluded={"busy","rawNeedsChoice","rawFastModeActive",
+          "rawOriginalSourceActive","photoInputConvertedFromP3"}
+assert "rawOriginalSourceActive" in app
+assert '"rawOriginalSourceActive"' not in recipe
 bools={name for name,value in fields if value in {"true","false"} and name not in excluded}
 numbers={name for name,value in fields if value not in {"true","false"}}
 enums={

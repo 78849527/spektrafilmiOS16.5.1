@@ -119,11 +119,11 @@ jobs:
           sys.path.insert(0,'ios/scripts')
           from build_ci_version_floor import minimum_build, minimum_minor
           project=Path('ios/project.yml').read_text()
-          assert minimum_build(project,131)
-          assert minimum_minor(project,97)
-          assert not minimum_build(project,132)
-          assert not minimum_minor(project,98)
-          print('PASS current 1.8.97/131 and all carried-forward minimum release contracts')
+          assert minimum_build(project,132)
+          assert minimum_minor(project,98)
+          assert not minimum_build(project,133)
+          assert not minimum_minor(project,99)
+          print('PASS current 1.8.98/132 and all carried-forward minimum release contracts')
           PY
           git diff --exit-code
 
