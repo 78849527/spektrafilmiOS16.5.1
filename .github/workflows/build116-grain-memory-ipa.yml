@@ -1,4 +1,4 @@
-# Build116: Apple Silicon macOS 15, full original-source tests, 1MP/2MP grain RSS, unsigned iPhoneOS arm64 IPA.
+# Build116: Apple Silicon macOS 15, complete 8-size x SciPy/Numba grain matrix, iPhoneOS arm64 IPA.
 # Build115 Build103 GUI audit: retain laboratory route and source parameter checks under renamed Build114 UI.
 # Retry Build115 on the original development branch; single active attempt, unchanged Swift implementation.
 # Build115 final pinned test-and-release trigger after parallel grain source batch
@@ -47,7 +47,7 @@ jobs:
   # Failure to start both runners is an Actions/account-level blocker,
   # not a Swift compile diagnostic.
   runner-preflight:
-    name: Linux runner + Build115 source contract
+    name: Linux runner + Build116 source and full matrix contract
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -57,6 +57,7 @@ jobs:
           set -euo pipefail
           echo "RUNNER_OS=$RUNNER_OS RUNNER_NAME=$RUNNER_NAME SHA=$GITHUB_SHA"
           python3 ios/scripts/build115_unseeded_parallel_source_audit.py
+          python3 ios/scripts/build116_grain_memory_matrix_audit.py
           # Fail-fast all carried-forward Build103/Build100 UI invariants before Mac source generation.
           python3 ios/scripts/build103_device_metrics_audit.py /tmp/build115-early-ui-audit.json
           python3 ios/scripts/build111_photo_input_audit.py
@@ -147,6 +148,7 @@ jobs:
         run: |
           set -euo pipefail
           python ios/scripts/build115_unseeded_parallel_source_audit.py
+          python ios/scripts/build116_grain_memory_matrix_audit.py
           swiftc -frontend -parse \
             ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
@@ -176,10 +178,13 @@ jobs:
           assert "diffused.removeAll(keepingCapacity:false)" in physical
           assert "captureBuild116GrainMemory(" in device
           assert "onRunBuild116GrainMemory()" in ui
+          assert "captureBuild116GrainMemory(" in device
+          assert 'for parallel in [false,true]' in device
+          assert 'matrixCases:results,plannedCaseCount:cases.count' in device
           workflow=Path(".github/workflows/build116-grain-memory-ipa.yml").read_text()
           standalone=workflow.split("- name: Build104 run independent",1)[1].split("- name: Build104 on-device",1)[0]
           assert "SourceGrainScalarGaussian.swift" in standalone, "Build104 standalone compile missing scalar dependency"
-          print("PASS Build116 scalar grain, 24B/px released DIR, real 1MP/2MP RSS route; 13MP full-grain NOT certified")
+          print("PASS Build116 full 8x2 matrix, scalar grain, 24B/px released DIR, explicit memory refusal vs rendered RSS")
           PY
 
       - name: Build114 deterministic 1300MB safe output and late headroom rejection
