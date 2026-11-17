@@ -66,7 +66,9 @@ assert 'firstFailure:measured && touched ? nil' in source
 assert 'status:passed ?' in source
 assert 'code:103' in source
 assert 'stageObserverBytesPerPixel: UInt64 = 960' in ledger
-assert memory.count('Build106SourceMemoryLedger.additional(') == 2
+assert memory.count('Build106SourceMemoryLedger.productionAdditional(') == 2
+assert 'let conservative=additional(' in ledger
+assert 'return conservative' in ledger
 assert grain.index('stageObserver?("sourceGrainDyeClouds",out)') < grain.index('layerInputs.removeAll(keepingCapacity:false)') < grain.index('let microStd=settings.microstructureNM')
 assert minimum_minor(project, 78)
 assert minimum_build(project, 112)
