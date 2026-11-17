@@ -204,8 +204,10 @@ enum OriginalSourcePhysicalGrain {
         var probabilities=[Double](repeating:0,count:pixels)
         var rates=[Double](repeating:0,count:pixels)
         var saturations=[Double](repeating:0,count:pixels)
+        // Build116: dye cloud carries ONE channel per source sublayer.
+        // Reuse its scalar buffer for full-frame FIR/YVV output.
         var cloud=settings.dyeCloudBlurUM>0
-            ? [Double](repeating:0,count:pixels*3) : []
+            ? [Double](repeating:0,count:pixels) : []
         var controlledFastSampler:OriginalSourceNumbaFastCounts? =
             settings.useFastStats && !settings.useUnseededParallel
                 ? OriginalSourceNumbaFastCounts(seed:settings.fastStatsSeed!)
@@ -262,13 +264,15 @@ enum OriginalSourcePhysicalGrain {
                 let sigma=settings.dyeCloudBlurUM*sqrt(od)
                 if sigma>0 {
                     for p in 0..<pixels {
-                        cloud[p*3]=Double(counts[p])*od*saturations[p]
+                        cloud[p]=Double(counts[p])*od*saturations[p]
                     }
-                    let smoothed=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-                        cloud,width:width,height:height,
-                        coreSigma:sigma,tailSigma:0,tailWeight:0
+                    // The previous RGB filter wrote channel zero only.
+                    // Preserve same full-frame reflect FIR/YVV in Float64,
+                    // without allocating two unused RGB channels.
+                    try SourceGrainScalarGaussian.blurInPlace(
+                        &cloud,width:width,height:height,sigma:sigma
                     )
-                    for p in 0..<pixels {out[p*3+ch]+=smoothed[p*3]}
+                    for p in 0..<pixels {out[p*3+ch]+=cloud[p]}
                 } else {
                     for p in 0..<pixels {
                         out[p*3+ch]+=Double(counts[p])*od*saturations[p]
