@@ -52,6 +52,9 @@ struct FloatingEditorWorkspace: View {
     // Confirm before changing any OTHER user-selected settings.
     @State private var pendingSourceMode: SourceModeChange?
     @State private var sourceInputCompatibilityAlert=false
+    // Build121: diagnostic copy is transient UI state, never a new optical
+    // preference or a way to bypass the existing production dependencies.
+    @State private var switchExplanation:SwitchExplanation?
     // The fast/editor configuration is saved only when first entering a
     // source-pixel mode. Leaving that mode restores the exact user values,
     // not a hardcoded default set. Never persist a snapshot across images.
@@ -170,6 +173,152 @@ struct FloatingEditorWorkspace: View {
             model.scannerBlackWhiteEnabled=blackWhite
             model.exposureReferenceEnabled=exposureReference
         }
+    }
+
+    private struct SwitchExplanation:Identifiable {
+        let id=UUID()
+        let title:String
+        let summary:String
+        let details:String
+    }
+
+    private struct SwitchGuidance {
+        let summary:String
+        let details:String
+    }
+
+    /// Human readable reasons for EXACT existing lock conditions. The
+    /// renderer, resetToggle .disabled guard and mode confirmation stay
+    /// unchanged. This mapping must never write model properties.
+    private func lockedSwitchReason(_ title:String)->String {
+        if !model.hasPhoto {
+            return "尚未导入照片。先从相册或文件打开一张图片。"
+        }
+        if model.busy {
+            return "正在计算或导出照片。处理结束后即可再次操作。"
+        }
+        switch title {
+        case "胶片层间扩散", "DIR 原版 FIR/YVV":
+            if directPixelMode {
+                return "原版像素直连依赖 DIR，不能单独关闭。先在「工艺」退出像素直连或精细冲印。"
+            }
+        case "背反射光晕":
+            if directPixelMode && !fullPhysicalMode {
+                return "8-bit 原版 DIR 像素直连不支持旧版背反射光晕。切回快速冲印，或进入精细冲印使用原版散射。"
+            }
+        case "胶片颗粒", "快速胶片颗粒", "颗粒":
+            if directPixelMode {
+                return "原版像素路径不运行旧版快速随机颗粒。请在「工艺 → 胶片」开启「原版三亚层颗粒」，或退出原版像素路径。"
+            }
+        case "摄影柔化":
+            if !fullPhysicalMode {
+                return "摄影柔化仅属于精细冲印。先在「工艺」选择精细冲印。"
+            }
+            if !model.sourceCameraPreFilmEnabled {
+                return "需要先在「工艺 → 拍摄」开启「测光与镜头处理」，才能开启摄影柔化。"
+            }
+        case "相纸显影曲线 s023":
+            if fullPhysicalMode || directPixelMode {
+                return "当前原版像素路线不允许独立切换旧版 s023 开关。退出精细冲印并切回快速冲印后可调整。"
+            }
+        case "光学放大机":
+            if fullPhysicalMode {
+                return "彩色负片的精细冲印依赖原版放大机，当前已开启且锁定。先退出精细冲印才能关闭。"
+            }
+        case "光谱扫描":
+            if fullPhysicalMode {
+                return "精细冲印依赖原版光谱扫描，当前已开启且锁定。先退出精细冲印才能关闭。"
+            }
+        case "扫描锐化":
+            if directPixelMode {
+                return "原版像素处理不支持旧版快速扫描锐化。可进入「工艺 → 扫描」开启「扫描镜头与锐化」。"
+            }
+        case "64位":
+            if fullPhysicalMode {
+                return "精细冲印强制要求 Hanatos Float64，不能单独降为快速精度。"
+            }
+        case "Poisson":
+            if model.grainOriginalMetalEnabled {
+                return "当前启用了原版 Metal 颗粒分支，Poisson 开关由该路线控制。请先在「工艺 → 胶片」切换颗粒路线。"
+            }
+        case "胶片层间扩散／原版 FIR/YVV":
+            if directPixelMode {
+                return "原版像素处理必须保留 DIR / FIR-YVV。先退出原版像素处理。"
+            }
+        default:
+            break
+        }
+        return "当前模式或前置条件不允许单独调整。检查「工艺」对应阶段已启用的模块，或切换到支持该功能的处理路线。"
+    }
+
+    private func availableSwitchInfo(_ title:String)->String {
+        switch title {
+        case "原版三亚层颗粒":
+            return "「工艺 → 胶片」原版三亚层颗粒。关闭时不产生该层颗粒；开启后可展开染料云、微结构及 SciPy／Numba 参数。"
+        case "乳剂散射与背反射联动":
+            return "「工艺 → 胶片」的原版光子域乳剂散射与背反射；仅在精细冲印中可独立使用。"
+        case "扫描镜头与锐化":
+            return "「工艺 → 扫描」的原版扫描光学模糊及 Unsharp，独立于快速模式的 RGB 后期锐化。"
+        case "光谱扫描":
+            return "「工艺 → 扫描」的原版光谱扫描。精细冲印将其作为必需模块。"
+        case "摄影柔化":
+            return "「工艺 → 拍摄」先启用测光与镜头处理，再调节原版摄影 PSF。"
+        case "背反射光晕":
+            return "「工艺 → 胶片」的背反射光晕。是否使用快速版本或原版光学版本由当前冲印模式决定。"
+        case "胶片颗粒", "快速胶片颗粒":
+            return "这是快速颗粒路线，不是精细冲印的三亚层 Float64 颗粒。需要原版颗粒请进入「工艺 → 胶片」。"
+        case "胶片层间扩散":
+            return "「工艺 → 胶片」的 DIR 层间扩散；原版像素直连需要 FIR/YVV 依赖。"
+        case "相纸显影曲线 s023":
+            return "「工艺 → 相纸」的独立曲线开关，仅适用于支持该开关的负片快速处理路线。"
+        default:
+            return "该功能当前已满足前置条件，可以直接点击右侧开关开启。双击左侧名称恢复该模块默认状态。"
+        }
+    }
+
+    /// Only CLOSED or LOCKED switches have an inline explanatory sentence
+    /// and a tappable exclamation icon. An enabled switch that is ON
+    /// remains compact to preserve the iOS16.5.1 floating editor viewport.
+    private func switchGuidance(
+        _ title:String,isOn:Bool,enabled:Bool,
+        explicitReason:String?=nil
+    )->SwitchGuidance? {
+        guard !enabled || !isOn else {return nil}
+        if !enabled {
+            let reason=explicitReason ?? lockedSwitchReason(title)
+            let state=isOn ? "已开启并锁定" : "当前不可操作"
+            return SwitchGuidance(
+                summary:state+" · "+reason,
+                details:"当前状态："+state+"。\n原因及操作条件："+reason+
+                    "\n\n此说明不会自动改变任何冲印参数或依赖。"
+            )
+        }
+        return SwitchGuidance(
+            summary:"当前关闭 · 点击开关即可开启",
+            details:"当前状态：可用，尚未开启。\n"+
+                availableSwitchInfo(title)+
+                "\n\n点击开关只执行原有操作，不会暗中修改其他处理模式。"
+        )
+    }
+
+    private func switchInfoButton(
+        _ title:String,guidance:SwitchGuidance
+    )->some View {
+        Button {
+            switchExplanation=SwitchExplanation(
+                title:title,summary:guidance.summary,
+                details:guidance.details
+            )
+        } label: {
+            Image(systemName:"exclamationmark.circle")
+                .font(.system(size:16,weight:.medium))
+                .foregroundColor(.secondary)
+                .frame(width:30,height:32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("查看"+title+"的关闭或锁定原因")
+        .accessibilityHint("只显示条件说明，不会自动切换开关")
     }
 
     private var directPixelMode: Bool { model.sourcePixelIOEnabled }
@@ -370,33 +519,66 @@ struct FloatingEditorWorkspace: View {
             model.spatialDIRSourceConvolutionEnabled &&
             model.lut != nil && model.originalPixelInputAvailable &&
             (mode == .pixel || model.sourcePixelIOEnabled)
-        return HStack(spacing: 7) {
-            Text(title)
-                .font(.caption2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                if !isOn && !model.photoDirectInputReady {
-                    sourceInputCompatibilityAlert=true
-                } else {
-                    requestSourceMode(mode)
-                }
-            } label: {
-                miniatureSwitch(isOn: isOn)
-                    .frame(width: MiniSwitchMetrics.tapWidth,
-                           height: MiniSwitchMetrics.tapHeight)
-                    .contentShape(Rectangle())
+        let blocked = model.busy || (!isOn && (!model.hasPhoto ||
+            model.lut == nil || !model.spatialDIREnabled ||
+            !model.spatialDIRSourceConvolutionEnabled ||
+            (mode == .physical && !model.sourcePixelIOEnabled)))
+        let reason:String? = {
+            if !model.hasPhoto { return "先从相册或文件打开照片。" }
+            if model.busy { return "正在处理照片，完成后即可操作。" }
+            if model.lut == nil { return "请先选择可用的胶片／相纸材料并生成 LUT。" }
+            if !model.spatialDIREnabled {
+                return "请先在「工艺 → 胶片」开启「胶片层间扩散」。"
             }
-            .buttonStyle(.plain)
-            .disabled(model.busy || (!isOn && (!model.hasPhoto ||
-                model.lut == nil || !model.spatialDIREnabled ||
-                !model.spatialDIRSourceConvolutionEnabled ||
-                (mode == .physical && !model.sourcePixelIOEnabled))))
-            .accessibilityLabel(title + (isOn ? "，关闭" : "，开启"))
-            .accessibilityHint(model.photoDirectInputReady
-                ? "若需改变其他已开启选项，会先列明并要求确认"
-                : "原图需要检测或明确转换。点击查看原因")
+            if !model.spatialDIRSourceConvolutionEnabled {
+                return "请先在「工艺 → 胶片 → 层间扩散」开启原版 FIR/YVV。"
+            }
+            if !model.originalPixelInputAvailable || !model.photoDirectInputReady {
+                return "原图没有可直连的已认证像素输入；查看图像输入检测或明确进行 P3 → sRGB 副本转换。"
+            }
+            if mode == .physical && !model.sourcePixelIOEnabled {
+                return "请先启用 8-bit DIR 原版像素通道；精细冲印模式切换仍需确认依赖。"
+            }
+            return nil
+        }()
+        let note=switchGuidance(
+            title,isOn:isOn,enabled:!blocked && reason==nil,
+            explicitReason:reason
+        )
+        return VStack(alignment:.leading,spacing:2) {
+            HStack(spacing:7) {
+                Text(title)
+                    .font(.caption2)
+                    .frame(maxWidth:.infinity,alignment:.leading)
+                Button {
+                    if !isOn && !model.photoDirectInputReady {
+                        sourceInputCompatibilityAlert=true
+                    } else {
+                        requestSourceMode(mode)
+                    }
+                } label: {
+                    miniatureSwitch(isOn:isOn)
+                        .frame(width:MiniSwitchMetrics.tapWidth,
+                               height:MiniSwitchMetrics.tapHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(blocked)
+                .accessibilityLabel(title+(isOn ? "，关闭" : "，开启"))
+                .accessibilityHint("原版算法依赖先确认，再切换")
+                if let note {
+                    switchInfoButton(title,guidance:note)
+                }
+            }
+            if let note {
+                Text(note.summary)
+                    .font(.system(size:10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal:false,vertical:true)
+                    .accessibilityLabel(note.summary)
+            }
         }
-        .opacity(!isOn && (!prerequisite || !model.photoDirectInputReady) ? 0.45 : 1)
+        .opacity(!isOn && !prerequisite ? 0.8 : 1)
     }
 
     /// Change top titles in the ONE lower sheet; the inactive adjustment
@@ -521,6 +703,13 @@ struct FloatingEditorWorkspace: View {
                                       maxHeight: panelHeight - 44)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 63)
+                        .alert(item:$switchExplanation) { notice in
+                            Alert(
+                                title:Text(notice.title),
+                                message:Text(notice.details),
+                                dismissButton:.default(Text("知道了"))
+                            )
+                        }
                 }
             }
             .sheet(isPresented: $statusReportPresented,
@@ -2249,34 +2438,54 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    private func simpleToggle(_ title: String, value: Binding<Bool>,
-                              allowed: Bool = true, resetTo: Bool = false,
-                              changed: @escaping () -> Void) -> some View {
-        let confirmedLock = confirmedSimpleLock(title)
-        return Button {
-            guard model.hasPhoto && !model.busy && allowed && confirmedLock == nil else { return }
-            value.wrappedValue.toggle()
-            changed()
-        } label: {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-                miniatureSwitch(isOn: value.wrappedValue)
+    private func simpleToggle(_ title:String,value:Binding<Bool>,
+                              allowed:Bool=true,resetTo:Bool=false,
+                              changed:@escaping ()->Void)->some View {
+        let confirmedLock=confirmedSimpleLock(title)
+        let ready=model.hasPhoto && !model.busy && allowed &&
+            confirmedLock == nil
+        let reason=confirmedLock ?? (!allowed
+            ? "当前颗粒模式的前置条件不支持独立开启此选项。请先在「工艺 → 胶片」调整颗粒路线。"
+            : nil)
+        let note=switchGuidance(
+            title,isOn:value.wrappedValue,enabled:ready,
+            explicitReason:reason
+        )
+        return VStack(alignment:.leading,spacing:2) {
+            HStack(spacing:3) {
+                Button {
+                    guard ready else{return}
+                    value.wrappedValue.toggle()
+                    changed()
+                } label: {
+                    HStack(spacing:4) {
+                        Text(title)
+                            .font(.system(size:10,weight:.semibold))
+                        miniatureSwitch(isOn:value.wrappedValue)
+                    }
+                    .padding(.horizontal,7)
+                    .padding(.vertical,5)
+                    .background(Color.primary.opacity(0.07),in:Capsule())
+                }
+                .buttonStyle(.plain)
+                .onTapGesture(count:2) {
+                    guard ready else{return}
+                    value.wrappedValue=resetTo
+                    changed()
+                }
+                .disabled(!ready)
+                .accessibilityLabel(title+(value.wrappedValue ? "，已开启" : "，已关闭"))
+                if let note {
+                    switchInfoButton(title,guidance:note)
+                }
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .background(Color.primary.opacity(0.07), in: Capsule())
+            if let note {
+                Text(note.summary)
+                    .font(.system(size:10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal:false,vertical:true)
+            }
         }
-        .buttonStyle(.plain)
-        .onTapGesture(count: 2) {
-            guard model.hasPhoto && !model.busy && allowed && confirmedLock == nil else { return }
-            value.wrappedValue = resetTo
-            changed()
-        }
-        .disabled(!model.hasPhoto || model.busy || !allowed || confirmedLock != nil)
-        .opacity(confirmedLock == nil ? 1 : 0.45)
-        .accessibilityLabel(title + (value.wrappedValue ? "，已开启" : "，已关闭"))
-        .accessibilityHint(confirmedLock ?? "单击切换；双击恢复默认")
     }
 
     // Top feature row and pure-switch second row. The parameter
@@ -3095,30 +3304,43 @@ struct FloatingEditorWorkspace: View {
     // attach competing gestures to the actual switch on iOS 16.5.1).
     private func resetToggle(_ title: String, value: Binding<Bool>,
                              enabled: Bool, resetTo: Bool = false) -> some View {
-        HStack(spacing: 5) {
-            Text(title)
-                .font(.caption2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    guard enabled else { return }
-                    value.wrappedValue = resetTo
-                }
-                .accessibilityHint("双击标签恢复该模块默认状态")
-            Button {
-                guard enabled else { return }
-                value.wrappedValue.toggle()
-            } label: {
-                miniatureSwitch(isOn: value.wrappedValue)
-                    .frame(width: MiniSwitchMetrics.tapWidth,
-                           height: MiniSwitchMetrics.tapHeight)
+        let note=switchGuidance(title,isOn:value.wrappedValue,enabled:enabled)
+        return VStack(alignment:.leading,spacing:2) {
+            HStack(spacing:5) {
+                Text(title)
+                    .font(.caption2)
+                    .frame(maxWidth:.infinity,alignment:.leading)
                     .contentShape(Rectangle())
+                    .onTapGesture(count:2) {
+                        guard enabled else{return}
+                        value.wrappedValue=resetTo
+                    }
+                    .accessibilityHint("双击标签恢复该模块默认状态")
+                Button {
+                    guard enabled else{return}
+                    value.wrappedValue.toggle()
+                } label: {
+                    miniatureSwitch(isOn:value.wrappedValue)
+                        .frame(width:MiniSwitchMetrics.tapWidth,
+                               height:MiniSwitchMetrics.tapHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!enabled)
+                .accessibilityLabel(title+(value.wrappedValue ? "，已开启" : "，已关闭"))
+                .accessibilityHint("单击切换；双击左侧名称恢复默认")
+                if let note {
+                    switchInfoButton(title,guidance:note)
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title + (value.wrappedValue ? "，已开启" : "，已关闭"))
-            .accessibilityHint("单击切换；双击左侧标签恢复默认")
+            if let note {
+                Text(note.summary)
+                    .font(.system(size:10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal:false,vertical:true)
+                    .accessibilityLabel(note.summary)
+            }
         }
-        .disabled(!enabled)
     }
 
     private func exposureControl(_ title: String, value: Binding<Double>,
