@@ -26,7 +26,7 @@ checks={
     "real_camera_capture":"output.capturePhoto(with:settings,delegate:processor)" in camera and
         "NextLevelCapturedPhoto" in camera,
     "raw_dng_not_jpeg_fallback":"photo.isRawPhoto" in camera and
-        '拒绝静默拍成 JPEG' in camera,
+        'RAW 拍摄未返回 DNG' in camera,
     "camera_auth":"AVCaptureDevice.requestAccess" in camera,
     "photo_picker":"PhotosPickerItem" in main and
         "func selectFromPhotos(" in main,
