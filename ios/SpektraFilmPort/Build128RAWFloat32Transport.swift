@@ -97,7 +97,7 @@ enum Build128RAWFloat32Transport {
                 throw Failure.invalid(
                     "Apple RAW 浮点 TIFF 没有通过 Build78/111 真实位深、" +
                     "色彩空间和图像尺寸检查：" +
-                    profile.summary+"；"+profile.reason+
+                    profile.summary+"；"+profile.reason +
                     "。拒绝冒充 Float32 或自动改为 8-bit"
                 )
             }
