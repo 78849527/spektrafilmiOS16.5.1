@@ -1,3 +1,4 @@
+# Build128 early Swift parser now includes new Float32 RAW bridge (fail fast before fixtures).
 # Build128 Build103 audit now distinguishes original Build90 TIFF16 and compatibility Build96 TIFF16.
 # Build128 gate correction: RGBAf checks inspect executable code, not prose comments.
 # Build128 audit correction: Apple RAW Float32 is preferred while legacy 8-bit remains opt-in.
@@ -139,7 +140,8 @@ jobs:
             ios/SpektraFilmPort/Build107CombinedDeviceFeedback.swift \
           ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
             ios/SpektraFilmPort/ContentView.swift \
-            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
+            ios/SpektraFilmPort/Build128RAWFloat32Transport.swift
           swiftc -frontend -parse \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
