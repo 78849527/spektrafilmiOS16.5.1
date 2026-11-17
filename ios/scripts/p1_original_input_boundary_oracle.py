@@ -7,11 +7,24 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import types
+import importlib.util
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src/spektrafilm/utils/spectral_upsampling.py"
-sys.path.insert(0, str(ROOT / "src"))
+# The original package root eagerly imports optional RAW/exiv2 bindings.
+# CI already validates the original light-weight optical modules without
+# those optional dependencies by setting namespace package search paths.
+# Do not reimplement the source algorithm or silently install new packages.
+package_root = ROOT / "src/spektrafilm"
+for name, directory in (
+    ("spektrafilm", package_root),
+    ("spektrafilm.utils", package_root / "utils"),
+):
+    package = types.ModuleType(name)
+    package.__path__ = [str(directory)]
+    sys.modules[name] = package
 
 # Negative, superwhite, zero, out-of-gamut and ordinary inputs.
 # Keep values verbatim; source only bounds final TC LUT lookup, not raw RGB.
@@ -33,7 +46,14 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
 
-    from spektrafilm.utils.spectral_upsampling import _rgb_to_tc_b
+    module_name = "spektrafilm.utils.spectral_upsampling"
+    spec = importlib.util.spec_from_file_location(module_name, SOURCE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load pinned Python original optical source")
+    original = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = original
+    spec.loader.exec_module(original)
+    _rgb_to_tc_b = original._rgb_to_tc_b
     cases = []
     for color_space, cctf in [
         ("sRGB", True),

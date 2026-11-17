@@ -1,3 +1,4 @@
+# Build132 source oracle: load frozen optical Python source without eager optional RAW/exiv2 imports.
 # Build132 scoped retry: add only upstream-based P1 RAW/ACES source files to historical Build116 original-module diff gate.
 # Build132 retry: preserve original named RAW import entry points for Build103/95 historical GUI source audit.
 # Build131 strict-original cleanup: drop Build131 non-original global Float32 remapping; source/ICC transport preserved, full original parity pending.
