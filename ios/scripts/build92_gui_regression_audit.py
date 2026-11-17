@@ -24,7 +24,7 @@ checks={
         'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
     "build92_version":minimum_build(spec, 92) and
         minimum_minor(spec, 59),
-    "real_camera_capture":"output.capturePhoto(with:settings,delegate:processor)" in camera and
+    "real_camera_capture":"SFNativeCaptureSafety.startPhotoOutput(" in camera and
         "NextLevelCapturedPhoto" in camera,
     "raw_dng_not_jpeg_fallback":"photo.isRawPhoto" in camera and
         'RAW 拍摄未返回 DNG' in camera,
