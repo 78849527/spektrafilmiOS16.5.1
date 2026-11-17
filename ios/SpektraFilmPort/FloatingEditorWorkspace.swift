@@ -287,17 +287,14 @@ struct FloatingEditorWorkspace: View {
         if !enabled {
             let reason=explicitReason ?? lockedSwitchReason(title)
             let state=isOn ? "已开启并锁定" : "当前不可操作"
+            let explanation="当前状态：\(state)。\n原因及操作条件：\(reason)\n\n此说明不会自动改变任何冲印参数或依赖。"
             return SwitchGuidance(
-                summary:state+" · "+reason,
-                details:"当前状态："+state+"。\n原因及操作条件："+reason+
-                    "\n\n此说明不会自动改变任何冲印参数或依赖。"
+                summary:state+" · "+reason,details:explanation
             )
         }
+        let explanation="当前状态：可用，尚未开启。\n\(availableSwitchInfo(title))\n\n点击开关只执行原有操作，不会暗中修改其他处理模式。"
         return SwitchGuidance(
-            summary:"当前关闭 · 点击开关即可开启",
-            details:"当前状态：可用，尚未开启。\n"+
-                availableSwitchInfo(title)+
-                "\n\n点击开关只执行原有操作，不会暗中修改其他处理模式。"
+            summary:"当前关闭 · 点击开关即可开启",details:explanation
         )
     }
 
