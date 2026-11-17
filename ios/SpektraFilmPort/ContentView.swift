@@ -2757,14 +2757,14 @@ struct ContentView: View {
         guard let docs=FileManager.default.urls(
             for:.documentDirectory,in:.userDomainMask
         ).first else {
-            model.status="Build118 无法访问文件目录"
+            model.status="Build119 无法访问文件目录"
             return
         }
         let folder=docs.appendingPathComponent(
             "SpektraFilm Verification",isDirectory:true
         )
         let checkpoint=folder.appendingPathComponent(
-            "Build118-last-\(megapixels)MP-checkpoint.txt"
+            "Build119-last-\(megapixels)MP-checkpoint.txt"
         )
         do {
             try FileManager.default.createDirectory(
@@ -2773,12 +2773,12 @@ struct ContentView: View {
             let initial="status=INCOMPLETE_OR_NOT_RUN\napp=\(version) build=\(build) sha=\(sha)\nselected=\(megapixels)MP\n高风险内存测试未完成；系统闪退请保留本文件。\n"
             try initial.write(to:checkpoint,atomically:true,encoding:.utf8)
         } catch {
-            model.status="Build118 检查点保存失败："+error.localizedDescription
+            model.status="Build119 检查点保存失败："+error.localizedDescription
             return
         }
         diagnosticDismissPending=true
         model.busy=true
-        model.status="Build118：单独执行 \(megapixels)MP SciPy／Numba Float64 真实颗粒测试…"
+        model.status="Build119：单独执行 \(megapixels)MP SciPy／Numba Float64 真实颗粒测试…"
         Task { @MainActor in
             defer {model.busy=false}
             let proof=await Task.detached(priority:.userInitiated) {
@@ -2797,15 +2797,15 @@ struct ContentView: View {
                 let summary="status=\(state)\napp=\(version) build=\(build) sha=\(sha)\nsize=\(megapixels)MP\npassed=\(proof.measuredCaseCount)/2 refused=\(proof.refusedCaseCount)\n"
                 try summary.write(to:checkpoint,atomically:true,encoding:.utf8)
                 model.status=proof.bothRoutesRendered
-                    ? "Build118 \(megapixels)MP 双路线实渲染 PASS；非 Python 整图认证"
-                    : "Build118 \(megapixels)MP：实渲染 \(proof.measuredCaseCount)/2，拒绝 \(proof.refusedCaseCount)，失败 \(proof.failedCaseCount)"
+                    ? "Build119 \(megapixels)MP 双路线实渲染 PASS；非 Python 整图认证"
+                    : "Build119 \(megapixels)MP：实渲染 \(proof.measuredCaseCount)/2，拒绝 \(proof.refusedCaseCount)，失败 \(proof.failedCaseCount)"
                 if diagnosticDismissPending {
                     diagnosticPendingFeedback=pair
                 } else {
                     activeSheet = .shareFeedback(pair.log,pair.json)
                 }
             } catch {
-                model.status="Build118 报告保存失败："+error.localizedDescription
+                model.status="Build119 报告保存失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }
