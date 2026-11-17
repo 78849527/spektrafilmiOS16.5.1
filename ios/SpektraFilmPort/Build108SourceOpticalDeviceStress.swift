@@ -120,6 +120,8 @@ enum Build108SourceOpticalDeviceStress {
         let width:Int
         let height:Int
         let grain:Bool
+        // Build116 real 4-worker optional fast_stats particles.
+        var parallelFastStats:Bool=false
     }
     private static let geometries=[
         Geometry(label:"1MP_Kodak_Portra_Endura_3x3_grain",
@@ -128,8 +130,9 @@ enum Build108SourceOpticalDeviceStress {
                  width:1600,height:1250,grain:false)
     ]
 
-    private static func settings(grain:Bool)
-        ->OriginalSourcePhysicalImage.Parameters {
+    private static func settings(
+        grain:Bool,parallelFastStats:Bool=false
+    )->OriginalSourcePhysicalImage.Parameters {
         // Same native stock pair and enlarger configuration used by the
         // independent Python "kodak_neutral_fir" reference family.
         var enlarger=OriginalPrintOptics.Settings(enabled:true)
@@ -150,7 +153,15 @@ enum Build108SourceOpticalDeviceStress {
             var original=OriginalSourcePhysicalGrain.Settings()
             original.active=true
             original.sublayersActive=true
-            original.numbaSeed=8888
+            if parallelFastStats {
+                original.useFastStats=true
+                original.useUnseededParallel=true
+                original.parallelWorkerCount=4
+                original.numbaSeed=nil
+                original.fastStatsSeed=nil
+            } else {
+                original.numbaSeed=8888
+            }
             result.sourceGrain=original
         }
         return result
@@ -213,7 +224,10 @@ enum Build108SourceOpticalDeviceStress {
 
     private static func measure(_ g:Geometry)->OpticalCase {
         let bpp:UInt64=g.grain
-            ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0
+            ? OriginalSourcePhysicalGrain.extraBytesPerPixel +
+              (g.parallelFastStats
+                ? OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel
+                : 0) : 0
         var budget:UInt64?
         do {
             // SAME pre-allocation source memory admission as production.
@@ -248,7 +262,11 @@ enum Build108SourceOpticalDeviceStress {
         var sum:Double?
         var firstFailure:String?
         do {
-            let actual=try render(g,with:settings(grain:g.grain))
+            let actual=try render(
+                g,with:settings(
+                    grain:g.grain,parallelFastStats:g.parallelFastStats
+                )
+            )
             count=actual.samples
             sum=actual.checksum
         } catch {
@@ -425,6 +443,146 @@ enum Build108SourceOpticalDeviceStress {
         \(report.limitations.joined(separator:"\n"))
         """
         try logText.write(to:log,atomically:true,encoding:.utf8)
+        return (log,json)
+    }
+
+
+    /// Build116: opt-in real-device memory measurements. The user explicitly
+    /// launches these tests; 13MP grain is admission-tested only, NEVER run.
+    struct Build116GrainMemoryReport:Codable {
+        let schema:Int
+        let appVersion:String
+        let appBuild:String
+        let compiledSourceCommit:String
+        let osVersion:String
+        let physicalDevice:Bool
+        let generatedUTC:String
+        let actualParallelFastStatsGrainCases:[OpticalCase]
+        let allMeasuredCasesPassed:Bool
+        let thirteenMegapixelGrainBudgetBytes:UInt64
+        let thirteenMegapixelGrainAdmissionRefused:Bool
+        let thirteenMegapixelGrainActuallyRendered:Bool
+        let sampledRSSIsExactJetsamPeak:Bool
+        let firstFailure:String?
+        let limitations:[String]
+    }
+
+    static func captureBuild116GrainMemory(
+        version:String,build:String,commit:String,
+        osVersion:String,physicalDevice:Bool
+    )->Build116GrainMemoryReport {
+        let target=physicalDevice && osVersion=="16.5.1" &&
+            commit.count==40 && commit.allSatisfy {
+                "0123456789abcdef".contains($0)
+            }
+        let testCases=[
+            Geometry(
+                label:"Build116_1MP_4worker_fast_stats_real_3x3_grain",
+                width:1000,height:1000,grain:true,
+                parallelFastStats:true
+            ),
+            Geometry(
+                label:"Build116_2MP_4worker_fast_stats_real_3x3_grain",
+                width:1600,height:1250,grain:true,
+                parallelFastStats:true
+            )
+        ]
+        var results=[OpticalCase]()
+        var stopReason:String?
+        for geometry in testCases {
+            if !target {
+                results.append(skipped(geometry,
+                    "非绑定有效 SHA 的 iOS 16.5.1 真机，拒绝实测"))
+            } else if let stopReason {
+                results.append(skipped(geometry,
+                    "前一个大图颗粒测试失败，后续停止："+stopReason))
+            } else {
+                let actual=measure(geometry)
+                results.append(actual)
+                stopReason=actual.firstFailure
+            }
+        }
+        // Do not allocate a 13MP grain frame: even this reduced-scratch
+        // candidate has not proved a safe whole-pipeline memory estimate.
+        let grainBytes=OriginalSourcePhysicalGrain.extraBytesPerPixel +
+            OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel
+        let plan=try? Build91PhysicalMemory.plan(
+            width:5000,height:2600,
+            baseBytesPerPixel:OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel,
+            additionalBytesPerPixel:grainBytes,
+            physicalMemory:ProcessInfo.processInfo.physicalMemory,
+            processAvailable:available()
+        )
+        var refused=true
+        if let plan {
+            do {
+                try Build91PhysicalMemory.validate(plan)
+                refused=false
+            } catch {
+                refused=true
+            }
+        }
+        let measured=target && results.count==2 && results.allSatisfy {
+            $0.status=="real_source_float64_render_pass" &&
+            $0.sampledPeakResidentBytes != nil &&
+            $0.actualOutputSampleCount>0
+        }
+        let first=stopReason ?? (target
+            ? (refused ? nil : "13MP 颗粒内存预检意外允许，禁止自动运行")
+            : "非 iOS 16.5.1 有效 SHA 真机")
+        return Build116GrainMemoryReport(
+            schema:1,appVersion:version,appBuild:build,
+            compiledSourceCommit:commit,osVersion:osVersion,
+            physicalDevice:physicalDevice,
+            generatedUTC:ISO8601DateFormatter().string(from:Date()),
+            actualParallelFastStatsGrainCases:results,
+            allMeasuredCasesPassed:measured && refused,
+            thirteenMegapixelGrainBudgetBytes:plan?.estimatedPeakBytes ??
+                13_000_000*(OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel+grainBytes),
+            thirteenMegapixelGrainAdmissionRefused:refused,
+            thirteenMegapixelGrainActuallyRendered:false,
+            sampledRSSIsExactJetsamPeak:false,
+            firstFailure:first,
+            limitations:[
+                "1MP and 2MP are synthetic sRGB FULL production 3x3 grain with 4 independent OS-seeded fast_stats workers",
+                "25ms RSS sampling may miss short spikes and is NOT a Jetsam high-watermark",
+                "13MP grain is NOT rendered; memory gate only. No source Float32 fallback or automatic resize",
+                "No Python full-size image numeric parity, RAW ingress, or arbitrary unseeded prange bitstream"
+            ]
+        )
+    }
+
+    static func writeBuild116GrainMemory(
+        _ report:Build116GrainMemoryReport,documents:URL
+    ) throws -> (log:URL,json:URL) {
+        let dir=documents.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true
+        )
+        try FileManager.default.createDirectory(
+            at:dir,withIntermediateDirectories:true
+        )
+        let prefix="Build116-grain-memory-"+UUID().uuidString
+        let json=dir.appendingPathComponent(prefix+".json")
+        let log=dir.appendingPathComponent(prefix+".log")
+        let encoder=JSONEncoder()
+        encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
+        try encoder.encode(report).write(to:json,options:.atomic)
+        var text="Build116 real Float64 source grain memory tests\n"
+        text+="App \(report.appVersion) Build\(report.appBuild) SHA \(report.compiledSourceCommit)\n"
+        text+="iOS \(report.osVersion), physical \(report.physicalDevice)\n"
+        text+="Real 1MP/2MP all PASS: \(report.allMeasuredCasesPassed)\n"
+        text+="13MP grain gate refused: \(report.thirteenMegapixelGrainAdmissionRefused)\n"
+        text+="13MP grain budget: \(report.thirteenMegapixelGrainBudgetBytes)\n"
+        for item in report.actualParallelFastStatsGrainCases {
+            text+="\n\(item.label) \(item.width)x\(item.height): \(item.status)\n"
+            text+="Sampled peak RSS: \(item.sampledPeakResidentBytes.map(String.init) ?? "none")\n"
+            text+="Samples: \(item.residentSampleCount), time: \(item.elapsedSeconds.map(String.init) ?? "none")\n"
+            text+="Checksum: \(item.outputSampleChecksum.map(String.init) ?? "none")\n"
+            text+="First failure: \(item.firstFailure ?? "none")\n"
+        }
+        text+="\nFirst failure: \(report.firstFailure ?? "none")\n"
+        text+=report.limitations.joined(separator:"\n")
+        try text.write(to:log,atomically:true,encoding:.utf8)
         return (log,json)
     }
 
