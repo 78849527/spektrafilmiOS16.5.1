@@ -125,6 +125,9 @@ struct Build126Recipe: Codable, Identifiable {
     var embeddedLUT:Build126RecipeLUT?
     /// Optional deliberately tiny cover (~240px). No full-size photo.
     var coverJPEG:Data?
+    /// Build128 additive optional field. Missing means Build126 8-bit
+    /// source mode; old on-device and exported recipes remain decodable.
+    var inputContract:String?
 
     func validateStructure() throws {
         guard schemaVersion==Self.schema else {
@@ -148,6 +151,13 @@ struct Build126Recipe: Codable, Identifiable {
               choices["sourceCameraMeteringMethod"].flatMap(OriginalSourceCameraOptics.Metering.init(rawValue:)) != nil,
               choices["sourceCameraRawMethod"].flatMap(SpectralPhysics.CameraRawMethod.init(rawValue:)) != nil else {
             throw ImageProcessingError.invalid("配方包含不支持的原版枚举值")
+        }
+        guard inputContract == nil ||
+              ["uint8SRGB","uint16SRGB","float16ExtendedSRGB",
+               "float32ExtendedSRGB"].contains(inputContract!) else {
+            throw ImageProcessingError.invalid(
+                "配方输入格式契约未知，拒绝不兼容模式或静默降级"
+            )
         }
         guard coverJPEG == nil || coverJPEG!.count <= 120_000 else {
             throw ImageProcessingError.invalid("封面缩略图不能超过 120KB")
