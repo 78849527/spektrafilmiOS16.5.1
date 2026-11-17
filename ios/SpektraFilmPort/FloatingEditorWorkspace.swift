@@ -17,6 +17,7 @@ struct FloatingEditorWorkspace: View {
     let onShareRaw: () -> Void
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
+    let onOpenRecipes: () -> Void
     let onExport: (ExportResolutionMode) -> Void
     /// Build96: separate actual 16-bit TIFF share destination; Photos stay JPEG.
     let onExportTIFF16: (ExportResolutionMode) -> Void
@@ -1448,6 +1449,16 @@ struct FloatingEditorWorkspace: View {
                                     in:Capsule())
                 }
                 .accessibilityLabel("高级菜单：仅验证状态与开发者诊断")
+                Button(action:onOpenRecipes) {
+                    Text("配方")
+                        .font(.system(size:12,weight:.semibold))
+                        .foregroundColor(.primary)
+                        .frame(height:34)
+                        .padding(.horizontal,7)
+                        .background(Color.primary.opacity(0.06),
+                                    in:Capsule())
+                }
+                .accessibilityLabel("打开我的冲印配方，不保存原始照片")
                 Spacer(minLength: 0)
                 if selectedEditorPage == .adjustment {
                     Button {
