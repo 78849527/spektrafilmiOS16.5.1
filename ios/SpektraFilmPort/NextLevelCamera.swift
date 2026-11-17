@@ -193,12 +193,14 @@ private final class NativePhotoCaptureDelegate:NSObject,AVCapturePhotoCaptureDel
             return
         }
         guard let companion else {
+            NativeRAWCaptureTrace.clear()
             DispatchQueue.main.async {
                 self.done(.failure(self.fail("相机未返回 JPEG/HEIC 主照片")))
             }
             return
         }
         if format == .raw && dng == nil {
+            NativeRAWCaptureTrace.clear()
             DispatchQueue.main.async {
                 self.done(.failure(self.fail("RAW 拍摄未返回 DNG；未静默回退 JPEG")))
             }
