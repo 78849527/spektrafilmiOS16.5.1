@@ -213,10 +213,10 @@ enum OriginalSourcePhysicalImage {
                     "原版摄影黑白参考 RAW 光子倍率无效；禁止自动代入估算值"
                 )
             }
-            if cameraInputColorSpace == .proPhotoLinear &&
+            if cameraInputColorSpace != .sRGB &&
                 cameraRawMethod != .hanatos2025 {
                 throw Failure.invalid(
-                    "原版 ProPhoto 仅在完整 Hanatos 光谱输入路径已实现，"
+                    "原版 ProPhoto/ACES 仅在完整 Hanatos 光谱输入路径已实现，"
                     + "不支持当前 Mallett 组合"
                 )
             }

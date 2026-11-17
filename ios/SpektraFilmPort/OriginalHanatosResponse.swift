@@ -35,6 +35,8 @@ struct OriginalHanatosResponse {
     enum InputColorSpace: Sendable {
         case sRGB
         case proPhotoLinear
+        /// P1 linear ACES2065-1 (rawpy output), no input CCTF.
+        case acesLinear
     }
 
     /// Source-precision mode is the default. The previous Float16 storage
@@ -57,6 +59,8 @@ struct OriginalHanatosResponse {
             matrix=GeneratedHanatosData.sRGBToXYZByFilm[filmID]
         case .proPhotoLinear:
             matrix=GeneratedHanatosData.proPhotoRGBToXYZByFilm[filmID]
+        case .acesLinear:
+            matrix=GeneratedHanatosData.acesRGBToXYZByFilm[filmID]
         }
         guard n >= 32,
               let matrix,

@@ -28,3 +28,12 @@ demosaic checks, WB/daylight/tungsten/custom/tint/lensfun branches, identical
 RGB pixel arrays with max/RMSE/MAE, ACES CCTF and exact Hanatos input
 matrix, negative/superwhite stage boundary, full-resolution memory tests
 and iOS16.5.1 hardware run. Never silently substitute sRGB if ACES fails.
+
+## P1 ACES camera spectral dispatch
+Python `spectral_upsampling._rgb_to_tc_b` uses a per-stock
+`colour.RGB_to_XYZ` with the stock reference illuminant and CAT16.
+The original generator now embeds a separate ACES2065-1 Float64 matrix.
+Hanatos accepts `.acesLinear` without decoding sRGB CCTF.
+Non-sRGB Mallett paths still fail closed. Production RAW direct rendering
+is not enabled: Python/Swift numeric parity, full-resolution memory,
+and a real iOS16.5.1 build remain unverified.

@@ -107,6 +107,7 @@ def main():
                      .copy().align(SHAPE).values, dtype=np.float64)
     matrices={}
     prophoto_matrices={}
+    aces_matrices={}
     for info, _ in originals:
         illum = reference_illuminant(info["reference_illuminant"])
         illum_xyz = np.einsum("w,wc->c", illum, cie)
@@ -127,6 +128,13 @@ def main():
             chromatic_adaptation_transform="CAT16"),dtype=np.float64)
         assert prophoto.shape==(3,3) and np.isfinite(prophoto).all()
         prophoto_matrices[info["stock"]]=prophoto
+        # P1 original source: ACES2065-1 scene-linear RGB -> film D55/T CAT16.
+        aces=np.asarray(colour.RGB_to_XYZ(
+            np.eye(3),colourspace="ACES2065-1",
+            apply_cctf_decoding=False,illuminant=illum_xy,
+            chromatic_adaptation_transform="CAT16"),dtype=np.float64)
+        assert aces.shape==(3,3) and np.isfinite(aces).all()
+        aces_matrices[info["stock"]]=aces
 
     lines = [
         "// ORIGINAL Hanatos2025 spectral irradiation TC response from upstream",
@@ -146,6 +154,11 @@ def main():
     lines.append("    ]")
     lines.append("    static let proPhotoRGBToXYZByFilm: [String: [Double]] = [")
     for stock,mat in prophoto_matrices.items():
+        lines.append("        "+q(stock)+": ["+
+                     ",".join(format(float(x),".17g") for x in mat.ravel())+"],")
+    lines.append("    ]")
+    lines.append("    static let acesRGBToXYZByFilm: [String: [Double]] = [")
+    for stock,mat in aces_matrices.items():
         lines.append("        "+q(stock)+": ["+
                      ",".join(format(float(x),".17g") for x in mat.ravel())+"],")
     lines.extend([

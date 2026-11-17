@@ -575,10 +575,10 @@ struct SpectralPhysics {
                 )
             }
         }
-        guard cameraInputColorSpace != .proPhotoLinear ||
+        guard cameraInputColorSpace == .sRGB ||
                 cameraRawMethod == .hanatos2025 else {
             throw PhysicsError.invalid(
-                "原版 ProPhoto 输入尚未接入 Mallett 光谱反演，"
+                "原版 ProPhoto/ACES 输入尚未接入 Mallett 光谱反演，"
                 + "只能选择精确 Hanatos，禁止默默当成 sRGB"
             )
         }
@@ -1634,7 +1634,7 @@ struct SpectralPhysics {
         let linear: [Double]
         switch cameraInputColorSpace {
         case .sRGB: linear=encodedRGB.map { Self.decodeSRGB($0) }
-        case .proPhotoLinear: linear=encodedRGB
+        case .proPhotoLinear, .acesLinear: linear=encodedRGB
         }
         let raw: [Double]
         switch cameraRawMethod {
@@ -1687,7 +1687,7 @@ struct SpectralPhysics {
         let linear: [Double]
         switch cameraInputColorSpace {
         case .sRGB: linear=encodedRGB.map { Self.decodeSRGB($0) }
-        case .proPhotoLinear: linear=encodedRGB
+        case .proPhotoLinear, .acesLinear: linear=encodedRGB
         }
         let raw: [Double]
         switch cameraRawMethod {
