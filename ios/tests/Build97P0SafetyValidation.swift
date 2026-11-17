@@ -86,13 +86,21 @@ let oversize=try SafeExportResolution.plan(
 )
 ensure(oversize.dimensions.pixels==40_000_000,
        "original mode never silently shrinks 40MP")
-var capRejected=false
+// Build135: remove obsolete 1500MB/physical-RAM-third ceiling.
+// 40MP is preserved when live OS process headroom genuinely supports
+// its 4160MB estimated peak; refuse at lower available headroom.
+try SafeExportResolution.validateForHeadroom(
+    oversize,processAvailableMemory:8_000_000_000
+)
+ensure(oversize.estimatedPeakBytes==4_160_000_000,
+       "40MP complete-image estimate remains truthful")
+var lowHeadroomRejected=false
 do {
     try SafeExportResolution.validateForHeadroom(
-        oversize,processAvailableMemory:8_000_000_000
+        oversize,processAvailableMemory:5_000_000_000
     )
-} catch { capRejected=true }
-ensure(capRejected,"over-physical-cap original must fail closed")
+} catch { lowHeadroomRejected=true }
+ensure(lowHeadroomRejected,"40MP must refuse insufficient live memory")
 
 let reduced=try SafeExportResolution.plan(
     width:8000,height:5000,
@@ -108,4 +116,4 @@ try SafeExportResolution.validateForHeadroom(
 )
 
 print("PASS Build97 P0 CoreImage explicit nil/empty rejection, disabled-stage identity, " +
-      "original JPEG live RAM admission, physical cap, explicit safe geometry")
+      "original JPEG dynamic 40MP admission/low-memory refusal, explicit safe geometry")
