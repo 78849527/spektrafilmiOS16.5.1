@@ -447,8 +447,10 @@ enum Build108SourceOpticalDeviceStress {
     }
 
 
-    /// Build116: opt-in real-device memory measurements. The user explicitly
-    /// launches these tests; 13MP grain is admission-tested only, NEVER run.
+    /// Build116: opt-in real-device memory measurements.
+    /// Build116: one tap runs the WHOLE 8-size x 2-source-grain route matrix.
+    /// Each permitted size is rendered once; denied sizes have explicit
+    /// pre-allocation refusal entries. No reduced-resolution substitution.
     struct Build116GrainMemoryReport:Codable {
         let schema:Int
         let appVersion:String
@@ -457,8 +459,13 @@ enum Build108SourceOpticalDeviceStress {
         let osVersion:String
         let physicalDevice:Bool
         let generatedUTC:String
-        let actualParallelFastStatsGrainCases:[OpticalCase]
-        let allMeasuredCasesPassed:Bool
+        let matrixCases:[OpticalCase]
+        let plannedCaseCount:Int
+        let measuredCaseCount:Int
+        let refusedCaseCount:Int
+        let failedCaseCount:Int
+        let notRunCaseCount:Int
+        let allAdmittedCasesPassed:Bool
         let thirteenMegapixelGrainBudgetBytes:UInt64
         let thirteenMegapixelGrainAdmissionRefused:Bool
         let thirteenMegapixelGrainActuallyRendered:Bool
@@ -469,85 +476,142 @@ enum Build108SourceOpticalDeviceStress {
 
     static func captureBuild116GrainMemory(
         version:String,build:String,commit:String,
-        osVersion:String,physicalDevice:Bool
+        osVersion:String,physicalDevice:Bool,
+        checkpointURL:URL?=nil
     )->Build116GrainMemoryReport {
         let target=physicalDevice && osVersion=="16.5.1" &&
             commit.count==40 && commit.allSatisfy {
                 "0123456789abcdef".contains($0)
             }
-        let testCases=[
-            Geometry(
-                label:"Build116_1MP_4worker_fast_stats_real_3x3_grain",
-                width:1000,height:1000,grain:true,
-                parallelFastStats:true
-            ),
-            Geometry(
-                label:"Build116_2MP_4worker_fast_stats_real_3x3_grain",
-                width:1600,height:1250,grain:true,
-                parallelFastStats:true
-            )
+
+        // Full-size source grain test matrix, ordered low-to-high:
+        // 1 / 2 / 3 / 4 / 6 / 8 / 10 / 13 million pixels.
+        // Each real shape is tested via the original fixed-seed SciPy
+        // layer path AND optional 4-worker unseeded Numba fast_stats.
+        // The production Build91 budget decides which cases may execute.
+        let shapes:[(name:String,width:Int,height:Int)]=[
+            ("1MP",1000,1000),
+            ("2MP",1600,1250),
+            ("3MP",2000,1500),
+            ("4MP",2000,2000),
+            ("6MP",3000,2000),
+            ("8MP",4000,2000),
+            ("10MP",4000,2500),
+            ("13MP",5000,2600)
         ]
+        var cases=[Geometry]()
+        for shape in shapes {
+            for parallel in [false,true] {
+                let route=parallel ? "Numba4WorkerFastStats" : "SciPySeeded"
+                cases.append(Geometry(
+                    label:"Build116_\(shape.name)_\(route)_3x3_Float64",
+                    width:shape.width,height:shape.height,grain:true,
+                    parallelFastStats:parallel
+                ))
+            }
+        }
+
         var results=[OpticalCase]()
-        var stopReason:String?
-        for geometry in testCases {
-            if !target {
-                results.append(skipped(geometry,
-                    "非绑定有效 SHA 的 iOS 16.5.1 真机，拒绝实测"))
-            } else if let stopReason {
-                results.append(skipped(geometry,
-                    "前一个大图颗粒测试失败，后续停止："+stopReason))
-            } else {
-                let actual=measure(geometry)
-                results.append(actual)
-                stopReason=actual.firstFailure
+        var executionFailure:String?
+        var persistenceFailure:String?
+        func saveCheckpoint(_ phase:String)->Bool {
+            guard let checkpointURL else {return true}
+            var text="status=IN_PROGRESS\napp=\(version) build=\(build) sha=\(commit)\n"
+            text+="phase=\(phase)\n"
+            text+="completed=\(results.count)/\(cases.count)\n"
+            for item in results {
+                text+="\(item.label) | \(item.status) | RSS="
+                text+="\(item.sampledPeakResidentBytes.map{String($0)} ?? "none")"
+                text+=" | error=\(item.firstFailure ?? "none")\n"
             }
-        }
-        // Do not allocate a 13MP grain frame: even this reduced-scratch
-        // candidate has not proved a safe whole-pipeline memory estimate.
-        let grainBytes=OriginalSourcePhysicalGrain.extraBytesPerPixel +
-            OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel
-        let plan=try? Build91PhysicalMemory.plan(
-            width:5000,height:2600,
-            baseBytesPerPixel:OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel,
-            additionalBytesPerPixel:grainBytes,
-            physicalMemory:ProcessInfo.processInfo.physicalMemory,
-            processAvailable:available()
-        )
-        var refused=true
-        if let plan {
             do {
-                try Build91PhysicalMemory.validate(plan)
-                refused=false
+                try text.write(to:checkpointURL,atomically:true,encoding:.utf8)
+                return true
             } catch {
-                refused=true
+                persistenceFailure="Build116 无法更新真机矩阵检查点："+error.localizedDescription
+                return false
             }
         }
-        let measured=target && results.count==2 && results.allSatisfy {
-            $0.status=="real_source_float64_render_pass" &&
-            $0.sampledPeakResidentBytes != nil &&
-            $0.actualOutputSampleCount>0
+
+        for geometry in cases {
+            if !saveCheckpoint("BEFORE_\(geometry.label)") {break}
+            let result:OpticalCase
+            if !target {
+                result=skipped(geometry,
+                    "非绑定有效 SHA 的 iOS 16.5.1 真机，禁止宣称实测")
+            } else if let executionFailure {
+                // After a real execution error, continue recording all
+                // remaining rows as not-run, but no further allocations.
+                // Memory-admission refusal alone is NOT execution failure.
+                result=skipped(geometry,
+                    "前一真实颗粒渲染失败，安全停止后续执行："+executionFailure)
+            } else {
+                result=measure(geometry)
+                if result.status=="real_source_render_failed_or_unmeasured" {
+                    executionFailure=result.firstFailure ?? "颗粒执行失败"
+                }
+            }
+            results.append(result)
+            if !saveCheckpoint("AFTER_\(geometry.label)") {break}
         }
-        let first=stopReason ?? (target
-            ? (refused ? nil : "13MP 颗粒内存预检意外允许，禁止自动运行")
-            : "非 iOS 16.5.1 有效 SHA 真机")
+        if results.count<cases.count {
+            for geometry in cases.dropFirst(results.count) {
+                results.append(skipped(geometry,
+                    persistenceFailure ?? "矩阵提前结束，未执行"))
+            }
+        }
+
+        let measured=results.filter {
+            $0.status=="real_source_float64_render_pass"
+        }.count
+        let refused=results.filter {
+            $0.status=="refused_by_production_memory_gate"
+        }.count
+        let failed=results.filter {
+            $0.status=="real_source_render_failed_or_unmeasured"
+        }.count
+        let notRun=results.filter {$0.status=="not_run"}.count
+        let allAdmitted=target && measured>0 && failed==0 &&
+            notRun==0 && persistenceFailure==nil &&
+            results.count==cases.count
+
+        let thirteen=results.filter {
+            $0.width==5000 && $0.height==2600
+        }
+        let thirteenRefused=thirteen.count==2 && thirteen.allSatisfy {
+            $0.status=="refused_by_production_memory_gate"
+        }
+        let thirteenRendered=thirteen.contains {
+            $0.status=="real_source_float64_render_pass"
+        }
+        let budget=UInt64(13_000_000) * (
+            OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
+            OriginalSourcePhysicalGrain.extraBytesPerPixel +
+            OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel
+        )
+
+        let first=persistenceFailure ?? executionFailure ??
+            (target ? nil : "非有效 SHA 的 iOS 16.5.1 真机")
         return Build116GrainMemoryReport(
-            schema:1,appVersion:version,appBuild:build,
+            schema:2,appVersion:version,appBuild:build,
             compiledSourceCommit:commit,osVersion:osVersion,
             physicalDevice:physicalDevice,
             generatedUTC:ISO8601DateFormatter().string(from:Date()),
-            actualParallelFastStatsGrainCases:results,
-            allMeasuredCasesPassed:measured && refused,
-            thirteenMegapixelGrainBudgetBytes:plan?.estimatedPeakBytes ??
-                13_000_000*(OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel+grainBytes),
-            thirteenMegapixelGrainAdmissionRefused:refused,
-            thirteenMegapixelGrainActuallyRendered:false,
-            sampledRSSIsExactJetsamPeak:false,
-            firstFailure:first,
+            matrixCases:results,plannedCaseCount:cases.count,
+            measuredCaseCount:measured,refusedCaseCount:refused,
+            failedCaseCount:failed,notRunCaseCount:notRun,
+            allAdmittedCasesPassed:allAdmitted,
+            thirteenMegapixelGrainBudgetBytes:budget,
+            thirteenMegapixelGrainAdmissionRefused:thirteenRefused,
+            thirteenMegapixelGrainActuallyRendered:thirteenRendered,
+            sampledRSSIsExactJetsamPeak:false,firstFailure:first,
             limitations:[
-                "1MP and 2MP are synthetic sRGB FULL production 3x3 grain with 4 independent OS-seeded fast_stats workers",
-                "25ms RSS sampling may miss short spikes and is NOT a Jetsam high-watermark",
-                "13MP grain is NOT rendered; memory gate only. No source Float32 fallback or automatic resize",
-                "No Python full-size image numeric parity, RAW ingress, or arbitrary unseeded prange bitstream"
+                "One tap: 8 image sizes x SciPy seeded and Numba 4-worker 3x3 source-grain routes",
+                "Only production Build91/optical preflight-admitted cases really render; memory refusals are NOT test passes",
+                "After a real rendering failure, remaining cases record not_run for safety",
+                "25ms sampled RSS can miss Jetsam high-watermarks and short transient peaks",
+                "Synthetic sRGB source frame, not imported RAW/ICC/EXIF end-to-end",
+                "Unseeded Numba output may not repeat bitwise; no Python full-size image parity"
             ]
         )
     }
@@ -567,20 +631,24 @@ enum Build108SourceOpticalDeviceStress {
         let encoder=JSONEncoder()
         encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
         try encoder.encode(report).write(to:json,options:.atomic)
-        var text="Build116 real Float64 source grain memory tests\n"
+        var text="Build116 full 8-size x 2-route grain memory matrix\n"
         text+="App \(report.appVersion) Build\(report.appBuild) SHA \(report.compiledSourceCommit)\n"
         text+="iOS \(report.osVersion), physical \(report.physicalDevice)\n"
-        text+="Real 1MP/2MP all PASS: \(report.allMeasuredCasesPassed)\n"
-        text+="13MP grain gate refused: \(report.thirteenMegapixelGrainAdmissionRefused)\n"
-        text+="13MP grain budget: \(report.thirteenMegapixelGrainBudgetBytes)\n"
-        for item in report.actualParallelFastStatsGrainCases {
+        text+="Planned: \(report.plannedCaseCount), real passed: \(report.measuredCaseCount)\n"
+        text+="Admission-refused: \(report.refusedCaseCount), failed: \(report.failedCaseCount), not-run: \(report.notRunCaseCount)\n"
+        text+="All admitted tests passed: \(report.allAdmittedCasesPassed)\n"
+        text+="13MP real grain rendered: \(report.thirteenMegapixelGrainActuallyRendered)\n"
+        text+="13MP both grain routes refused: \(report.thirteenMegapixelGrainAdmissionRefused)\n"
+        text+="13MP parallel budget: \(report.thirteenMegapixelGrainBudgetBytes)\n"
+        for item in report.matrixCases {
             text+="\n\(item.label) \(item.width)x\(item.height): \(item.status)\n"
-            text+="Sampled peak RSS: \(item.sampledPeakResidentBytes.map { String($0) } ?? "none")\n"
-            text+="Samples: \(item.residentSampleCount), time: \(item.elapsedSeconds.map { String($0) } ?? "none")\n"
-            text+="Checksum: \(item.outputSampleChecksum.map { String($0) } ?? "none")\n"
-            text+="First failure: \(item.firstFailure ?? "none")\n"
+            text+="Estimated bytes: \(item.estimatedProductionBudgetBytes.map{String($0)} ?? "none")\n"
+            text+="RSS before / sampled peak / after: \(item.beforeResidentBytes.map{String($0)} ?? "none") / \(item.sampledPeakResidentBytes.map{String($0)} ?? "none") / \(item.afterResidentBytes.map{String($0)} ?? "none")\n"
+            text+="RSS samples: \(item.residentSampleCount), seconds: \(item.elapsedSeconds.map{String($0)} ?? "none")\n"
+            text+="Checksum: \(item.outputSampleChecksum.map{String($0)} ?? "none")\n"
+            text+="First failure / gate reason: \(item.firstFailure ?? "none")\n"
         }
-        text+="\nFirst failure: \(report.firstFailure ?? "none")\n"
+        text+="\nFirst execution failure: \(report.firstFailure ?? "none")\n"
         text+=report.limitations.joined(separator:"\n")
         try text.write(to:log,atomically:true,encoding:.utf8)
         return (log,json)
