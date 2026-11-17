@@ -176,6 +176,9 @@ jobs:
           assert "diffused.removeAll(keepingCapacity:false)" in physical
           assert "captureBuild116GrainMemory(" in device
           assert "onRunBuild116GrainMemory()" in ui
+          workflow=Path(".github/workflows/build116-grain-memory-ipa.yml").read_text()
+          standalone=workflow.split("- name: Build104 run independent",1)[1].split("- name: Build104 on-device",1)[0]
+          assert "SourceGrainScalarGaussian.swift" in standalone, "Build104 standalone compile missing scalar dependency"
           print("PASS Build116 scalar grain, 24B/px released DIR, real 1MP/2MP RSS route; 13MP full-grain NOT certified")
           PY
 
@@ -376,6 +379,7 @@ jobs:
             ios/SpektraFilmPort/OriginalSourceMicrostructure.swift \
             ios/SpektraFilmPort/GeneratedSourceMicrostructureReference.swift \
             ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
+            ios/SpektraFilmPort/SourceGrainScalarGaussian.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/tests/SourcePhysicalGrainValidation.swift \
             -o /tmp/Build104FiveOriginalGrainFrames
