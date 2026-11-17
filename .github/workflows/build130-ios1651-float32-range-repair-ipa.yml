@@ -1,3 +1,4 @@
+# Build130 retry after Swift parser correction in explicit RGB input-range diagnostic; same branch, full TIFF32 test and arm64 packaging.
 # Build130 same development branch: user-confirmed IEEE Float32 HDR-to-[0,1] working copy, no implicit 8-bit clip.
 # Build129 retry: corrected RAW Float32 TIFF status concatenation following full arm64 compiler error; rerun complete numeric/compile/package gates.
 # Build129 source whitelist: allow only Build111+Build78 strict ICC Float32 admission changes, independently proven by real TIFF fixture.
