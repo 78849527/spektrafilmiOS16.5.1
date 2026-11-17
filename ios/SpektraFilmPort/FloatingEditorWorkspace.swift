@@ -1021,14 +1021,14 @@ struct FloatingEditorWorkspace: View {
                     Text("一次完成 1／2／3／4／6／8／10／13MP × SciPy／Numba 4 线程（共 16 项）。每项先过生产内存预检：可运行则实测 RSS／耗时；不允许则明确记录拒绝。结果统一导出 LOG＋JSON；高内存测试仍有系统终止风险。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text("Build118：大图独立测试，每次只运行一个尺寸")
+                    Text("Build119：大图独立测试，每次只运行一个尺寸")
                         .font(.subheadline)
                     ForEach([8,10,13],id:\.self) { mp in
                         Button {
                             statusReportPresented=false
                             onRunBuild118LargeMemory(mp)
                         } label: {
-                            Label("Build118：单独测试 \(mp)MP · SciPy＋Numba",
+                            Label("Build119：单独测试 \(mp)MP · SciPy＋Numba",
                                   systemImage:"memorychip")
                         }
                         .buttonStyle(.borderedProminent)
