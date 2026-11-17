@@ -1396,7 +1396,7 @@ struct FloatingEditorWorkspace: View {
             Text("冲印色调")
                 .font(.caption).fontWeight(.semibold)
             if isReversal {
-                Text("反转片直接扫描，不经过相纸滤色。色域算法的高级参数保留在实验室。")
+                Text("反转片直接扫描，不经过相纸滤色。色域路线与光学参数请在「工艺」调整。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if model.originalPrintOpticsEnabled {
                 Text("在相纸曝光阶段调节滤色，不是简单的 RGB 颜色叠加。")
@@ -1443,7 +1443,7 @@ struct FloatingEditorWorkspace: View {
                     .onChange(of:model.sourceCameraDiffusionEnabled) { _ in
                         model.queueSpectralPreview()
                     }
-                Text("柔化需要先在「工艺 → 拍摄」启用镜头处理。三亚层颗粒的实验参数位于实验室。")
+                Text("柔化需先在「工艺 → 拍摄」启用镜头处理；三亚层颗粒参数在「工艺 → 胶片」展开。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if directPixelMode {
                 Text("兼容处理不支持旧版随机颗粒；请在工艺中选择可用模式。")
@@ -2683,7 +2683,7 @@ struct FloatingEditorWorkspace: View {
                         }
                         Text("实算 Hanatos→胶片 H-D→空间 DIR FIR/YVV→" +
                              "相纸 H-D→光谱扫描；不经过颜色 3D LUT。" +
-                             "实验上限提高到 1200 万像素；实际是否允许导出，" +
+                             "原版光学源上限 1300 万像素；实际是否允许导出，" +
                              "按这台手机当前物理内存和 App 可用余量逐次检查。" +
                              "整图 Double FIR/YVV 与相纸显影均保留，不缩图；" +
                              "需开启原版 ACES 扫描、Hanatos Float64、" +
@@ -2806,7 +2806,7 @@ struct FloatingEditorWorkspace: View {
     private var sourcePhysicalGrainSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {
-                Text("三亚层颗粒开关：工艺 → 胶片；下面保留源码原样参数。")
+                Text("三亚层颗粒 · 以下为原版染料云及微结构参数，保持原始值范围与默认值。")
                     .font(.caption2).foregroundColor(.secondary)
                 if model.sourcePhysicalGrainEnabled {
                     morphSlider("原版末端颗粒模糊 σ / px",
@@ -2838,7 +2838,7 @@ struct FloatingEditorWorkspace: View {
     private var sourceScannerGlareSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {
-                Text("扫描 XYZ 眩光开关：工艺 → 扫描；此处仅保留原版源码参数。")
+                Text("扫描 XYZ 眩光 · 参数直接作用于原版扫描阶段，非快速模式 RGB 后期。")
                     .font(.caption2).foregroundColor(.secondary)
                 if model.sourceScannerGlareEnabled {
                     morphSlider("原版扫描眩光百分比 %",
@@ -2980,7 +2980,7 @@ struct FloatingEditorWorkspace: View {
     private var sourceCameraSpectralSettings: AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 6) {
-                Text("光谱重建选择在工艺 → 拍摄；此处保留 UV／IR 和 Hanatos 源码参数。")
+                Text("光谱重建在「工艺 → 拍摄」上方选择；此面板直接调整 UV／IR 与 Hanatos 源码参数。")
                     .font(.caption2).foregroundColor(.secondary)
                 Text("Hanatos 原版 81 波长 TC 光谱重算支持 UV/IR；" +
                      "滤镜变更立即重算，并同时应用原版感光度窗口、" +
