@@ -29,6 +29,14 @@ NS_ASSUME_NONNULL_BEGIN
                           bitsPerComponent:(NSInteger)bits
                                      error:(NSError * _Nullable * _Nullable)error
     NS_SWIFT_NAME(decode(_:bitsPerComponent:));
+/// Separate original-source candidate: 16-bit linear ACES2065-1 with as-shot WB.
+/// Matches rawpy postprocess parameter intent, not yet proven pixel-identical.
+/// Existing 8/16-bit sRGB fast routes remain unchanged.
++ (nullable SFBuild94RawResult *)decodeURL:(NSURL *)url
+                          bitsPerComponent:(NSInteger)bits
+                         sourceLinearACES:(BOOL)sourceLinearACES
+                                    error:(NSError * _Nullable * _Nullable)error
+    NS_SWIFT_NAME(decode(_:bitsPerComponent:sourceLinearACES:));
 @end
 
 /// Build123: Objective-C AVFoundation immediate settings-validation guard.

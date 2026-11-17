@@ -50,8 +50,21 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
 + (SFBuild94RawResult *)decodeURL:(NSURL *)url
                  bitsPerComponent:(NSInteger)bits
                             error:(NSError **)error {
+    return [self decodeURL:url
+          bitsPerComponent:bits
+         sourceLinearACES:NO
+                    error:error];
+}
++ (SFBuild94RawResult *)decodeURL:(NSURL *)url
+                 bitsPerComponent:(NSInteger)bits
+                sourceLinearACES:(BOOL)sourceLinearACES
+                           error:(NSError **)error {
     if (bits != 8 && bits != 16) {
         SFBuild94Fail(error, 6, @"LibRaw 解码位深仅支持显式 8 或 16 bit");
+        return nil;
+    }
+    if (sourceLinearACES && bits != 16) {
+        SFBuild94Fail(error, 9, @"原版 RAW 入口必须使用 16-bit 线性 ACES，禁止降为 RGB8");
         return nil;
     }
     // Fail closed: caller has already verified RAF signature and preserved
@@ -108,12 +121,20 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
             break;
         }
 #endif
-        // Explicit LibRaw output precision. This is LibRaw's post-demosaic
-        // sRGB curve, NOT the source rawpy/ACES Float64 sensor input.
+        // Original Python raw_file_processor._postprocess_params('as_shot'):
+        // output_color=rawpy.ColorSpace.ACES (LibRaw 6), output_bps=16,
+        // no_auto_bright=True, gamma=(1,1), use_camera_wb=True.
+        // Default source branch is camera WB; other WB/tint/lens branches
+        // remain unported and MUST NOT be called numerically equivalent.
+        // Explicit legacy fast branch retains its old sRGB and gamma settings.
         // UInt16 output is native-endian on iPhoneOS arm64 (little-endian).
         libraw_set_output_bps(raw, (int)bits);
-        libraw_set_output_color(raw, 1);
+        libraw_set_output_color(raw, sourceLinearACES ? 6 : 1);
         libraw_set_no_auto_bright(raw, 1);
+        if (sourceLinearACES) {
+            raw->params.gamm[0] = 1.0;
+            raw->params.gamm[1] = 1.0;
+        }
         raw->params.use_camera_wb = 1;
         raw->params.use_auto_wb = 0;
         raw->params.half_size = 0;
