@@ -499,7 +499,7 @@ enum OriginalSourcePhysicalImage {
         let pixelUM=parameters.dir.referencePixelSizeUM ??
             (36_000.0/Double(max(w,h)))
         let radius=parameters.dir.diffusionRadiusScale
-        let diffused:[Double]
+        var diffused:[Double]
         if !dirOn {
             // Source active=false: no chemistry, no spatial filter.
             diffused=[Double](repeating:0,count:size)
@@ -595,6 +595,12 @@ enum OriginalSourcePhysicalImage {
                 frame.rgb[k+c]=rgb[c]
             }
         }
+        // Build116 memory-only: all corrected film pixels have now
+        // consumed the full-frame DIR field. Release this 3-channel
+        // Float64 buffer BEFORE allocating source 3×3 grain workspace.
+        // The observer, when enabled, already received its original tap.
+        // No arithmetic, filter boundary or RGB output is modified.
+        diffused.removeAll(keepingCapacity:false)
         if let correctedObserved {
             stageDoubleObserver?("correctedLog",correctedObserved)
         }
