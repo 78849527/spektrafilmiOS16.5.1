@@ -182,7 +182,12 @@ jobs:
           assert 'for parallel in [false,true]' in device
           assert 'matrixCases:results,plannedCaseCount:cases.count' in device
           workflow=Path(".github/workflows/build116-grain-memory-ipa.yml").read_text()
-          standalone=workflow.split("- name: Build104 run independent",1)[1].split("- name: Build104 on-device",1)[0]
+          # Search the actual YAML step heading (not this Python assertion
+          # string, which also contains the same step-name text).
+          start=workflow.rfind("\\n      - name: Build104 run independent ")
+          end=workflow.find("\\n      - name: Build104 on-device ",start+1)
+          assert start>=0 and end>start, "Build104 compile step boundaries missing"
+          standalone=workflow[start:end]
           assert "SourceGrainScalarGaussian.swift" in standalone, "Build104 standalone compile missing scalar dependency"
           print("PASS Build116 full 8x2 matrix, scalar grain, 24B/px released DIR, explicit memory refusal vs rendered RSS")
           PY
