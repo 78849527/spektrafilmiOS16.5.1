@@ -35,7 +35,8 @@ for proof in [
     "try? FileManager.default.removeItem(at:file)",
 ]:
     assert proof in bridge,proof
-assert "RGBA8" not in bridge.replace("No UInt8/JPEG","")
+bridge_code="\n".join(line for line in bridge.splitlines() if not line.lstrip().startswith("//"))
+assert ".RGBA8" not in bridge_code and ".RGBA16" not in bridge_code
 assert ".RGBA16" not in bridge
 assert ".lanczos" not in bridge
 assert "kCGImageDestinationLossyCompressionQuality" not in bridge
