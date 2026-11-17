@@ -237,7 +237,9 @@ private final class NativeCameraController:NSObject,ObservableObject {
     @Published private(set) var flashAvailable=false
     @Published private(set) var selectedLens:NativeCameraLens = .wide
     @Published private(set) var availableLenses:Set<NativeCameraLens> = [.wide]
-    @Published private(set) var format:NativePhotoFormat = .jpeg
+    // Build127: default requests genuine Bayer DNG. Unsupported lenses
+    // remain explicitly blocked; never silently switch to JPEG.
+    @Published private(set) var format:NativePhotoFormat = .raw
     @Published private(set) var ratio:NativeCameraRatio = .fourThree
     @Published private(set) var flashEnabled=false
     @Published var errorMessage:String?
@@ -495,7 +497,7 @@ struct NativeCameraScreen:View {
     var body:some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing:10) {
+            VStack(spacing:8) {
                 HStack {
                     Button(action:onCancel) {
                         Image(systemName:"xmark")
@@ -515,24 +517,6 @@ struct NativeCameraScreen:View {
                               camera.format == .raw)
                 }
                 .padding(.horizontal,12)
-                HStack(spacing:12) {
-                    Menu {
-                        ForEach(NativePhotoFormat.allCases) { option in
-                            Button(option.rawValue) {camera.selectFormat(option)}
-                                .disabled(camera.capturing ||
-                                    (option == .raw && !camera.rawAvailable) ||
-                                    (option == .heic && !camera.heicAvailable))
-                        }
-                    } label: {
-                        Text(camera.format.rawValue).font(.caption.weight(.medium))
-                    }
-                    Spacer()
-                    Text(camera.format == .raw
-                         ? "DNG 原片保留完整传感器像素"
-                         : "画幅作用于照片输出")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                .padding(.horizontal,17)
                 Spacer(minLength:0)
                 NativeCameraPreview(session:camera.session)
                     .aspectRatio(camera.ratio.portraitAspect,contentMode:.fit)
@@ -567,6 +551,45 @@ struct NativeCameraScreen:View {
                     }
                 }
                 .padding(.horizontal,16)
+                // Build127: format controls sit directly BELOW the
+                // 0.5×/1×/tele/front lens row. Capture defaults to RAW.
+                HStack(spacing:8) {
+                    Text("格式")
+                        .font(.system(size:11,weight:.semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width:28,alignment:.leading)
+                    Button("JPEG") {camera.selectFormat(.jpeg)}
+                        .font(.system(size:12,weight:.semibold))
+                        .frame(maxWidth:.infinity,minHeight:35)
+                        .background(camera.format == .jpeg
+                            ? Color.accentColor.opacity(0.5)
+                            : Color.white.opacity(0.13),
+                            in:RoundedRectangle(cornerRadius:8))
+                        .disabled(camera.capturing)
+                    Button("RAW DNG") {camera.selectFormat(.raw)}
+                        .font(.system(size:12,weight:.semibold))
+                        .frame(maxWidth:.infinity,minHeight:35)
+                        .background(camera.format == .raw
+                            ? Color.accentColor.opacity(0.5)
+                            : Color.white.opacity(0.13),
+                            in:RoundedRectangle(cornerRadius:8))
+                        .disabled(camera.capturing || !camera.rawAvailable)
+                        .opacity(camera.rawAvailable ? 1 : 0.5)
+                    Menu {
+                        Button("HEIC") {camera.selectFormat(.heic)}
+                            .disabled(camera.capturing || !camera.heicAvailable)
+                    } label: {
+                        Text(camera.format == .heic ? "HEIC ✓" : "HEIC")
+                            .font(.system(size:11,weight:.semibold))
+                            .frame(minWidth:43,minHeight:35)
+                            .background(camera.format == .heic
+                                ? Color.accentColor.opacity(0.5)
+                                : Color.white.opacity(0.13),
+                                in:RoundedRectangle(cornerRadius:8))
+                    }
+                    .disabled(camera.capturing || !camera.heicAvailable)
+                }
+                .padding(.horizontal,16)
                 HStack {
                     Spacer()
                     Button {camera.capture()} label: {
@@ -575,13 +598,20 @@ struct NativeCameraScreen:View {
                                 ? .gray : .white).padding(7))
                             .frame(width:74,height:74)
                     }
-                    .disabled(!camera.ready || camera.capturing)
-                    .accessibilityLabel("拍摄照片")
+                    .disabled(!camera.ready || camera.capturing ||
+                              (camera.format == .raw && !camera.rawAvailable))
+                    .accessibilityLabel(camera.format == .raw
+                                        ? "拍摄真实 Bayer RAW DNG" : "拍摄照片")
                     Spacer()
                 }
                 Text(camera.capturing ? "正在写入照片…" :
-                     camera.ready ? "RAW 保留 DNG 全幅，非 4:3 仅裁切 JPEG/HEIC" :
-                     "正在启动相机…")
+                     (camera.ready && camera.format == .raw && !camera.rawAvailable)
+                     ? "该镜头不支持 Bayer RAW；请换支持 RAW 的镜头，或主动选择 JPEG"
+                     : camera.ready
+                       ? (camera.format == .raw
+                          ? "RAW 默认保存完整 DNG；画幅裁切仅作用于伴随 JPEG"
+                          : "JPEG/HEIC 使用所选画幅输出")
+                       : "正在启动相机…")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
