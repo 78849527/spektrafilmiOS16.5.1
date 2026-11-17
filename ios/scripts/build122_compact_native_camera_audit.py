@@ -34,9 +34,10 @@ check("private var captureDelegate:NativePhotoCaptureDelegate?" in camera and
       "correct lifetime/completion delegate")
 check("if format == .raw && dng == nil" in camera and
       "RAW 拍摄未返回 DNG" in camera,"no silent JPEG RAW substitution")
-check("raw.write(to: output, options: .atomic)" in main and
+check("raw.write(to: rawFile, options: .atomic)" in main and
+      "Build93AppleRAWImport.open(rawFile)" in main and
       "try loadPhoto(capture.processed,entry:.camera)" in main,
-      "DNG archival and same optical ingress")
+      "DNG archival and true RAW decoder; JPEG only for processed formats")
 for s in ['case fourThree="4:3"','case threeTwo="3:2"',
           'case sixteenNine="16:9"','case square="1:1"']:
     check(s in camera,s)
