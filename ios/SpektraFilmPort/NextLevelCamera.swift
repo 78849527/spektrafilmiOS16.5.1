@@ -130,6 +130,24 @@ private struct NativeCameraPreview:UIViewRepresentable {
 
 /// The capture delegate lives until didFinishCaptureFor, not until the
 /// first RAW/JPEG didFinishProcessing callback. No NextLevel singleton.
+
+/// Build123: last completed RAW capture phase is persisted before calling
+/// AVFoundation; if the process dies without a delegate error, the next
+/// camera opening reports the last observed phase. The stage alone does
+/// not prove a crash, and no DNG/private image bytes are logged.
+private enum NativeRAWCaptureTrace {
+    static let key="SF.Build123.NativeRAW.LastStage"
+    static func mark(_ stage:String) {
+        UserDefaults.standard.set(stage,forKey:key)
+    }
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey:key)
+    }
+    static func unresolved()->String? {
+        UserDefaults.standard.string(forKey:key)
+    }
+}
+
 private final class NativePhotoCaptureDelegate:NSObject,AVCapturePhotoCaptureDelegate {
     private let format:NativePhotoFormat
     private let ratio:NativeCameraRatio
@@ -152,14 +170,25 @@ private final class NativePhotoCaptureDelegate:NSObject,AVCapturePhotoCaptureDel
             firstError=fail("相机照片回调没有返回完整文件数据")
             return
         }
-        if photo.isRawPhoto {dng=bytes}
-        else {companion=bytes}
+        if photo.isRawPhoto {
+            dng=bytes
+            NativeRAWCaptureTrace.mark("DNG 数据回调完成")
+        } else {
+            companion=bytes
+            if format == .raw {
+                NativeRAWCaptureTrace.mark("JPEG 伴随片回调完成")
+            }
+        }
     }
     func photoOutput(_ output:AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings:AVCaptureResolvedPhotoSettings,
                      error:Error?) {
         if let error {firstError=error}
+        if format == .raw {
+            NativeRAWCaptureTrace.mark("拍摄完成回调已进入")
+        }
         if let firstError {
+            NativeRAWCaptureTrace.clear()
             DispatchQueue.main.async {self.done(.failure(firstError))}
             return
         }
@@ -185,8 +214,10 @@ private final class NativePhotoCaptureDelegate:NSObject,AVCapturePhotoCaptureDel
                 let photo=NextLevelCapturedPhoto(
                     processed:processed,rawDNG:raw,format:format
                 )
+                if self.format == .raw {NativeRAWCaptureTrace.clear()}
                 DispatchQueue.main.async {self.done(.success(photo))}
             } catch {
+                NativeRAWCaptureTrace.clear()
                 DispatchQueue.main.async {self.done(.failure(error))}
             }
         }
@@ -219,6 +250,10 @@ private final class NativeCameraController:NSObject,ObservableObject {
     func start() {
         guard !active else {return}
         active=true
+        if let prior=NativeRAWCaptureTrace.unresolved() {
+            errorMessage="上次 RAW 拍摄未正常结束，最后阶段：「\(prior)」。这并不直接证明崩溃原因。如再次退出，请在 iOS「设置 → 隐私与安全性 → 分析与改进 → 分析数据」提供 SpektraFilm 的 .ips 崩溃报告。"
+            NativeRAWCaptureTrace.clear()
+        }
         switch AVCaptureDevice.authorizationStatus(for:.video) {
         case .authorized:configure()
         case .notDetermined:
@@ -238,6 +273,8 @@ private final class NativeCameraController:NSObject,ObservableObject {
         active=false
         ready=false
         onCapture=nil
+        // Do not erase a pending RAW breadcrumb on force-quit / crash.
+        if !capturing {NativeRAWCaptureTrace.clear()}
         sessionQueue.async {[weak self] in
             guard let self else{return}
             if self.session.isRunning {self.session.stopRunning()}
@@ -356,6 +393,9 @@ private final class NativeCameraController:NSObject,ObservableObject {
         }
         capturing=true
         let wantedFormat=format,wantedRatio=ratio,flash=flashEnabled
+        if wantedFormat == .raw {
+            NativeRAWCaptureTrace.mark("RAW 快门按下，准备提交原生拍摄请求")
+        }
         sessionQueue.async {[weak self] in
             guard let self else{return}
             let jpegAllowed=self.output.availablePhotoCodecTypes.contains(.jpeg)
@@ -363,8 +403,10 @@ private final class NativeCameraController:NSObject,ObservableObject {
             let raw=self.output.availableRawPhotoPixelFormatTypes.first {
                 AVCapturePhotoOutput.isBayerRAWPixelFormat($0)
             }
-            guard self.session.isRunning else {
-                self.finishFailure("相机拍摄会话已停止")
+            guard self.session.isRunning,
+                  self.output.connection(with:.video)?.isEnabled == true,
+                  self.videoInput != nil else {
+                self.finishFailure("RAW/JPEG 前置检查失败：摄像头会话或照片输出连接未就绪")
                 return
             }
             guard jpegAllowed && (wantedFormat != .heic || heicAllowed) else {
@@ -382,22 +424,35 @@ private final class NativeCameraController:NSObject,ObservableObject {
                 settings=AVCapturePhotoSettings(
                     rawPixelFormatType:raw,processedFormat:dictionary
                 )
+                // Bayer RAW requires disabled stabilization. The full
+                // sensor DNG dimensions are unaffected by this processed
+                // JPEG-only high-resolution request, so avoid the high-res
+                // processed pipeline for RAW+JPEG on legacy iOS 16.5.1.
                 settings.isAutoStillImageStabilizationEnabled=false
                 settings.flashMode = .off
+                settings.isHighResolutionPhotoEnabled=false
             } else {
                 settings=AVCapturePhotoSettings(format:dictionary)
                 if flash && self.videoInput?.device.hasFlash == true {
                     settings.flashMode = .on
                 }
             }
-            settings.isHighResolutionPhotoEnabled=true
-            settings.photoQualityPrioritization = .balanced
+            if wantedFormat != .raw {
+                settings.isHighResolutionPhotoEnabled=true
+            }
+            // The output advertises balanced as maximum. RAW uses the
+            // least complicated speed capture mode while preserving
+            // unchanged Bayer sensor samples and a companion JPEG.
+            settings.photoQualityPrioritization =
+                wantedFormat == .raw ? .speed : .balanced
             let processor=NativePhotoCaptureDelegate(
                 format:wantedFormat,ratio:wantedRatio
             ) {[weak self] outcome in
                 guard let self else{return}
                 self.capturing=false
-                self.captureDelegate=nil
+                self.sessionQueue.async {[weak self] in
+                    self?.captureDelegate=nil
+                }
                 switch outcome {
                 case .success(let photo):self.onCapture?(photo)
                 case .failure(let error):
@@ -405,10 +460,25 @@ private final class NativeCameraController:NSObject,ObservableObject {
                 }
             }
             self.captureDelegate=processor
-            self.output.capturePhoto(with:settings,delegate:processor)
+            if wantedFormat == .raw {
+                NativeRAWCaptureTrace.mark(
+                    "RAW AVFoundation capturePhoto 请求即将提交（格式 \(raw ?? 0)）"
+                )
+            }
+            // capturePhoto(with:delegate:) validates RAW settings by
+            // Objective-C exceptions, not Swift throws. The ObjC barrier
+            // prevents synchronous invalid-argument process termination.
+            // Async capture and Jetsam failures still need physical logs.
+            if let problem=SFNativeCaptureSafety.startPhotoOutput(
+                self.output,settings:settings,delegate:processor
+            ) {
+                self.captureDelegate=nil
+                self.finishFailure(problem)
+            }
         }
     }
     private func finishFailure(_ message:String) {
+        NativeRAWCaptureTrace.clear()
         DispatchQueue.main.async {[weak self] in
             self?.capturing=false
             self?.errorMessage=message
@@ -429,6 +499,7 @@ struct NativeCameraScreen:View {
                         Image(systemName:"xmark")
                             .frame(width:44,height:44)
                     }
+                    .disabled(camera.capturing)
                     Spacer()
                     Text("SpektraFilm · 原生相机")
                         .font(.system(size:14,weight:.semibold))
