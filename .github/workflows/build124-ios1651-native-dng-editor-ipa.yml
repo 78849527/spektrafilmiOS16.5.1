@@ -1,3 +1,4 @@
+# Build124 test-only correction: comment text is not an embedded JPEG decoding call.
 # Build124 trigger after merged DNG route, version and regression audits.
 # Build123 iOS16.5.1: explicit NS_SWIFT_NAME avoids Swift 5 Objective-C method-name inference mismatch for RAW exception wrapper.
 # Build123: inherited static GUI checks now require guarded Apple AVFoundation capture instead of direct unguarded call.
