@@ -623,7 +623,7 @@ jobs:
           grep -Fq 'Build104-device-grain-' ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
           grep -Fq 'onRunBuild104Grain()' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
           grep -Fq 'MARKETING_VERSION: "1.8.99"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "132"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "133"' ios/project.yml
       - uses: actions/setup-python@v5
         with:
           # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
@@ -741,7 +741,7 @@ jobs:
           grep -Fq 'generated-physical-v1.8.22' ios/project.yml
           grep -Fq 'Build92DeviceSourceStageDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
           grep -Fq 'MARKETING_VERSION: "1.8.99"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "132"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "133"' ios/project.yml
           test -s ios/SpektraFilmPort/Build91PhysicalMemory.swift
           test -s ios/SpektraFilmPort/Build91MemoryProductionDiagnostic.swift
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
@@ -896,7 +896,7 @@ jobs:
           test -s "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.99
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 132
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 133
           /usr/libexec/PlistBuddy -c 'Print :SFSourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
           # Native libraw symbols must actually be linked, no stub.
           xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_dcraw_process'
