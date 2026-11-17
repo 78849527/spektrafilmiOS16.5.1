@@ -59,7 +59,7 @@ for proof in [
     'expected=="uint8SRGB"',
     'p.declaredDepth==8,p.decodedDepth==8',
     'p.color == .sRGB,!p.hasAlphaChannel',
-    'inputContract:currentRecipeInputContract()',
+    'inputContract:sourcePixelIOEnabled ? currentRecipeInputContract() : nil',
     'try OriginalSourcePixelIO.exportPhysicalOriginalFile(',
     'bytes,parameters:physical,format:.tiff,',
     'bitDepth:16,outputSpace:"sRGB",',
@@ -69,6 +69,9 @@ for proof in [
 ]:
     assert proof in s,proof
 assert "inputContract:String?" in recipe
+assert "private func currentRecipeInputContract() -> String?" in s
+assert "guard let p=photoInputProfile else {return nil}" in s
+assert "guard sourcePixelIOEnabled,let p=photoInputProfile" not in s
 assert '"float32ExtendedSRGB"' in recipe
 assert "missing" not in recipe[:100]
 assert "static func exportPhysicalOriginalFile(" in original
