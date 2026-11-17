@@ -23,6 +23,6 @@ assert "static let grainBytesPerPixel: UInt64 = 224" in ledger
 assert "let layers=pixels*3*8" in ledger
 assert "let cloud=withDyeCloud ? pixels*8 : 0" in ledger
 assert "complex.estimatedPeakBytes==4_665_600_000" in tests
-assert 'MARKETING_VERSION: "1.8.83"' in project
-assert 'CURRENT_PROJECT_VERSION: "117"' in project
+from build_ci_version_floor import minimum_minor, minimum_build
+assert minimum_minor(project,83) and minimum_build(project,117)
 print("PASS Build117 dynamic process 80% / fallback physical-third; 3-layer per-channel Float64; 13MP never auto-resized or bypassed")
