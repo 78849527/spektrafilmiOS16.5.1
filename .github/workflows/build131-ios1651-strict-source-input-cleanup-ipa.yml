@@ -952,7 +952,7 @@ jobs:
           ASSET=ios/build/release/SpektraFilm-1.8.97-Build131-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
           ID=ios/build/release/verification-build131.json
-          NOTES='Build131 v1.8.97 strictly cleans up the non-original Build131 global affine Float32 HDR range-mapping and UI; keeps exact IEEE Float32 TIFF negative/superwhite source values into CPU Float64, actual ICC/bit-depth tests, historical source optical parity and no silent JPEG8 fallback. Current iOS full physical [0,1] limitation remains an UNPORTED source-range case and is not an upstream Python rule. No claim of rawpy/ACES or iOS16.5.1 whole-image numerical equivalence. Historical Build131 release remains archived.'
+          NOTES='Build131 v1.8.97 strictly cleans up the non-original Build130 global affine Float32 HDR range-mapping and UI; keeps exact IEEE Float32 TIFF negative/superwhite source values into CPU Float64, actual ICC/bit-depth tests, historical source optical parity and no silent JPEG8 fallback. Current iOS full physical [0,1] limitation remains an UNPORTED source-range case and is not an upstream Python rule. No claim of rawpy/ACES or iOS16.5.1 whole-image numerical equivalence. Historical Build130 release remains archived.'
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
             gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
