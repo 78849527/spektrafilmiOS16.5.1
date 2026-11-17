@@ -212,6 +212,8 @@ jobs:
           set -euo pipefail
           python ios/scripts/build118_separate_large_memory_audit.py
           xcrun swiftc -Onone -parse-as-library \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/Build91PhysicalMemory.swift \
             ios/SpektraFilmPort/Build106SourceMemoryLedger.swift \
             ios/tests/Build118LargeGrainMemoryValidation.swift \
             -o /tmp/Build118LargeGrainMemory
