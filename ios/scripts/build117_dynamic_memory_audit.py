@@ -11,7 +11,8 @@ tests=read("ios/tests/Build91PhysicalMemoryMatrixValidation.swift")
 assert "min(1_500_000_000" not in mem
 assert "maximumSourceMemoryBudget" not in read("ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift")
 assert "let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3" in mem
-assert "$0>0 && plan.estimatedPeakBytes<=($0/10)*8" in mem
+assert "remainingPeak<=($0/10)*8" in mem
+assert "alreadyCommittedInputBytes<=plan.basePeakBytes" in mem
 assert "FFT.sourceCap" in mem
 assert "retainAllSublayers=stageObserver != nil" in grain
 assert "pixels*(retainAllSublayers ? 9 : 3)" in grain
