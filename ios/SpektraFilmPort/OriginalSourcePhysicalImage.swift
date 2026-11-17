@@ -346,12 +346,13 @@ enum OriginalSourcePhysicalImage {
             alreadyCommittedInputBytes:committedInputBytes,
             cameraDiffusion:cameraFFT,paperDiffusion:paperFFT
         )
-        // The ImageIO Float32 TIFF transport legitimately preserves HDR
-        // components outside 0...1. This physical engine was numerically
-        // validated for encoded source RGB in 0...1 ONLY. Distinguish a
-        // real range error from dimensions/non-finite values, showing
-        // evidence so the user can explicitly choose a separate mapped
-        // Float32 working copy. Never clip or enter a fast fallback here.
+        // Upstream Python accepts floating-point RGB at its unified
+        // processing entrance and handles its actual colour/range rules
+        // within the source stages. The currently VERIFIED iOS ingress
+        // covers finite, display-encoded [0,1] RGB only; this is an iOS
+        // certification gap, NOT a source-Python [0,1] global invariant.
+        // Reject unported values with evidence; never modify the RGB
+        // array to make a gate pass, silently clamp or select fast mode.
         guard frame.rgb.count==w*h*3 else {
             throw Failure.invalid(
                 "逐像素显影输入 RGB 通道数错误：实际=" +
@@ -378,9 +379,9 @@ enum OriginalSourcePhysicalImage {
                 " max=" + String(maximum) +
                 " 超出0～1通道=" + String(outOfRange) +
                 " 非有限通道=" + String(nonFinite) +
-                "。Float32 高动态输入可在「精细冲印」明确生成" +
-                "0～1 映射工作副本（保留浮点位深但改变输入颜色值）。" +
-                "不会自动裁切、转 8-bit 或切换快速模式。"
+                "。当前 iOS 光学入口尚未验证该输入范围与 Python 原版逐阶段等价；" +
+                "不可将此 iOS 限制视为原版约束。" +
+                "拒绝近似范围映射、静默裁切、8-bit 降级或快速模式替代。"
             )
         }
 
