@@ -153,11 +153,22 @@ enum Build91PhysicalMemory {
     }
     /// Real process headroom governs admission; physicalMemory/3 is only
     /// the fallback when the OS cannot report current process headroom.
-    static func validate(_ plan:Plan) throws {
+    /// pre-decode: committed=0, full estimated peak against OS headroom.
+    /// developInPlace: the caller's already allocated RGB Double buffer is
+    /// included in the full estimate but no longer in OS process headroom.
+    /// Subtract exactly those committed input bytes, NEVER estimates of
+    /// future scratch or stage releases. Keep the 80% live OS gate.
+    static func validate(
+        _ plan:Plan,alreadyCommittedInputBytes:UInt64=0
+    ) throws {
+        guard alreadyCommittedInputBytes<=plan.basePeakBytes else {
+            throw Failure.invalid("Build119 已分配输入帧扣除量超过完整峰值预算")
+        }
+        let remainingPeak=plan.estimatedPeakBytes-alreadyCommittedInputBytes
         let headroomOK=plan.processAvailableBytes.map{
-            $0>0 && plan.estimatedPeakBytes<=($0/10)*8
+            $0>0 && remainingPeak<=($0/10)*8
         } ?? true
-        guard plan.estimatedPeakBytes<=plan.allowedBytes,
+        guard remainingPeak<=plan.allowedBytes,
               headroomOK else {
             let available=plan.processAvailableBytes.map{
                 "\($0/1_000_000)"
@@ -165,7 +176,9 @@ enum Build91PhysicalMemory {
             throw Failure.invalid(
                 "Build91 原版 Double 内存预算不足 " +
                 "\(plan.width)×\(plan.height)：" +
-                "预估峰值 \(plan.estimatedPeakBytes/1_000_000) MB，" +
+                "完整预估峰值 \(plan.estimatedPeakBytes/1_000_000) MB，" +
+                "已分配输入 \(alreadyCommittedInputBytes/1_000_000) MB，" +
+                "尚需 \(remainingPeak/1_000_000) MB，" +
                 "允许 \(plan.allowedBytes/1_000_000) MB，" +
                 "当前可分配 \(available) MB。" +
                 "请明确选择较低导出分辨率，不会自动缩图、" +
