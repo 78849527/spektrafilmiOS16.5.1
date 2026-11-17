@@ -346,42 +346,20 @@ enum OriginalSourcePhysicalImage {
             alreadyCommittedInputBytes:committedInputBytes,
             cameraDiffusion:cameraFFT,paperDiffusion:paperFFT
         )
-        // Upstream Python accepts floating-point RGB at its unified
-        // processing entrance and handles its actual colour/range rules
-        // within the source stages. The currently VERIFIED iOS ingress
-        // covers finite, display-encoded [0,1] RGB only; this is an iOS
-        // certification gap, NOT a source-Python [0,1] global invariant.
-        // Reject unported values with evidence; never modify the RGB
-        // array to make a gate pass, silently clamp or select fast mode.
+        // Python's FilmingStage accepts finite source RGB without global
+        // [0,1] clipping. It applies colour-space CCTF/CAT16 in the
+        // spectral input, then fmax(raw,0)+1e-10 ONLY at film log10.
+        // Preserve negative / superwhite / OOG values byte-for-byte here.
+        // Invalid NaN/Inf input is still a hard failure, never silent.
         guard frame.rgb.count==w*h*3 else {
             throw Failure.invalid(
                 "逐像素显影输入 RGB 通道数错误：实际=" +
                 String(frame.rgb.count) + "，期望=" + String(w*h*3)
             )
         }
-        var minimum=Double.infinity
-        var maximum = -Double.infinity
-        var outOfRange=0
-        var nonFinite=0
-        for value in frame.rgb {
-            if !value.isFinite {
-                nonFinite+=1
-            } else {
-                minimum=min(minimum,value)
-                maximum=max(maximum,value)
-                if value<0 || value>1 {outOfRange+=1}
-            }
-        }
-        guard nonFinite==0,outOfRange==0 else {
+        guard frame.rgb.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid(
-                "逐像素原版显影 RGB 检测不通过：" +
-                " min=" + String(minimum) +
-                " max=" + String(maximum) +
-                " 超出0～1通道=" + String(outOfRange) +
-                " 非有限通道=" + String(nonFinite) +
-                "。当前 iOS 光学入口尚未验证该输入范围与 Python 原版逐阶段等价；" +
-                "不可将此 iOS 限制视为原版约束。" +
-                "拒绝近似范围映射、静默裁切、8-bit 降级或快速模式替代。"
+                "逐像素原版显影输入存在 NaN/Inf；拒绝静默裁切、范围映射或降级"
             )
         }
 
@@ -428,7 +406,8 @@ enum OriginalSourcePhysicalImage {
         if cameraPreActive {
             let autoEV=try OriginalSourceCameraOptics.measureAutoExposureEV(
                 encodedRGB:frame.rgb,width:w,height:h,
-                method:parameters.cameraOptics.metering
+                method:parameters.cameraOptics.metering,
+                inputColorSpace:parameters.cameraInputColorSpace
             )
             stageDoubleObserver?("cameraAutoExposureEV",[autoEV])
             let autoScale=pow(2.0,autoEV)

@@ -51,8 +51,12 @@ for token in ["if spec.format == oiio.TypeDesc(\"uint16\")",
 assert "raw.postprocess(**params).astype(np.float32) / np.float32(65535.0)" in up_raw
 assert "_rgb_to_film_raw(" in up_film
 assert "np.fmax(raw, 0.0)" in up_film
-assert "当前 iOS 光学入口尚未验证该输入范围与 Python 原版逐阶段等价" in physical
-assert "拒绝近似范围映射" in physical
+assert "guard frame.rgb.allSatisfy({ $0.isFinite }) else" in physical
+assert "if value<0 || value>1" not in physical
+assert "拒绝静默裁切、范围映射或降级" in physical
+assert "case .proPhotoLinear, .acesLinear: linear=encodedRGB" in read("ios/SpektraFilmPort/SpectralPhysics.swift")
+assert "sourceLuminanceWeightsACES" in read("ios/scripts/generate_source_camera_batch.py")
+assert "sourceLuminanceWeightsProPhoto" in read("ios/SpektraFilmPort/OriginalSourceCameraOptics.swift")
 print("PASS: non-original global Float32 input mapping removed from iOS production/UI/source test")
 print("PASS: source OpenImageIO / rawpy reference remains and real TIFF Float32 negative/superwhite ingress fixture stays unchanged")
-print("PENDING, NOT CERTIFIED: iOS Float32 OOG physical algorithm and original Python rawpy/ACES/CCTF stagewise numerical equivalence")
+print("PENDING, NOT CERTIFIED: Python vs iOS HDR/RAW whole-image colour/optical stage numerical equivalence")

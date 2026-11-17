@@ -106,13 +106,14 @@ enum OriginalSourceCameraOptics {
     /// The 5x5 algorithm deliberately discards right/bottom remainders,
     /// matching the source floor-divided zone boundaries.
     static func measureAutoExposureEV(
-        encodedRGB: [Double], width: Int, height: Int, method: Metering
+        encodedRGB: [Double], width: Int, height: Int, method: Metering,
+        inputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB
     ) throws -> Double {
         guard width > 0, height > 0,
               width <= Int.max / height / 3,
               encodedRGB.count == width * height * 3,
-              encodedRGB.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else {
-            throw Failure.invalid("原版自动测光仅接受有限的 8-bit sRGB Double 像素")
+              encodedRGB.allSatisfy({ $0.isFinite }) else {
+            throw Failure.invalid("原版自动测光输入尺寸错误或包含非有限 RGB")
         }
         if method == .disabled { return 0 }
         let preview = smallPreview(encodedRGB,width:width,height:height)
@@ -120,18 +121,29 @@ enum OriginalSourceCameraOptics {
         // Values obtained by invoking ORIGINAL colour.RGB_to_XYZ on
         // source sRGB unit vectors with CCTF decoding, not by manually
         // copying a common sRGB matrix from a different implementation.
-        let sourceY=GeneratedSourceCameraReference.sourceLuminanceWeights
+        // Use colour.RGB_to_XYZ source Y vectors, not a hand-tuned
+        // sRGB matrix for scene-linear RAW ACES or ProPhoto.
+        let sourceY:[Double]
+        switch inputColorSpace {
+        case .sRGB:
+            sourceY=GeneratedSourceCameraReference.sourceLuminanceWeights
+        case .proPhotoLinear:
+            sourceY=GeneratedSourceCameraReference.sourceLuminanceWeightsProPhoto
+        case .acesLinear:
+            sourceY=GeneratedSourceCameraReference.sourceLuminanceWeightsACES
+        }
         guard sourceY.count==3,
               sourceY.allSatisfy({ $0.isFinite && $0>0 }) else {
-            throw Failure.invalid("原版 colour-science sRGB 亮度矩阵参考缺失")
+            throw Failure.invalid("原版 colour-science 输入色彩空间 Y 矩阵缺失")
         }
         var yValues = [Double](repeating:0,count:w*h)
         for p in 0..<(w*h) {
             let i=p*3
-            yValues[p] =
-                sourceY[0] * decodeSRGB(preview.rgb[i]) +
-                sourceY[1] * decodeSRGB(preview.rgb[i+1]) +
-                sourceY[2] * decodeSRGB(preview.rgb[i+2])
+            for channel in 0..<3 {
+                let input=preview.rgb[i+channel]
+                let linear=inputColorSpace == .sRGB ? decodeSRGB(input) : input
+                yValues[p]+=sourceY[channel]*linear
+            }
         }
         let ySum=yValues.reduce(0,+)
         let count=Double(yValues.count)

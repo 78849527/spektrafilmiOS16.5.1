@@ -107,3 +107,17 @@ and optionally `--raw` for original sensor file hash validation.
 The synthetic selftest has run locally; there is no real native RAW
 buffer or matching reference committed, so real decoding equality remains
 uncertified. A stage-input pass alone does not certify H-D/DIR/scan/IPA.
+
+## P1 range-entry correction (non-approximate)
+
+Upstream `FilmingStage` accepts finite RGB and applies CCTF/CAT16 before
+film photons; it bounds raw photon values only in
+`np.log10(np.fmax(raw,0)+1e-10)`. iOS global `[0,1]` rejection was not
+in the Python original. This change removes that gate in the full-image
+engine, and the redundant `sourceSpatialInput`/`sourceCameraRaw` checks.
+NaN/Inf remains a hard failure, with no map/clip/scaling workaround.
+
+When original autoexposure is active, its Y matrix is generated using
+`colour.RGB_to_XYZ(...)` for sRGB encoded, ProPhoto linear, or ACES2065-1
+linear. Source meter defaults, colour science library version and exact
+Python fixture must pass the next full source numerical gate.

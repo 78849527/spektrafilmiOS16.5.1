@@ -184,11 +184,24 @@ source_luminance_weights=colour.RGB_to_XYZ(
 assert source_luminance_weights.shape==(3,)
 assert np.all(np.isfinite(source_luminance_weights))
 assert np.all(source_luminance_weights>0)
+# Linear RAW/ProPhoto meter Y uses the actual upstream colour-science
+# input RGB_to_XYZ matrix without a display-referred sRGB decoding.
+source_aces_y=colour.RGB_to_XYZ(
+    np.eye(3,dtype=np.float64),"ACES2065-1",apply_cctf_decoding=False
+)[:,1]
+source_prophoto_y=colour.RGB_to_XYZ(
+    np.eye(3,dtype=np.float64),"ProPhoto RGB",apply_cctf_decoding=False
+)[:,1]
+for reference_y in (source_aces_y,source_prophoto_y):
+    assert reference_y.shape==(3,) and np.isfinite(reference_y).all()
+    assert np.all(reference_y>0)
 lines=[
     "import Foundation",
     "// GENERATED from actual original Python functions; do not hand-edit.",
     "enum GeneratedSourceCameraReference {",
     "    static let sourceLuminanceWeights:[Double] = [%s]" % ",".join(repr(float(y)) for y in source_luminance_weights),
+    "    static let sourceLuminanceWeightsACES:[Double] = [%s]" % ",".join(repr(float(y)) for y in source_aces_y),
+    "    static let sourceLuminanceWeightsProPhoto:[Double] = [%s]" % ",".join(repr(float(y)) for y in source_prophoto_y),
     "    struct MeterCase {let width:Int;let height:Int;let ev:[Double]}",
     "    struct EdgeMeterCase {let width:Int;let height:Int;let level:Double;let ev:[Double]}",
     "    struct BoostCase {let width:Int;let height:Int;let ev:Double;let span:Double;let protect:Double;let output:String}",

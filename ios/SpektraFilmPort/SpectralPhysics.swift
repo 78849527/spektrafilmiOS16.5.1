@@ -1627,7 +1627,7 @@ struct SpectralPhysics {
         encodedRGB:[Double],cameraEV:Double
     ) throws -> [Double] {
         guard encodedRGB.count==3,
-              encodedRGB.allSatisfy({ $0.isFinite && $0>=0 }),
+              encodedRGB.allSatisfy({ $0.isFinite }),
               cameraEV.isFinite && abs(cameraEV)<=4 else {
             throw PhysicsError.invalid("原版自动测光后的相机 RGB 或曝光无效")
         }
@@ -1680,7 +1680,7 @@ struct SpectralPhysics {
         encodedRGB: [Double], cameraEV: Double
     ) throws -> SourceSpatialInput {
         guard encodedRGB.count == 3,
-              encodedRGB.allSatisfy({ $0.isFinite && (0...1).contains($0) }),
+              encodedRGB.allSatisfy({ $0.isFinite }),
               cameraEV.isFinite && abs(cameraEV) <= 4 else {
             throw PhysicsError.invalid("源逐像素 Hanatos 输入或曝光无效")
         }
