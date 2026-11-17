@@ -8,8 +8,8 @@ main=(r/"ios/SpektraFilmPort/ContentView.swift").read_text()
 project=(r/"ios/project.yml").read_text()
 def check(condition,why):
     assert condition,why
-check('MARKETING_VERSION: "1.8.88"' in project and
-      'CURRENT_PROJECT_VERSION: "122"' in project,"app version")
+from build_ci_version_floor import minimum_build,minimum_minor
+check(minimum_build(project,122) and minimum_minor(project,88),"Build122 version floor")
 check('IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project,"min iOS 16.5")
 check("import NextLevel" not in camera and "path: Vendor/NextLevel" not in project
       and "- package: NextLevel" not in project,"no NextLevel package")
@@ -25,7 +25,7 @@ check("availableRawPhotoPixelFormatTypes.first" in camera and
 check("rawPixelFormatType:raw,processedFormat:dictionary" in camera,
       "RAW+processed pair")
 check("settings.isAutoStillImageStabilizationEnabled=false" in camera and
-      "settings.photoQualityPrioritization = .balanced" in camera,
+      "wantedFormat == .raw ? .speed : .balanced" in camera,
       "safe RAW settings (and max quality set prior to start)")
 check("private var captureDelegate:NativePhotoCaptureDelegate?" in camera and
       "self.captureDelegate=processor" in camera and
