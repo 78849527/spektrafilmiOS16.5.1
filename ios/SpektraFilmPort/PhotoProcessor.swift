@@ -20,6 +20,12 @@ enum PhotoProcessor {
         .workingColorSpace: srgb, .cacheIntermediates: false
     ])
 
+    /// Flush only CIContext intermediate caches; never discard the user's
+    /// source photo, previews, selected film or already-owned RAW container.
+    static func clearTransientCaches() {
+        context.clearCaches()
+    }
+
     static func decode(_ data: Data) throws -> CIImage {
         guard let image = CIImage(data: data, options: [
             .applyOrientationProperty: true

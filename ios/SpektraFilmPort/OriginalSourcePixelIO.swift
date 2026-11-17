@@ -373,6 +373,37 @@ enum OriginalSourcePixelIO {
         return cg
     }
 
+    /// Render the SAME completed Float64 optical frame to a compact UI-only
+    /// preview. This never alters, clips or resamples the optical data sent
+    /// to full-size TIFF/JPEG export. Resident UIImage memory is bounded.
+    static func displayPreviewImage(
+        _ frame:Frame,maxEdge:Int=1600
+    ) throws -> CGImage {
+        let full=try displayImage(frame)
+        let maxDimension=max(full.width,full.height)
+        guard maxEdge>=256,maxDimension>0 else {
+            throw Failure.invalid("RAW 显示预览尺寸无效")
+        }
+        if maxDimension<=maxEdge { return full }
+        let width=max(1,Int((Double(full.width)*Double(maxEdge) /
+                            Double(maxDimension)).rounded()))
+        let height=max(1,Int((Double(full.height)*Double(maxEdge) /
+                             Double(maxDimension)).rounded()))
+        guard let context=CGContext(
+            data:nil,width:width,height:height,
+            bitsPerComponent:8,bytesPerRow:0,
+            space:srgb,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw Failure.invalid("无法为 RAW 全图生成受限内存显示缓冲区")
+        }
+        context.interpolationQuality = .high
+        context.draw(full,in:CGRect(x:0,y:0,width:width,height:height))
+        guard let preview=context.makeImage() else {
+            throw Failure.invalid("无法生成 RAW 原版光学显示预览")
+        }
+        return preview
+    }
+
     /// Runs in GitHub's macOS native validation executable as well as on
     /// iPhone. One opaque lossless PNG ensures byte order and row orientation
     /// are not silently altered by the new ImageIO/Quartz transport.

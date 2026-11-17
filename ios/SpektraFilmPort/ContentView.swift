@@ -1137,6 +1137,48 @@ final class PhotoEditorModel: ObservableObject {
         status="RAW 原片已保存，当前照片和编辑设置保持不变"
     }
 
+    /// Deleting an active app-owned RAW must not leave a lazy CIImage
+    /// pointing at a removed file or allow precision export on a ghost URI.
+    func isCurrentSavedRAW(_ url:URL)->Bool {
+        url.standardizedFileURL == capturedRAWURL?.standardizedFileURL
+    }
+
+    func didDeleteSavedRAW(_ url:URL) {
+        let file=url.standardizedFileURL
+        let active=capturedRAWURL?.standardizedFileURL == file
+        let pending=pendingImportedRAWURL?.standardizedFileURL == file
+        guard active || pending else {
+            status="本机 RAW 副本已删除，其他编辑与原片不变"
+            return
+        }
+        if pending {
+            pendingImportedRAWURL=nil
+            rawNeedsChoice=false
+        }
+        if active {
+            invalidateSimulation()
+            originalMetalPreviewVersion &+= 1
+            source=nil
+            originalPhotoData=nil
+            photoOriginalBeforeColorConversion=nil
+            photoInputProfile=nil
+            photoInputConvertedFromP3=false
+            originalPreview=nil
+            processedPreview=nil
+            capturedRAWURL=nil
+            rawFastModeActive=false
+            rawOriginalSourceActive=false
+            sourcePixelIOEnabled=false
+            sourcePhysicalDirectEnabled=false
+            photoDimensions=""
+            photoSessionRevision &+= 1
+        }
+        PhotoProcessor.clearTransientCaches()
+        status=active
+            ? "已删除当前本机 RAW 并退出编辑；胶片及相纸选择保留"
+            : "已删除待导入 RAW 副本；当前编辑未改变"
+    }
+
     var hasPhoto: Bool { source != nil }
     /// Read-only actual source geometry for independent Build133 RAW probes.
     /// The private CIImage and its backed pixels never leave the model.
@@ -2059,12 +2101,17 @@ final class PhotoEditorModel: ObservableObject {
                     "rawpy 数值尚未认证，失败不会改用 Apple 兼容图"
                 Task.detached(priority:.userInitiated) {
                     do {
-                        let frame=try P1OriginalRawACESIngress.developSourceCandidate(
-                            rawURL,opticalSettings:physical
-                        )
-                        let result=UIImage(
-                            cgImage:try OriginalSourcePixelIO.displayImage(frame)
-                        )
+                        let result=try autoreleasepool { () throws -> UIImage in
+                            let frame=try P1OriginalRawACESIngress.developSourceCandidate(
+                                rawURL,opticalSettings:physical
+                            )
+                            // Output calculation stays full resolution; only
+                            // the persistent SwiftUI display gets downsampled.
+                            let image=try OriginalSourcePixelIO.displayPreviewImage(
+                                frame,maxEdge:1600
+                            )
+                            return UIImage(cgImage:image)
+                        }
                         await MainActor.run {
                             guard revision==self.originalMetalPreviewVersion else {return}
                             self.processedPreview=result
@@ -2522,6 +2569,13 @@ final class PhotoEditorModel: ObservableObject {
     func prepareExport(resolution: ExportResolutionMode,
                        tiff16: Bool = false) throws
         -> SafeExportResolution.Plan {
+        // Build134: the editor may retain completed Core Image preview
+        // kernels even though original RAW export uses the independent
+        // source Float64 renderer. Discard only unowned CI intermediate
+        // caches BEFORE the existing guarded headroom preflight.
+        if rawOriginalSourceActive && sourcePhysicalDirectEnabled {
+            PhotoProcessor.clearTransientCaches()
+        }
         guard let src = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
@@ -2682,16 +2736,18 @@ final class PhotoEditorModel: ObservableObject {
                 try SafeExportResolution.validateBeforeRender(plan)
                 let optical=try sourcePhysicalParameters()
                 let url=try await Task.detached(priority:.userInitiated) {
-                    let result=try P1OriginalRawACESIngress.developSourceCandidate(
-                        rawURL,opticalSettings:optical
-                    )
-                    return try Build90NativeOutputWriter.write(
-                        width:result.width,height:result.height,rgb:result.rgb,
-                        options:.init(
-                            format:.jpeg,bitDepth:8,outputSpace:"sRGB",
-                            cctfEncoded:optical.sourceOutputCCTFEncoding
+                    try autoreleasepool { () throws -> URL in
+                        let result=try P1OriginalRawACESIngress.developSourceCandidate(
+                            rawURL,opticalSettings:optical
                         )
-                    )
+                        return try Build90NativeOutputWriter.write(
+                            width:result.width,height:result.height,rgb:result.rgb,
+                            options:.init(
+                                format:.jpeg,bitDepth:8,outputSpace:"sRGB",
+                                cctfEncoded:optical.sourceOutputCCTFEncoding
+                            )
+                        )
+                    }
                 }.value
                 status="RAW 原片 ACES16 → Float64 原版冲印 JPEG 已输出；" +
                     "rawpy/设备对照尚未认证，原 RAW 未改动"
@@ -2797,16 +2853,18 @@ final class PhotoEditorModel: ObservableObject {
                 try SafeExportResolution.validateBeforeRender(confirmedPlan)
                 let optical=try sourcePhysicalParameters()
                 let url=try await Task.detached(priority:.userInitiated) {
-                    let result=try P1OriginalRawACESIngress.developSourceCandidate(
-                        rawURL,opticalSettings:optical
-                    )
-                    return try Build90NativeOutputWriter.write(
-                        width:result.width,height:result.height,rgb:result.rgb,
-                        options:.init(
-                            format:.tiff,bitDepth:16,outputSpace:"sRGB",
-                            cctfEncoded:optical.sourceOutputCCTFEncoding
+                    try autoreleasepool { () throws -> URL in
+                        let result=try P1OriginalRawACESIngress.developSourceCandidate(
+                            rawURL,opticalSettings:optical
                         )
-                    )
+                        return try Build90NativeOutputWriter.write(
+                            width:result.width,height:result.height,rgb:result.rgb,
+                            options:.init(
+                                format:.tiff,bitDepth:16,outputSpace:"sRGB",
+                                cctfEncoded:optical.sourceOutputCCTFEncoding
+                            )
+                        )
+                    }
                 }.value
                 status="RAW 原片 ACES16 → Float64 光学 TIFF16 已输出；" +
                     "原始 RAW 未修改，rawpy 与真机数值尚未认证"
@@ -2928,6 +2986,7 @@ struct ContentView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var cameraPresented = false
     @State private var recipeLibraryPresented = false
+    @State private var rawManagerPresented = false
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
     @State private var pendingExport: ExportProposal?
@@ -2993,6 +3052,10 @@ struct ContentView: View {
                     if let url = model.capturedRAWURL {
                         activeSheet = .share(url)
                     }
+                },
+                onManageLocalRAW: {
+                    guard !model.busy else { return }
+                    rawManagerPresented = true
                 },
                 onOpenLUT: {
                     guard !model.busy else { return }
@@ -3178,6 +3241,11 @@ struct ContentView: View {
                         model.loadCapturedPhoto(photo)
                     }
                 )
+            }
+            .sheet(isPresented:$rawManagerPresented) {
+                Build134LocalRAWManagerView(model:model)
+                    .presentationDetents([.medium,.large])
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented:$recipeLibraryPresented) {
                 Build126RecipeLibraryView(

@@ -15,6 +15,7 @@ struct FloatingEditorWorkspace: View {
     let onOpenPhotoFile: () -> Void
     let onOpenCamera: () -> Void
     let onShareRaw: () -> Void
+    let onManageLocalRAW: () -> Void
     let onOpenLUT: () -> Void
     let onOpenCatalog: () -> Void
     let onOpenRecipes: () -> Void
@@ -926,34 +927,17 @@ struct FloatingEditorWorkspace: View {
            model.originalPreview != nil, model.processedPreview != nil {
             comparisonArea(size: size)
         } else {
-            ZStack(alignment: .bottom) {
-                previewImage(
-                    originalHeld ? model.originalPreview :
-                        (model.processedPreview ?? model.originalPreview),
-                    size: size
-                )
-                if model.hasPhoto && controlsVisible {
-                    Text(originalHeld ? "原图" :
-                         (model.simulationAwaitingCurrentSettings ||
-                          model.processedPreview == nil
-                            ? "当前效果正在更新 · 暂时显示原图"
-                            : "按住看原图 · 双击放大"))
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(Color.black.opacity(0.5), in: Capsule())
-                        .padding(.bottom, 6)
-                        .allowsHitTesting(false)
-                }
-            }
+            previewImage(
+                originalHeld ? model.originalPreview :
+                    (model.processedPreview ?? model.originalPreview),
+                size: size
+            )
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                togglePhotoZoom()
-            }
             .overlay {
                 if model.hasPhoto {
-                    StableImageHoldRecognizer(isHolding: $originalHeld)
+                    StableImageHoldRecognizer(
+                        isHolding:$originalHeld,onDoubleTap:togglePhotoZoom
+                    )
                 }
             }
         }
@@ -1008,10 +992,26 @@ struct FloatingEditorWorkspace: View {
         HStack(spacing: 7) {
             toolButton("camera.fill", name: "NextLevel 专业拍照并直接冲印", action: onOpenCamera)
                 .disabled(model.busy)
-            if model.capturedRAWURL != nil {
-                toolButton("doc", name: "分享保留的原始 RAW 文件", action: onShareRaw)
-                    .disabled(model.busy)
+            Menu {
+                if model.capturedRAWURL != nil {
+                    Button {
+                        onShareRaw()
+                    } label: {
+                        Label("分享当前保存的 RAW 原片",systemImage:"square.and.arrow.up")
+                    }
+                }
+                Button {
+                    onManageLocalRAW()
+                } label: {
+                    Label("管理／删除本机 RAW",systemImage:"trash")
+                }
+            } label: {
+                Image(systemName:"externaldrive")
+                    .frame(width:33,height:40)
+                    .contentShape(Rectangle())
             }
+            .accessibilityLabel("本机 RAW：分享或删除")
+            .disabled(model.busy)
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
                 Image(systemName: "photo")
             }
@@ -1131,6 +1131,23 @@ struct FloatingEditorWorkspace: View {
                 .accessibilityLabel("查看完整状态及 Metal 数值诊断报告")
             }
             inputCompatibilityBanner
+            if model.hasPhoto {
+                Text(originalHeld ? "原图" :
+                     (model.simulationAwaitingCurrentSettings ||
+                      model.processedPreview == nil
+                        ? "当前效果正在更新 · 按住看原图"
+                        : (photoScale>1
+                            ? "按住看原图 · 双击还原"
+                            : "按住看原图 · 双击放大")))
+                    .font(.caption2)
+                    .foregroundColor(.white)
+                    .padding(.horizontal,9)
+                    .frame(height:25)
+                    .background(Color.black.opacity(0.52),
+                                in:Capsule())
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("照片手势：按住原图，双击放大或还原")
+            }
         }
         .frame(maxWidth:.infinity,alignment:.top)
         .fixedSize(horizontal:false,vertical:true)
@@ -3904,9 +3921,10 @@ private struct CompactOpticalSlider:UIViewRepresentable {
 /// .began/.changed hold original; only .ended/.cancelled/.failed restore look.
 private struct StableImageHoldRecognizer: UIViewRepresentable {
     @Binding var isHolding: Bool
+    let onDoubleTap: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isHolding: $isHolding)
+        Coordinator(isHolding:$isHolding,onDoubleTap:onDoubleTap)
     }
 
     func makeUIView(context: Context) -> UIView {
@@ -3921,17 +3939,34 @@ private struct StableImageHoldRecognizer: UIViewRepresentable {
         recognizer.cancelsTouchesInView = false
         recognizer.delegate = context.coordinator
         overlay.addGestureRecognizer(recognizer)
+        // UIKit owns the transparent hit layer, so SwiftUI's underlying
+        // .onTapGesture did not reliably receive double taps on iOS16.5.1.
+        let doubleTap=UITapGestureRecognizer(
+            target:context.coordinator,
+            action:#selector(Coordinator.doubleTapped(_:))
+        )
+        doubleTap.numberOfTapsRequired=2
+        doubleTap.cancelsTouchesInView=false
+        doubleTap.delegate=context.coordinator
+        overlay.addGestureRecognizer(doubleTap)
         return overlay
     }
 
     func updateUIView(_ view: UIView, context: Context) {
         context.coordinator.isHolding = $isHolding
+        context.coordinator.onDoubleTap = onDoubleTap
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var isHolding: Binding<Bool>
-        init(isHolding: Binding<Bool>) {
-            self.isHolding = isHolding
+        var onDoubleTap: () -> Void
+        init(isHolding:Binding<Bool>,onDoubleTap:@escaping () -> Void) {
+            self.isHolding=isHolding
+            self.onDoubleTap=onDoubleTap
+        }
+        @objc func doubleTapped(_ recognizer:UITapGestureRecognizer) {
+            guard recognizer.state == .ended else {return}
+            onDoubleTap()
         }
         @objc func onPress(_ recognizer: UILongPressGestureRecognizer) {
             switch recognizer.state {
