@@ -40,11 +40,12 @@ final class PhotoEditorModel: ObservableObject {
     }
     var photoInputExplanation:String {
         if rawFastModeActive && capturedRAWURL != nil {
-            return "DNG 原片已完整保存，胶片／相纸效果正常可用。" +
-                "8-bit 原版像素直连要求另有经过检测的 8-bit sRGB 文件，" +
-                "不能把 Apple RAW 解码的 CIImage 伪装成 RAW 原版 Float64。" +
-                "需要此功能时，可主动生成 sRGB 8-bit 副本；它是有损转换，" +
-                "不等同于原始 RAW，原始 DNG 始终保留。"
+            return "DNG 原片已完整保存，Apple RAW 高精度解码／兼容冲印可用。" +
+                "不是必须转 8-bit：可直接进行兼容光学处理并最终导出 TIFF16。" +
+                "如需进入原版 Float64 像素直连，可明确生成经验证的 " +
+                "Float32 扩展 sRGB TIFF 副本（不经过 JPEG／RGBA8）；" +
+                "这是 Apple RAW 色彩管理结果，不是传感器 Bayer 或 Python rawpy 数值等价。" +
+                "旧 8-bit 副本仍为可选，绝不自动转换或覆盖原 DNG。"
         }
         return photoInputProfile?.reason ??
             "此照片没有可检测的原始文件数据，原版像素直连不可用。"
@@ -111,6 +112,48 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+
+    /// Build128: opt-in RAW high-precision bridge; ALWAYS reopen the real
+    /// preserved DNG through CIRAWFilter. Do not reuse a JPEG companion or
+    /// a potentially different LibRaw compatible CI preview.
+    func convertActiveRAWToFloat32ExtendedSRGBCopy() {
+        guard !busy,rawFastModeActive,
+              let originalDNG=capturedRAWURL else {
+            status="当前没有真实 RAW 原片可转换；照片与参数未改变"
+            return
+        }
+        busy=true
+        status="正在从原始 DNG 生成明确的 Float32 扩展 sRGB TIFF，"
+            + "不经过 8-bit JPEG、不改变原片…"
+        Task { @MainActor in
+            defer {busy=false}
+            do {
+                let result=try await Task.detached(priority:.userInitiated) {
+                    let decoded=try Build93AppleRAWImport.open(originalDNG)
+                    return try Build128RAWFloat32Transport.makeVerifiedCopy(
+                        decoded.image
+                    )
+                }.value
+                let input=try PhotoProcessor.decode(result.bytes)
+                let preview=try PhotoProcessor.preview(
+                    input,lut:nil,strength:0
+                )
+                try commitDecodedPhoto(
+                    image:input,preview:preview,data:result.bytes,
+                    rawURL:originalDNG,rawCompatible:false,
+                    dimensions:"\(result.admission.dimensions) · Apple RAW → Float32 TIFF",
+                    inputProfile:result.admission
+                )
+                status="RAW→Float32 TIFF 经 Build78/111 验证通过，"
+                    + "可在符合 DIR／全光学前置条件时使用 Float64 像素路径；"
+                    + "没有 8-bit 中间 JPEG。原 DNG 无损保留。" +
+                    "注意：Apple RAW 去马赛克／色彩管理与 Python rawpy 不保证等价。"
+            } catch {
+                status="RAW→Float32 高位深入口拒绝／失败，原照片、冲印与 DNG 保留：" +
+                    error.localizedDescription
+            }
+        }
+    }
 
     // Build126 recipes are a separate, opt-in persistence domain. The source
     // image, sensor DNG, simulated stage caches and preview are NOT persisted.
