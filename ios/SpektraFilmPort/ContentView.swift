@@ -43,7 +43,7 @@ final class PhotoEditorModel: ObservableObject {
             return "DNG 原片已完整保存，Apple RAW 高精度解码／兼容冲印可用。" +
                 "不是必须转 8-bit：可直接进行兼容光学处理并最终导出 TIFF16。" +
                 "如需进入原版 Float64 像素直连，可明确生成经验证的 " +
-                "Float32 扩展 sRGB TIFF 副本（不经过 JPEG／RGBA8）；" +
+                "Float32 TIFF 副本（按实际 ICC sRGB／扩展 sRGB 校验，不经过 JPEG／RGBA8）；" +
                 "这是 Apple RAW 色彩管理结果，不是传感器 Bayer 或 Python rawpy 数值等价。" +
                 "旧 8-bit 副本仍为可选，绝不自动转换或覆盖原 DNG。"
         }
@@ -123,7 +123,7 @@ final class PhotoEditorModel: ObservableObject {
             return
         }
         busy=true
-        status="正在从原始 DNG 生成明确的 Float32 扩展 sRGB TIFF，"
+        status="正在从原始 DNG 生成明确的 Float32 TIFF（ICC 独立验证），"
             + "不经过 8-bit JPEG、不改变原片…"
         Task { @MainActor in
             defer {busy=false}
@@ -144,8 +144,9 @@ final class PhotoEditorModel: ObservableObject {
                     dimensions:"\(result.admission.dimensions) · Apple RAW → Float32 TIFF",
                     inputProfile:result.admission
                 )
-                status="RAW→Float32 TIFF 经 Build78/111 验证通过，"
-                    + "可在符合 DIR／全光学前置条件时使用 Float64 像素路径；"
+                status="RAW→Float32 "+result.admission.color.rawValue+
+                    " TIFF 已通过真实位深／ICC 入口验证，" +
+                    "可在符合 DIR／全光学前置条件时使用 Float64 像素路径；"
                     + "没有 8-bit 中间 JPEG。原 DNG 无损保留。" +
                     "注意：Apple RAW 去马赛克／色彩管理与 Python rawpy 不保证等价。"
             } catch {
@@ -201,6 +202,11 @@ final class PhotoEditorModel: ObservableObject {
         if p.floatingComponents && p.color == .extendedSRGB {
             if p.decodedDepth==32 {return "float32ExtendedSRGB"}
             if p.decodedDepth==16 {return "float16ExtendedSRGB"}
+        }
+        if p.floatingComponents && p.color == .sRGB &&
+            p.declaredDepth==32 && p.decodedDepth==32 &&
+            p.format=="TIFF" {
+            return "float32SRGB"
         }
         if !p.floatingComponents && p.color == .sRGB {
             if p.decodedDepth==16 {return "uint16SRGB"}
