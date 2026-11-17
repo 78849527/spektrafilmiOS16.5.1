@@ -49,7 +49,7 @@ assert "StableImageHoldRecognizer(isHolding: $originalHeld)" not in ui
 assert "context.clearCaches()" in processor
 assert "maxEdge:Int=1600" in pixel
 assert "context.interpolationQuality = .high" in pixel
-assert 'MARKETING_VERSION: "1.8.100"' in project
-assert 'CURRENT_PROJECT_VERSION: "134"' in project
+from build_ci_version_floor import minimum_build,minimum_minor
+assert minimum_build(project,134) and minimum_minor(project,100)
 print("PASS Build134 scoped local RAW deletion / active file invalidation / genuine UIKit double tap / bounded preview and native export memory lifecycle")
 print("NOT CERTIFIED: actual on-device file deletion, gesture interaction and original RAW TIFF16 export require physical iPhone validation")

@@ -28,11 +28,8 @@ struct SafeExportResolutionValidation {
                     precondition(!d.reduced)
                 } else {
                     let percentage:UInt64 = mode == .safe ? 90 : 30
-                    let physicalBudget = min(UInt64(1_500_000_000),ram/3)
-                    let effective = min(physicalBudget,1_500_000_000)
-                    let allowance = mode == .safe
-                        ? min(UInt64(1_300_000_000),effective/100*percentage)
-                        : effective/100*percentage
+                    let effective:UInt64 = 1_500_000_000
+                    let allowance = effective/100*percentage
                     let limit = allowance /
                         SafeExportResolution.estimatedBytesPerPixel
                     precondition(plan.allocationAllowanceBytes == allowance)
@@ -66,7 +63,7 @@ struct SafeExportResolutionValidation {
             width:6000,height:4000,physicalMemory:6_000_000_000,
             processAvailableMemory:1_500_000_000,mode:.economy
         )
-        precondition(adaptive.allocationAllowanceBytes == 1_300_000_000)
+        precondition(adaptive.allocationAllowanceBytes == 1_350_000_000)
         precondition(adaptive.dimensions.pixels >= 11_990_000)
         precondition(adaptive.dimensions.pixels <= 12_000_000)
         precondition(economy.dimensions.pixels <= 7_200_000)
@@ -169,8 +166,8 @@ struct SafeExportResolutionValidation {
             processAvailableMemory:3_140_000_000,mode:.safe,
             estimatedBytesPerPixel:120
         )
-        precondition(requested.allocationAllowanceBytes == 1_300_000_000)
-        precondition(requested.estimatedPeakBytes <= 1_300_000_000)
+        precondition(requested.allocationAllowanceBytes == 2_826_000_000)
+        precondition(requested.estimatedPeakBytes <= 2_826_000_000)
         try SafeExportResolution.validateForHeadroom(
             requested, processAvailableMemory:3_140_000_000)
         // Headroom may drop before confirmation. Reject rather than
@@ -180,6 +177,23 @@ struct SafeExportResolutionValidation {
                 requested, processAvailableMemory:100_000_000)
             fatalError("Must reject changed headroom")
         } catch SafeExportResolution.Failure.invalid {}
-        print("PASS Build113: smart <=1300MB, 90% process headroom, source Float64 estimate, original size unchanged, no silent fallback")
+        // Build135: reproduce the actual reported 3024x4032 TIFF16 1560MB
+        // preflight. It MUST pass at 3.12GB live headroom and refuse
+        // when available headroom drops; no fixed 1500MB limit.
+        let rawTIFF16=try SafeExportResolution.plan(
+            width:3024,height:4032,physicalMemory:4_000_000_000,
+            processAvailableMemory:3_120_000_000,mode:.original,
+            estimatedBytesPerPixel:128
+        )
+        precondition(rawTIFF16.estimatedPeakBytes > 1_500_000_000)
+        precondition(rawTIFF16.allocationAllowanceBytes == 2_184_000_000)
+        try SafeExportResolution.validateForHeadroom(
+            rawTIFF16,processAvailableMemory:3_120_000_000)
+        do {
+            try SafeExportResolution.validateForHeadroom(
+                rawTIFF16,processAvailableMemory:1_800_000_000)
+            fatalError("Must reject low process headroom")
+        } catch SafeExportResolution.Failure.invalid {}
+        print("PASS Build135: source original TIFF16 1560MB estimate accepted at 3.12GB OS headroom, low headroom refused, no automatic resize")
     }
 }
