@@ -7,7 +7,7 @@
 ## 接手项目必须先做的事
 
 1. 读取根目录 `DEVELOPMENT_PRINCIPLES.md`，这是唯一当前有效的开发总原则。
-2. 在现有 iOS 开发分支读取 [47 项原版移植路线图](docs/MASTER-PORTING-ROADMAP-ios16.5.1.md) 与最近的真实 GitHub 提交/CI；默认 `main` 可能尚未合入 iOS 工程。
+2. 在现有 iOS 开发分支读取 [47 项原版移植路线图](https://github.com/78849527/spektrafilmiOS16.5.1/blob/work/build129-raw-float32-srgb-icc-admission-ios1651/docs/MASTER-PORTING-ROADMAP-ios16.5.1.md) 与最近的真实 GitHub 提交/CI；默认 `main` 可能尚未合入 iOS 工程。
 3. 核对上游 Python 固定源码与相关数值样本，先检查旧实现是否已经正确移植及真实接入生产，再动代码。
 4. **不新建分支；需要新分支必须先得到项目所有者明确许可。** 普通 Bug、编译失败、UI 微调、同模块开发继续使用原开发分支。
 5. 仅做最小必要修复，清理已证伪的非原版兼容实现，保留原版数据和有效回归。严禁强制 Float32 全图 RGB 0～1 映射、隐式 JPEG8、伪造 ICC 或未认证光学近似。
@@ -24,8 +24,8 @@
 
 ## 技术路线及历史记录
 
-- [47 项原版最大化移植路线图](docs/MASTER-PORTING-ROADMAP-ios16.5.1.md)：完整范围、原版源码映射、四类认证状态与逐阶段数值验收要求。**这是技术清单，不是与总原则并列的第二套规范。**
-- [Build131 清理记录](docs/BUILD131-ORIGINAL-FIRST-EXPERIMENT-CLEANUP.md)：历史实验清理证据，不能代替现行原则。
+- [47 项原版最大化移植路线图](https://github.com/78849527/spektrafilmiOS16.5.1/blob/work/build129-raw-float32-srgb-icc-admission-ios1651/docs/MASTER-PORTING-ROADMAP-ios16.5.1.md)：完整范围、原版源码映射、四类认证状态与逐阶段数值验收要求。**这是技术清单，不是与总原则并列的第二套规范。**
+- [Build131 清理记录](https://github.com/78849527/spektrafilmiOS16.5.1/blob/work/build129-raw-float32-srgb-icc-admission-ios1651/docs/BUILD131-ORIGINAL-FIRST-EXPERIMENT-CLEANUP.md)：历史实验清理证据，不能代替现行原则。
 - 上游 Python：`andreavolpato/spektrafilm`。未经审计、批准，不自行推进上游源码基准。
 
 **最终规则：原版优先、只在既有开发分支继续、没有证据就不宣称等价。**
