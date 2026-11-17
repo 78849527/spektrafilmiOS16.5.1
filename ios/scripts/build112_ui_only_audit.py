@@ -35,8 +35,9 @@ assert ui.count('value:$model.sourcePhysicalGrainEnabled')==1
 assert ui.count('value:$model.scannerCAM16Enabled')==1
 require("专业参数与验证状态")
 require("13MP、RAW 与 Python 原版整图仍未认证")
-assert 'MARKETING_VERSION: "1.8.81"' in project
-assert 'CURRENT_PROJECT_VERSION: "115"' in project
+# Historical contracts stay valid across the new Build116 revision.
+assert 'MARKETING_VERSION: "1.8.82"' in project
+assert 'CURRENT_PROJECT_VERSION: "116"' in project
 # The user-facing scanner switch has one owner; advanced retains only parameters.
 assert ui.count("value:$model.sourceScannerGlareEnabled")==1
 assert 'resetToggle("扫描眩光 · 受控单线程"' in ui
