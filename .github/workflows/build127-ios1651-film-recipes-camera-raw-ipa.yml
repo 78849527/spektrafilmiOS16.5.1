@@ -1,3 +1,4 @@
+# Build127 retry: remove stray Swift quote from absorbed recipe menu; algorithms unchanged.
 # Build127: UI-only full-name film card browsing, favorites/recents/recipes and native camera RAW default.
 # Build126: 101-parameter persistent recipes, strict 8-bit preflight, rollback, small optional covers.
 # Build125 regression gate: inspect real 8-bit certificate, no non-existent RAW marker.
