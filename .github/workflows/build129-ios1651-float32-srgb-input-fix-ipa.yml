@@ -1,3 +1,4 @@
+# Build129 source whitelist: allow only Build111+Build78 strict ICC Float32 admission changes, independently proven by real TIFF fixture.
 # Build129 rerun: fix strict Swift parsing of ordinary-photo high precision conversion, all previous source parity unchanged.
 # Build129 extra user-device bug: enable precision UI for input diagnostics and explicit ordinary Float32 bridge.
 # Build129: correct real Apple RAW Float32 TIFF color profile admission; preserve strict Float64 and 8bit.
@@ -195,7 +196,11 @@ jobs:
                 'ios/SpektraFilmPort/Build125RAW8BitTransport.swift',
                 'ios/SpektraFilmPort/Build126Recipe.swift',
                 'ios/SpektraFilmPort/Build126RecipeLibraryView.swift',
-                'ios/SpektraFilmPort/Build128RAWFloat32Transport.swift'
+                'ios/SpektraFilmPort/Build128RAWFloat32Transport.swift',
+                # Build129 only: independent real-image source ICC admission.
+                # Numerical rendering sources remain scoped unchanged.
+                'ios/SpektraFilmPort/Build111PhotoInputProfile.swift',
+                'ios/SpektraFilmPort/Build78FloatTIFFIngress.swift'
               }]
           assert not forbidden, 'Build116 unexpectedly changed unapproved original modules: '+str(forbidden)
           print('PASS Build115 scoped original parallel stochastic work with strictly separate controlled seed mode')
