@@ -2413,7 +2413,9 @@ final class PhotoEditorModel: ObservableObject {
                     ? OriginalSourcePhysicalImage.filmHalationExtraBytesPerPixel : 0) +
                    (printSourceDiffusionEnabled
                     ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0))
-                : SafeExportResolution.estimatedBytesPerPixel
+                : (tiff16
+                   ? Build96TIFF16Writer.estimatedBytesPerPixel
+                   : SafeExportResolution.estimatedBytesPerPixel)
         )
         if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
             // The entire optical chain is now bounded by the SELECTED
