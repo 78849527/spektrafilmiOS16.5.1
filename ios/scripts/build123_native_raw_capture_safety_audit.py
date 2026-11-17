@@ -8,8 +8,8 @@ c=(r/"ios/SpektraFilmPort/NextLevelCamera.swift").read_text()
 project=(r/"ios/project.yml").read_text()
 ui=(r/"ios/SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
 def check(v,label):assert v,label
-check('MARKETING_VERSION: "1.8.89"' in project and
-      'CURRENT_PROJECT_VERSION: "123"' in project and
+from build_ci_version_floor import minimum_build,minimum_minor
+check(minimum_minor(project,89) and minimum_build(project,123) and
       'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project,"Build123 iOS16.5 min")
 check("import NextLevel" not in c and "path: Vendor/NextLevel" not in project,
       "only native AVFoundation")
