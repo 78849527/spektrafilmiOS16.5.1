@@ -15,4 +15,10 @@ assert 'acesRGBToXYZByFilm' in gen and 'acesRGBToXYZByFilm' in han
 assert 'case acesLinear' in han
 assert physics.count('case .proPhotoLinear, .acesLinear: linear=encodedRGB')==2
 assert 'cameraInputColorSpace != .sRGB' in phys
+gen_meter=src('ios/scripts/generate_source_camera_batch.py')
+source_meter=src('ios/SpektraFilmPort/OriginalSourceCameraOptics.swift')
+assert 'np.all(reference_y>0)' not in gen_meter
+assert 'np.any(reference_y != 0)' in gen_meter
+assert 'sourceY.allSatisfy({ $0.isFinite })' in source_meter
+assert 'sourceY.contains(where: { $0 != 0 })' in source_meter
 print('PASS P1 ACES source contract; numerical/demosaic/iOS compile NOT RUN')

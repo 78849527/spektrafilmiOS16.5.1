@@ -132,8 +132,11 @@ enum OriginalSourceCameraOptics {
         case .acesLinear:
             sourceY=GeneratedSourceCameraReference.sourceLuminanceWeightsACES
         }
+        // Original ACES AP0 and ProPhoto Y rows can include zero or
+        // negative coefficients. Keep their signed values intact.
         guard sourceY.count==3,
-              sourceY.allSatisfy({ $0.isFinite && $0>0 }) else {
+              sourceY.allSatisfy({ $0.isFinite }),
+              sourceY.contains(where: { $0 != 0 }) else {
             throw Failure.invalid("原版 colour-science 输入色彩空间 Y 矩阵缺失")
         }
         var yValues = [Double](repeating:0,count:w*h)

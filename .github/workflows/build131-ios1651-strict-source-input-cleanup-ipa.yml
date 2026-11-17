@@ -1,3 +1,4 @@
+# Build132 P1 signed ACES/ProPhoto meter: preserve actual colour-science Y coefficients incl zero/negative; no invented positive-only admission.
 # Build132 P1 fixed source oracle: execute AST of exact original D55 spectral functions; exclude unrelated optional EXIF/RAW import dependencies.
 # Build132 Intel compile fix: exact IEEE754 binary16->Float32->Float64 conversion; host architectures unrestricted, target still iPhoneOS arm64.
 # Build132 source oracle: load frozen optical Python source without eager optional RAW/exiv2 imports.

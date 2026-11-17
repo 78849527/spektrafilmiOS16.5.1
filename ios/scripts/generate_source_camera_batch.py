@@ -192,9 +192,12 @@ source_aces_y=colour.RGB_to_XYZ(
 source_prophoto_y=colour.RGB_to_XYZ(
     np.eye(3,dtype=np.float64),"ProPhoto RGB",apply_cctf_decoding=False
 )[:,1]
+# ACES2065-1 (AP0) and ProPhoto primary Y coefficients are NOT all
+# strictly positive: preserve the original colour-science matrix,
+# including negative or zero entries. Never abs/clip/fabricate weights.
 for reference_y in (source_aces_y,source_prophoto_y):
     assert reference_y.shape==(3,) and np.isfinite(reference_y).all()
-    assert np.all(reference_y>0)
+    assert np.any(reference_y != 0)
 lines=[
     "import Foundation",
     "// GENERATED from actual original Python functions; do not hand-edit.",
