@@ -420,7 +420,7 @@ jobs:
           old=old.replace('import CoreImage\n','').replace('import CoreGraphics\n','')
           Path('/tmp/Build114DIRCore.swift').write_text(old+'\n}\n')
           physical=Path('ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift').read_text()
-          assert 'estimatedPeakBytesPerPixel: UInt64 = 112' in physical
+          assert 'estimatedPeakBytesPerPixel: UInt64 = 104' in physical
           assert 'diffuseInPlaceMemoryBounded(' in physical
           PY
           swiftc -O -parse-as-library \
