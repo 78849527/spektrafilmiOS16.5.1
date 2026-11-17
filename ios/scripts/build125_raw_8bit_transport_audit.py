@@ -55,7 +55,7 @@ assert "胶片效果正常；8-bit 原版直连需生成明确副本" in ui
 assert "if rawCompatible || inputProfile?.directCompatible != true" in app
 assert "rawFastModeActive=rawCompatible" in app
 assert "rawDNG" in (root/"ios/SpektraFilmPort/NextLevelCamera.swift").read_text()
-assert "RAW" in profile and "directCompatible" in profile
+assert "directCompatible" in profile and "declaredDepth==8" in profile
 
 raw_capture=app[app.index("func loadCapturedPhoto("):app.index("func loadPhotoFile(")]
 assert "convertActiveRAWTo8BitSRGBCopy()" not in raw_capture
