@@ -2127,6 +2127,7 @@ struct ContentView: View {
                 },
                 onRunBuild114FourGates: { runBuild114FourGates() },
                 onRunBuild115ParallelGrain: { runBuild115ParallelGrain() },
+                onRunBuild116GrainMemory: { runBuild116GrainMemory() },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -2655,6 +2656,80 @@ struct ContentView: View {
                 }
             } catch {
                 model.status="Build115 保存真机随机报告失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
+
+    /// Build116: explicit 1MP/2MP four-worker source-grain memory test.
+    /// Preserve a checkpoint before the high-memory first allocation.
+    /// Never attempt a 13MP grain frame in this uncertified candidate.
+    private func runBuild116GrainMemory() {
+        guard !model.busy else {return}
+        let bundle=Bundle.main
+        let version=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let sha=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        let system=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physical=false
+        #else
+        let physical=true
+        #endif
+        guard let docs=FileManager.default.urls(
+            for:.documentDirectory,in:.userDomainMask
+        ).first else {
+            model.status="Build116 无法访问本机文档目录"
+            return
+        }
+        let folder=docs.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true
+        )
+        let checkpoint=folder.appendingPathComponent(
+            "Build116-last-grain-memory-checkpoint.txt"
+        )
+        do {
+            try FileManager.default.createDirectory(
+                at:folder,withIntermediateDirectories:true
+            )
+            let initial="status=INCOMPLETE_OR_NOT_RUN\napp=\(version) build=\(build) sha=\(sha)\n1MP/2MP 多线程颗粒未完成；如闪退请保留本文件。\n"
+            try initial.write(to:checkpoint,atomically:true,encoding:.utf8)
+        } catch {
+            model.status="Build116 无法保存颗粒内存测试检查点："+error.localizedDescription
+            return
+        }
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build116：真实运行 1MP／2MP Float64 三亚层多线程颗粒并采样 RSS…"
+        Task { @MainActor in
+            defer {model.busy=false}
+            let proof=await Task.detached(priority:.userInitiated) {
+                Build108SourceOpticalDeviceStress.captureBuild116GrainMemory(
+                    version:version,build:build,commit:sha,
+                    osVersion:system,physicalDevice:physical
+                )
+            }.value
+            do {
+                let pair=try Build108SourceOpticalDeviceStress.writeBuild116GrainMemory(
+                    proof,documents:docs
+                )
+                let passed=proof.allMeasuredCasesPassed
+                let finished="status=\(passed ? "GRAIN_1MP_2MP_MEASURED" : "FAILED_OR_INCOMPLETE")\napp=\(version) build=\(build) sha=\(sha)\n"
+                try finished.write(to:checkpoint,atomically:true,encoding:.utf8)
+                model.status=passed
+                    ? "Build116 1MP／2MP 多线程颗粒真机实测通过；13MP 仍拒绝执行"
+                    : "Build116 颗粒内存实测失败或未完成；首错已保存"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build116 保存真实 RSS 报告失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }
