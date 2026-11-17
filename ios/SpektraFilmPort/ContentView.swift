@@ -194,8 +194,10 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    // Reflect the INPUT file independently from the currently selected
+    // processing mode; a recipe must be applicable from fast mode too.
     private func currentRecipeInputContract() -> String? {
-        guard sourcePixelIOEnabled,let p=photoInputProfile else {return nil}
+        guard let p=photoInputProfile else {return nil}
         if p.floatingComponents && p.color == .extendedSRGB {
             if p.decodedDepth==32 {return "float32ExtendedSRGB"}
             if p.decodedDepth==16 {return "float16ExtendedSRGB"}
@@ -342,7 +344,7 @@ final class PhotoEditorModel: ObservableObject {
             "sourceCameraRawMethod":sourceCameraRawMethod.rawValue
             ],
             embeddedLUT:originalLUT,coverJPEG:cover,
-            inputContract:currentRecipeInputContract()
+            inputContract:sourcePixelIOEnabled ? currentRecipeInputContract() : nil
         )
     }
 
