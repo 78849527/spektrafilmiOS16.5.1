@@ -144,6 +144,7 @@ jobs:
                 'ios/SpektraFilmPort/FloatingEditorWorkspace.swift',
                 'ios/SpektraFilmPort/SafeExportResolution.swift',
                 'ios/SpektraFilmPort/ContentView.swift',
+              'ios/SpektraFilmPort/NextLevelCamera.swift',
                 'ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift',
                 'ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift',
                 'ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift',
