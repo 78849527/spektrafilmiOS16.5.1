@@ -55,6 +55,7 @@ struct FloatingEditorWorkspace: View {
     // Build121: diagnostic copy is transient UI state, never a new optical
     // preference or a way to bypass the existing production dependencies.
     @State private var switchExplanation:SwitchExplanation?
+    @State private var precisionEdit:PrecisionRequest?
     // The fast/editor configuration is saved only when first entering a
     // source-pixel mode. Leaving that mode restores the exact user values,
     // not a hardcoded default set. Never persist a snapshot across images.
@@ -173,6 +174,106 @@ struct FloatingEditorWorkspace: View {
             model.scannerBlackWhiteEnabled=blackWhite
             model.exposureReferenceEnabled=exposureReference
         }
+    }
+
+    /// Build122: numeric editing is transient UI state; the model receives
+    /// a single validated Double on Confirm, not one optical render per key.
+    private struct PrecisionRequest:Identifiable {
+        let id=UUID()
+        let title:String
+        let current:Double
+        let range:ClosedRange<Double>
+        let increment:Double
+        let resetTo:Double
+        let unit:String
+        let apply:(Double)->Void
+    }
+
+    private struct PrecisionEntrySheet:View {
+        let request:PrecisionRequest
+        @Environment(\.dismiss) private var dismiss
+        @State private var input:String
+        @State private var error:String?
+        init(request:PrecisionRequest) {
+            self.request=request
+            _input=State(initialValue:String(request.current))
+        }
+        private var parsed:Double? {
+            Double(input.trimmingCharacters(in:.whitespacesAndNewlines)
+                .replacingOccurrences(of:"，",with:".")
+                .replacingOccurrences(of:",",with:"."))
+        }
+        private var valid:Bool {
+            guard let n=parsed else{return false}
+            return n.isFinite && request.range.contains(n)
+        }
+        private func nudge(_ delta:Double) {
+            let value=min(request.range.upperBound,
+                max(request.range.lowerBound,
+                    (parsed ?? request.current)+delta))
+            input=String(value)
+            error=nil
+        }
+        var body:some View {
+            VStack(alignment:.leading,spacing:10) {
+                Text(request.title).font(.headline)
+                Text("允许范围：\(request.range.lowerBound) ～ \(request.range.upperBound) \(request.unit)。支持直接输入小数；只在确认后更新渲染。")
+                    .font(.caption).foregroundColor(.secondary)
+                HStack(spacing:10) {
+                    Button("−") {nudge(-request.increment)}
+                        .font(.title2).frame(width:42,height:42)
+                    TextField("输入数值",text:$input)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numbersAndPunctuation)
+                        .multilineTextAlignment(.center)
+                        .font(.system(.body,design:.monospaced))
+                        .accessibilityLabel("输入"+request.title+"的精确数值")
+                    Button("+") {nudge(request.increment)}
+                        .font(.title2).frame(width:42,height:42)
+                }
+                if let error {
+                    Text(error).font(.caption).foregroundColor(.red)
+                }
+                HStack {
+                    Button("恢复默认") {
+                        input=String(request.resetTo)
+                        error=nil
+                    }
+                    Spacer()
+                    Button("取消") {dismiss()}
+                    Button("确认") {
+                        guard valid,let value=parsed else {
+                            error="数值无效或超过参数范围；未修改照片"
+                            return
+                        }
+                        request.apply(value)
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!valid)
+                }
+            }
+            .padding(18)
+            .presentationDetents([.height(258)])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func presentPrecision(
+        title:String,value:Binding<Double>,range:ClosedRange<Double>,
+        increment:Double,resetTo:Double,unit:String="",
+        onCommit:@escaping()->Void
+    ) {
+        guard model.hasPhoto && !model.busy else{return}
+        precisionEdit=PrecisionRequest(
+            title:title,current:value.wrappedValue,range:range,
+            increment:increment,resetTo:resetTo,unit:unit,
+            apply:{ exact in
+                guard model.hasPhoto && !model.busy else {return}
+                value.wrappedValue=exact
+                onCommit()
+            }
+        )
     }
 
     private struct SwitchExplanation:Identifiable {
@@ -708,6 +809,9 @@ struct FloatingEditorWorkspace: View {
                             )
                         }
                 }
+            }
+            .sheet(item:$precisionEdit) { request in
+                PrecisionEntrySheet(request:request)
             }
             .sheet(isPresented: $statusReportPresented,
                    onDismiss: onDiagnosticSheetDismissed) {
@@ -1559,7 +1663,7 @@ struct FloatingEditorWorkspace: View {
                     ScrollView(.vertical) {
                         dailySettings
                             .padding(.horizontal, 11)
-                            .padding(.bottom, 13)
+                            .padding(.bottom, 8)
                             .frame(maxWidth:.infinity,alignment:.leading)
                     }
                     .frame(maxHeight:.infinity)
@@ -1578,7 +1682,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var dailyColorSettings: some View {
-        VStack(alignment:.leading,spacing:6) {
+        VStack(alignment:.leading,spacing:4) {
             Text("冲印色调")
                 .font(.caption).fontWeight(.semibold)
             if isReversal {
@@ -1603,7 +1707,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var dailyTextureSettings: some View {
-        VStack(alignment:.leading,spacing:7) {
+        VStack(alignment:.leading,spacing:4) {
             Text("胶片质感")
                 .font(.caption).fontWeight(.semibold)
             if fullPhysicalMode {
@@ -1659,7 +1763,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var dailyDetailSettings: some View {
-        VStack(alignment:.leading,spacing:7) {
+        VStack(alignment:.leading,spacing:4) {
             Text("清晰度")
                 .font(.caption).fontWeight(.semibold)
             if fullPhysicalMode {
@@ -1876,7 +1980,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var processCameraSettings: some View {
-        VStack(alignment:.leading,spacing:7) {
+        VStack(alignment:.leading,spacing:4) {
             Text("拍摄阶段 · 光线进入胶片之前")
                 .font(.caption).fontWeight(.semibold)
             if fullPhysicalMode {
@@ -1953,7 +2057,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var processFilmSettings: some View {
-        VStack(alignment:.leading,spacing:7) {
+        VStack(alignment:.leading,spacing:4) {
             Text("胶片显影 · 乳剂密度与空间作用")
                 .font(.caption).fontWeight(.semibold)
             resetToggle("胶片层间扩散",value:$model.spatialDIREnabled,
@@ -2066,7 +2170,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var processPaperSettings: some View {
-        VStack(alignment:.leading,spacing:7) {
+        VStack(alignment:.leading,spacing:4) {
             Text("相纸印相 · 仅适用于彩色负片")
                 .font(.caption).fontWeight(.semibold)
             if !isReversal {
@@ -2092,7 +2196,7 @@ struct FloatingEditorWorkspace: View {
                             .onChange(of:model.printExposureCompensation) { _ in model.queueSpectralPreview() }
                     }
                     DisclosureGroup("滤色片 · C / M / Y") {
-                        VStack(alignment:.leading,spacing:6) {
+                        VStack(alignment:.leading,spacing:4) {
                             morphSlider("青色 C / CC",value:$model.printCyanShift,
                                         range:-40...40)
                             morphSlider("洋红 M / CC",value:$model.printMagentaShift,
@@ -2155,7 +2259,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var processScannerSettings: some View {
-        VStack(alignment:.leading,spacing:7) {
+        VStack(alignment:.leading,spacing:4) {
             Text(isReversal ? "反转片 → 直接扫描" : "相纸显影 → 扫描输出")
                 .font(.caption).fontWeight(.semibold)
             resetToggle("光谱扫描",value:$model.originalScannerEnabled,
@@ -2607,7 +2711,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var exposureSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(model.hanatosOriginalPrecisionEnabled
                  ? "原版双精度光谱响应 · 未近似存储"
                  : "移动快速 Float16 光谱响应 · 已量化")
@@ -2629,25 +2733,32 @@ struct FloatingEditorWorkspace: View {
                         }
                     Spacer(minLength: 0)
                     Button {
-                        guard model.hasPhoto && model.lut != nil && !model.busy else { return }
-                        model.strength = 1.0
-                        onRefresh()
+                        guard model.hasPhoto && model.lut != nil &&
+                            !model.busy && !directPixelMode else {return}
+                        // Show percent to the user while preserving the
+                        // underlying exact normalized 0...1 Double.
+                        presentPrecision(
+                            title:"效果强度",value:Binding(
+                                get:{model.strength*100},
+                                set:{model.strength=$0/100}
+                            ),range:0...100,increment:1,
+                            resetTo:100,unit:"%",onCommit:onRefresh
+                        )
                     } label: {
-                        Text("\(Int(model.strength * 100))%")
+                        Text(String(format:"%.1f%%",model.strength*100))
                             .font(.caption2).monospacedDigit()
-                            .frame(minWidth: 49, minHeight: 30, alignment: .trailing)
-                            .contentShape(Rectangle())
+                            .frame(minWidth:49,minHeight:25,alignment:.trailing)
                     }
                     .buttonStyle(.plain)
                     .disabled(!model.hasPhoto || model.lut == nil ||
                               model.busy || directPixelMode)
-                    .accessibilityLabel("效果强度，点击数值恢复默认 100%")
+                    .accessibilityLabel("效果强度，点击输入精确百分比")
                 }
-                Slider(value: $model.strength, in: 0...1, step: 0.05,
-                       onEditingChanged: { editing in
-                    if !editing { onRefresh() }
-                })
-                .disabled(!model.hasPhoto || model.lut == nil || directPixelMode)
+                CompactOpticalSlider(value:$model.strength,range:0...1,
+                                     onCommit:onRefresh)
+                    .frame(height:24)
+                    .disabled(!model.hasPhoto || model.lut == nil ||
+                              model.busy || directPixelMode)
                 if directPixelMode {
                     Text("原版像素通道固定 100% 强度；不允许混合近似 LUT。")
                         .font(.caption2).foregroundColor(.secondary)
@@ -2655,7 +2766,7 @@ struct FloatingEditorWorkspace: View {
             }
 
             Divider()
-            Text("点右侧数值恢复默认 · 双击左侧名称复原")
+            Text("点右侧数值精确输入 · 双击左侧名称复原")
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
@@ -2663,7 +2774,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var scannerSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             if model.originalScannerEnabled {
                 Text(model.scannerCAM16Enabled
                      ? "快速 CAM16 LUT · 查表插值"
@@ -2687,7 +2798,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var sharpeningSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             if model.scannerFinishingEnabled {
                 strengthControl("锐化强度",
                                 value: $model.scannerSharpenAmount,
@@ -2697,7 +2808,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var enlargerSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             if model.originalPrintOpticsEnabled && !isReversal {
                 Picker("放大机原版光源", selection: $model.printIlluminant) {
                     Text("TH-KG3（默认）")
@@ -2726,7 +2837,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var preflashSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             if model.preflashEnabled && model.originalPrintOpticsEnabled && !isReversal {
                 morphSlider("预闪曝光", value: $model.preflashExposure,
                             range: 0...0.2)
@@ -2742,7 +2853,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var morphologySettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             if model.printMorphEnabled && !isReversal {
                 morphSlider("总体伽马", value: $model.printGamma,
                             range: 0.65...1.45, resetTo: 1.0)
@@ -2760,7 +2871,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var halationSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             // In the explicitly selected whole-physical path the familiar
             // switches use the source's actual Double photon optics.
             // Outside that path these remain unchanged mobile CI controls.
@@ -2780,7 +2891,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var dirSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             Divider()
             if model.spatialDIREnabled {
                 resetToggle("DIR 原版 FIR/YVV", value: $model.spatialDIRSourceConvolutionEnabled,
@@ -2961,7 +3072,7 @@ struct FloatingEditorWorkspace: View {
     /// parameter views reuse the same model bindings/defaults; no engine
     /// changes and no duplicate user-facing owner in Advanced.
     private var sourceCameraOpticsDetailSettings: AnyView {
-        AnyView(VStack(alignment:.leading,spacing:6) {
+        AnyView(VStack(alignment:.leading,spacing:4) {
             if model.sourceCameraPreFilmEnabled && fullPhysicalMode {
                 morphSlider("高光恢复范围",
                             value:$model.sourceCameraHighlightBoostRange,
@@ -2977,7 +3088,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var processDIRDetailSettings: AnyView {
-        AnyView(VStack(alignment:.leading,spacing:6) {
+        AnyView(VStack(alignment:.leading,spacing:4) {
             resetToggle("DIR 原版 FIR/YVV",
                         value:$model.spatialDIRSourceConvolutionEnabled,
                         enabled:model.hasPhoto && !model.busy && !directPixelMode,
@@ -2994,7 +3105,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var sourceFilmHalationDetailSettings: AnyView {
-        AnyView(VStack(alignment:.leading,spacing:6) {
+        AnyView(VStack(alignment:.leading,spacing:4) {
             if fullPhysicalMode && model.sourceFilmHalationEnabled {
                 morphSlider("乳剂散射比例",
                             value:$model.sourceFilmScatterAmount,
@@ -3013,7 +3124,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var sourceScannerOpticalDetailSettings: AnyView {
-        AnyView(VStack(alignment:.leading,spacing:6) {
+        AnyView(VStack(alignment:.leading,spacing:4) {
             if fullPhysicalMode && model.sourceScannerOpticalEnabled {
                 morphSlider("源扫描镜头模糊 σ / px",
                             value:$model.sourceScannerLensBlurSigma,
@@ -3030,7 +3141,7 @@ struct FloatingEditorWorkspace: View {
 
     private var sourcePhysicalGrainSettings: AnyView {
         AnyView(
-            VStack(alignment:.leading,spacing:6) {
+            VStack(alignment:.leading,spacing:4) {
                 Text("三亚层颗粒 · 以下为原版染料云及微结构参数，保持原始值范围与默认值。")
                     .font(.caption2).foregroundColor(.secondary)
                 if model.sourcePhysicalGrainEnabled {
@@ -3062,7 +3173,7 @@ struct FloatingEditorWorkspace: View {
 
     private var sourceScannerGlareSettings: AnyView {
         AnyView(
-            VStack(alignment:.leading,spacing:6) {
+            VStack(alignment:.leading,spacing:4) {
                 Text("扫描 XYZ 眩光 · 参数直接作用于原版扫描阶段，非快速模式 RGB 后期。")
                     .font(.caption2).foregroundColor(.secondary)
                 if model.sourceScannerGlareEnabled {
@@ -3090,7 +3201,7 @@ struct FloatingEditorWorkspace: View {
 
     private var sourcePrintDiffusionSettings: AnyView {
         AnyView(
-            VStack(alignment:.leading,spacing:6) {
+            VStack(alignment:.leading,spacing:4) {
                 Text("原版印相扩散｜相纸曝光光子域 Double")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -3149,7 +3260,7 @@ struct FloatingEditorWorkspace: View {
 
     private var sourceCameraDiffusionSettings: AnyView {
         AnyView(
-            VStack(alignment:.leading,spacing:6) {
+            VStack(alignment:.leading,spacing:4) {
                 Text("摄影扩散原版 Double｜PSF + reflect FFT")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -3204,7 +3315,7 @@ struct FloatingEditorWorkspace: View {
 
     private var sourceCameraSpectralSettings: AnyView {
         AnyView(
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("光谱重建在「工艺 → 拍摄」上方选择；此面板直接调整 UV／IR 与 Hanatos 源码参数。")
                     .font(.caption2).foregroundColor(.secondary)
                 Text("Hanatos 原版 81 波长 TC 光谱重算支持 UV/IR；" +
@@ -3264,7 +3375,7 @@ struct FloatingEditorWorkspace: View {
     }
 
     private var grainSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             if model.grainEnabled {
                 resetToggle("实测三乳剂亚层", value: $model.grainSublayersEnabled,
                             enabled: model.hasPhoto && !model.busy)
@@ -3357,110 +3468,169 @@ struct FloatingEditorWorkspace: View {
         }
     }
 
-    private func exposureControl(_ title: String, value: Binding<Double>,
-                                 enabled: Bool, onCommit: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title).font(.caption)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        guard enabled else { return }
-                        value.wrappedValue = 0
-                        onCommit()
-                    }
-                Spacer(minLength: 0)
-                Button {
-                    guard enabled else { return }
-                    value.wrappedValue = 0
-                    onCommit()
-                } label: {
-                    Text(String(format: "%+.2f EV", value.wrappedValue))
-                        .font(.caption2).monospacedDigit()
-                        .frame(minWidth: 67, minHeight: 30, alignment: .trailing)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!enabled)
-                .accessibilityLabel("\(title)，点击数值恢复默认 0 EV")
-            }
-            Slider(value: value, in: -2...2, step: 0.25,
-                   onEditingChanged: { editing in
-                if !editing { onCommit() }
-            })
-            .disabled(!enabled)
-        }
-    }
-
-    private func morphSlider(_ title: String, value: Binding<Double>,
-                             range: ClosedRange<Double>,
-                             resetTo: Double = 0) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
+    private func exposureControl(_ title:String,value:Binding<Double>,
+                                 enabled:Bool,
+                                 onCommit:@escaping()->Void)->some View {
+        VStack(alignment:.leading,spacing:1) {
+            HStack(spacing:4) {
                 Text(title).font(.caption2)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        guard model.hasPhoto && !model.busy else { return }
-                        value.wrappedValue = resetTo
+                    .onTapGesture(count:2) {
+                        guard enabled && !model.busy else{return}
+                        value.wrappedValue=0
+                        onCommit()
+                    }
+                Spacer(minLength:0)
+                Button {
+                    guard enabled && !model.busy else{return}
+                    presentPrecision(
+                        title:title,value:value,range:-2...2,
+                        increment:0.01,resetTo:0,unit:"EV",
+                        onCommit:onCommit
+                    )
+                } label: {
+                    Text(String(format:"%+.2f EV",value.wrappedValue))
+                        .font(.caption2).monospacedDigit()
+                        .frame(minWidth:66,minHeight:25,alignment:.trailing)
+                }
+                .buttonStyle(.plain)
+                .disabled(!enabled || model.busy)
+                .accessibilityLabel(title+"，点击输入精确曝光 EV")
+            }
+            CompactOpticalSlider(value:value,range:-2...2,onCommit:onCommit)
+                .frame(height:24)
+                .disabled(!enabled || model.busy)
+        }
+    }
+
+    private func morphSlider(_ title:String,value:Binding<Double>,
+                             range:ClosedRange<Double>,
+                             resetTo:Double=0)->some View {
+        let increment:Double = (range.upperBound-range.lowerBound)>100
+            ? 0.1 : 0.01
+        return VStack(alignment:.leading,spacing:1) {
+            HStack(spacing:4) {
+                Text(title).font(.caption2)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count:2) {
+                        guard model.hasPhoto && !model.busy else{return}
+                        value.wrappedValue=resetTo
                         model.queueSpectralPreview()
                     }
-                Spacer(minLength: 0)
+                Spacer(minLength:0)
                 Button {
-                    guard model.hasPhoto && !model.busy else { return }
-                    value.wrappedValue = resetTo
-                    model.queueSpectralPreview()
+                    presentPrecision(
+                        title:title,value:value,range:range,
+                        increment:increment,resetTo:resetTo,
+                        onCommit:{model.queueSpectralPreview()}
+                    )
                 } label: {
-                    Text(String(format: "%.2f", value.wrappedValue))
+                    Text(String(format:"%.4f",value.wrappedValue))
                         .font(.caption2).monospacedDigit()
-                        .frame(minWidth: 59, minHeight: 30, alignment: .trailing)
-                        .contentShape(Rectangle())
+                        .frame(minWidth:61,minHeight:25,alignment:.trailing)
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.hasPhoto || model.busy)
-                .accessibilityLabel("\(title)，点击数值恢复默认 \(String(format: "%.2f", resetTo))")
+                .accessibilityLabel(title+"，点击可输入精确小数")
             }
-            Slider(value: value, in: range, step: 0.05,
-                   onEditingChanged: { editing in
-                if !editing { model.queueSpectralPreview() }
-            })
-            .disabled(!model.hasPhoto || model.busy)
+            CompactOpticalSlider(value:value,range:range,
+                onCommit:{model.queueSpectralPreview()})
+                .frame(height:24)
+                .disabled(!model.hasPhoto || model.busy)
         }
     }
 
-    private func strengthControl(_ title: String, value: Binding<Double>,
-                                 range: ClosedRange<Double>, suffix: String,
-                                 resetTo: Double) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title).font(.caption)
+    private func strengthControl(_ title:String,value:Binding<Double>,
+                                 range:ClosedRange<Double>,suffix:String,
+                                 resetTo:Double)->some View {
+        VStack(alignment:.leading,spacing:1) {
+            HStack(spacing:4) {
+                Text(title).font(.caption2)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        guard model.hasPhoto else { return }
-                        value.wrappedValue = resetTo
+                    .onTapGesture(count:2) {
+                        guard model.hasPhoto && !model.busy else{return}
+                        value.wrappedValue=resetTo
                         onRefresh()
                     }
-                Spacer(minLength: 0)
+                Spacer(minLength:0)
                 Button {
-                    guard model.hasPhoto && !model.busy else { return }
-                    value.wrappedValue = resetTo
-                    onRefresh()
+                    presentPrecision(
+                        title:title,value:value,range:range,
+                        increment:0.01,resetTo:resetTo,unit:suffix,
+                        onCommit:onRefresh
+                    )
                 } label: {
-                    Text(String(format: "%.2f", value.wrappedValue) + suffix)
+                    Text(String(format:"%.3f",value.wrappedValue)+suffix)
                         .font(.caption2).monospacedDigit()
-                        .frame(minWidth: 59, minHeight: 30, alignment: .trailing)
-                        .contentShape(Rectangle())
+                        .frame(minWidth:61,minHeight:25,alignment:.trailing)
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.hasPhoto || model.busy)
-                .accessibilityLabel("\(title)，点击数值恢复默认 \(String(format: "%.2f", resetTo))\(suffix)")
+                .accessibilityLabel(title+"，点击输入精确小数")
             }
-            Slider(value: value, in: range, step: 0.25,
-                   onEditingChanged: { editing in
-                if !editing { onRefresh() }
-            })
-            .disabled(!model.hasPhoto)
+            CompactOpticalSlider(value:value,range:range,onCommit:onRefresh)
+                .frame(height:24)
+                .disabled(!model.hasPhoto || model.busy)
         }
     }
 
+}
+
+
+/// Build122: compact native slider, 12-point knob and 3-point visual rail.
+/// Enlarged transparent hit testing remains independent from the tiny thumb.
+/// All render callbacks occur once on release; direct numeric entry stores
+/// the Double untouched by UISlider's display-only Float precision.
+private final class CompactOpticalUISlider:UISlider {
+    override func point(inside point:CGPoint,with event:UIEvent?)->Bool {
+        bounds.insetBy(dx:-8,dy:-10).contains(point)
+    }
+}
+private struct CompactOpticalSlider:UIViewRepresentable {
+    @Binding var value:Double
+    let range:ClosedRange<Double>
+    let onCommit:()->Void
+    private static let smallThumb:UIImage = {
+        let render=UIGraphicsImageRenderer(size:CGSize(width:12,height:12))
+        return render.image { ctx in
+            UIColor.systemBlue.setFill()
+            ctx.fillEllipse(in:CGRect(x:0.5,y:0.5,width:11,height:11))
+        }
+    }()
+    func makeCoordinator()->Coordinator {Coordinator(self)}
+    func makeUIView(context:Context)->CompactOpticalUISlider {
+        let slider=CompactOpticalUISlider()
+        slider.minimumTrackTintColor=.systemBlue
+        slider.maximumTrackTintColor=.tertiaryLabel
+        slider.setThumbImage(Self.smallThumb,for:.normal)
+        slider.setThumbImage(Self.smallThumb,for:.highlighted)
+        slider.isContinuous=true
+        slider.addTarget(context.coordinator,
+                         action:#selector(Coordinator.moved(_:)),for:.valueChanged)
+        slider.addTarget(context.coordinator,
+                         action:#selector(Coordinator.finished(_:)),
+                         for:[.touchUpInside,.touchUpOutside,.touchCancel])
+        return slider
+    }
+    func updateUIView(_ uiView:CompactOpticalUISlider,context:Context) {
+        context.coordinator.parent=self
+        uiView.minimumValue=Float(range.lowerBound)
+        uiView.maximumValue=Float(range.upperBound)
+        let clamped=Float(min(range.upperBound,max(range.lowerBound,value)))
+        if !uiView.isTracking || abs(uiView.value-clamped)>0.00001 {
+            uiView.value=clamped
+        }
+    }
+    final class Coordinator:NSObject {
+        var parent:CompactOpticalSlider
+        init(_ parent:CompactOpticalSlider) {self.parent=parent}
+        @objc func moved(_ slider:UISlider) {
+            parent.value=Double(slider.value)
+        }
+        @objc func finished(_ slider:UISlider) {
+            parent.onCommit()
+        }
+    }
 }
 
 /// Continuous UIKit recognition survives SwiftUI view refresh on iOS 16.5.1:
