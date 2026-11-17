@@ -37,7 +37,8 @@ assert raw_start < raw_decode < raw_return < jpeg_ingest,"JPEG remains RAW sourc
 assert "CIRAWFilter(imageURL: url)" in decoder
 assert "Build79RAWSignature.probeFile(url)" in decoder
 assert "render(" in decoder and "raw.outputImage" in decoder
-assert "CIImage(contentsOf:" not in decoder and "CIImage(data:" not in decoder
+decoder_code="\n".join(line for line in decoder.splitlines() if not line.lstrip().startswith("//"))
+assert "CIImage(contentsOf:" not in decoder_code and "CIImage(data:" not in decoder_code
 assert "if rawCompatible || inputProfile?.directCompatible != true" in editor
 assert "rawFastModeActive=rawCompatible" in editor
 assert "capturedRAWURL=rawURL" in editor
