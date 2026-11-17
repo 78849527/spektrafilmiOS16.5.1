@@ -1130,18 +1130,18 @@ struct FloatingEditorWorkspace: View {
                 editorTab(.film)
                 editorTab(.adjustment)
                 editorTab(.workflow)
-                // The algorithm laboratory is still accessible, but it is
-                // NOT an equal fourth production workflow. Keep the tested
-                // lazy-mount/dismount behavior after selecting its page.
+                // Build120: Advanced is now ONLY verification/diagnostics.
+                // Actual image-affecting controls live in the process stages.
+                // Keep the lazily mounted lab overview for iOS16.5.1 safety.
                 Menu {
-                    Button("专业参数与验证状态") {
-                        selectEditorPage(.laboratory)
-                    }
                     Button("验证状态与诊断") {
                         statusReportPresented=true
                     }
+                    Button("验证概况") {
+                        selectEditorPage(.laboratory)
+                    }
                 } label: {
-                    Text(selectedEditorPage == .laboratory ? "实验室" : "高级")
+                    Text("高级")
                         .font(.system(size:12,weight:.semibold))
                         .foregroundColor(selectedEditorPage == .laboratory
                                          ? .accentColor : .primary)
@@ -1150,7 +1150,7 @@ struct FloatingEditorWorkspace: View {
                         .background(Color.primary.opacity(0.06),
                                     in:Capsule())
                 }
-                .accessibilityLabel("高级菜单：实验参数和验证状态")
+                .accessibilityLabel("高级菜单：仅验证状态与开发者诊断")
                 Spacer(minLength: 0)
                 if selectedEditorPage == .adjustment {
                     Button {
@@ -1522,10 +1522,10 @@ struct FloatingEditorWorkspace: View {
                 Text("当前输入无原版像素直连数据；继续使用快速冲印，不会假装为 Float64 精确路径。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if directPixelMode && !fullPhysicalMode {
-                Text("当前为兼容处理。可切换快速冲印，或确认启用精细冲印依赖。")
+                Text("当前为 8-bit DIR 像素处理；精细冲印需要另外确认原版全光学依赖。")
                     .font(.caption2).foregroundColor(.secondary)
             } else if fullPhysicalMode {
-                Text("Float64 受控真机 PASS；13MP、RAW 与 Python 原版整图仍未认证。")
+                Text("13MP 基础三亚层双路线已真机渲染；完整 RAW／ICC 和 Python 原版整图仍未认证。")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -1631,6 +1631,12 @@ struct FloatingEditorWorkspace: View {
             VStack(alignment:.leading,spacing:5) {
                 currentMaterialSummary
                 processingModeBar.padding(.horizontal,10)
+                if !fullPhysicalMode {
+                    // Keep the old 8-bit DIR path available independent of
+                    // the Float64 physical button. Same confirm-first gate.
+                    sourceModeControl("8-bit 原版 DIR 像素直连（实验）",mode:.pixel)
+                        .padding(.horizontal,10)
+                }
                 if fullPhysicalMode {
                     sourceColorRouteControls
                         .padding(.horizontal,10)
@@ -1714,7 +1720,29 @@ struct FloatingEditorWorkspace: View {
                 Text("快速冲印保留现有的相机曝光与色彩预处理，不会自动启用实验光谱算法。")
                     .font(.caption2).foregroundColor(.secondary)
             }
-            Text("UV／IR 与光谱重算详细参数在高级，已通过受控的光学功能在工艺中使用。")
+            if fullPhysicalMode {
+                DisclosureGroup("光谱重建 · UV / IR 参数") {
+                    sourceCameraSpectralSettings
+                }
+                .font(.caption)
+                if model.sourceCameraPreFilmEnabled {
+                    DisclosureGroup("高光恢复与摄影镜头参数") {
+                        sourceCameraOpticsDetailSettings
+                    }
+                    .font(.caption)
+                    if model.sourceCameraDiffusionEnabled {
+                        DisclosureGroup("摄影扩散 · 原版 PSF 参数") {
+                            sourceCameraDiffusionSettings
+                        }
+                        .font(.caption)
+                    }
+                }
+            } else {
+                simpleToggle("64位",value:$model.hanatosOriginalPrecisionEnabled) {
+                    model.queueSpectralPreview()
+                }
+            }
+            Text("参数直接控制当前拍摄处理阶段；原版精确与快速模式严格区分。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1783,7 +1811,51 @@ struct FloatingEditorWorkspace: View {
                         model.queueSpectralPreview()
                     }
             }
-            Text("颗粒模式：快速近似／原版固定种子单线程／原版无固定种子多线程（统计验证）。三种模式严格分离。")
+            if model.spatialDIREnabled {
+                DisclosureGroup("层间扩散 · 原版 FIR/YVV 参数") {
+                    processDIRDetailSettings
+                }
+                .font(.caption)
+            }
+            if model.halationEnabled {
+                DisclosureGroup("背反射光晕 · 强度参数") {
+                    halationSettings
+                }
+                .font(.caption)
+            }
+            if fullPhysicalMode {
+                if model.sourceFilmHalationEnabled {
+                    DisclosureGroup("乳剂散射＋背反射 · 专业参数") {
+                        sourceFilmHalationDetailSettings
+                    }
+                    .font(.caption)
+                }
+                if model.sourcePhysicalGrainEnabled {
+                    DisclosureGroup("三亚层颗粒 · 染料云与微结构参数") {
+                        sourcePhysicalGrainSettings
+                    }
+                    .font(.caption)
+                }
+            } else if model.grainEnabled {
+                DisclosureGroup("快速颗粒 · 专业参数") {
+                    grainSettings
+                    if model.grainSublayersEnabled {
+                        if model.grainOriginalMetalEnabled {
+                            simpleToggle("SciPy",
+                                         value:$model.grainOriginalSciPyEnabled) {
+                                onRefresh()
+                            }
+                        }
+                        simpleToggle("Poisson",
+                                     value:$model.grainDiscreteParticlesEnabled,
+                                     allowed:!model.grainOriginalMetalEnabled) {
+                            onRefresh()
+                        }
+                    }
+                }
+                .font(.caption)
+            }
+            Text("快速颗粒／原版固定种子／原版无种子多线程三条路线保持独立。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -1847,7 +1919,31 @@ struct FloatingEditorWorkspace: View {
                             }
                     }
                 }
-                Text("原版 CMY 滤色片可在此展开；相纸显影曲线等源码参数保留高级。")
+                if model.printMorphEnabled {
+                    DisclosureGroup("相纸 s023 · 显影曲线参数") {
+                        morphologySettings
+                    }
+                    .font(.caption)
+                }
+                if model.originalPrintOpticsEnabled {
+                    DisclosureGroup("放大机 · 光源与滤色数据库") {
+                        enlargerSettings
+                    }
+                    .font(.caption)
+                    if model.preflashEnabled {
+                        DisclosureGroup("预闪光 · 曝光与 M / Y 滤色") {
+                            preflashSettings
+                        }
+                        .font(.caption)
+                    }
+                    if fullPhysicalMode && model.printSourceDiffusionEnabled {
+                        DisclosureGroup("印相扩散 · 原版 PSF 参数") {
+                            sourcePrintDiffusionSettings
+                        }
+                        .font(.caption)
+                    }
+                }
+                Text("CMY、放大机、预闪、乳剂曲线和印相扩散都在相纸阶段。")
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -1922,7 +2018,21 @@ struct FloatingEditorWorkspace: View {
                                     range:0...1.5,suffix:"×",resetTo:0.7)
                 }
             }
-            Text("精细 CAM16-UCS 在上方选路线；扫描眩光参数和未认证校准留在高级。")
+            if fullPhysicalMode {
+                if model.sourceScannerGlareEnabled && !isReversal {
+                    DisclosureGroup("原版扫描 XYZ 眩光参数") {
+                        sourceScannerGlareSettings
+                    }
+                    .font(.caption)
+                }
+                if model.sourceScannerOpticalEnabled {
+                    DisclosureGroup("原版扫描镜头与 Unsharp 参数") {
+                        sourceScannerOpticalDetailSettings
+                    }
+                    .font(.caption)
+                }
+            }
+            Text("精细 CAM16-UCS 在上方选路线；扫描校准与光学参数均在此管理。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
@@ -2174,27 +2284,33 @@ struct FloatingEditorWorkspace: View {
     // to adjustmentControls.getter, followed by STACK GUARD SIGSEGV.
     // Avoid a giant nested SwiftUI opaque type; each child is explicitly
     // type-erased BEFORE composing it with parent views.
+    /// Build120: Advanced no longer hosts *any* image-changing switches.
+    /// The old disconnected feature functions remain source-defined only
+    /// as compatibility helpers; all visible controls are in 工艺 stages.
     private var advancedControls: AnyView {
         AnyView(
-            VStack(spacing: 3) {
-                HStack(spacing: 5) {
-                    Text("高级参数与验收 · 已验证功能不等于待认证")
-                        .font(.caption2).foregroundColor(.secondary)
-                    Spacer(minLength: 2)
-                    Text(fullPhysicalMode ? "Float64 · 受控 PASS" : "快速 / 专业")
-                        .font(.caption2).foregroundColor(.secondary)
+            ScrollView(.vertical) {
+                VStack(alignment:.leading,spacing:12) {
+                    Text("高级 · 验证与诊断")
+                        .font(.headline)
+                    Text("Build119：13MP 基础三亚层 SciPy／Numba 双路线真机实渲染已通过；RAW、ICC、其他全光学组合与 Python 整图数值仍待认证。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=true
+                    } label: {
+                        Label("查看验证状态与诊断报告",
+                              systemImage:"checkmark.shield")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("这里不改变任何拍摄、显影、印相或扫描参数。完整处理参数请到「工艺」的对应阶段展开。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 11)
-                Text("受控通过：28 核心＋20 颗粒阶段、四色域、1/2MP；工艺中直接使用相应功能。")
-                    .font(.caption2).foregroundColor(.secondary)
-                    .padding(.horizontal,11)
-                Text("尚未认证：13MP 全光学、Python 整图、RAW/高位深全链、默认多线程随机。")
-                    .font(.caption2).foregroundColor(.secondary)
-                    .padding(.horizontal,11)
-                featureRow
-                simpleSwitchRow
-                Divider().padding(.horizontal, 8)
-                adjustmentDetailContent
+                .padding(.horizontal,11)
+                .padding(.vertical,13)
+                .frame(maxWidth:.infinity,alignment:.leading)
             }
         )
     }
@@ -2616,6 +2732,77 @@ struct FloatingEditorWorkspace: View {
     /// Batch v1.8.48: 3 measured emulsion sublayers × CMY in ORIGINAL
     /// film optical density before enlarger/scanner, not mobile post-RGB.
     /// Separate AnyView keeps the iOS16 adjustment tree compact.
+    /// Build120: owned only by the matching "工艺" stage. These
+    /// parameter views reuse the same model bindings/defaults; no engine
+    /// changes and no duplicate user-facing owner in Advanced.
+    private var sourceCameraOpticsDetailSettings: AnyView {
+        AnyView(VStack(alignment:.leading,spacing:6) {
+            if model.sourceCameraPreFilmEnabled && fullPhysicalMode {
+                morphSlider("高光恢复范围",
+                            value:$model.sourceCameraHighlightBoostRange,
+                            range:0...1,resetTo:0.3)
+                morphSlider("高光保护 EV",
+                            value:$model.sourceCameraHighlightProtectEV,
+                            range:0...8,resetTo:4)
+                morphSlider("原版摄影镜头模糊 μm",
+                            value:$model.sourceCameraLensBlurUM,
+                            range:0...80,resetTo:0)
+            }
+        })
+    }
+
+    private var processDIRDetailSettings: AnyView {
+        AnyView(VStack(alignment:.leading,spacing:6) {
+            resetToggle("DIR 原版 FIR/YVV",
+                        value:$model.spatialDIRSourceConvolutionEnabled,
+                        enabled:model.hasPhoto && !model.busy && !directPixelMode,
+                        resetTo:true)
+                .onChange(of:model.spatialDIRSourceConvolutionEnabled) { _ in
+                    model.queueSpectralPreview()
+                }
+            strengthControl("抑制剂扩散范围",
+                            value:$model.spatialDIRRadiusScale,
+                            range:0.25...3.0,suffix:"×",resetTo:1.0)
+            Text("层间扩散使用原版 reflect FIR/YVV；快速模式保留独立 CI 路线。")
+                .font(.caption2).foregroundColor(.secondary)
+        })
+    }
+
+    private var sourceFilmHalationDetailSettings: AnyView {
+        AnyView(VStack(alignment:.leading,spacing:6) {
+            if fullPhysicalMode && model.sourceFilmHalationEnabled {
+                morphSlider("乳剂散射比例",
+                            value:$model.sourceFilmScatterAmount,
+                            range:0...1,resetTo:1)
+                morphSlider("乳剂散射空间倍率",
+                            value:$model.sourceFilmScatterScale,
+                            range:0...3,resetTo:1)
+                morphSlider("背反射光晕比例",
+                            value:$model.sourceFilmHalationAmount,
+                            range:0...2,resetTo:1)
+                morphSlider("背反射空间倍率",
+                            value:$model.sourceFilmHalationScale,
+                            range:0...3,resetTo:1)
+            }
+        })
+    }
+
+    private var sourceScannerOpticalDetailSettings: AnyView {
+        AnyView(VStack(alignment:.leading,spacing:6) {
+            if fullPhysicalMode && model.sourceScannerOpticalEnabled {
+                morphSlider("源扫描镜头模糊 σ / px",
+                            value:$model.sourceScannerLensBlurSigma,
+                            range:0...8,resetTo:0)
+                morphSlider("源扫描 Unsharp σ / px",
+                            value:$model.sourceScannerUnsharpSigma,
+                            range:0...8,resetTo:1)
+                morphSlider("源扫描 Unsharp 强度",
+                            value:$model.sourceScannerUnsharpAmount,
+                            range:0...2,resetTo:0.7)
+            }
+        })
+    }
+
     private var sourcePhysicalGrainSettings: AnyView {
         AnyView(
             VStack(alignment:.leading,spacing:6) {
