@@ -49,6 +49,7 @@ enum OriginalSourcePhysicalImage {
     static func validateMemoryBudget(
         width:Int,height:Int,
         additionalBytesPerPixel:UInt64=0,
+        alreadyCommittedInputBytes:UInt64=0,
         physicalMemory:UInt64?=nil,
         processAvailableMemory:UInt64?=nil,
         cameraDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
@@ -82,7 +83,9 @@ enum OriginalSourcePhysicalImage {
             physicalMemory:physical,processAvailable:headroom,
             camera:cameraDiffusion,paper:paperDiffusion
         )
-        try Build91PhysicalMemory.validate(plan)
+        try Build91PhysicalMemory.validate(
+            plan,alreadyCommittedInputBytes:alreadyCommittedInputBytes
+        )
     }
 
     struct Parameters {
@@ -289,6 +292,14 @@ enum OriginalSourcePhysicalImage {
     ) throws {
         try parameters.validate()
         let w=frame.width,h=frame.height
+        // The already-owned input is exactly one Float64 RGB frame.
+        // No credit for scratch, allocator margin or future releases.
+        guard w>0,h>0,w<=maximumPixels/h,
+              frame.rgb.count==w*h*3 else {
+            throw Failure.invalid("Build119 已分配 RGB Double 输入尺寸不合法")
+        }
+        let committedInputBytes=UInt64(frame.rgb.count) *
+            UInt64(MemoryLayout<Double>.stride)
         let activePrintDiffusion=parameters.printDiffusion.active &&
             parameters.printDiffusion.strength>0 &&
             parameters.printDiffusion.spatialScale>0
@@ -332,6 +343,7 @@ enum OriginalSourcePhysicalImage {
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:extraPeakBytesPerPixel,
+            alreadyCommittedInputBytes:committedInputBytes,
             cameraDiffusion:cameraFFT,paperDiffusion:paperFFT
         )
         guard frame.rgb.count==w*h*3,
