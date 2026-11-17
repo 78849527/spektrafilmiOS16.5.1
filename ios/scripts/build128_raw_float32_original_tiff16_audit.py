@@ -30,7 +30,8 @@ for proof in [
     "profile.declaredDepth==32",
     "profile.decodedDepth==32",
     "profile.floatingComponents",
-    "profile.color == .extendedSRGB",
+    "(profile.color == .extendedSRGB ||",
+    "profile.color == .sRGB)",
     "profile.directCompatible",
     "try? FileManager.default.removeItem(at:file)",
 ]:
@@ -73,6 +74,7 @@ assert "private func currentRecipeInputContract() -> String?" in s
 assert "guard let p=photoInputProfile else {return nil}" in s
 assert "guard sourcePixelIOEnabled,let p=photoInputProfile" not in s
 assert '"float32ExtendedSRGB"' in recipe
+assert '"float32SRGB"' in recipe
 assert "missing" not in recipe[:100]
 assert "static func exportPhysicalOriginalFile(" in original
 assert "Build90NativeOutputWriter.write(" in original
@@ -84,5 +86,5 @@ assert "convertActiveRAWToFloat32ExtendedSRGBCopy()" not in capture
 assert "data:nil,rawURL:rawFile,rawCompatible:true" in capture
 assert "JPEG 伴随片没有进入编辑器" in capture
 assert "rawFastModeActive=rawCompatible" in s
-print("PASS Build128: opt-in DNG→Float32 TIFF extended sRGB, original Float64 optical TIFF16, preserved 8-bit recipes and fail-closed memory")
+print("PASS Build128/129: opt-in DNG→Float32 TIFF with actual sRGB/extended ICC checks, original Float64 TIFF16, preserved 8-bit recipes")
 print("NOT CERTIFIED: Apple CIRAWFilter versus original Python rawpy numeric parity or full-image iOS16.5.1 hardware render")
