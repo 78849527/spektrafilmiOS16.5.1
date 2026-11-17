@@ -274,6 +274,7 @@ enum Build108SourceOpticalDeviceStress {
         var count=0
         var sum:Double?
         var firstFailure:String?
+        var lateAdmissionRefused=false
         do {
             let callback:((String)->Void)? = phaseSink.map { sink in
                 return { (name:String) in
@@ -293,6 +294,10 @@ enum Build108SourceOpticalDeviceStress {
             count=actual.samples
             sum=actual.checksum
         } catch {
+            // Build119: an inner memory guard rejection is not an actual
+            // full-resolution render failure. Report it as admission refused
+            // and retain the exact source error and sampled RSS.
+            lateAdmissionRefused=error is Build91PhysicalMemory.Failure
             firstFailure=error.localizedDescription
         }
         let elapsed=ProcessInfo.processInfo.systemUptime-start
@@ -306,7 +311,8 @@ enum Build108SourceOpticalDeviceStress {
             measuredFrame:sum != nil,
             original3x3GrainActive:g.grain,
             status:firstFailure==nil ? "real_source_float64_render_pass" :
-                "real_source_render_failed_or_unmeasured",
+                (lateAdmissionRefused ? "refused_by_production_memory_gate" :
+                    "real_source_render_failed_or_unmeasured"),
             estimatedProductionBudgetBytes:budget,
             beforeResidentBytes:before,
             sampledPeakResidentBytes:peak.peak,
@@ -678,7 +684,7 @@ enum Build108SourceOpticalDeviceStress {
         default: shape=(0,0)
         }
         let target=physicalDevice && osVersion=="16.5.1" &&
-            build=="118" && shape.0>0 &&
+            build=="119" && shape.0>0 &&
             commit.count==40 && commit.allSatisfy {
                 "0123456789abcdef".contains($0)
             }
@@ -713,7 +719,7 @@ enum Build108SourceOpticalDeviceStress {
             var samples=[StageRSS]()
             let value:OpticalCase
             if !target {
-                value=skipped(g,"必须为源码 SHA 绑定的 Build118 iOS16.5.1 真机")
+                value=skipped(g,"必须为源码 SHA 绑定的 Build119 iOS16.5.1 真机")
             } else if !safe || checkpointFailure != nil {
                 value=skipped(g,"Jetsam 检查点无法写入，停止大图渲染")
             } else if let executionFailure {
@@ -751,7 +757,10 @@ enum Build108SourceOpticalDeviceStress {
             failedCaseCount:failed,notRunCaseCount:notRun,
             bothRoutesRendered:passed==2 && checkpointFailure==nil,
             firstFailure:checkpointFailure ?? executionFailure ??
-                (target ? nil : "非 Build118 iOS16.5.1 真机"),
+                results.first(where:{
+                    $0.optical.status=="refused_by_production_memory_gate"
+                })?.optical.firstFailure ??
+                (target ? nil : "非 Build119 iOS16.5.1 真机"),
             generatedUTC:ISO8601DateFormatter().string(from:Date()),
             limitations:[
                 "Separate size selection: two source-grain routes for one selected resolution only",
@@ -774,13 +783,13 @@ enum Build108SourceOpticalDeviceStress {
         try FileManager.default.createDirectory(
             at:folder,withIntermediateDirectories:true
         )
-        let prefix="Build118-\(report.megapixels)MP-grain-memory-"+UUID().uuidString
+        let prefix="Build119-\(report.megapixels)MP-grain-memory-"+UUID().uuidString
         let log=folder.appendingPathComponent(prefix+".log")
         let json=folder.appendingPathComponent(prefix+".json")
         let encoder=JSONEncoder()
         encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
         try encoder.encode(report).write(to:json,options:.atomic)
-        var text="Build118 independent \(report.megapixels)MP SciPy and Numba 3x3 Float64\n"
+        var text="Build119 independent \(report.megapixels)MP SciPy and Numba 3x3 Float64\n"
         text+="App \(report.appVersion) Build\(report.appBuild) SHA \(report.compiledSourceCommit)\n"
         text+="iOS \(report.osVersion), physical \(report.physicalDevice)\n"
         text+="Measured \(report.measuredCaseCount)/2; refused \(report.refusedCaseCount); failed \(report.failedCaseCount); not-run \(report.notRunCaseCount)\n"
