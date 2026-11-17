@@ -42,7 +42,7 @@ assert minimum_build(project,112) and minimum_minor(project,78)
 assert ui.count("value:$model.sourceScannerGlareEnabled")==1
 assert 'resetToggle("扫描眩光 · 受控单线程"' in ui
 assert "固定 seed=8888 · 单线程受控" in ui
-assert "扫描 XYZ 眩光开关：工艺 → 扫描" in ui
+assert 'DisclosureGroup("原版扫描 XYZ 眩光参数")' in ui
 # The original enlarger controls now live in the paper process stage.
 assert ui.count('morphSlider("青色 C / CC"')==1
 assert ui.count('morphSlider("洋红 M / CC"')==1
