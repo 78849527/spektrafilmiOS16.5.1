@@ -146,3 +146,14 @@ before rendering; RAW at 40MP is rejected explicitly. This is a known
 P1 limitation requiring real device peak-memory / larger-source geometry
 engineering, not full RAW input parity. The code must pass native macOS
 compile and real iPhone numeric/device tests before feature certification.
+
+## Unified iPhoneOS test build (P1 candidate, not scientific completion)
+
+Build132 / v1.8.98 retains the same development branch. It runs the
+carried-forward optical regressions, P1 source topology audits,
+Python original negative/superwhite/CCTF oracle, and synthetic 16-bit
+RAW Float32 reference mismatch gate before iPhoneOS arm64 build.
+Its unsigned IPA, if produced, is for device triage and signature
+verification only. No real camera RAW pair has yet passed rawpy/native
+bitwise comparison; 40MP full-frame optical processing remains unported.
+Do not mark P1 complete based on a CI build or mock selftest.
