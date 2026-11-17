@@ -2128,6 +2128,7 @@ struct ContentView: View {
                 onRunBuild114FourGates: { runBuild114FourGates() },
                 onRunBuild115ParallelGrain: { runBuild115ParallelGrain() },
                 onRunBuild116GrainMemory: { runBuild116GrainMemory() },
+                onRunBuild118LargeMemory: { mp in runBuild118LargeMemory(mp) },
                 onDiagnosticSheetDismissed: {
                     diagnosticDismissPending=false
                     if let pair=diagnosticPendingFeedback {
@@ -2731,6 +2732,80 @@ struct ContentView: View {
                 }
             } catch {
                 model.status="Build116 保存真实 RSS 报告失败："+error.localizedDescription
+                message=error.localizedDescription
+            }
+        }
+    }
+
+
+    /// Build118: one selected 8 / 10 / 13MP route pair per user action.
+    private func runBuild118LargeMemory(_ megapixels:Int) {
+        guard !model.busy,[8,10,13].contains(megapixels) else {return}
+        let bundle=Bundle.main
+        let version=bundle.object(forInfoDictionaryKey:"CFBundleShortVersionString")
+            as? String ?? "unknown"
+        let build=bundle.object(forInfoDictionaryKey:"CFBundleVersion")
+            as? String ?? "unknown"
+        let sha=bundle.object(forInfoDictionaryKey:"SFSourceCommit")
+            as? String ?? "missing"
+        let system=UIDevice.current.systemVersion
+        #if targetEnvironment(simulator)
+        let physical=false
+        #else
+        let physical=true
+        #endif
+        guard let docs=FileManager.default.urls(
+            for:.documentDirectory,in:.userDomainMask
+        ).first else {
+            model.status="Build118 无法访问文件目录"
+            return
+        }
+        let folder=docs.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true
+        )
+        let checkpoint=folder.appendingPathComponent(
+            "Build118-last-\(megapixels)MP-checkpoint.txt"
+        )
+        do {
+            try FileManager.default.createDirectory(
+                at:folder,withIntermediateDirectories:true
+            )
+            let initial="status=INCOMPLETE_OR_NOT_RUN\napp=\(version) build=\(build) sha=\(sha)\nselected=\(megapixels)MP\n高风险内存测试未完成；系统闪退请保留本文件。\n"
+            try initial.write(to:checkpoint,atomically:true,encoding:.utf8)
+        } catch {
+            model.status="Build118 检查点保存失败："+error.localizedDescription
+            return
+        }
+        diagnosticDismissPending=true
+        model.busy=true
+        model.status="Build118：单独执行 \(megapixels)MP SciPy／Numba Float64 真实颗粒测试…"
+        Task { @MainActor in
+            defer {model.busy=false}
+            let proof=await Task.detached(priority:.userInitiated) {
+                Build108SourceOpticalDeviceStress.captureBuild118Large(
+                    megapixels:megapixels,version:version,build:build,
+                    commit:sha,osVersion:system,physicalDevice:physical,
+                    checkpointURL:checkpoint
+                )
+            }.value
+            do {
+                let pair=try Build108SourceOpticalDeviceStress.writeBuild118Large(
+                    proof,documents:docs
+                )
+                let state=proof.bothRoutesRendered
+                    ? "BOTH_ROUTES_RENDERED" : "REFUSED_FAILED_OR_INCOMPLETE"
+                let summary="status=\(state)\napp=\(version) build=\(build) sha=\(sha)\nsize=\(megapixels)MP\npassed=\(proof.measuredCaseCount)/2 refused=\(proof.refusedCaseCount)\n"
+                try summary.write(to:checkpoint,atomically:true,encoding:.utf8)
+                model.status=proof.bothRoutesRendered
+                    ? "Build118 \(megapixels)MP 双路线实渲染 PASS；非 Python 整图认证"
+                    : "Build118 \(megapixels)MP：实渲染 \(proof.measuredCaseCount)/2，拒绝 \(proof.refusedCaseCount)，失败 \(proof.failedCaseCount)"
+                if diagnosticDismissPending {
+                    diagnosticPendingFeedback=pair
+                } else {
+                    activeSheet = .shareFeedback(pair.log,pair.json)
+                }
+            } catch {
+                model.status="Build118 报告保存失败："+error.localizedDescription
                 message=error.localizedDescription
             }
         }
