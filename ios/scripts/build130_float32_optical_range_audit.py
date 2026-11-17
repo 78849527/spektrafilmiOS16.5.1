@@ -71,6 +71,9 @@ for token in [
     if token=="original unchanged":continue
     assert token in test,token
 assert "try Build130Float32RangeCopyValidation.evaluate()" in runner
-assert 'UInt8(' not in entry and "JPEG" not in entry.split("static func makeMappedWorkingCopy",1)[1]
+assert 'bitsPerComponent:32' in entry
+assert 'CGImageDestinationCreateWithData(' in entry
+assert '.RGBA8' not in entry and 'format:.RGBA8' not in entry
+assert '.jpeg' not in entry and 'LossyCompressionQuality' not in entry
 print("PASS Build130: original Float64 source range guard retained; real IEEE Float32 opt-in global affine map only, ICC/alpha/memory/full output checked, original DNG unchanged")
 print("NOT CERTIFIED: Apple RAW rawpy parity, iOS16.5.1 user photo exact look after opt-in gamut mapping")
