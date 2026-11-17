@@ -104,6 +104,7 @@ enum Build129FloatSRGBIngressValidation {
                     "既有 JPEG8 sRGB 不应被误拒绝")
         try require(inspection(.sRGB,16,false).directCompatible,
                     "既有 sRGB 整数16 TIFF 不应回退")
+        try Build130Float32RangeCopyValidation.evaluate()
         print("PASS Build129 real CI RGBAf TIFF → actual " +
               actual.admission.color.rawValue +
               " ICC/Float32 8×6 ImageIO → Build78 CPU Double;" +
