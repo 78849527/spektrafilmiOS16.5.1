@@ -53,11 +53,23 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
     return [self decodeURL:url
           bitsPerComponent:bits
          sourceLinearACES:NO
+    maximumAllowedPixels:0
                     error:error];
 }
 + (SFBuild94RawResult *)decodeURL:(NSURL *)url
                  bitsPerComponent:(NSInteger)bits
                 sourceLinearACES:(BOOL)sourceLinearACES
+                           error:(NSError **)error {
+    return [self decodeURL:url
+          bitsPerComponent:bits
+         sourceLinearACES:sourceLinearACES
+    maximumAllowedPixels:0
+                    error:error];
+}
++ (SFBuild94RawResult *)decodeURL:(NSURL *)url
+                 bitsPerComponent:(NSInteger)bits
+                sourceLinearACES:(BOOL)sourceLinearACES
+           maximumAllowedPixels:(NSInteger)maximumAllowedPixels
                            error:(NSError **)error {
     if (bits != 8 && bits != 16) {
         SFBuild94Fail(error, 6, @"LibRaw 解码位深仅支持显式 8 或 16 bit");
@@ -89,6 +101,23 @@ static void SFBuild94Fail(NSError **outError, NSInteger code, NSString *message)
         }
         const uint64_t w = (uint64_t)raw->sizes.width;
         const uint64_t h = (uint64_t)raw->sizes.height;
+        // Strict source optical ceiling, enforced on the raw metadata
+        // BEFORE libraw_unpack/demosaic/large RGB memory allocations.
+        // max=0 keeps the pre-existing 45MP legacy behaviour unchanged.
+        if (maximumAllowedPixels < 0) {
+            SFBuild94Fail(error, 10, @"P1：全光学原始尺寸上限必须为正数");
+            break;
+        }
+        if (maximumAllowedPixels > 0 && w && h &&
+            w <= UINT64_MAX / h &&
+            w * h > (uint64_t)maximumAllowedPixels) {
+            SFBuild94Fail(error, 11, [NSString stringWithFormat:
+                @"P1：真实 RAW 为 %llu×%llu，超过本机当前全光学 %ld 像素上限；"
+                 "解包前拒绝，不降尺寸、不改数据、不转快速模式",
+                (unsigned long long)w, (unsigned long long)h,
+                (long)maximumAllowedPixels]);
+            break;
+        }
         // Explicit limit: avoid accidental multi-gigabyte 40MP+ allocations.
         if (!w || !h || w > 10000 || h > 10000 ||
             w > UINT64_MAX / h || w * h > 45000000) {

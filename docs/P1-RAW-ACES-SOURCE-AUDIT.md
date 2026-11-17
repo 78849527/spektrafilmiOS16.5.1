@@ -78,3 +78,14 @@ This function is **diagnostic-only** until a real iOS16.5.1 compile, decoder
 comparison, exact stage taps and memory accounting have passed. The existing
 13MP ceiling remains enforced explicitly; do not misrepresent it as an
 upstream Python limitation. The current app UI is unchanged.
+
+## Early large-RAW admission
+
+`SFBuild94LibRaw.decode(... maximumAllowedPixels:)` checks the true
+LibRaw RAW header dimensions **before** unpack/demosaic. The candidate
+source engine sets that ceiling to the existing 13MP optical policy.
+The existing sRGB fast routes and decoder-only RAW pixel comparison use
+`maximumAllowedPixels=0` and keep their old 45MP decoder limits.
+This prevents allocating a 40MP RAW frame only to fail the current
+full-optical memory/geometry check. It does NOT implement 40MP optical
+processing or establish optical engine RAW parity.

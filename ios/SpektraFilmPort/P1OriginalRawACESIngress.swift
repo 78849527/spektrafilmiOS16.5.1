@@ -23,14 +23,17 @@ enum P1OriginalRawACESIngress {
         let sourceCCTFEncoded = false
     }
 
-    static func open(_ url: URL) throws -> Source {
+    static func open(
+        _ url: URL, maximumAllowedPixels: Int = 0
+    ) throws -> Source {
         guard try Build79RAWSignature.probeFile(url) != nil else {
             throw Failure.invalid("P1: 文件不是可验证的真实 RAW；不读内嵌 JPEG")
         }
         // The native bridge rejects unsupported cameras, compression and
         // insufficient memory instead of switching to Apple RAW/sRGB/RGB8.
         let result = try SFBuild94LibRaw.decode(
-            url, bitsPerComponent: 16, sourceLinearACES: true
+            url, bitsPerComponent: 16, sourceLinearACES: true,
+            maximumAllowedPixels: maximumAllowedPixels
         )
         let w = result.width, h = result.height
         guard result.bitsPerComponent == 16,
@@ -63,15 +66,13 @@ enum P1OriginalRawACESIngress {
         // ensure its samples can NEVER enter a display-sRGB transfer function.
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
-        // Fail BEFORE demosaicing when the existing whole-image optical
-        // engine cannot actually consume the dimensions within its budget.
-        // Do not pretend the 13MP current ceiling is an upstream limitation.
-        // A future full-size implementation must prove peak RSS separately.
-        guard let dimensions = try Build79RAWSignature.probeFile(rawURL) else {
-            throw Failure.invalid("P1：未识别真实 RAW 文件，不能改用内嵌 JPEG")
-        }
-        _ = dimensions
-        let decoded = try open(rawURL)
+        // This is the current iOS FULL-OPTICAL memory ceiling, not a
+        // Python/rawpy input limit. Reject from the LibRaw source header
+        // BEFORE unpacking and allocating the source high-resolution RGB.
+        let decoded = try open(
+            rawURL,
+            maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
+        )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width: decoded.width, height: decoded.height
         )

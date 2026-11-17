@@ -37,6 +37,14 @@ NS_ASSUME_NONNULL_BEGIN
                          sourceLinearACES:(BOOL)sourceLinearACES
                                     error:(NSError * _Nullable * _Nullable)error
     NS_SWIFT_NAME(decode(_:bitsPerComponent:sourceLinearACES:));
+/// Optional optical pixel ceiling checked from LibRaw header before unpack.
+/// 0 means the existing decoder-only 45MP ceiling (no optical admission).
++ (nullable SFBuild94RawResult *)decodeURL:(NSURL *)url
+                          bitsPerComponent:(NSInteger)bits
+                         sourceLinearACES:(BOOL)sourceLinearACES
+                    maximumAllowedPixels:(NSInteger)maximumAllowedPixels
+                                    error:(NSError * _Nullable * _Nullable)error
+    NS_SWIFT_NAME(decode(_:bitsPerComponent:sourceLinearACES:maximumAllowedPixels:));
 @end
 
 /// Build123: Objective-C AVFoundation immediate settings-validation guard.

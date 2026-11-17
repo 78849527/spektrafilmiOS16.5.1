@@ -37,3 +37,7 @@ assert "sourceCCTFEncoded = false" in ingress
 assert "ACES2065-1" in ingress
 
 print("PASS P1 source/LibRaw parameter contract; real RAW parity and device ingress NOT CERTIFIED")
+
+assert "maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels" in ingress
+assert "maximumAllowedPixels" in bridge
+assert "BEFORE libraw_unpack" in bridge
