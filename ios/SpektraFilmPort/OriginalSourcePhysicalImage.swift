@@ -284,7 +284,8 @@ enum OriginalSourcePhysicalImage {
     static func developInPlace(
         _ frame: inout OriginalSourcePixelIO.Frame,
         parameters: Parameters,
-        stageDoubleObserver: ((String, [Double]) -> Void)? = nil
+        stageDoubleObserver: ((String, [Double]) -> Void)? = nil,
+        phaseMemoryObserver: ((String) -> Void)? = nil
     ) throws {
         try parameters.validate()
         let w=frame.width,h=frame.height
@@ -314,15 +315,18 @@ enum OriginalSourcePhysicalImage {
         // Build106: ONE audited feature ledger for both pre-decode and
         // the actual in-place renderer. A diagnostic callback may retain
         // every source Float64 tap, not just the latest three-channel tap.
-        let extraPeakBytesPerPixel=Build106SourceMemoryLedger.additional(
+        let extraPeakBytesPerPixel=Build106SourceMemoryLedger.productionAdditional(
             scannerFinish:parameters.scannerOptics.active,
             scannerGlare:controlledScannerGlare,
             grain:controlledFilmGrain,
+            grainSublayers:parameters.sourceGrain.sublayersActive,
+            cameraActive:parameters.cameraOptics.active,
             cameraLens:parameters.cameraOptics.needsWholeImageBlur,
             filmHalation:parameters.filmHalation.active,
             paperDiffusion:parameters.printDiffusion.active,
             stageObserver:stageDoubleObserver != nil,
             paperStageObserver:capturePaperStages,
+            outputGamut:parameters.sourceOutputGamut != nil,
             parallelGrain:parameters.sourceGrain.useUnseededParallel
         )
         try validateMemoryBudget(
@@ -339,6 +343,7 @@ enum OriginalSourcePhysicalImage {
             )
         }
 
+        phaseMemoryObserver?("source_input_ready")
         let engine=try parameters.createEngine()
         let source=try engine.sourceSpatialFilmParameters()
         let dynamicDIR:Build84OriginalFilmDIR.Prepared?
@@ -486,6 +491,7 @@ enum OriginalSourcePhysicalImage {
                 initialObserved?[k+c]=initialDensity[c]
             }
         }
+        phaseMemoryObserver?("camera_photons_ready")
         stageDoubleObserver?("logRaw",frame.rgb)
         if let initialObserved {
             stageDoubleObserver?("initial",initialObserved)
@@ -518,6 +524,7 @@ enum OriginalSourcePhysicalImage {
         // Do not keep another full-frame 3-channel inhibitor buffer alive
         // while computing the real spectral paper/scan output.
         inhibitors.removeAll(keepingCapacity:false)
+        phaseMemoryObserver?("spatial_DIR_ready")
         stageDoubleObserver?("diffused",diffused)
 
         var correctedObserved:[Double]?=stageDoubleObserver == nil
@@ -600,6 +607,7 @@ enum OriginalSourcePhysicalImage {
         // The observer, when enabled, already received its original tap.
         // No arithmetic, filter boundary or RGB output is modified.
         diffused.removeAll(keepingCapacity:false)
+        phaseMemoryObserver?("film_density_ready_DIR_released")
         if let correctedObserved {
             stageDoubleObserver?("correctedLog",correctedObserved)
         }
@@ -615,7 +623,8 @@ enum OriginalSourcePhysicalImage {
                     pixelUM:pixelUM,
                     measured:engine.sourceSpatialGrainLayers(),
                     settings:parameters.sourceGrain,
-                    stageObserver:stageDoubleObserver
+                    stageObserver:stageDoubleObserver,
+                    phaseMemoryObserver:phaseMemoryObserver
                 )
             } else {
                 frame.rgb=try OriginalSourcePhysicalGrain.applySingleLayer(
@@ -625,6 +634,7 @@ enum OriginalSourcePhysicalImage {
                     stageObserver:stageDoubleObserver
                 )
             }
+            phaseMemoryObserver?("three_sublayer_grain_ready")
             stageDoubleObserver?("grainDensity",frame.rgb)
             // Original develop.py: apply_grain(DIR-developed film density)
             // THEN print_expose or direct reversal scan; never RGB overlay.
@@ -758,6 +768,7 @@ enum OriginalSourcePhysicalImage {
                 for ch in 0..<3 {frame.rgb[k+ch]=encoded[ch]}
             }
         }
+        phaseMemoryObserver?("scanner_output_ready")
         stageDoubleObserver?("printed",frame.rgb)
         guard frame.rgb.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("逐像素源光学计算产生非有限扫描 RGB")
@@ -832,16 +843,19 @@ extension OriginalSourcePixelIO {
         // Build106: call the EXACT same source-feature ledger as the
         // renderer; the export has no stage observer. No unsafe optimistic
         // budget before ImageIO allocates full-resolution Float64 buffers.
-        let preflightAdditional=Build106SourceMemoryLedger.additional(
+        let preflightAdditional=Build106SourceMemoryLedger.productionAdditional(
             scannerFinish:parameters.scannerOptics.active,
             scannerGlare:parameters.scannerGlare.active &&
                 parameters.scannerGlare.percent>0,
             grain:parameters.sourceGrain.active,
+            grainSublayers:parameters.sourceGrain.sublayersActive,
+            cameraActive:parameters.cameraOptics.active,
             cameraLens:parameters.cameraOptics.needsWholeImageBlur,
             filmHalation:parameters.filmHalation.active,
             paperDiffusion:parameters.printDiffusion.active,
             stageObserver:false,
             paperStageObserver:false,
+            outputGamut:parameters.sourceOutputGamut != nil,
             parallelGrain:parameters.sourceGrain.useUnseededParallel
         )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
