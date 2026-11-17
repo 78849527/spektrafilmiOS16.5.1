@@ -36,7 +36,7 @@ name: Build124 iOS16.5.1 captured DNG-to-editor native Apple RAW IPA
 on:
   push:
     branches:
-      - 'work/build123-native-raw-capture-safety-ios1651'
+      - 'work/build124-native-dng-editor-ingress-ios1651'
     paths:
       # Batch only: source-file commits must NOT start another Xcode build.
       # Re-run explicitly via workflow_dispatch after multi-module changes.
