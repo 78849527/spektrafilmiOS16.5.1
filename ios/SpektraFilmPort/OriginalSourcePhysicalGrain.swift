@@ -115,7 +115,8 @@ enum OriginalSourcePhysicalGrain {
         _ densityCMY: [Double], width: Int, height: Int,
         pixelUM: Double, measured: MeasuredLayers,
         settings: Settings,
-        stageObserver: ((String,[Double])->Void)? = nil
+        stageObserver: ((String,[Double])->Void)? = nil,
+        phaseMemoryObserver: ((String)->Void)? = nil
     ) throws -> [Double] {
         try settings.validate()
         guard width>0,height>0,
@@ -257,6 +258,7 @@ enum OriginalSourcePhysicalGrain {
                     }
                 }
             }
+            phaseMemoryObserver?("grain_channel_\(ch)_inputs_ready")
             for sl in 0..<3 {
                 let li=sl*3+ch
                 let n=particleN[li],od=densityOD[li]
@@ -311,6 +313,7 @@ enum OriginalSourcePhysicalGrain {
                 }
             }
         }
+        phaseMemoryObserver?("grain_particle_clouds_ready")
         stageObserver?("sourceGrainDyeClouds",out)
 
         // Build117: release the current 3-layer (or observed 9-layer) field,
@@ -325,6 +328,7 @@ enum OriginalSourcePhysicalGrain {
         rates.removeAll(keepingCapacity:false)
         saturations.removeAll(keepingCapacity:false)
         cloud.removeAll(keepingCapacity:false)
+        phaseMemoryObserver?("grain_particle_scratch_released")
 
         // Upstream fast_lognormal_from_mean_std(mean=1,std=30nm/px);
         // only enabled if std > 0.05. Controlled Numba one-worker draw.
@@ -366,6 +370,7 @@ enum OriginalSourcePhysicalGrain {
             }
             for ix in out.indices {out[ix]*=clump[ix]}
         }
+        phaseMemoryObserver?("grain_microstructure_ready")
         stageObserver?("sourceGrainMicrostructure",out)
 
         for p in 0..<pixels {
@@ -382,6 +387,7 @@ enum OriginalSourcePhysicalGrain {
         guard out.allSatisfy({$0.isFinite}) else {
             throw Failure.invalid("原版颗粒输出出现 NaN/Inf，拒绝静默降级")
         }
+        phaseMemoryObserver?("grain_final_blur_ready")
         stageObserver?("sourceGrainFinalDensity",out)
         return out
     }
