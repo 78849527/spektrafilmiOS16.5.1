@@ -212,6 +212,57 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+
+    /// A Float32 ICC file may be transport-compatible but carry negative
+    /// or >1 samples outside the original optical display-input contract.
+    /// A separate, explicitly confirmed working-copy transform is offered.
+    var float32RangeWorkingCopyPossible:Bool {
+        guard !busy,hasPhoto,!rawFastModeActive,
+              originalPhotoData != nil,
+              let p=photoInputProfile,p.directCompatible,
+              p.format=="TIFF",p.floatingComponents,
+              p.declaredDepth==32,p.decodedDepth==32 else {return false}
+        return p.color == .sRGB || p.color == .extendedSRGB
+    }
+
+    func convertFloat32ToBoundedWorkingCopy() {
+        guard !busy,float32RangeWorkingCopyPossible,
+              let bytes=originalPhotoData else {
+            status="Float32 范围转换仅适用于经过真实 ICC 和位深校验的 TIFF；原编辑不变"
+            return
+        }
+        let previousOriginal=photoOriginalBeforeColorConversion ?? bytes
+        let rawURL=capturedRAWURL
+        busy=true
+        status="已明确选择 Float32 RGB 范围映射。正在逐像素检查、生成新 TIFF 并重新验证 0～1；原件不覆盖…"
+        Task { @MainActor in
+            defer {busy=false}
+            do {
+                let result=try await Task.detached(priority:.userInitiated) {
+                    try Build130Float32RangeCopy.makeMappedWorkingCopy(bytes)
+                }.value
+                let decoded=try PhotoProcessor.decode(result.bytes)
+                let preview=try PhotoProcessor.preview(decoded,lut:nil,strength:0)
+                try commitDecodedPhoto(
+                    image:decoded,preview:preview,data:result.bytes,
+                    rawURL:rawURL,rawCompatible:false,
+                    dimensions:result.admission.dimensions+" · Float32 0～1 映射工作副本",
+                    inputProfile:result.admission
+                )
+                photoOriginalBeforeColorConversion=previousOriginal
+                status="Float32 RGB 已明确进行全局线性范围映射（非原版 rawpy 输入等价）。" +
+                    "源 min="+String(result.sourceMinimum) +
+                    "，max="+String(result.sourceMaximum) +
+                    "；原越界通道="+String(result.outOfRangeComponents) +
+                    "；副本通过 32-bit TIFF ICC/0～1 真实重解码验证。" +
+                    "源照片／DNG 保留，可重新选择精细冲印；没有转换为 8-bit。"
+            } catch {
+                status="Float32 RGB 明确范围映射未完成；原片、DNG、参数与照片保持不变：" +
+                    error.localizedDescription
+            }
+        }
+    }
+
     // Build126 recipes are a separate, opt-in persistence domain. The source
     // image, sensor DNG, simulated stage caches and preview are NOT persisted.
     @Published private(set) var savedRecipes:[Build126Recipe]=[]
@@ -2010,7 +2061,9 @@ final class PhotoEditorModel: ObservableObject {
                             self.rejectRecipePreview(error.localizedDescription)
                         } else {
                             self.processedPreview=nil
-                            self.status = "原版 8-bit 像素直连失败（禁止回退）：" +
+                            self.status = (physical == nil
+                                ? "原版像素直连失败（禁止回退）："
+                                : "逐像素全光学失败（禁止回退）：") +
                                 error.localizedDescription
                         }
                     }
