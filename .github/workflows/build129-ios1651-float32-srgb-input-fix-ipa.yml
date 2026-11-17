@@ -1,3 +1,4 @@
+# Build129 rerun: fix strict Swift parsing of ordinary-photo high precision conversion, all previous source parity unchanged.
 # Build129 extra user-device bug: enable precision UI for input diagnostics and explicit ordinary Float32 bridge.
 # Build129: correct real Apple RAW Float32 TIFF color profile admission; preserve strict Float64 and 8bit.
 # Build128 final pass: include fast-to-advanced recipe input-format preflight fix.
