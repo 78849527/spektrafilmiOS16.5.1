@@ -575,9 +575,9 @@ enum Build108SourceOpticalDeviceStress {
         text+="13MP grain budget: \(report.thirteenMegapixelGrainBudgetBytes)\n"
         for item in report.actualParallelFastStatsGrainCases {
             text+="\n\(item.label) \(item.width)x\(item.height): \(item.status)\n"
-            text+="Sampled peak RSS: \(item.sampledPeakResidentBytes.map(String.init) ?? "none")\n"
-            text+="Samples: \(item.residentSampleCount), time: \(item.elapsedSeconds.map(String.init) ?? "none")\n"
-            text+="Checksum: \(item.outputSampleChecksum.map(String.init) ?? "none")\n"
+            text+="Sampled peak RSS: \(item.sampledPeakResidentBytes.map { String($0) } ?? "none")\n"
+            text+="Samples: \(item.residentSampleCount), time: \(item.elapsedSeconds.map { String($0) } ?? "none")\n"
+            text+="Checksum: \(item.outputSampleChecksum.map { String($0) } ?? "none")\n"
             text+="First failure: \(item.firstFailure ?? "none")\n"
         }
         text+="\nFirst failure: \(report.firstFailure ?? "none")\n"
