@@ -194,6 +194,19 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    private func currentRecipeInputContract() -> String? {
+        guard sourcePixelIOEnabled,let p=photoInputProfile else {return nil}
+        if p.floatingComponents && p.color == .extendedSRGB {
+            if p.decodedDepth==32 {return "float32ExtendedSRGB"}
+            if p.decodedDepth==16 {return "float16ExtendedSRGB"}
+        }
+        if !p.floatingComponents && p.color == .sRGB {
+            if p.decodedDepth==16 {return "uint16SRGB"}
+            if p.decodedDepth==8 {return "uint8SRGB"}
+        }
+        return nil
+    }
+
     private func recipeSnapshot(name:String,includeCover:Bool) -> Build126Recipe {
         let cover:Data? = {
             guard includeCover,let preview=processedPreview else {return nil}
@@ -328,7 +341,8 @@ final class PhotoEditorModel: ObservableObject {
             "sourceCameraDiffusionFamily":sourceCameraDiffusionFamily.rawValue,
             "sourceCameraRawMethod":sourceCameraRawMethod.rawValue
             ],
-            embeddedLUT:originalLUT,coverJPEG:cover
+            embeddedLUT:originalLUT,coverJPEG:cover,
+            inputContract:currentRecipeInputContract()
         )
     }
 
@@ -516,7 +530,8 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     /// Reject incompatible source-pixel recipes before touching ANY setting.
-    /// The only RAW->JPEG8 conversion remains Build125's explicit user action.
+    /// Legacy nil input contract = Build126 8-bit; precision NEVER escalates
+    /// or demotes to match a different source without explicit conversion.
     func preflightSavedRecipe(_ recipe:Build126Recipe) throws {
         try recipe.validateStructure()
         guard hasPhoto,!busy,!simulationAwaitingCurrentSettings,
@@ -538,18 +553,34 @@ final class PhotoEditorModel: ObservableObject {
             )
         }
         if pixel {
-            // Build111 may accept high-depth PNG/TIFF independently, but
-            // a saved **8-bit** recipe MUST not activate on 16-bit or RAW.
+            // Check the exact captured input precision, not merely
+            // transport admission. Old Build126 recipes were STRICT 8-bit.
+            let expected=recipe.inputContract ?? "uint8SRGB"
             guard let p=photoInputProfile,
-                  originalPhotoData != nil,!rawFastModeActive,
-                  p.directCompatible,p.declaredDepth==8,p.decodedDepth==8,
-                  p.color == .sRGB,!p.hasAlphaChannel,
-                  !p.floatingComponents else {
+                  originalPhotoData != nil,!rawFastModeActive,p.directCompatible else {
                 throw ImageProcessingError.invalid(
-                    "8-bit 配方与当前照片不兼容：" + photoInputSummary +
-                    "。需要时请主动生成经认证的 sRGB 8-bit 副本后再应用；" +
+                    "配方要求 " + expected +
+                    "；当前 RAW／照片没有已认证的可直连像素副本。" +
                     "本次已放弃，原设置和预览不变。"
                 )
+            }
+            let actual=currentRecipeInputContract()
+            guard actual==expected else {
+                throw ImageProcessingError.invalid(
+                    "配方输入位深不兼容：要求 " + expected +
+                    "，当前 " + (actual ?? p.summary) +
+                    "。8-bit 绝不假装 Float32，Float32 也不暗降为 8-bit；" +
+                    "本次拒绝应用，原设置和预览不变。"
+                )
+            }
+            if expected=="uint8SRGB" {
+                guard p.declaredDepth==8,p.decodedDepth==8,
+                      p.color == .sRGB,!p.hasAlphaChannel,
+                      !p.floatingComponents else {
+                    throw ImageProcessingError.invalid(
+                        "Build126 旧配方必须匹配 8-bit sRGB，不允许自动改变输入位深"
+                    )
+                }
             }
             guard bs["spatialDIREnabled"]==true,
                   bs["spatialDIRSourceConvolutionEnabled"]==true,
@@ -557,7 +588,7 @@ final class PhotoEditorModel: ObservableObject {
                   bs["scannerFinishingEnabled"]==false,
                   abs((recipe.numbers["strength"] ?? 0)-1.0)<1e-9 else {
                 throw ImageProcessingError.invalid(
-                    "8-bit 原版直连依赖 FIR/YVV、100% 强度，" +
+                    "原版像素直连依赖 FIR/YVV、100% 强度，" +
                     "且不支持旧版随机颗粒或扫描后处理；配方拒绝应用"
                 )
             }
