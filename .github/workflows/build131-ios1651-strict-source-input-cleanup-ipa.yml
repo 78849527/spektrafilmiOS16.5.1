@@ -1,3 +1,4 @@
+# Build132 retry: preserve original named RAW import entry points for Build103/95 historical GUI source audit.
 # Build131 strict-original cleanup: drop Build131 non-original global Float32 remapping; source/ICC transport preserved, full original parity pending.
 # Build131 retry after Swift parser correction in explicit RGB input-range diagnostic; same branch, full TIFF32 test and arm64 packaging.
 # Build131 same development branch: user-confirmed IEEE Float32 HDR-to-[0,1] working copy, no implicit 8-bit clip.

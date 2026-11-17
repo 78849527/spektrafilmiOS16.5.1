@@ -1482,7 +1482,11 @@ final class PhotoEditorModel: ObservableObject {
     /// sensor file always remains byte-for-byte in Documents; CIImage is a
     /// lazily evaluated Apple *fast compatibility* development, never source
     /// Python Float64 / X-Trans rawpy parity. Unsupported compression fails.
-    func openPreservedRAWWithApple(preferOriginalSource:Bool=false) {
+    /// Legacy public entry point stays byte-for-byte available to UI/tests.
+    func openPreservedRAWWithApple() {
+        openPreservedRAWWithApple(preferOriginalSource:false)
+    }
+    func openPreservedRAWWithApple(preferOriginalSource:Bool) {
         guard let url=pendingImportedRAWURL ?? capturedRAWURL else {
             status="没有可打开的原始 RAW 文件"
             return
@@ -1597,7 +1601,11 @@ final class PhotoEditorModel: ObservableObject {
 
     /// Build95: explicit high-depth LibRaw Fujifilm path. The existing
     /// Build93 Apple RAW and Build94 RGB8 routes remain unchanged.
-    func openPreservedRAW16Bit(preferOriginalSource:Bool=false) {
+    /// Legacy explicit high-depth RAF button remains independently selectable.
+    func openPreservedRAW16Bit() {
+        openPreservedRAW16Bit(preferOriginalSource:false)
+    }
+    func openPreservedRAW16Bit(preferOriginalSource:Bool) {
         guard let url = pendingImportedRAWURL ?? capturedRAWURL else {
             status = "请先导入并保存富士 RAF 原始文件"
             return
