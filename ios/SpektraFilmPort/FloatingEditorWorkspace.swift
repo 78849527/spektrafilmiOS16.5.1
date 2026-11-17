@@ -1454,7 +1454,7 @@ struct FloatingEditorWorkspace: View {
                                     in:Capsule())
                 }
                 .accessibilityLabel("高级菜单：仅验证状态与开发者诊断")
-"                Spacer(minLength: 0)
+                Spacer(minLength: 0)
                 if selectedEditorPage == .adjustment {
                     Button {
                         model.applyMeasuredSimulation()
