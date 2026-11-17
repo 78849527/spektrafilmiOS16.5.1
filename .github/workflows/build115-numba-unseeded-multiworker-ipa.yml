@@ -199,6 +199,19 @@ jobs:
             'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
             'matplotlib==3.10.7' 'numba==0.61.2' 'opt_einsum==3.4.0' \
             'scikit-image==0.25.2'
+      - name: Build115 fail-fast original Numba fixture generation with isolated JIT caches
+        env:
+          NUMBA_NUM_THREADS: '1'
+          NUMBA_THREADING_LAYER: workqueue
+        run: |
+          set -euo pipefail
+          # The upstream source uses @njit(cache=True) and is dynamically
+          # imported under different names by successive fixture generators.
+          # Avoid restoring an incompatible <dynamic> module from another step.
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_numba_fast_counts.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_scanner_glare.py
+          test -s ios/SpektraFilmPort/GeneratedSourceNumbaFastCountsReference.swift
+          test -s ios/SpektraFilmPort/GeneratedSourceScannerGlareReference.swift
       - name: Build114 real original Python Numba 4-worker unseeded statistical gate
         env:
           NUMBA_NUM_THREADS: '4'
@@ -396,8 +409,8 @@ jobs:
           assert numba.__version__ == '0.61.2', numba.__version__
           assert numpy.__version__ == '1.26.4', numpy.__version__
           PY
-          python ios/scripts/generate_source_numba_fast_counts.py
-          python ios/scripts/generate_source_scanner_glare.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_numba_fast_counts.py
+          NUMBA_CACHE_DIR="$(mktemp -d)" python ios/scripts/generate_source_scanner_glare.py
           python ios/scripts/build81_generate_source_locus.py \
             --output ios/SpektraFilmPort/Build81GeneratedSpectralLocus.swift
           python ios/scripts/build82_generate_profiles.py \
