@@ -33,8 +33,8 @@ assert ui.count("value:$model.sourcePhysicalCAM16DefaultGamutEnabled")==0
 assert ui.count('Picker("原版光谱重建"')==1
 assert ui.count('value:$model.sourcePhysicalGrainEnabled')==1
 assert ui.count('value:$model.scannerCAM16Enabled')==1
-require("专业参数与验证状态")
-require("13MP、RAW 与 Python 原版整图仍未认证")
+require("验证状态与诊断")
+require("13MP 基础三亚层双路线已真机渲染")
 # Build112 UI invariants carry forward into later releases.
 from build_ci_version_floor import minimum_build, minimum_minor
 assert minimum_build(project,112) and minimum_minor(project,78)
@@ -65,5 +65,5 @@ require('resetToggle("黑白场校准"')
 require('resetToggle("扫描曝光参考"')
 require('resetToggle("印相曝光归一化"')
 require('resetToggle("印相曝光补偿"')
-require('尚未认证：13MP 全光学、Python 整图、RAW/高位深全链、默认多线程随机。')
+require('其他全光学组合与 Python 整图数值仍待认证')
 print("PASS Build113 fixed overlay, 4 source routes, smart 1300MB max, quick/process controls and separated certification labels")
