@@ -1012,12 +1012,12 @@ struct FloatingEditorWorkspace: View {
                         statusReportPresented=false
                         onRunBuild116GrainMemory()
                     } label: {
-                        Label("Build116：1MP／2MP 多线程三亚层颗粒内存实测",
+                        Label("Build116：一次测试 1–13MP 全尺寸 × 双颗粒路线",
                               systemImage:"memorychip")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
-                    Text("真实执行原版 Float64 3×3 颗粒＋4 工作线程 fast_stats，采样内存 RSS 并导出 LOG＋JSON。高内存风险，可能被系统终止；13MP 只做安全拒绝检查，不分配大图。")
+                    Text("一次完成 1／2／3／4／6／8／10／13MP × SciPy／Numba 4 线程（共 16 项）。每项先过生产内存预检：可运行则实测 RSS／耗时；不允许则明确记录拒绝。结果统一导出 LOG＋JSON；高内存测试仍有系统终止风险。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
