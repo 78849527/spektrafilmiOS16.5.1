@@ -95,7 +95,9 @@ for item in [
     "saveCover=false","ShareLink(item:url)","allowedContentTypes:[.json]"
 ]:
     assert item in shelf,item
-assert "let onOpenRecipes: () -> Void" in ui and "Button(action:onOpenRecipes)" in ui
+assert "let onOpenRecipes: () -> Void" in ui and 'Button("查看全部／保存") {onOpenRecipes()}' in ui
+assert "selectRecipeFromShelf(_ recipe:Build126Recipe)" in ui
+assert "try model.applySavedRecipe(recipe)" in ui
 assert "Build126RecipeLibraryView(" in app
 assert "rawNeedsChoice" in app and "Build93AppleRAWImport.open(rawFile)" in app
 print(f"PASS Build126: {len(bools)} booleans + {len(numbers)} doubles + {len(enums)} enums + stock pair; stable storage, 8-bit refusal, transactional restoration, shelf and exchange")
