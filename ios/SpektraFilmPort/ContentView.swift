@@ -111,6 +111,487 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+
+    // Build126 recipes are a separate, opt-in persistence domain. The source
+    // image, sensor DNG, simulated stage caches and preview are NOT persisted.
+    @Published private(set) var savedRecipes:[Build126Recipe]=[]
+    @Published private(set) var isRecipeApplying=false
+    private struct RecipeUndo {
+        let settings:Build126Recipe
+        let lut:FilmLUT?
+        let density:DensityGrainStage?
+        let dir:SpatialDIRStage?
+        let preview:UIImage?
+        let previousStatus:String
+        let hadPendingSimulation:Bool
+        let desiredName:String
+    }
+    private var recipeUndo:RecipeUndo?
+
+    init() {
+        do {
+            savedRecipes=try Build126RecipeStorage.load()
+        } catch {
+            status="配方库验证失败（未覆盖原数据）：" + error.localizedDescription
+        }
+    }
+
+    private func recipeSnapshot(name:String,includeCover:Bool) -> Build126Recipe {
+        let cover:Data? = {
+            guard includeCover,let preview=processedPreview else {return nil}
+            let s=preview.size
+            let factor=min(1.0,240.0/max(1.0,max(s.width,s.height)))
+            let target=CGSize(width:max(1.0,s.width*factor),
+                              height:max(1.0,s.height*factor))
+            let image=UIGraphicsImageRenderer(size:target).image { _ in
+                preview.draw(in:CGRect(origin:.zero,size:target))
+            }
+            return image.jpegData(compressionQuality:0.60)
+        }()
+        let originalLUT:Build126RecipeLUT? = {
+            guard let l=lut,!l.title.hasPrefix("实测光谱 ·") else{return nil}
+            return Build126RecipeLUT(
+                title:l.title,dimension:l.dimension,
+                rgbaFloatData:l.rgbaFloatData
+            )
+        }()
+        return Build126Recipe(
+            schemaVersion:Build126Recipe.schema,
+            id:UUID(),name:name,createdAt:Date(),modifiedAt:Date(),
+            favorite:false,
+            filmID:UserDefaults.standard.string(forKey:"compactFilmStock")
+                ?? "kodak_portra_400",
+            paperID:UserDefaults.standard.string(forKey:"compactPaperStock")
+                ?? "kodak_portra_endura",
+            bools:[
+            "hanatosOriginalPrecisionEnabled":hanatosOriginalPrecisionEnabled,
+            "scatterEnabled":scatterEnabled,
+            "halationEnabled":halationEnabled,
+            "grainEnabled":grainEnabled,
+            "grainSublayersEnabled":grainSublayersEnabled,
+            "grainDiscreteParticlesEnabled":grainDiscreteParticlesEnabled,
+            "grainOriginalMetalEnabled":grainOriginalMetalEnabled,
+            "grainOriginalSciPyEnabled":grainOriginalSciPyEnabled,
+            "originalScannerEnabled":originalScannerEnabled,
+            "scannerCAM16Enabled":scannerCAM16Enabled,
+            "scannerBlackWhiteEnabled":scannerBlackWhiteEnabled,
+            "scannerFinishingEnabled":scannerFinishingEnabled,
+            "exposureReferenceEnabled":exposureReferenceEnabled,
+            "printMorphEnabled":printMorphEnabled,
+            "originalPrintOpticsEnabled":originalPrintOpticsEnabled,
+            "neutralPrintFiltersFromDatabase":neutralPrintFiltersFromDatabase,
+            "printSourceDiffusionEnabled":printSourceDiffusionEnabled,
+            "normalizePrintExposure":normalizePrintExposure,
+            "printExposureCompensation":printExposureCompensation,
+            "preflashEnabled":preflashEnabled,
+            "spatialDIREnabled":spatialDIREnabled,
+            "spatialDIRSourceConvolutionEnabled":spatialDIRSourceConvolutionEnabled,
+            "sourcePixelIOEnabled":sourcePixelIOEnabled,
+            "sourcePhysicalDirectEnabled":sourcePhysicalDirectEnabled,
+            "sourcePhysicalCAM16DefaultGamutEnabled":sourcePhysicalCAM16DefaultGamutEnabled,
+            "sourcePhysicalInputOklchEnabled":sourcePhysicalInputOklchEnabled,
+            "sourceScannerOpticalEnabled":sourceScannerOpticalEnabled,
+            "sourceScannerGlareEnabled":sourceScannerGlareEnabled,
+            "sourcePhysicalGrainEnabled":sourcePhysicalGrainEnabled,
+            "sourceGrainUseUnseededParallel":sourceGrainUseUnseededParallel,
+            "sourceGrainFastStatsEnabled":sourceGrainFastStatsEnabled,
+            "sourceCameraPreFilmEnabled":sourceCameraPreFilmEnabled,
+            "sourceCameraDiffusionEnabled":sourceCameraDiffusionEnabled,
+            "sourceHanatosFullRecompute":sourceHanatosFullRecompute,
+            "sourceCameraUVEnabled":sourceCameraUVEnabled,
+            "sourceCameraIREnabled":sourceCameraIREnabled,
+            "sourceFilmHalationEnabled":sourceFilmHalationEnabled
+            ],
+            numbers:[
+            "strength":strength,
+            "filmExposureEV":filmExposureEV,
+            "printExposureEV":printExposureEV,
+            "halationAmount":halationAmount,
+            "grainAmount":grainAmount,
+            "scannerSharpenAmount":scannerSharpenAmount,
+            "printGamma":printGamma,
+            "printFastGamma":printFastGamma,
+            "printSlowGamma":printSlowGamma,
+            "printDeveloperExhaustion":printDeveloperExhaustion,
+            "printSourceDiffusionStrength":printSourceDiffusionStrength,
+            "printSourceDiffusionSpatialScale":printSourceDiffusionSpatialScale,
+            "printSourceDiffusionWarmth":printSourceDiffusionWarmth,
+            "printSourceDiffusionCoreIntensity":printSourceDiffusionCoreIntensity,
+            "printSourceDiffusionCoreSize":printSourceDiffusionCoreSize,
+            "printSourceDiffusionHaloIntensity":printSourceDiffusionHaloIntensity,
+            "printSourceDiffusionHaloSize":printSourceDiffusionHaloSize,
+            "printSourceDiffusionBloomIntensity":printSourceDiffusionBloomIntensity,
+            "printSourceDiffusionBloomSize":printSourceDiffusionBloomSize,
+            "printCyanShift":printCyanShift,
+            "printMagentaShift":printMagentaShift,
+            "printYellowShift":printYellowShift,
+            "preflashExposure":preflashExposure,
+            "preflashMagentaShift":preflashMagentaShift,
+            "preflashYellowShift":preflashYellowShift,
+            "spatialDIRRadiusScale":spatialDIRRadiusScale,
+            "sourceScannerLensBlurSigma":sourceScannerLensBlurSigma,
+            "sourceScannerUnsharpSigma":sourceScannerUnsharpSigma,
+            "sourceScannerUnsharpAmount":sourceScannerUnsharpAmount,
+            "sourceScannerGlarePercent":sourceScannerGlarePercent,
+            "sourceScannerGlareRoughness":sourceScannerGlareRoughness,
+            "sourceScannerGlareBlur":sourceScannerGlareBlur,
+            "sourcePhysicalGrainBlur":sourcePhysicalGrainBlur,
+            "sourcePhysicalGrainDyeCloudBlur":sourcePhysicalGrainDyeCloudBlur,
+            "sourcePhysicalGrainMicroUM":sourcePhysicalGrainMicroUM,
+            "sourcePhysicalGrainMicroNM":sourcePhysicalGrainMicroNM,
+            "sourceCameraHighlightBoostEV":sourceCameraHighlightBoostEV,
+            "sourceCameraHighlightBoostRange":sourceCameraHighlightBoostRange,
+            "sourceCameraHighlightProtectEV":sourceCameraHighlightProtectEV,
+            "sourceCameraLensBlurUM":sourceCameraLensBlurUM,
+            "sourceCameraDiffusionStrength":sourceCameraDiffusionStrength,
+            "sourceCameraDiffusionSpatialScale":sourceCameraDiffusionSpatialScale,
+            "sourceCameraDiffusionWarmth":sourceCameraDiffusionWarmth,
+            "sourceCameraDiffusionCoreIntensity":sourceCameraDiffusionCoreIntensity,
+            "sourceCameraDiffusionCoreSize":sourceCameraDiffusionCoreSize,
+            "sourceCameraDiffusionHaloIntensity":sourceCameraDiffusionHaloIntensity,
+            "sourceCameraDiffusionHaloSize":sourceCameraDiffusionHaloSize,
+            "sourceCameraDiffusionBloomIntensity":sourceCameraDiffusionBloomIntensity,
+            "sourceCameraDiffusionBloomSize":sourceCameraDiffusionBloomSize,
+            "sourceCameraUVAmount":sourceCameraUVAmount,
+            "sourceCameraUVCutoffNM":sourceCameraUVCutoffNM,
+            "sourceCameraUVWidthNM":sourceCameraUVWidthNM,
+            "sourceCameraIRAmount":sourceCameraIRAmount,
+            "sourceCameraIRCutoffNM":sourceCameraIRCutoffNM,
+            "sourceCameraIRWidthNM":sourceCameraIRWidthNM,
+            "sourceFilmScatterAmount":sourceFilmScatterAmount,
+            "sourceFilmScatterScale":sourceFilmScatterScale,
+            "sourceFilmHalationAmount":sourceFilmHalationAmount,
+            "sourceFilmHalationScale":sourceFilmHalationScale
+            ],
+            choices:[
+            "printIlluminant":printIlluminant.rawValue,
+            "printSourceDiffusionFamily":printSourceDiffusionFamily.rawValue,
+            "sourceCameraMeteringMethod":sourceCameraMeteringMethod.rawValue,
+            "sourceCameraDiffusionFamily":sourceCameraDiffusionFamily.rawValue,
+            "sourceCameraRawMethod":sourceCameraRawMethod.rawValue
+            ],
+            embeddedLUT:originalLUT,coverJPEG:cover
+        )
+    }
+
+    private func setRecipeValues(_ recipe:Build126Recipe) {
+        // Called only with a complete, validated schema. No optional
+        // defaults: missing/unknown keys must never silently use stale values.
+        hanatosOriginalPrecisionEnabled=recipe.bools["hanatosOriginalPrecisionEnabled"]!
+        scatterEnabled=recipe.bools["scatterEnabled"]!
+        halationEnabled=recipe.bools["halationEnabled"]!
+        grainEnabled=recipe.bools["grainEnabled"]!
+        grainSublayersEnabled=recipe.bools["grainSublayersEnabled"]!
+        grainDiscreteParticlesEnabled=recipe.bools["grainDiscreteParticlesEnabled"]!
+        grainOriginalMetalEnabled=recipe.bools["grainOriginalMetalEnabled"]!
+        grainOriginalSciPyEnabled=recipe.bools["grainOriginalSciPyEnabled"]!
+        originalScannerEnabled=recipe.bools["originalScannerEnabled"]!
+        scannerCAM16Enabled=recipe.bools["scannerCAM16Enabled"]!
+        scannerBlackWhiteEnabled=recipe.bools["scannerBlackWhiteEnabled"]!
+        scannerFinishingEnabled=recipe.bools["scannerFinishingEnabled"]!
+        exposureReferenceEnabled=recipe.bools["exposureReferenceEnabled"]!
+        printMorphEnabled=recipe.bools["printMorphEnabled"]!
+        originalPrintOpticsEnabled=recipe.bools["originalPrintOpticsEnabled"]!
+        neutralPrintFiltersFromDatabase=recipe.bools["neutralPrintFiltersFromDatabase"]!
+        printSourceDiffusionEnabled=recipe.bools["printSourceDiffusionEnabled"]!
+        normalizePrintExposure=recipe.bools["normalizePrintExposure"]!
+        printExposureCompensation=recipe.bools["printExposureCompensation"]!
+        preflashEnabled=recipe.bools["preflashEnabled"]!
+        spatialDIREnabled=recipe.bools["spatialDIREnabled"]!
+        spatialDIRSourceConvolutionEnabled=recipe.bools["spatialDIRSourceConvolutionEnabled"]!
+        sourcePixelIOEnabled=recipe.bools["sourcePixelIOEnabled"]!
+        sourcePhysicalDirectEnabled=recipe.bools["sourcePhysicalDirectEnabled"]!
+        sourcePhysicalCAM16DefaultGamutEnabled=recipe.bools["sourcePhysicalCAM16DefaultGamutEnabled"]!
+        sourcePhysicalInputOklchEnabled=recipe.bools["sourcePhysicalInputOklchEnabled"]!
+        sourceScannerOpticalEnabled=recipe.bools["sourceScannerOpticalEnabled"]!
+        sourceScannerGlareEnabled=recipe.bools["sourceScannerGlareEnabled"]!
+        sourcePhysicalGrainEnabled=recipe.bools["sourcePhysicalGrainEnabled"]!
+        sourceGrainUseUnseededParallel=recipe.bools["sourceGrainUseUnseededParallel"]!
+        sourceGrainFastStatsEnabled=recipe.bools["sourceGrainFastStatsEnabled"]!
+        sourceCameraPreFilmEnabled=recipe.bools["sourceCameraPreFilmEnabled"]!
+        sourceCameraDiffusionEnabled=recipe.bools["sourceCameraDiffusionEnabled"]!
+        sourceHanatosFullRecompute=recipe.bools["sourceHanatosFullRecompute"]!
+        sourceCameraUVEnabled=recipe.bools["sourceCameraUVEnabled"]!
+        sourceCameraIREnabled=recipe.bools["sourceCameraIREnabled"]!
+        sourceFilmHalationEnabled=recipe.bools["sourceFilmHalationEnabled"]!
+        strength=recipe.numbers["strength"]!
+        filmExposureEV=recipe.numbers["filmExposureEV"]!
+        printExposureEV=recipe.numbers["printExposureEV"]!
+        halationAmount=recipe.numbers["halationAmount"]!
+        grainAmount=recipe.numbers["grainAmount"]!
+        scannerSharpenAmount=recipe.numbers["scannerSharpenAmount"]!
+        printGamma=recipe.numbers["printGamma"]!
+        printFastGamma=recipe.numbers["printFastGamma"]!
+        printSlowGamma=recipe.numbers["printSlowGamma"]!
+        printDeveloperExhaustion=recipe.numbers["printDeveloperExhaustion"]!
+        printSourceDiffusionStrength=recipe.numbers["printSourceDiffusionStrength"]!
+        printSourceDiffusionSpatialScale=recipe.numbers["printSourceDiffusionSpatialScale"]!
+        printSourceDiffusionWarmth=recipe.numbers["printSourceDiffusionWarmth"]!
+        printSourceDiffusionCoreIntensity=recipe.numbers["printSourceDiffusionCoreIntensity"]!
+        printSourceDiffusionCoreSize=recipe.numbers["printSourceDiffusionCoreSize"]!
+        printSourceDiffusionHaloIntensity=recipe.numbers["printSourceDiffusionHaloIntensity"]!
+        printSourceDiffusionHaloSize=recipe.numbers["printSourceDiffusionHaloSize"]!
+        printSourceDiffusionBloomIntensity=recipe.numbers["printSourceDiffusionBloomIntensity"]!
+        printSourceDiffusionBloomSize=recipe.numbers["printSourceDiffusionBloomSize"]!
+        printCyanShift=recipe.numbers["printCyanShift"]!
+        printMagentaShift=recipe.numbers["printMagentaShift"]!
+        printYellowShift=recipe.numbers["printYellowShift"]!
+        preflashExposure=recipe.numbers["preflashExposure"]!
+        preflashMagentaShift=recipe.numbers["preflashMagentaShift"]!
+        preflashYellowShift=recipe.numbers["preflashYellowShift"]!
+        spatialDIRRadiusScale=recipe.numbers["spatialDIRRadiusScale"]!
+        sourceScannerLensBlurSigma=recipe.numbers["sourceScannerLensBlurSigma"]!
+        sourceScannerUnsharpSigma=recipe.numbers["sourceScannerUnsharpSigma"]!
+        sourceScannerUnsharpAmount=recipe.numbers["sourceScannerUnsharpAmount"]!
+        sourceScannerGlarePercent=recipe.numbers["sourceScannerGlarePercent"]!
+        sourceScannerGlareRoughness=recipe.numbers["sourceScannerGlareRoughness"]!
+        sourceScannerGlareBlur=recipe.numbers["sourceScannerGlareBlur"]!
+        sourcePhysicalGrainBlur=recipe.numbers["sourcePhysicalGrainBlur"]!
+        sourcePhysicalGrainDyeCloudBlur=recipe.numbers["sourcePhysicalGrainDyeCloudBlur"]!
+        sourcePhysicalGrainMicroUM=recipe.numbers["sourcePhysicalGrainMicroUM"]!
+        sourcePhysicalGrainMicroNM=recipe.numbers["sourcePhysicalGrainMicroNM"]!
+        sourceCameraHighlightBoostEV=recipe.numbers["sourceCameraHighlightBoostEV"]!
+        sourceCameraHighlightBoostRange=recipe.numbers["sourceCameraHighlightBoostRange"]!
+        sourceCameraHighlightProtectEV=recipe.numbers["sourceCameraHighlightProtectEV"]!
+        sourceCameraLensBlurUM=recipe.numbers["sourceCameraLensBlurUM"]!
+        sourceCameraDiffusionStrength=recipe.numbers["sourceCameraDiffusionStrength"]!
+        sourceCameraDiffusionSpatialScale=recipe.numbers["sourceCameraDiffusionSpatialScale"]!
+        sourceCameraDiffusionWarmth=recipe.numbers["sourceCameraDiffusionWarmth"]!
+        sourceCameraDiffusionCoreIntensity=recipe.numbers["sourceCameraDiffusionCoreIntensity"]!
+        sourceCameraDiffusionCoreSize=recipe.numbers["sourceCameraDiffusionCoreSize"]!
+        sourceCameraDiffusionHaloIntensity=recipe.numbers["sourceCameraDiffusionHaloIntensity"]!
+        sourceCameraDiffusionHaloSize=recipe.numbers["sourceCameraDiffusionHaloSize"]!
+        sourceCameraDiffusionBloomIntensity=recipe.numbers["sourceCameraDiffusionBloomIntensity"]!
+        sourceCameraDiffusionBloomSize=recipe.numbers["sourceCameraDiffusionBloomSize"]!
+        sourceCameraUVAmount=recipe.numbers["sourceCameraUVAmount"]!
+        sourceCameraUVCutoffNM=recipe.numbers["sourceCameraUVCutoffNM"]!
+        sourceCameraUVWidthNM=recipe.numbers["sourceCameraUVWidthNM"]!
+        sourceCameraIRAmount=recipe.numbers["sourceCameraIRAmount"]!
+        sourceCameraIRCutoffNM=recipe.numbers["sourceCameraIRCutoffNM"]!
+        sourceCameraIRWidthNM=recipe.numbers["sourceCameraIRWidthNM"]!
+        sourceFilmScatterAmount=recipe.numbers["sourceFilmScatterAmount"]!
+        sourceFilmScatterScale=recipe.numbers["sourceFilmScatterScale"]!
+        sourceFilmHalationAmount=recipe.numbers["sourceFilmHalationAmount"]!
+        sourceFilmHalationScale=recipe.numbers["sourceFilmHalationScale"]!
+        printIlluminant=OriginalPrintOptics.Illuminant(rawValue:recipe.choices["printIlluminant"]!)!
+        printSourceDiffusionFamily=OriginalSourceDiffusion.Family(rawValue:recipe.choices["printSourceDiffusionFamily"]!)!
+        sourceCameraMeteringMethod=OriginalSourceCameraOptics.Metering(rawValue:recipe.choices["sourceCameraMeteringMethod"]!)!
+        sourceCameraDiffusionFamily=OriginalSourceDiffusion.Family(rawValue:recipe.choices["sourceCameraDiffusionFamily"]!)!
+        sourceCameraRawMethod=SpectralPhysics.CameraRawMethod(rawValue:recipe.choices["sourceCameraRawMethod"]!)!
+    }
+
+    private func saveRecipeLibrary(_ entries:[Build126Recipe]) throws {
+        try Build126RecipeStorage.write(entries)
+        savedRecipes=entries
+    }
+
+    func addSavedRecipe(name:String,includeCover:Bool) throws {
+        guard hasPhoto,!busy,!simulationAwaitingCurrentSettings,
+              !isRecipeApplying,processedPreview != nil,lut != nil else {
+            throw ImageProcessingError.invalid(
+                "当前效果尚未完整生成；请先完成冲印再保存配方"
+            )
+        }
+        let recipe=recipeSnapshot(
+            name:name.trimmingCharacters(in:.whitespacesAndNewlines),
+            includeCover:includeCover
+        )
+        try recipe.validateStructure()
+        try saveRecipeLibrary(savedRecipes+[recipe])
+        status="已保存「" + recipe.name + "」的完整冲印参数；没有保存照片"
+    }
+
+    func renameSavedRecipe(_ recipe:Build126Recipe,to name:String) throws {
+        guard let index=savedRecipes.firstIndex(where:{$0.id==recipe.id}) else {
+            throw ImageProcessingError.invalid("配方已不存在")
+        }
+        var entries=savedRecipes
+        entries[index].name=name.trimmingCharacters(in:.whitespacesAndNewlines)
+        entries[index].modifiedAt=Date()
+        try saveRecipeLibrary(entries)
+    }
+
+    func duplicateSavedRecipe(_ recipe:Build126Recipe) throws {
+        guard let origin=savedRecipes.first(where:{$0.id==recipe.id}) else {
+            throw ImageProcessingError.invalid("配方已不存在")
+        }
+        var copy=origin
+        copy.id=UUID()
+        copy.name=String((origin.name + " 副本").prefix(40))
+        copy.favorite=false
+        copy.createdAt=Date()
+        copy.modifiedAt=Date()
+        try saveRecipeLibrary(savedRecipes+[copy])
+    }
+
+    func toggleRecipeFavorite(_ recipe:Build126Recipe) throws {
+        guard let index=savedRecipes.firstIndex(where:{$0.id==recipe.id}) else {
+            throw ImageProcessingError.invalid("配方已不存在")
+        }
+        var entries=savedRecipes
+        entries[index].favorite.toggle()
+        entries[index].modifiedAt=Date()
+        try saveRecipeLibrary(entries)
+    }
+
+    func deleteSavedRecipe(_ recipe:Build126Recipe) throws {
+        guard savedRecipes.contains(where:{$0.id==recipe.id}) else {
+            throw ImageProcessingError.invalid("配方已不存在")
+        }
+        try saveRecipeLibrary(savedRecipes.filter{$0.id != recipe.id})
+    }
+
+    func importSavedRecipe(_ url:URL) throws {
+        var recipe=try Build126RecipeStorage.imported(from:url)
+        recipe.id=UUID()
+        recipe.createdAt=Date()
+        recipe.modifiedAt=Date()
+        try saveRecipeLibrary(savedRecipes+[recipe])
+        status="导入配方「" + recipe.name + "」完成；尚未应用，也未导入照片"
+    }
+
+    func exportSavedRecipe(_ recipe:Build126Recipe) throws -> URL {
+        guard let found=savedRecipes.first(where:{$0.id==recipe.id}) else {
+            throw ImageProcessingError.invalid("配方不存在")
+        }
+        return try Build126RecipeStorage.export(found)
+    }
+
+    /// Reject incompatible source-pixel recipes before touching ANY setting.
+    /// The only RAW->JPEG8 conversion remains Build125's explicit user action.
+    func preflightSavedRecipe(_ recipe:Build126Recipe) throws {
+        try recipe.validateStructure()
+        guard hasPhoto,!busy,!simulationAwaitingCurrentSettings,
+              !isRecipeApplying,source != nil else {
+            throw ImageProcessingError.invalid("请先打开照片并完成当前冲印")
+        }
+        guard SpectralPhysics.supportedFilmIDs.contains(recipe.filmID),
+              SpectralPhysics.supportedPaperIDs.contains(recipe.paperID) else {
+            throw ImageProcessingError.invalid(
+                "配方的胶片或相纸不属于当前可模拟材料；未修改原编辑"
+            )
+        }
+        let bs=recipe.bools
+        let pixel=bs["sourcePixelIOEnabled"]==true
+        let physical=bs["sourcePhysicalDirectEnabled"]==true
+        if physical && !pixel {
+            throw ImageProcessingError.invalid(
+                "精细全光学依赖原版像素直连；配方前置条件相互冲突"
+            )
+        }
+        if pixel {
+            // Build111 may accept high-depth PNG/TIFF independently, but
+            // a saved **8-bit** recipe MUST not activate on 16-bit or RAW.
+            guard let p=photoInputProfile,
+                  originalPhotoData != nil,!rawFastModeActive,
+                  p.directCompatible,p.declaredDepth==8,p.decodedDepth==8,
+                  p.color == .sRGB,!p.hasAlphaChannel,
+                  !p.floatingComponents else {
+                throw ImageProcessingError.invalid(
+                    "8-bit 配方与当前照片不兼容：" + photoInputSummary +
+                    "。需要时请主动生成经认证的 sRGB 8-bit 副本后再应用；" +
+                    "本次已放弃，原设置和预览不变。"
+                )
+            }
+            guard bs["spatialDIREnabled"]==true,
+                  bs["spatialDIRSourceConvolutionEnabled"]==true,
+                  bs["grainEnabled"]==false,
+                  bs["scannerFinishingEnabled"]==false,
+                  abs((recipe.numbers["strength"] ?? 0)-1.0)<1e-9 else {
+                throw ImageProcessingError.invalid(
+                    "8-bit 原版直连依赖 FIR/YVV、100% 强度，" +
+                    "且不支持旧版随机颗粒或扫描后处理；配方拒绝应用"
+                )
+            }
+            if physical {
+                guard bs["hanatosOriginalPrecisionEnabled"]==true,
+                      bs["originalScannerEnabled"]==true,
+                      bs["scannerCAM16Enabled"]==false,
+                      bs["scannerBlackWhiteEnabled"]==false,
+                      bs["exposureReferenceEnabled"]==false else {
+                    throw ImageProcessingError.invalid(
+                        "精细全光学要求原版 Float64、ACES 扫描及独立工艺依赖；" +
+                        "配置不满足前置条件，拒绝应用"
+                    )
+                }
+            }
+        }
+        if recipe.embeddedLUT != nil &&
+            (pixel || bs["grainEnabled"]==true ||
+             bs["spatialDIREnabled"]==true) {
+            throw ImageProcessingError.invalid(
+                "自定义 .cube 不含原版胶片密度／DIR 阶段，" +
+                "不能假装支持精确或密度颗粒模式；配置拒绝应用"
+            )
+        }
+    }
+
+    func applySavedRecipe(_ recipe:Build126Recipe) throws {
+        try preflightSavedRecipe(recipe)
+        let previous=recipeSnapshot(name:"回滚",includeCover:false)
+        recipeUndo=RecipeUndo(
+            settings:previous,lut:lut,density:densityGrainStage,
+            dir:spatialDIRStage,preview:processedPreview,
+            previousStatus:status,
+            hadPendingSimulation:simulationAwaitingCurrentSettings,
+            desiredName:recipe.name
+        )
+        isRecipeApplying=true
+        setRecipeValues(recipe)
+        UserDefaults.standard.set(recipe.filmID,forKey:"compactFilmStock")
+        UserDefaults.standard.set(recipe.paperID,forKey:"compactPaperStock")
+        if let saved=recipe.embeddedLUT {
+            // Imported LUT has no measured density/DIR tape. Validated above.
+            invalidateSimulation()
+            lut=FilmLUT(
+                title:saved.title,dimension:saved.dimension,
+                rgbaFloatData:saved.rgbaFloatData
+            )
+            densityGrainStage=nil
+            spatialDIRStage=nil
+            do {
+                try refresh()
+                if processedPreview != nil { finishRecipePreview() }
+            } catch {
+                rejectRecipePreview(error.localizedDescription)
+            }
+        } else {
+            applyMeasuredSimulation()
+        }
+    }
+
+    private func finishRecipePreview() {
+        guard let undo=recipeUndo else {return}
+        recipeUndo=nil
+        isRecipeApplying=false
+        busy=false
+        status="配方「" + undo.desiredName +
+            "」已完整应用至当前照片；原始照片未保存到配方库"
+    }
+
+    private func rejectRecipePreview(_ reason:String) {
+        guard let undo=recipeUndo else {return}
+        // Kill any previous or in-flight preview before replaying cached
+        // state. This is a rollback, NOT a silent fast-mode fallback.
+        invalidateSimulation()
+        originalMetalPreviewVersion &+= 1
+        setRecipeValues(undo.settings)
+        UserDefaults.standard.set(undo.settings.filmID,
+                                  forKey:"compactFilmStock")
+        UserDefaults.standard.set(undo.settings.paperID,
+                                  forKey:"compactPaperStock")
+        lut=undo.lut
+        densityGrainStage=undo.density
+        spatialDIRStage=undo.dir
+        processedPreview=undo.preview
+        simulationAwaitingCurrentSettings=undo.hadPendingSimulation
+        recipeUndo=nil
+        isRecipeApplying=false
+        busy=false
+        status="配方「" + undo.desiredName +
+            "」应用失败并已完整回滚：" + reason
+    }
+
     /// Original Bayer DNG file from the most recent RAW+JPEG capture.
     @Published var capturedRAWURL: URL?
     /// Build93: only an explicit user choice opens non-source Apple RAW.
