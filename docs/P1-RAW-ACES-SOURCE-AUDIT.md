@@ -93,3 +93,17 @@ processing or establish optical engine RAW parity.
 The comparison helper now participates in the iPhoneOS target source list
 for a real Swift compile gate at the next **combined P1** build. Adding it
 to a target does not execute RAW reference comparisons or certify parity.
+
+## Strict source pixel-diff gate (chunked, zero tolerance)
+
+`python ios/scripts/p1_compare_raw_input.py --selftest` checks 21
+synthetic Float32 channels and proves one changed channel is rejected.
+It uses at most ~524288 RGB components per chunk and computes exact
+IEEE754 Float32 bit comparison, MAE/RMSE/max, mismatch index, and SHA.
+A real run requires `--manifest`, `--reference` (from original
+`p1_rawpy_input_golden.py`), `--native` (actual iPhone LibRaw RGB16 LE),
+and optionally `--raw` for original sensor file hash validation.
+
+The synthetic selftest has run locally; there is no real native RAW
+buffer or matching reference committed, so real decoding equality remains
+uncertified. A stage-input pass alone does not certify H-D/DIR/scan/IPA.
