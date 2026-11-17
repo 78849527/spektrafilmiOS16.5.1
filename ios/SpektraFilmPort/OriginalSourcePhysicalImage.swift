@@ -346,12 +346,41 @@ enum OriginalSourcePhysicalImage {
             alreadyCommittedInputBytes:committedInputBytes,
             cameraDiffusion:cameraFFT,paperDiffusion:paperFFT
         )
-        guard frame.rgb.count==w*h*3,
-              frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
-        else {
+        // The ImageIO Float32 TIFF transport legitimately preserves HDR
+        // components outside 0...1. This physical engine was numerically
+        // validated for encoded source RGB in 0...1 ONLY. Distinguish a
+        // real range error from dimensions/non-finite values, showing
+        // evidence so the user can explicitly choose a separate mapped
+        // Float32 working copy. Never clip or enter a fast fallback here.
+        guard frame.rgb.count==w*h*3 else {
             throw Failure.invalid(
-                "逐像素原版显影输入 RGB 尺寸／颜色范围错误，" +
-                "不能静默截断或改用移动模式"
+                "逐像素显影输入 RGB 通道数错误：实际=" +
+                String(frame.rgb.count) + "，期望=" + String(w*h*3)
+            )
+        }
+        var minimum=Double.infinity
+        var maximum = -Double.infinity
+        var outOfRange=0
+        var nonFinite=0
+        for value in frame.rgb {
+            if !value.isFinite {
+                nonFinite+=1
+            } else {
+                minimum=min(minimum,value)
+                maximum=max(maximum,value)
+                if value<0 || value>1 {outOfRange+=1}
+            }
+        }
+        guard nonFinite==0,outOfRange==0 else {
+            throw Failure.invalid(
+                "逐像素原版显影 RGB 检测不通过：" +
+                " min="+String(minimum)+
+                " max="+String(maximum)+
+                " 超出0～1通道="+String(outOfRange)+
+                " 非有限通道="+String(nonFinite)+
+                "。Float32 高动态输入可在「精细冲印」明确生成" +
+                "0～1 映射工作副本（保留浮点位深但改变输入颜色值）。" +
+                "不会自动裁切、转 8-bit 或切换快速模式。"
             )
         }
 
