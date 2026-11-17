@@ -31,12 +31,22 @@ final class PhotoEditorModel: ObservableObject {
     }
     var photoInputSummary:String {
         guard let p=photoInputProfile else {
-            return hasPhoto ? "RAW / 未认证输入：原版像素直连不可用" : "尚未导入照片"
+            if rawFastModeActive && capturedRAWURL != nil {
+                return "真实 DNG / Apple RAW 已解码｜胶片效果可用"
+            }
+            return hasPhoto ? "未认证输入：原版像素直连不可用" : "尚未导入照片"
         }
         return p.summary + (photoInputConvertedFromP3 ? "｜ColorSync 已转换" : "")
     }
     var photoInputExplanation:String {
-        photoInputProfile?.reason ??
+        if rawFastModeActive && capturedRAWURL != nil {
+            return "DNG 原片已完整保存，胶片／相纸效果正常可用。" +
+                "8-bit 原版像素直连要求另有经过检测的 8-bit sRGB 文件，" +
+                "不能把 Apple RAW 解码的 CIImage 伪装成 RAW 原版 Float64。" +
+                "需要此功能时，可主动生成 sRGB 8-bit 副本；它是有损转换，" +
+                "不等同于原始 RAW，原始 DNG 始终保留。"
+        }
+        return photoInputProfile?.reason ??
             "此照片没有可检测的原始文件数据，原版像素直连不可用。"
     }
 
@@ -52,6 +62,55 @@ final class PhotoEditorModel: ObservableObject {
         photoInputConvertedFromP3=true
         status="已明确使用 Apple ColorSync 将 P3 转为独立 sRGB JPEG；原始照片保留。(photoInputSummary)。原版全光学仍需通过其独立内存预算。"
     }
+    /// Build125: ONLY an explicit user selection can create a secondary
+    /// 8-bit sRGB file from genuinely developed RAW pixels. Never change the
+    /// original DNG, never claim source RAW or Python rawpy equivalence.
+    func convertActiveRAWTo8BitSRGBCopy() {
+        guard !busy,rawFastModeActive,
+              let preservedDNG=capturedRAWURL,
+              let rawImage=source else {
+            status="当前没有可转换的 Apple RAW 编辑图；原编辑未改变"
+            return
+        }
+        busy=true
+        status="正在将 Apple RAW 解码像素明确转换为独立 sRGB 8-bit 副本；原 DNG 不变…"
+        Task { @MainActor in
+            defer {busy=false}
+            do {
+                let output=try await Task.detached(priority:.userInitiated) {
+                    try Build125RAW8BitTransport.makeCertifiedCopy(rawImage)
+                }.value
+                let profile=Build111PhotoInputProfile.inspect(
+                    output,entry:.converted
+                )
+                guard profile.directCompatible else {
+                    throw ImageProcessingError.invalid(
+                        "转换后的 8-bit 文件不满足原版像素入口：" +
+                        profile.summary + "。" + profile.reason
+                    )
+                }
+                let decoded=try PhotoProcessor.decode(output)
+                let preview=try PhotoProcessor.preview(
+                    decoded,lut:nil,strength:0
+                )
+                try commitDecodedPhoto(
+                    image:decoded,preview:preview,
+                    data:output,rawURL:preservedDNG,rawCompatible:false,
+                    dimensions:"\(profile.dimensions) · DNG→sRGB 8-bit 副本",
+                    inputProfile:profile
+                )
+                status="8-bit sRGB 副本已通过原版像素输入预检，" +
+                    "可按原有前置条件开启 8-bit 直连／全光学。" +
+                    "输入已是 Apple RAW 转换的有损 JPEG 副本，" +
+                    "不等同于 RAW 传感器原始值或 Python rawpy 精确显影；" +
+                    "原始 DNG 已保留。"
+            } catch {
+                status="RAW 转 8-bit sRGB 副本失败；保持 RAW 冲印与原始 DNG：" +
+                    error.localizedDescription
+            }
+        }
+    }
+
     /// Original Bayer DNG file from the most recent RAW+JPEG capture.
     @Published var capturedRAWURL: URL?
     /// Build93: only an explicit user choice opens non-source Apple RAW.
