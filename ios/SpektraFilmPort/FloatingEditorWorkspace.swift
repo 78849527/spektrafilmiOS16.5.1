@@ -1609,13 +1609,30 @@ struct FloatingEditorWorkspace: View {
         VStack(alignment:.leading,spacing:7) {
             Text("胶片质感")
                 .font(.caption).fontWeight(.semibold)
-            resetToggle("胶片颗粒",value:$model.grainEnabled,
-                        enabled:model.hasPhoto && !model.busy && !directPixelMode,
-                        resetTo:false)
-                .onChange(of:model.grainEnabled) { _ in onRefresh() }
-            if model.grainEnabled && !directPixelMode {
-                strengthControl("颗粒强度",value:$model.grainAmount,
-                                range:0...2,suffix:"×",resetTo:1)
+            if fullPhysicalMode {
+                // Same original source binding as 工艺 → 胶片.
+                // Never expose the unrelated legacy fast-grain switch as
+                // an apparently broken toggle in the precise workflow.
+                resetToggle("原版三亚层颗粒",
+                            value:$model.sourcePhysicalGrainEnabled,
+                            enabled:model.hasPhoto && !model.busy,
+                            resetTo:false)
+                    .onChange(of:model.sourcePhysicalGrainEnabled) { _ in
+                        model.queueSpectralPreview()
+                    }
+                if model.sourcePhysicalGrainEnabled {
+                    Text("原版颗粒路线已开启；SciPy／Numba、染料云和微结构请在「工艺 → 胶片」调整。")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            } else {
+                resetToggle("胶片颗粒",value:$model.grainEnabled,
+                            enabled:model.hasPhoto && !model.busy && !directPixelMode,
+                            resetTo:false)
+                    .onChange(of:model.grainEnabled) { _ in onRefresh() }
+                if model.grainEnabled && !directPixelMode {
+                    strengthControl("颗粒强度",value:$model.grainAmount,
+                                    range:0...2,suffix:"×",resetTo:1)
+                }
             }
             resetToggle("背反射光晕",value:$model.halationEnabled,
                         enabled:model.hasPhoto && !model.busy &&
