@@ -1637,10 +1637,8 @@ struct FloatingEditorWorkspace: View {
                     sourceModeControl("8-bit 原版 DIR 像素直连（实验）",mode:.pixel)
                         .padding(.horizontal,10)
                 }
-                if fullPhysicalMode {
-                    sourceColorRouteControls
-                        .padding(.horizontal,10)
-                }
+                // The four source gamut buttons are now an on-demand
+                // section of 拍摄, never a permanently tall global header.
                 HStack(spacing:5) {
                     processTab(.camera)
                     processTab(.film)
@@ -1692,6 +1690,10 @@ struct FloatingEditorWorkspace: View {
                 Text("输入色域：" + (model.sourcePhysicalInputOklchEnabled
                     ? "Oklch Float64" : "经典 xy Float64"))
                     .font(.caption2).foregroundColor(.secondary)
+                DisclosureGroup("原版色域路线 · Oklch / CAM16-UCS") {
+                    sourceColorRouteControls
+                }
+                .font(.caption)
                 resetToggle("测光与镜头处理",value:$model.sourceCameraPreFilmEnabled,
                             enabled:model.hasPhoto && !model.busy,resetTo:false)
                     .onChange(of:model.sourceCameraPreFilmEnabled) { _ in
@@ -2032,7 +2034,7 @@ struct FloatingEditorWorkspace: View {
                     .font(.caption)
                 }
             }
-            Text("精细 CAM16-UCS 在上方选路线；扫描校准与光学参数均在此管理。")
+            Text("精细 CAM16-UCS 请在「工艺 → 拍摄 → 原版色域路线」选择；扫描校准与光学参数在此管理。")
                 .font(.caption2).foregroundColor(.secondary)
         }
     }
