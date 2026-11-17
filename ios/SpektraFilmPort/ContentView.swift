@@ -2552,6 +2552,7 @@ struct ContentView: View {
     @StateObject private var model = PhotoEditorModel()
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var cameraPresented = false
+    @State private var recipeLibraryPresented = false
     @State private var activeSheet: ImportSheet?
     @State private var message: String?
     @State private var pendingExport: ExportProposal?
@@ -2625,6 +2626,9 @@ struct ContentView: View {
                 },
                 onOpenCatalog: {
                     activeSheet = .stocks
+                },
+                onOpenRecipes: {
+                    recipeLibraryPresented=true
                 },
                 onExport: { resolution in
                     proposeExport(saveToPhotos: false, resolution: resolution)
@@ -2779,10 +2783,10 @@ struct ContentView: View {
                 }
             }
             .onChange(of: selectedFilmID) { _ in
-                model.queueSpectralPreview()
+                if !model.isRecipeApplying { model.queueSpectralPreview() }
             }
             .onChange(of: selectedPaperID) { _ in
-                model.queueSpectralPreview()
+                if !model.isRecipeApplying { model.queueSpectralPreview() }
             }
             .fullScreenCover(isPresented: $cameraPresented) {
                 NativeCameraScreen(
@@ -2792,6 +2796,15 @@ struct ContentView: View {
                         model.loadCapturedPhoto(photo)
                     }
                 )
+            }
+            .sheet(isPresented:$recipeLibraryPresented) {
+                Build126RecipeLibraryView(
+                    model:model,
+                    selectedFilmID:$selectedFilmID,
+                    selectedPaperID:$selectedPaperID
+                )
+                .presentationDetents([.medium,.large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(item: $activeSheet, onDismiss: {
                 if let output=temporarySharedExport {
