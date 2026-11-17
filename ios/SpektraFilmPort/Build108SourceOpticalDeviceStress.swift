@@ -9,6 +9,12 @@ import os
 /// actual 1MP and 2MP synthetic sRGB frames, with NO stage observer and
 /// NO hidden Float32/CI fallback. Not equivalent to real 13MP/RAW ingress.
 enum Build108SourceOpticalDeviceStress {
+    struct StageRSS:Codable {
+        let stage:String
+        let elapsedSeconds:Double
+        let residentBytes:UInt64?
+        let processAvailableBytes:UInt64?
+    }
     struct OpticalCase: Codable {
         let label: String
         let width: Int
@@ -172,7 +178,8 @@ enum Build108SourceOpticalDeviceStress {
     /// This is the actual production per-pixel Hanatos→H-D→spatial DIR→
     /// measured source grain (when enabled)→optical paper→scanner.
     private static func render(
-        _ geometry:Geometry,with parameters:OriginalSourcePhysicalImage.Parameters
+        _ geometry:Geometry,with parameters:OriginalSourcePhysicalImage.Parameters,
+        phaseObserver:((String)->Void)?=nil
     ) throws ->(samples:Int,checksum:Double) {
         let w=geometry.width,h=geometry.height,pixels=w*h
         var frame=OriginalSourcePixelIO.Frame(
@@ -188,7 +195,8 @@ enum Build108SourceOpticalDeviceStress {
             }
         }
         try OriginalSourcePhysicalImage.developInPlace(
-            &frame,parameters:parameters,stageDoubleObserver:nil
+            &frame,parameters:parameters,stageDoubleObserver:nil,
+            phaseMemoryObserver:phaseObserver
         )
         guard frame.rgb.count==pixels*3,
               frame.rgb.allSatisfy({$0.isFinite}) else {
@@ -222,12 +230,17 @@ enum Build108SourceOpticalDeviceStress {
         )
     }
 
-    private static func measure(_ g:Geometry)->OpticalCase {
-        let bpp:UInt64=g.grain
-            ? OriginalSourcePhysicalGrain.extraBytesPerPixel +
-              (g.parallelFastStats
-                ? OriginalSourcePhysicalGrain.unseededParallelExtraBytesPerPixel
-                : 0) : 0
+    private static func measure(
+        _ g:Geometry,phaseSink:((StageRSS)->Void)?=nil
+    )->OpticalCase {
+        // Same baseline knobs as settings(); never bypass real renderer gate.
+        let bpp=Build106SourceMemoryLedger.productionAdditional(
+            scannerFinish:false,scannerGlare:false,grain:g.grain,
+            grainSublayers:true,cameraActive:false,cameraLens:false,
+            filmHalation:false,paperDiffusion:false,stageObserver:false,
+            paperStageObserver:false,outputGamut:false,
+            parallelGrain:g.parallelFastStats
+        )
         var budget:UInt64?
         do {
             // SAME pre-allocation source memory admission as production.
@@ -262,10 +275,20 @@ enum Build108SourceOpticalDeviceStress {
         var sum:Double?
         var firstFailure:String?
         do {
+            let callback:((String)->Void)? = phaseSink.map { sink in
+                return { (name:String) in
+                    sink(StageRSS(
+                        stage:name,
+                        elapsedSeconds:ProcessInfo.processInfo.systemUptime-start,
+                        residentBytes:resident(),
+                        processAvailableBytes:available()
+                    ))
+                }
+            }
             let actual=try render(
                 g,with:settings(
                     grain:g.grain,parallelFastStats:g.parallelFastStats
-                )
+                ),phaseObserver:callback
             )
             count=actual.samples
             sum=actual.checksum
@@ -614,6 +637,168 @@ enum Build108SourceOpticalDeviceStress {
                 "Unseeded Numba output may not repeat bitwise; no Python full-size image parity"
             ]
         )
+    }
+
+
+    // Build118: one explicit 8/10/13MP button per report; no chained sizes.
+    struct Build118LargeCase:Codable {
+        let route:String
+        let optical:OpticalCase
+        let stages:[StageRSS]
+    }
+    struct Build118LargeReport:Codable {
+        let schema:Int
+        let appVersion:String
+        let appBuild:String
+        let compiledSourceCommit:String
+        let osVersion:String
+        let physicalDevice:Bool
+        let megapixels:Int
+        let width:Int
+        let height:Int
+        let cases:[Build118LargeCase]
+        let measuredCaseCount:Int
+        let refusedCaseCount:Int
+        let failedCaseCount:Int
+        let notRunCaseCount:Int
+        let bothRoutesRendered:Bool
+        let firstFailure:String?
+        let generatedUTC:String
+        let limitations:[String]
+    }
+    static func captureBuild118Large(
+        megapixels:Int,version:String,build:String,commit:String,
+        osVersion:String,physicalDevice:Bool,checkpointURL:URL?
+    )->Build118LargeReport {
+        let shape:(Int,Int)
+        switch megapixels {
+        case 8: shape=(4000,2000)
+        case 10: shape=(4000,2500)
+        case 13: shape=(5000,2600)
+        default: shape=(0,0)
+        }
+        let target=physicalDevice && osVersion=="16.5.1" &&
+            build=="118" && shape.0>0 &&
+            commit.count==40 && commit.allSatisfy {
+                "0123456789abcdef".contains($0)
+            }
+        var results=[Build118LargeCase]()
+        var executionFailure:String?
+        var checkpointFailure:String?
+        func checkpoint(_ step:String)->Bool {
+            guard let checkpointURL else {return true}
+            var text="status=IN_PROGRESS\napp=\(version) build=\(build) sha=\(commit)\n"
+            text+="selected=\(megapixels)MP\nstep=\(step)\ncompleted=\(results.count)/2\n"
+            for entry in results {
+                text+="\(entry.route): \(entry.optical.status), RSS="
+                text+="\(entry.optical.sampledPeakResidentBytes.map{String($0)} ?? "none")"
+                text+=" error=\(entry.optical.firstFailure ?? "none")\n"
+            }
+            do {
+                try text.write(to:checkpointURL,atomically:true,encoding:.utf8)
+                return true
+            } catch {
+                checkpointFailure=error.localizedDescription
+                return false
+            }
+        }
+        for parallel in [false,true] {
+            let route=parallel ? "Numba4WorkerFastStats" : "SciPySeeded"
+            let g=Geometry(
+                label:"Build118_\(megapixels)MP_\(route)_3x3_Float64",
+                width:shape.0,height:shape.1,
+                grain:true,parallelFastStats:parallel
+            )
+            let safe=checkpoint("BEFORE_\(route)")
+            var samples=[StageRSS]()
+            let value:OpticalCase
+            if !target {
+                value=skipped(g,"必须为源码 SHA 绑定的 Build118 iOS16.5.1 真机")
+            } else if !safe || checkpointFailure != nil {
+                value=skipped(g,"Jetsam 检查点无法写入，停止大图渲染")
+            } else if let executionFailure {
+                value=skipped(g,"前一真实渲染失败，停止下一条路线："+executionFailure)
+            } else {
+                value=measure(g,phaseSink:{ sample in
+                    samples.append(sample)
+                    _=checkpoint("IN_\(route)_\(sample.stage)")
+                })
+                if value.status=="real_source_render_failed_or_unmeasured" {
+                    executionFailure=value.firstFailure ?? "真实渲染失败"
+                }
+            }
+            results.append(Build118LargeCase(
+                route:route,optical:value,stages:samples
+            ))
+            _=checkpoint("AFTER_\(route)")
+        }
+        let passed=results.filter{
+            $0.optical.status=="real_source_float64_render_pass"
+        }.count
+        let refused=results.filter{
+            $0.optical.status=="refused_by_production_memory_gate"
+        }.count
+        let failed=results.filter{
+            $0.optical.status=="real_source_render_failed_or_unmeasured"
+        }.count
+        let notRun=results.filter{$0.optical.status=="not_run"}.count
+        return Build118LargeReport(
+            schema:1,appVersion:version,appBuild:build,
+            compiledSourceCommit:commit,osVersion:osVersion,
+            physicalDevice:physicalDevice,megapixels:megapixels,
+            width:shape.0,height:shape.1,cases:results,
+            measuredCaseCount:passed,refusedCaseCount:refused,
+            failedCaseCount:failed,notRunCaseCount:notRun,
+            bothRoutesRendered:passed==2 && checkpointFailure==nil,
+            firstFailure:checkpointFailure ?? executionFailure ??
+                (target ? nil : "非 Build118 iOS16.5.1 真机"),
+            generatedUTC:ISO8601DateFormatter().string(from:Date()),
+            limitations:[
+                "Separate size selection: two source-grain routes for one selected resolution only",
+                "Same 80% process headroom and predecode/renderer production gate",
+                "25ms sampled RSS + stage point samples are NOT exact Jetsam high-water marks",
+                "Atomic checkpoint persists the last stage before potential Jetsam",
+                "Synthetic sRGB only; no RAW/ICC/16-bit full-path Python parity",
+                "Numba unseeded worker results are stochastic, not bit-identical arbitrary source stream",
+                "Other optional camera/print/scanner/FFT routes keep conservative memory ledger"
+            ]
+        )
+    }
+
+    static func writeBuild118Large(
+        _ report:Build118LargeReport,documents:URL
+    ) throws -> (log:URL,json:URL) {
+        let folder=documents.appendingPathComponent(
+            "SpektraFilm Verification",isDirectory:true
+        )
+        try FileManager.default.createDirectory(
+            at:folder,withIntermediateDirectories:true
+        )
+        let prefix="Build118-\(report.megapixels)MP-grain-memory-"+UUID().uuidString
+        let log=folder.appendingPathComponent(prefix+".log")
+        let json=folder.appendingPathComponent(prefix+".json")
+        let encoder=JSONEncoder()
+        encoder.outputFormatting=[.prettyPrinted,.sortedKeys]
+        try encoder.encode(report).write(to:json,options:.atomic)
+        var text="Build118 independent \(report.megapixels)MP SciPy and Numba 3x3 Float64\n"
+        text+="App \(report.appVersion) Build\(report.appBuild) SHA \(report.compiledSourceCommit)\n"
+        text+="iOS \(report.osVersion), physical \(report.physicalDevice)\n"
+        text+="Measured \(report.measuredCaseCount)/2; refused \(report.refusedCaseCount); failed \(report.failedCaseCount); not-run \(report.notRunCaseCount)\n"
+        text+="Both actual renders passed: \(report.bothRoutesRendered)\n"
+        for entry in report.cases {
+            let c=entry.optical
+            text+="\n\(entry.route): \(c.status) \(c.width)x\(c.height)\n"
+            text+="Budget \(c.estimatedProductionBudgetBytes.map{String($0)} ?? "none") RSS before / sampled peak / after: \(c.beforeResidentBytes.map{String($0)} ?? "none") / \(c.sampledPeakResidentBytes.map{String($0)} ?? "none") / \(c.afterResidentBytes.map{String($0)} ?? "none")\n"
+            text+="Minimum headroom \(c.minimumAvailableBytes.map{String($0)} ?? "none") samples \(c.residentSampleCount) seconds \(c.elapsedSeconds.map{String($0)} ?? "none") checksum \(c.outputSampleChecksum.map{String($0)} ?? "none")\n"
+            text+="First failure / admission reason \(c.firstFailure ?? "none")\n"
+            for point in entry.stages {
+                text+="  \(point.stage) t=\(point.elapsedSeconds)s rss=\(point.residentBytes.map{String($0)} ?? "none") available=\(point.processAvailableBytes.map{String($0)} ?? "none")\n"
+            }
+        }
+        text+="\nFirst failure \(report.firstFailure ?? "none")\n"
+        text+=report.limitations.joined(separator:"\n")
+        try text.write(to:log,atomically:true,encoding:.utf8)
+        return (log,json)
     }
 
     static func writeBuild116GrainMemory(
