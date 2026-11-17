@@ -31,6 +31,7 @@ struct FloatingEditorWorkspace: View {
     let onRunBuild110GamutEvidence: () -> Void
     let onRunBuild114FourGates: () -> Void
     let onRunBuild115ParallelGrain: () -> Void
+    let onRunBuild116GrainMemory: () -> Void
     let onDiagnosticSheetDismissed: () -> Void
     let onCaptureBuild77Evidence: () -> Void
 
@@ -1005,6 +1006,18 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
                     Text("实测 4 工作线程 Poisson/Binomial 和 lognormal 统计；执行两条真实三亚层颗粒路线（SciPy 与可选 fast_stats），导出 SHA 绑定的 LOG＋JSON。仅统计等价，不冒充随机像素逐位一致。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunBuild116GrainMemory()
+                    } label: {
+                        Label("Build116：1MP／2MP 多线程三亚层颗粒内存实测",
+                              systemImage:"memorychip")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("真实执行原版 Float64 3×3 颗粒＋4 工作线程 fast_stats，采样内存 RSS 并导出 LOG＋JSON。高内存风险，可能被系统终止；13MP 只做安全拒绝检查，不分配大图。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Divider()
