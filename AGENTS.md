@@ -15,8 +15,8 @@
 
 ## 固定构建环境与发布门槛
 
-- **GitHub-hosted iOS 编译使用 Apple Silicon `macos-15`，目标 `iphoneos arm64`，最低部署版本 iOS 16.5，真机重点 iOS 16.5.1。**
-- 不因失败猜测原因就更换为 `macos-15-intel`、`macos-14`、浮动的 `macos-latest` 或改变依赖。需要临时例外必须先获得项目所有者明确许可，并记录理由和恢复方案。
+- **构建机架构不再限制：GitHub-hosted Intel/Apple Silicon macOS Runner 均可使用；按可用性与所需 Xcode/iPhoneOS SDK 选择。最终产物必须是 `iphoneos arm64`，最低部署版本 iOS 16.5，重点真机 iOS 16.5.1。**
+- 不得将宿主机架构与 iPhone App 目标架构混淆。切换 Runner 不得改变原版算法、依赖版本、数值阈值或跳过回归。某个镜像缺少 Xcode/SDK 或工具时明确报错并换可用镜像，而不是静默退化。
 - Python、NumPy、SciPy、Numba、llvmlite 的依赖版本需匹配原版冻结基准及当前已验证 Runner；变更必须有独立验证，不得静默升级。
 - 批量修改、低成本预检后再启动全量构建；同一 Bug 构建失败不新建分支、不无意义增 Build 编号。
 - 发布须真实通过适用的 Python 原版数值回归、Swift 验证、iPhoneOS 编译、真机验证及身份校验；无法完成全面科学认证时只能明确标记“未认证”。

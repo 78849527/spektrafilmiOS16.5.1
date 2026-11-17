@@ -131,7 +131,33 @@ enum Build78FloatTIFFIngress {
                     let raw:UInt16 = little
                         ? (UInt16(p[off]) | (UInt16(p[off+1]) << 8))
                         : ((UInt16(p[off]) << 8) | UInt16(p[off+1]))
-                    return Double(Float16(bitPattern:raw))
+                    // IEEE-754 binary16 -> binary32 is exact for every finite
+                    // source value. Decode bits directly: Intel Swift does
+                    // not expose the same Float16 conversion initializers.
+                    // No rounding, clipping, gamut remap or source change.
+                    let sign=UInt32(raw & 0x8000) << 16
+                    let exponent=UInt32((raw >> 10) & 0x1F)
+                    var fraction=UInt32(raw & 0x03FF)
+                    let bits32:UInt32
+                    if exponent==0 {
+                        if fraction==0 {
+                            bits32=sign // Preserve signed zero.
+                        } else {
+                            var exponent32:UInt32=113
+                            while (fraction & 0x0400)==0 {
+                                fraction <<= 1
+                                exponent32 -= 1
+                            }
+                            bits32=sign | (exponent32 << 23) |
+                                ((fraction & 0x03FF) << 13)
+                        }
+                    } else if exponent==31 {
+                        bits32=sign | 0x7F800000 | (fraction << 13)
+                    } else {
+                        bits32=sign | ((exponent+112) << 23) |
+                            (fraction << 13)
+                    }
+                    return Double(Float(bitPattern:bits32))
                 }
                 var raw:UInt32=0
                 if little {

@@ -75,7 +75,7 @@
 2. 构建失败**继续使用原分支**并修复，不能因失败或重新测试而无意义提高 Build 编号。
 3. 形成新的可验收版本后再推进正式版本/Build 号；发布前核验版本、提交、资产与测试对应关系。
 4. 更改范围涉及的原版对照和全部必要历史回归必须通过，严禁绕过测试。
-5. Linux 做低成本依赖/静态预检；正式 iOS 编译使用现有经验证的 Apple Silicon `macos-15` Runner，目标必须是 **iPhoneOS arm64**，最低 iOS 16.5；不得因猜测错误擅自更换 runner。
+5. Linux 做低成本依赖/静态预检；**正式 iOS 编译机不再限制 Intel 或 Apple Silicon**，允许使用具备必要 Xcode、iPhoneOS SDK 与依赖的 macOS GitHub Runner，按可用性选择。最终编译目标必须是 **iPhoneOS arm64**，最低 iOS 16.5；不得因为切换构建机而更改 Python 原版算法、数值门槛、依赖版本或绕过验证。
 6. 保持 NumPy/SciPy/Numba/llvmlite 等版本与原版及验证环境兼容，变更必须有依据和回归。
 7. 严格区分：静态检查、Python 参考、Swift 数值验证、iPhoneOS 编译、iOS 16.5.1 真机、IPA 发布及签名/安装验证。
 8. **只有实际发布且核实资源存在，才能提供 IPA 直链。** 未签名 IPA 必须明确说明需要签名。

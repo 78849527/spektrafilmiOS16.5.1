@@ -1,3 +1,4 @@
+# Build132 Intel compile fix: exact IEEE754 binary16->Float32->Float64 conversion; host architectures unrestricted, target still iPhoneOS arm64.
 # Build132 source oracle: load frozen optical Python source without eager optional RAW/exiv2 imports.
 # Build132 scoped retry: add only upstream-based P1 RAW/ACES source files to historical Build116 original-module diff gate.
 # Build132 retry: preserve original named RAW import entry points for Build103/95 historical GUI source audit.
@@ -65,6 +66,16 @@ on:
       # Re-run explicitly via workflow_dispatch after multi-module changes.
       - '.github/workflows/build131-ios1651-strict-source-input-cleanup-ipa.yml'
   workflow_dispatch:
+    inputs:
+      macos_runner:
+        description: "macOS build host (App target remains iPhoneOS arm64)"
+        required: false
+        type: choice
+        default: macos-15-intel
+        options:
+          - macos-15-intel
+          - macos-15
+          - macos-latest
 
 permissions:
   contents: write
@@ -132,26 +143,23 @@ jobs:
 
   group-compile-once:
     needs: runner-preflight
-    # Owner-approved Build132 TEMPORARY Intel host exception (2026-11-17).
-    # Cause: two macos-15 arm64 jobs canceled after ~15min without runner allocation.
-    # Only the CI host CPU changes. Xcode 16.4, iPhoneOS arm64, iOS 16.5,
-    # original Python/Swift/Metal sources, versions, RNG and all gates stay put.
-    # Restore after hosted ARM64 capacity recovers: runs-on: macos-15
-    # and test "$(uname -m)" = arm64 below. Do not promote host parity to
-    # original Python numerical certification without reference comparison.
-    runs-on: macos-15-intel
+    # Owner decision: any macOS host architecture is allowed.
+    # Push uses Intel while available; workflow_dispatch can select ARM64.
+    # Only host changes. The compiled iPhoneOS arm64 target, Xcode, original
+    # optical sources, versions, RNG and parity tests remain unchanged.
+    runs-on: ${{ inputs.macos_runner || 'macos-15-intel' }}
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
         uses: actions/checkout@v4
       - name: Use Xcode iPhoneOS SDK and report real source SHA
         run: |
-          # This is the BUILD HOST, not the App target (still iPhoneOS arm64).
-          test "$(uname -m)" = x86_64
+          # Host CPU does not decide the iPhoneOS app's architecture.
+          case "$(uname -m)" in x86_64|arm64) ;; *) echo "::error::Unsupported macOS host"; exit 1 ;; esac
           sudo xcode-select -s /Applications/Xcode_16.4.app
           test -d "$(xcode-select -p)"
           xcodebuild -version | grep -F 'Xcode 16.4'
-          echo "Intel macOS host; cross-compiling iPhoneOS arm64 with unchanged source"
+          echo "Host $(uname -m): cross-compiling iPhoneOS arm64; algorithms unchanged"
           xcodebuild -version
           git rev-parse HEAD
       - uses: actions/setup-python@v5
