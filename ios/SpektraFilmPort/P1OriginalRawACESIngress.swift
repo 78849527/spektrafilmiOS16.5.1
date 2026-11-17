@@ -46,6 +46,44 @@ enum P1OriginalRawACESIngress {
                       decoderVersion: result.decoder)
     }
 
+    /// Diagnostic-only full original optical engine call from a preserved RAW
+    /// file. The decoder and image are NEVER passed through Apple CI or TIFF.
+    /// Critical: this does NOT establish rawpy/LibRaw equality; it is not
+    /// connected to the user-facing "原版精确" selector until the Python tap
+    /// comparison and real iPhoneOS hardware gates pass.
+    ///
+    /// Unlike the old flow, a caller receives the actual source-space pixel
+    /// frame, and the existing original film/paper/scanner engine is reused.
+    /// No new optical approximation, LUT substitution or mode fallback.
+    static func developSourceCandidate(
+        _ rawURL: URL, opticalSettings: OriginalSourcePhysicalImage.Parameters
+    ) throws -> OriginalSourcePixelIO.Frame {
+        var selected = opticalSettings
+        // Python raw_file_processor outputs linear ACES2065-1 by default;
+        // ensure its samples can NEVER enter a display-sRGB transfer function.
+        selected.cameraInputColorSpace = .acesLinear
+        try selected.validate()
+        // Fail BEFORE demosaicing when the existing whole-image optical
+        // engine cannot actually consume the dimensions within its budget.
+        // Do not pretend the 13MP current ceiling is an upstream limitation.
+        // A future full-size implementation must prove peak RSS separately.
+        guard let dimensions = try Build79RAWSignature.probeFile(rawURL) else {
+            throw Failure.invalid("P1：未识别真实 RAW 文件，不能改用内嵌 JPEG")
+        }
+        _ = dimensions
+        let decoded = try open(rawURL)
+        try OriginalSourcePhysicalImage.validateMemoryBudget(
+            width: decoded.width, height: decoded.height
+        )
+        var frame = try makeSourceFrame(
+            decoded, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
+        )
+        try OriginalSourcePhysicalImage.developInPlace(
+            &frame, parameters: selected
+        )
+        return frame
+    }
+
     /// Match original rawpy: np.float32(uint16) / np.float32(65535).
     /// Values are promoted to Double only after that source quantization.
     /// Caller must separately validate downstream memory and stage gamut.

@@ -65,3 +65,16 @@ coordinates and physical brightness **without** modifying original input.
 The Swift source tap must be measured against this fixture before removing
 the existing iOS-only input-range rejection. This test has not been run
 against a macOS/iPhone build and is not a certification by itself.
+
+## Direct RAW → Float64 optical engine (candidate, NOT a released feature)
+
+`P1OriginalRawACESIngress.developSourceCandidate(rawURL:opticalSettings:)`
+connects the preserved native 16-bit/Float32 linear ACES pixels directly to
+`OriginalSourcePhysicalImage.developInPlace` while setting
+`cameraInputColorSpace = .acesLinear`. No TIFF/JPEG intermediary, re-tagging,
+CoreImage RGB working space, or alternative optical algorithm is used.
+
+This function is **diagnostic-only** until a real iOS16.5.1 compile, decoder
+comparison, exact stage taps and memory accounting have passed. The existing
+13MP ceiling remains enforced explicitly; do not misrepresent it as an
+upstream Python limitation. The current app UI is unchanged.
