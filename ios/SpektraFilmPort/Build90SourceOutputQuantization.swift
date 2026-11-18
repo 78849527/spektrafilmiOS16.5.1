@@ -93,26 +93,38 @@ enum Build90SourceOutputQuantization {
     static func packed(
         _ rgb:[Double],as spec:Specification
     ) throws->Data {
-        let q=try quantize(rgb,as:spec)
         let bpc=spec.storage.bitsPerChannel/8
         guard rgb.count <= Int.max/bpc else {
             throw Failure.invalid("输出缓冲区溢出")
         }
+        guard rgb.allSatisfy({$0.isFinite}) else {
+            throw Failure.invalid(
+                "源输出有 NaN/Inf，拒绝将其当成真实 uint8/EXR 成功"
+            )
+        }
+        // Build136 memory audit: write the exact source quantization
+        // directly to the packed buffer. The previous quantize() call
+        // allocated an unnecessary full-frame [Double] (24 B/px RGB).
+        // Preserve source rounding, component order and byte order.
         var data=Data(capacity:rgb.count*bpc)
-        for x in q {
+        for value in rgb {
             switch spec.storage {
             case .uint8:
-                data.append(UInt8(x))
+                data.append(UInt8(
+                    (min(1,max(0,value))*255).rounded(.towardZero)
+                ))
             case .uint16:
-                let v=UInt16(x)
+                let v=UInt16(
+                    (min(1,max(0,value))*65535).rounded(.towardZero)
+                )
                 data.append(UInt8((v>>8)&255))
                 data.append(UInt8(v&255))
             case .float16:
-                let v=Float16(x).bitPattern
+                let v=Float16(value).bitPattern
                 data.append(UInt8(v&255))
                 data.append(UInt8((v>>8)&255))
             case .float32:
-                let v=Float(x).bitPattern
+                let v=Float(value).bitPattern
                 for shift in stride(from:0,to:32,by:8) {
                     data.append(UInt8((v>>shift)&255))
                 }
