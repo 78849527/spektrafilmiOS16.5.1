@@ -194,6 +194,21 @@ struct SafeExportResolutionValidation {
                 rawTIFF16,processAvailableMemory:1_800_000_000)
             fatalError("Must reject low process headroom")
         } catch SafeExportResolution.Failure.invalid {}
-        print("PASS Build135: source original TIFF16 1560MB estimate accepted at 3.12GB OS headroom, low headroom refused, no automatic resize")
+        for mp in ExportResolutionMode.presetWanPixels {
+            let fixed=try SafeExportResolution.plan(
+                width:4032,height:3024,physicalMemory:8_000_000_000,
+                processAvailableMemory:4_000_000_000,mode:.megapixels(mp)
+            )
+            precondition(fixed.dimensions.pixels<=UInt64(mp)*10_000)
+            precondition(fixed.dimensions.pixels>=UInt64(mp)*10_000-20_000)
+            precondition(fixed.mode.title=="\(mp) 万像素")
+        }
+        let noUpscale=try SafeExportResolution.plan(
+            width:2400,height:1800,physicalMemory:8_000_000_000,
+            processAvailableMemory:4_000_000_000,mode:.megapixels(1200)
+        )
+        precondition(!noUpscale.dimensions.reduced &&
+                     noUpscale.dimensions.pixels==4_320_000)
+        print("PASS Build136: five fixed sizes, no upscale, dynamic original TIFF16 admission, low-headroom rejection")
     }
 }

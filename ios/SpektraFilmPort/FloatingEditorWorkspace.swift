@@ -1022,7 +1022,8 @@ struct FloatingEditorWorkspace: View {
                 .disabled(model.busy)
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
-            // original unchanged; smart up to 1300MB with live headroom and 12MP; economy 30% up to 7.2MP.
+            // original unchanged; smart up to 12MP/live OS headroom,
+            // economy 30% up to 7.2MP, five explicit fixed output caps.
             // Do not silently shrink after a failed original-size render.
             Menu {
                 Button("原始分辨率（不缩小）") {

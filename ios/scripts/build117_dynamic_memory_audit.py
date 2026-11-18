@@ -13,7 +13,7 @@ assert "maximumSourceMemoryBudget" not in read("ios/SpektraFilmPort/OriginalSour
 assert "let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3" in mem
 assert "remainingPeak<=($0/10)*8" in mem
 assert "alreadyCommittedInputBytes<=plan.basePeakBytes" in mem
-assert "FFT.sourceCap" in mem
+assert "FFT.sourceCap" not in mem and "let allowed=processAvailable.map" in mem
 assert "retainAllSublayers=stageObserver != nil" in grain
 assert "pixels*(retainAllSublayers ? 9 : 3)" in grain
 assert "layerInputs[p*3+sl]=layerScratch[sl*3+ch]" in grain

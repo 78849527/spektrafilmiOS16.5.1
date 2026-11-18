@@ -126,7 +126,7 @@ checks.update({
         "image->bits != (unsigned)bits" in libraw_bridge,
     "libraw_precise_bytes": "required != (uint64_t)image->data_size" in libraw_bridge and
         "(uint64_t)(bits / 8)" in libraw_bridge,
-    "libraw_native_pre_unpack_guard": "estimatedBytes > 1400000000ull" in libraw_bridge and
+    "libraw_native_pre_unpack_guard": "estimatedBytes > (headroom / 100ull) * 70ull" in libraw_bridge and
         "libraw_unpack(raw)" in libraw_bridge,
     "libraw_8bit_kept": "decodeURL:url bitsPerComponent:8 error:error" in libraw_bridge and
         "Build94LibRawIngress.open(url)" in main,
@@ -143,7 +143,7 @@ checks.update({
     "libraw_16bit_native_sanity": "PASS Build95 macOS 16-bit" in rgb16_test and
         "recovered == data" in rgb16_test and "RGBAf" in rgb16_test,
     "libraw_memory_limit": "45_000_000 / height" in raw16 and
-        "estimate <= 1_400_000_000" in raw16,
+        "return estimate" in raw16 and "1_400_000_000" not in raw16,
     "libraw_ios16_5": 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in spec,
 })
 # Build96: code surface checks are NOT substitutes for macOS real-file
@@ -165,7 +165,7 @@ checks.update({
         "writeTIFFRepresentation" in tiff,
     "tiff16_livesafe":
         "SafeExportResolution.currentProcessHeadroom()" in tiff and
-        "bytes <= available / 100 * 70" in tiff and
+        "bytes <= headroom / 100 * 70" in tiff and
         "width <= 45_000_000 / height" in tiff,
     "tiff16_not_original_float64_fallback":
         "tiff16 && sourcePixelIOEnabled" in main and
