@@ -8,12 +8,23 @@ enum ExportResolutionMode: Equatable {
     case original
     case safe      // adaptive up to 12MP, live headroom enforced
     case economy   // adaptive 30% of live memory, up to 7.2MP
+    case megapixels(Int) // explicit cap in units of 10,000 pixels
+
+    static let presetWanPixels = [720, 800, 900, 1000, 1200]
+
+    var permitsRAWFullOpticalExport: Bool {
+        switch self {
+        case .original, .megapixels: return true
+        case .safe, .economy: return false
+        }
+    }
 
     var title: String {
         switch self {
         case .original: return "原始分辨率"
         case .safe: return "智能安全分辨率"
         case .economy: return "省内存分辨率"
+        case .megapixels(let count): return "\(count) 万像素"
         }
     }
 }
@@ -53,6 +64,7 @@ enum SafeExportResolution {
         /// Maximum projected peak for this export, NOT pre-allocated memory.
         let allocationAllowanceBytes: UInt64
         let estimatedPeakBytes: UInt64
+        let fullSourceProcessing: Bool
 
         var summary: String {
             let estimatedMB = estimatedPeakBytes / 1_000_000
@@ -63,11 +75,12 @@ enum SafeExportResolution {
             } ?? "未获取（按物理预算估算）"
             return """
             原始照片：\(sourceWidth) × \(sourceHeight)（约 \(Double(sourceWidth)*Double(sourceHeight)/1_000_000) 百万像素）
-            已选档位：\(mode == .safe ? "智能安全（上限1200万）" : mode == .economy ? "省内存（上限720万）" : "原始尺寸")
+            已选档位：\(mode.title)
             预计输出：\(dimensions.width) × \(dimensions.height)（约 \(Double(dimensions.pixels)/1_000_000) 百万像素）
             预计显影峰值：约 \(estimatedMB) MB
             设备安全预算：约 \(budgetMB) MB；本档计划上限 \(allowanceMB) MB（估算上限，非预占内存）
             当前 App 可分配余量：\(headroom)
+            \(fullSourceProcessing ? "RAW 光学冲印仍在原尺寸完成，导出缩图不节省冲印内存。" : "")
             JPEG 质量 98%。估算不是内存保证；失败不自动降档。
             """
         }
@@ -97,7 +110,8 @@ enum SafeExportResolution {
         processAvailableMemory: UInt64?,
         mode: ExportResolutionMode,
         estimatedBytesPerPixel: UInt64 =
-            SafeExportResolution.estimatedBytesPerPixel
+            SafeExportResolution.estimatedBytesPerPixel,
+        fullSourceProcessing: Bool = false
     ) throws -> Plan {
         guard width > 0, height > 0, width <= 50_000,
               height <= 50_000, physicalMemory > 0,
@@ -106,6 +120,11 @@ enum SafeExportResolution {
             throw Failure.invalid("输出分辨率：原图尺寸或设备内存数据无效")
         }
         let sourcePixels = UInt64(width) * UInt64(height)
+        if case .megapixels(let count) = mode {
+            guard ExportResolutionMode.presetWanPixels.contains(count) else {
+                throw Failure.invalid("像素档位必须是 720/800/900/1000/1200 万")
+            }
+        }
         // No fixed MB budget. Headroom is updated for each export request.
         let budget = processAvailableMemory ?? physicalMemory / 3
         let percentage: UInt64
@@ -113,6 +132,7 @@ enum SafeExportResolution {
         case .original: percentage = originalBudgetPercent
         case .safe: percentage = intelligentBudgetPercent
         case .economy: percentage = economyBudgetPercent
+        case .megapixels: percentage = originalBudgetPercent
         }
         let allowance: UInt64
         switch mode {
@@ -121,13 +141,17 @@ enum SafeExportResolution {
         case .safe:
             // Explicit 12MP geometry and 90% live headroom; no fixed MB cap.
             allowance = (budget / 100) * percentage
-        case .economy:
+        case .economy, .megapixels:
             allowance = (budget / 100) * percentage
         }
         let targetPixels: UInt64
-        if mode == .original {
+        switch mode {
+        case .original:
             targetPixels = sourcePixels
-        } else {
+        case .megapixels(let count):
+            // Fixed cap: never auto-reduce further when memory is low.
+            targetPixels = min(sourcePixels, UInt64(count) * 10_000)
+        case .safe, .economy:
             guard budget > 0 && allowance >= estimatedBytesPerPixel else {
                 throw Failure.invalid(
                     "安全输出：当前 App 可分配内存不足，已停止；不会自动降分辨率或切换算法"
@@ -165,7 +189,14 @@ enum SafeExportResolution {
             dimensions: dimensions, effectiveBudgetBytes: budget,
             processHeadroomBytes: processAvailableMemory,
             allocationAllowanceBytes: allowance,
-            estimatedPeakBytes: dimensions.pixels * estimatedBytesPerPixel
+            // Original RAW optics still allocates full source pixels even
+            // if the user selects a smaller final JPEG/TIFF16 file.
+            estimatedPeakBytes:
+                (fullSourceProcessing ? sourcePixels : dimensions.pixels) *
+                    estimatedBytesPerPixel +
+                (fullSourceProcessing && dimensions.reduced
+                    ? dimensions.pixels * 48 : 0),
+            fullSourceProcessing: fullSourceProcessing
         )
     }
 
@@ -173,13 +204,15 @@ enum SafeExportResolution {
     static func capture(
         width: Int, height: Int, mode: ExportResolutionMode,
         estimatedBytesPerPixel: UInt64 =
-            SafeExportResolution.estimatedBytesPerPixel
+            SafeExportResolution.estimatedBytesPerPixel,
+        fullSourceProcessing: Bool = false
     ) throws -> Plan {
         try plan(
             width:width, height:height,
             physicalMemory:ProcessInfo.processInfo.physicalMemory,
             processAvailableMemory:currentProcessHeadroom(),
-            mode:mode,estimatedBytesPerPixel:estimatedBytesPerPixel
+            mode:mode,estimatedBytesPerPixel:estimatedBytesPerPixel,
+            fullSourceProcessing:fullSourceProcessing
         )
     }
 
@@ -204,6 +237,7 @@ enum SafeExportResolution {
             case .original: fraction = originalBudgetPercent
             case .safe: fraction = intelligentBudgetPercent
             case .economy: fraction = economyBudgetPercent
+            case .megapixels: fraction = originalBudgetPercent
             }
             guard current > 0,
                   plan.estimatedPeakBytes <= (current / 100) * fraction else {
