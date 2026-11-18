@@ -43,3 +43,30 @@
 4. 原版 Python 同图数值（RAW 解码、光谱、颗粒/扫描）仍待独立验收，不能因为 Xcode 编译通过宣称等价。
 
 状态：此文档是代码审计与实施记录；最终 CI 及真机结果以实际 GitHub Actions 和设备日志为准。
+
+
+## 五、后续增量修复｜原版输出编码缓冲区
+
+基于 Build136 已成功但尚未签名／真机验收的源码继续审计。所有提交保持在既有 `work/build129-raw-float32-srgb-icc-admission-ios1651` 分支，不修改 `main`，不改 Python 原版算法、源数据或量化规则。
+
+| 源文件 | 实际问题 | 本轮修复 | 对输出的影响 |
+| --- | --- | --- | --- |
+| `Build90SourceOutputQuantization.swift` | 生产 `packed()` 先执行 `quantize()` 并生成整幅新 `[Double]`，然后逐字节写 Data | 同一舍入规则逐通道直接打包；保留非有限数拒绝 | 不改变数据格式、位深、色彩数值或字节序；省去 24 B/px 临时 Double |
+| `ContentView.swift` | 两条 RAW JPEG/TIFF16 出口路径，在缩图生成后仍持有原尺寸 Float64 `rgb` | `result.rgb.removeAll(keepingCapacity:false)`；缩图输出单独持有，原尺寸输出由 Array COW 继续持有 | 不修改光学阶段、面积积分缩图、原 RAW 文件 |
+| `Build90NativeOutputWriter.swift` | ICC 校验前后多次将整份图像文件按普通 Data 读取 | 两处磁盘读取改为 `Data(contentsOf:options:.mappedIfSafe)`；保留磁盘回读与 ICC 完整字节校验 | 文件内容与校验条件不变；实际映射由系统决定 |
+| `Build90OriginalICCContainer.swift` | ICC 重写后用同一 `[UInt8]` 生成两次完整 `Data`（验证与返回） | 合并为 `encoded` 一份 Data 供验证和返回 | 原 ICC 嵌入与逐字节校验不变 |
+| `Build90SourceIOQuantizationValidation.swift` | 先前仅检查打包字节长度，未检查每个字节是否与量化参考一致 | 增加冻结的历史量化打包参考，八种格式逐字节检查 | 只增加测试，无生产效果 |
+
+**确定的分配改进**：输入为 1200 万像素 RGB 时，第一项不再创建约 `12,000,000 × 3 × 8 = 288,000,000` 字节的额外 Float64 数组。RAW 已缩小输出时，明确释放原图缓冲后再编码，也可避免它跨阶段额外存活。两项发生于不同生命周期，不能直接把字节数相加宣称真实 RSS 降幅。
+
+**已执行的独立 Linux Swift 数值对照**：四种存储格式 U8/U16/F16/F32，每种 10,018 个有限值（含负数、超白、阈值与伪随机数）；优化前后的结果逐字节一致。另验证了 Array COW 在清空原图引用后不改变输出数组。未执行 iPhoneOS 编译、Instruments 测量、真实 RAW JPEG/TIFF16 导出；**不得将这轮新提交视为 Build136 既有成功 CI 的一部分**。
+
+**仍需处理或认证的内容**：
+
+- 原版 Float64 全帧几何限制 1300 万像素；普通直连输入 1600 万；LibRaw/兼容 TIFF16 另有 4500 万像素上限。三套值属于不同路径，目前不可直接取消或统一宣称已验证。
+- `Build106SourceMemoryLedger.preview` 仍保留 Build106 历史基线 120 B/px，而生产 `OriginalSourcePhysicalImage` 已采用 104 B/px；这是历史诊断与现行估算并存，禁止当作同一口径，更不能未经同机 RSS 样本擅自压低生产安全预算。
+- `1500px` 快速预览、`1600px` UIKit 显示缩图不作用于原尺寸 RAW 冲印；不得误归类为输出限制。
+- `70%/80%` 实时进程余量门槛以及 os_proc_available_memory 缺失时的 RAM/3 估算是安全保护，不是 Python 算法参数。继续保留并测量实际 Jetsam 风险。
+- ICC 容器处理仍存在必要的整文件 `[UInt8]` 转换；若继续优化，必须保持 JPEG/PNG/TIFF ICC 原始字节往返校验，重新测试真实设备。
+
+**下一验收门槛**：新提交通过原版 OIIO 量化数值/打包字节回归、旧版静态内存审计、iPhoneOS arm64 编译后，再测同一张 3024×4032 RAW 的原图、720/1000/1200 万像素 JPEG/TIFF16。记录峰值 RSS、可分配内存、文件位深/ICC/尺寸、输出 SHA；签名和实机安装验证独立标记。
