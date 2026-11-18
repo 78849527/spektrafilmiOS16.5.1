@@ -48,7 +48,13 @@ for token in (
 assert "StableImageHoldRecognizer(isHolding: $originalHeld)" not in ui
 assert "context.clearCaches()" in processor
 assert "maxEdge:Int=1600" in pixel
-assert "context.interpolationQuality = .high" in pixel
+# Build136 replaced a transient full-frame RGBA8+Data copy and subsequent
+# CGContext downsample with a bounded direct Float64 display-only preview.
+# This preserves the full optical source and export data while removing a
+# large temporary allocation; do not require the deleted old implementation.
+assert "let full=try displayImage(frame)" not in pixel
+assert "frame.rgb.allSatisfy({$0.isFinite})" in pixel
+assert "var rgba=[UInt8](repeating:255,count:outW*outH*4)" in pixel
 from build_ci_version_floor import minimum_build,minimum_minor
 assert minimum_build(project,134) and minimum_minor(project,100)
 print("PASS Build134 scoped local RAW deletion / active file invalidation / genuine UIKit double tap / bounded preview and native export memory lifecycle")

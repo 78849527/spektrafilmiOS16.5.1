@@ -220,7 +220,7 @@ jobs:
             ios/tests/Build129FloatSRGBIngressValidation.swift \
             -o /tmp/Build129FloatSRGBIngressValidation
           /tmp/Build129FloatSRGBIngressValidation
-      - name: Build114 process/optics UI and safe-memory preflight
+      - name: Build114/136 process UI and bounded direct RAW preview regression
         run: |
           set -euo pipefail
           python ios/scripts/build112_ui_only_audit.py
