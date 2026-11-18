@@ -75,7 +75,7 @@ enum SafeExportResolution {
             } ?? "未获取（按物理预算估算）"
             return """
             原始照片：\(sourceWidth) × \(sourceHeight)（约 \(Double(sourceWidth)*Double(sourceHeight)/1_000_000) 百万像素）
-            已选档位：\(mode.title)
+            已选档位：\(mode == .safe ? "智能安全（上限1200万）" : mode == .economy ? "省内存（上限720万）" : mode.title)
             预计输出：\(dimensions.width) × \(dimensions.height)（约 \(Double(dimensions.pixels)/1_000_000) 百万像素）
             预计显影峰值：约 \(estimatedMB) MB
             设备安全预算：约 \(budgetMB) MB；本档计划上限 \(allowanceMB) MB（估算上限，非预占内存）

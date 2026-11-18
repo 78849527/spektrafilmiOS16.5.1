@@ -440,7 +440,7 @@ jobs:
             -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
             -I ios/SpektraFilmPort \
             ios/SpektraFilmPort/SFNativeCaptureSafety.m
-      - name: Build136 dynamic safe output, fixed pixel presets and late headroom refusal
+      - name: Build136 verify legacy 1200/720 smart labels, fixed RAW pixel presets and late headroom refusal
         run: |
           set -euo pipefail
           swiftc -parse-as-library -O \
