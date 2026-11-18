@@ -48,5 +48,19 @@ assert 'targetWidth<=width,targetHeight<=height' in resized
 assert 'fullSourceProcessing:true' in tests
 assert '900_000_000' in tests  # low-headroom fail-closed
 assert 'RAW' in read("ios/docs/BUILD136_MEMORY_AUDIT.md")
+# Incremental memory optimization gates; original math is unchanged.
+packed=s("Build90SourceOutputQuantization")
+writer=s("Build90NativeOutputWriter")
+iccContainer=s("Build90OriginalICCContainer")
+quantTest=read("ios/tests/Build90SourceIOQuantizationValidation.swift")
+assert "let q=try quantize(rgb,as:spec)" not in packed
+assert "guard rgb.allSatisfy({$0.isFinite}) else" in packed
+assert "for value in rgb" in packed
+assert "let encoded=Data(output)" in iccContainer
+assert "from:encoded,format:format" in iccContainer
+assert "Data(contentsOf:url,options:.mappedIfSafe)" in writer
+assert main.count("result.rgb.removeAll(keepingCapacity:false)")==2
+assert "let baselineBytes=packedFromQuantized(" in quantTest
+assert "guard byteData==baselineBytes else" in quantTest
 print("PASS Build136: full RAW Float64 source cost preserved; five explicit output presets; original-only numerical core; direct bounded UI preview")
 print("PASS Build136: fixed 1500MB SciPy and 512MB FFT removed; dynamic 70/80% guard; halation/glare aligned to 13MP; low-memory refusal retained")
