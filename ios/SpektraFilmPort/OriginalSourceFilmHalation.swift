@@ -84,7 +84,7 @@ enum OriginalSourceFilmHalation {
         try settings.validate()
         if !settings.active { return }
         guard width>0,height>0,width<=8192,height<=8192,
-              width<=12_000_000/height,
+              width<=13_000_000/height,
               photons.count==width*height*3,
               photons.allSatisfy({$0.isFinite}) else {
             throw Failure.invalid("原版散射/背反射需要完整有限的 Double 光子帧")

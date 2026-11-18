@@ -26,9 +26,9 @@ assert "estimate<=headroom/100*70" in rawf
 assert "estimatedBytes > (headroom / 100ull) * 70ull" in native
 assert "projectedBytes <= (memoryBudget / 100) * 70" in metal
 assert "let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3" in physical
-assert "sourceCap:UInt64=512_000_000" in physical
+assert "sourceCap:UInt64=512_000_000" not in physical
 assert ui.count("根据可用内存")>=2
 assert "rawTIFF16.estimatedPeakBytes > 1_500_000_000" in tests
 assert minimum_build(project,135) and minimum_minor(project,101)
 print("PASS Build135 user-facing memory gates: fixed 1500/1400/1300MB removed; real 70%-80% process headroom remains")
-print("RETAINED: source FFT 512MB scratch cap, maximum pixel geometry, user-selected smart/economy pixel ceilings; not bypassed")
+print("Build136: old fixed 512MB FFT cap removed, dynamic full-source/FFT headroom protection retained; 13MP source geometry preserved")

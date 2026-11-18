@@ -64,7 +64,7 @@ enum OriginalSourceScannerGlare {
         try settings.validate()
         guard width > 0, height > 0,
               width <= 8192, height <= 8192,
-              width <= 12_000_000 / height else {
+              width <= 13_000_000 / height else {
             throw Failure.invalid("原版眩光：图片大小或宽高无效")
         }
         let count = width * height
@@ -156,7 +156,7 @@ enum OriginalSourceScannerGlare {
         guard illuminantXYZ.count == 3,
               illuminantXYZ.allSatisfy({ $0.isFinite }),
               width > 0, height > 0,
-              width <= 12_000_000 / height,
+              width <= 13_000_000 / height,
               xyz.count == width * height * 3,
               xyz.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid(

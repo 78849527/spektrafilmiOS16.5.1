@@ -119,17 +119,28 @@ enum Build91PhysicalMemoryMatrixValidation {
                 "Camera and paper non-overlapping FFT scratch was double counted"
             )
         }
-        // A genuinely enormous FFT (e.g. 12MP reflect-padded PSF)
-        // must fail at PRE-DECODE; planner must NOT allocate the FFT.
+        // Build136: full Double FFTs can exceed the old arbitrary
+        // 512MB cap when memory permits. Low real process headroom must
+        // still reject the same geometry before decode/heap allocation.
+        let largeFFT=try Build91PhysicalMemory.plan(
+            width:4000,height:3000,
+            physicalMemory:128_000_000_000,
+            processAvailable:100_000_000_000,
+            camera:(opt,36_000.0/4000.0)
+        )
+        guard largeFFT.cameraFFT != nil,
+              largeFFT.additionalFFTBytes > 512_000_000 else {
+            throw Failure.invalid("Large original FFT planner discarded full workspace")
+        }
+        try Build91PhysicalMemory.validate(largeFFT)
+        let constrainedFFT=try Build91PhysicalMemory.plan(
+            width:4000,height:3000,
+            physicalMemory:physical,processAvailable:500_000_000,
+            camera:(opt,36_000.0/4000.0)
+        )
         do {
-            _=try Build91PhysicalMemory.plan(
-                width:4000,height:3000,
-                physicalMemory:physical,processAvailable:available,
-                camera:(opt,36_000.0/4000.0)
-            )
-            throw Failure.invalid(
-                "12MP source FFT exceeding 512MB silently accepted"
-            )
+            try Build91PhysicalMemory.validate(constrainedFFT)
+            throw Failure.invalid("Low-headroom original FFT unexpectedly admitted")
         } catch Build91PhysicalMemory.Failure.invalid(_) {}
 
         // Reject even a 13.1MP image at a generous 128GB memory size:
@@ -145,7 +156,7 @@ enum Build91PhysicalMemoryMatrixValidation {
               "six exact UInt64 peak estimates; dynamic 80% process" +
               " budget and physical-third fallback; 7.2MP complex" +
               " admitted with 6GB but refused with 4GB headroom;" +
-              " 12MP full source FFT >512MB rejected before decode;" +
+              " large full source FFT admitted with sufficient memory, denied with low headroom;" +
               " camera+paper 2× sequential Double FFT scratch max, " +
               "valid 1MP FFT dimensions \(fft.fftWidth)×\(fft.fftHeight);" +
               " 13MP ceiling and out-of-range fail closed.")

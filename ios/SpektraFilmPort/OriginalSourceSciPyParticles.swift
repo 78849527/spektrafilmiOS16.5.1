@@ -1,6 +1,9 @@
 import Foundation
 import CoreImage
 import Metal
+#if os(iOS)
+import os
+#endif
 
 /// Production, opt-in SciPy-sequence particle field builder.
 ///
@@ -298,11 +301,20 @@ enum OriginalSourceSciPyParticles {
         }
         let pixels = UInt64(width) * UInt64(height)
         let projected = pixels * 104
-        let budget = min(UInt64(1_500_000_000), physicalMemory / 3)
-        guard projected <= budget else {
+        // Build136: the old 1500MB ceiling was a local experiment,
+        // not part of the original SciPy particle algorithm.
+        // Keep a live Jetsam allowance; no allocation is reserved here.
+        let headroom: UInt64
+        #if os(iOS)
+        headroom = UInt64(os_proc_available_memory())
+        #else
+        headroom = physicalMemory / 3
+        #endif
+        let budget = (headroom / 100) * 70
+        guard headroom > 0, projected <= budget else {
             throw Failure.invalid(
                 "原版 SciPy 高清显影需要约 \(projected/1_000_000) MB，" +
-                "本机安全预算 \(budget/1_000_000) MB。已停止，" +
+                "当前可分配内存 \(headroom/1_000_000) MB，预留 30% 余量。" +
                 "不会分块重置随机数或降为近似算法。可关闭 SciPy 原版随机数使用现有 Metal 路径。"
             )
         }

@@ -22,8 +22,8 @@ enum Build91PhysicalMemory {
         let sourceFFTGuardBytes:UInt64
         let actualScratchBytes:UInt64
         let psfBytes:UInt64
-        /// Same guard as OriginalSourceDiffusion: 5 FFT planes + 2 RGB.
-        static let sourceCap:UInt64=512_000_000
+        /// Historical conservative FFT workspace estimate for telemetry.
+        /// No static-MB rejection: the full plan uses live OS headroom.
     }
     struct Plan {
         let width:Int
@@ -119,21 +119,10 @@ enum Build91PhysicalMemory {
             try fft(width:width,height:height,
                     pixelUM:$0.pixelUM,settings:$0.settings)
         }
-        // The 512 MB source guard is not permission to switch CPU Double
-        // into unconstrained Metal Float32.
-        for (label,work) in [
-            ("摄影 RAW",cameraFFT),("相纸 RAW",paperFFT)
-        ] {
-            if let work,work.sourceFFTGuardBytes>FFT.sourceCap {
-                throw Failure.invalid(
-                    "Build91 \(label) 源 FFT 需要 " +
-                    "\(work.fftWidth)×\(work.fftHeight) Double 网格、" +
-                    "约 \(work.sourceFFTGuardBytes/1_000_000) MB，" +
-                    "超过 512 MB 数值原版上限；禁止降采样／" +
-                    "缩短 PSF／静默换 Float32"
-                )
-            }
-        }
+        // Fixed 512MB FFT gate removed. The original geometry,
+        // pooled Double FFT arrays and PSF remain unchanged. Total
+        // source+FFT memory is admitted by the live 80% headroom
+        // check in validate(), never by an arbitrary scratch ceiling.
         let additionalFFT=max(
             cameraFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0,
             paperFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0

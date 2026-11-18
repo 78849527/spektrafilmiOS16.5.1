@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import os
+#endif
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
@@ -335,12 +338,26 @@ enum OriginalSourceDiffusion {
         let fftW=try pow2(paddedW+ks-1)
         let fftH=try pow2(paddedH+ks-1)
         let grid=fftW*fftH
-        // Two Double complex FFT planes plus full-frame output and
-        // scratch headroom, without shortening the original PSF.
-        let estimated=UInt64(grid)*UInt64(8)*UInt64(5) +
-                      UInt64(rgb.count)*UInt64(8)*UInt64(2)
-        guard estimated<=UInt64(512_000_000) else {
-            throw Failure.invalid("原版扩散滤镜需要超过 512 MB Float64 FFT 缓冲；无法精确执行，不自动降级或截断 PSF")
+        // Build136: the 512MB FFT limit was a local experimental cap,
+        // not an original Python numerical boundary. Check the actual
+        // yet-to-be-allocated 4× complex-plane storage, output and
+        // row/column scratch against current OS headroom instead.
+        // The full-sized frame is already allocated at this stage.
+        let remainingScratch=UInt64(grid)*32 +
+            UInt64(rgb.count)*8 + UInt64(fftW+fftH)*16 +
+            UInt64(ks)*UInt64(ks)*3*8
+        let available:UInt64
+        #if os(iOS)
+        available=UInt64(os_proc_available_memory())
+        #else
+        available=ProcessInfo.processInfo.physicalMemory/3
+        #endif
+        guard available>0,remainingScratch <= (available/10)*8 else {
+            throw Failure.invalid(
+                "原版 Float64 FFT 仍需约 \(remainingScratch/1_000_000) MB，" +
+                "当前可分配约 \(available/1_000_000) MB；需要 20% 余量，" +
+                "不缩短 PSF、不转 Float32、不自动缩图"
+            )
         }
         let kernel=try psf(width:width,height:height,
                            pixelUM:pixelUM,settings:settings)
