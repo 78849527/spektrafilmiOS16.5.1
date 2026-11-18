@@ -1034,12 +1034,18 @@ struct FloatingEditorWorkspace: View {
                 Button("省内存分辨率（最高 720 万像素）") {
                     onSaveToPhotos(.economy)
                 }
+                Divider()
+                ForEach(ExportResolutionMode.presetWanPixels, id: \.self) { count in
+                    Button("\(count) 万像素") {
+                        onSaveToPhotos(.megapixels(count))
+                    }
+                }
             } label: {
                 Image(systemName: "square.and.arrow.down")
                     .frame(width: 33, height: 40)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("保存相册：选择原始、智能安全或省内存分辨率")
+            .accessibilityLabel("保存相册：原尺寸、智能、省内存及五档固定像素")
             .disabled(!model.hasPhoto || model.busy ||
                       model.simulationAwaitingCurrentSettings)
             Menu {
@@ -1053,6 +1059,12 @@ struct FloatingEditorWorkspace: View {
                     onExport(.economy)
                 }
                 Divider()
+                ForEach(ExportResolutionMode.presetWanPixels, id: \.self) { count in
+                    Button("JPEG · \(count) 万像素") {
+                        onExport(.megapixels(count))
+                    }
+                }
+                Divider()
                 Button("TIFF 16-bit · 原始分辨率（需内存预检）") {
                     onExportTIFF16(.original)
                 }
@@ -1062,12 +1074,18 @@ struct FloatingEditorWorkspace: View {
                 Button("TIFF 16-bit · 省内存分辨率") {
                     onExportTIFF16(.economy)
                 }
+                Divider()
+                ForEach(ExportResolutionMode.presetWanPixels, id: \.self) { count in
+                    Button("TIFF 16-bit · \(count) 万像素") {
+                        onExportTIFF16(.megapixels(count))
+                    }
+                }
             } label: {
                 Image(systemName: "square.and.arrow.up")
                     .frame(width: 33, height: 40)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("分享存储：JPEG 或 TIFF 16-bit，三种明确分辨率选择")
+            .accessibilityLabel("分享存储：JPEG 或 TIFF16，原尺寸及 720 至 1200 万像素固定档位")
             .disabled(!model.hasPhoto || model.busy ||
                       model.simulationAwaitingCurrentSettings)
 
