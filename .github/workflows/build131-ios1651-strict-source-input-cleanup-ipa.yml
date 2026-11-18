@@ -153,6 +153,25 @@ jobs:
           print('PASS current 1.8.102/136, memory audit and all carried-forward minimum release contracts')
           PY
           git diff --exit-code
+      - name: Build136 source io.py and Swift Float16/32 exact bytes on Linux
+        run: |
+          set -euo pipefail
+          # Apple x86_64 macOS Swift cannot instantiate Float16, while
+          # the iPhoneOS arm64 app build uses its native Float16 path.
+          # Execute real source quantization plus native Swift6 F16 on Linux.
+          command -v swiftc
+          swiftc --version
+          python3 -m venv /tmp/build136-oiio-venv
+          /tmp/build136-oiio-venv/bin/python -m pip install \
+            --disable-pip-version-check --quiet 'numpy==1.26.4'
+          /tmp/build136-oiio-venv/bin/python \
+            ios/scripts/build90_original_io_quantization_oracle.py \
+            /tmp/build90-oiio-source-frozen.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
+            ios/tests/Build90SourceIOQuantizationValidation.swift \
+            -o /tmp/build136-source-byte-parity
+          /tmp/build136-source-byte-parity /tmp/build90-oiio-source-frozen.json
 
   group-compile-once:
     needs: runner-preflight
@@ -591,18 +610,6 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
-      - name: Build136 output-memory exact original io.py bit and byte parity
-        run: |
-          set -euo pipefail
-          python3 ios/scripts/build90_original_io_quantization_oracle.py /tmp/build90-oiio-source-frozen.json
-          swiftc -O -parse-as-library \
-            ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
-            ios/tests/Build90SourceIOQuantizationValidation.swift \
-            -o /tmp/build136-source-byte-parity
-          /tmp/build136-source-byte-parity /tmp/build90-oiio-source-frozen.json
-          # Guard that the RAW source is dropped before file encoding, not before
-          # physical development or output-only area-integral resampling.
-          python3 ios/scripts/build136_memory_constants_audit.py
       - name: Independent Python original Oklch 96, actual TC LUT 4038, CAM16 216 numerical parity
         run: |
           set -euo pipefail
