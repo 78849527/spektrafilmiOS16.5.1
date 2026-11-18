@@ -273,6 +273,11 @@ jobs:
                 # Build136 memory estimates/size guards and output-only
                 # resampling; no original film numeric kernels altered.
                 'ios/SpektraFilmPort/Build136RAWOutputResize.swift',
+                # Build136 memory-only source output packing and exact ICC.
+                # Guarded by the frozen io.py numerical/byte oracle below.
+                'ios/SpektraFilmPort/Build90SourceOutputQuantization.swift',
+                'ios/SpektraFilmPort/Build90OriginalICCContainer.swift',
+                'ios/SpektraFilmPort/Build90NativeOutputWriter.swift',
                 'ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift',
                 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift',
                 'ios/SpektraFilmPort/OriginalSourceScannerGlare.swift',
