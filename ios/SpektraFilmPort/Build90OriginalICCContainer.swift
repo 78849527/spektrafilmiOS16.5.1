@@ -392,15 +392,18 @@ enum Build90OriginalICCContainer {
         case .exr:
             throw Failure.invalid("EXR must not receive fake ICC container")
         }
+        // Build136 memory audit: reuse the encoded full-size container
+        // for verification and return, without a second Data copy.
+        let encoded=Data(output)
         let direct=try extract(
-            from:Data(output),format:format
+            from:encoded,format:format
         )
         guard direct==sourceICC else {
             throw Failure.invalid(
                 "Actual image container failed original ICC raw-byte validation"
             )
         }
-        return Data(output)
+        return encoded
     }
     static func extract(
         from file:Data,
