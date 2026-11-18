@@ -586,6 +586,18 @@ jobs:
           test -s ios/SpektraFilmPort/GeneratedSourceReplayReference.swift
           test -s ios/SpektraFilmPort/GeneratedMeasuredProfiles.swift
           test -s ios/SpektraFilmPort/GeneratedDIRData.swift
+      - name: Build136 output-memory exact original io.py bit and byte parity
+        run: |
+          set -euo pipefail
+          python3 ios/scripts/build90_original_io_quantization_oracle.py /tmp/build90-oiio-source-frozen.json
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/Build90SourceOutputQuantization.swift \
+            ios/tests/Build90SourceIOQuantizationValidation.swift \
+            -o /tmp/build136-source-byte-parity
+          /tmp/build136-source-byte-parity /tmp/build90-oiio-source-frozen.json
+          # Guard that the RAW source is dropped before file encoding, not before
+          # physical development or output-only area-integral resampling.
+          python3 ios/scripts/build136_memory_constants_audit.py
       - name: Independent Python original Oklch 96, actual TC LUT 4038, CAM16 216 numerical parity
         run: |
           set -euo pipefail
@@ -1027,7 +1039,7 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH=work/build129-raw-float32-srgb-icc-admission-ios1651
-          TAG=ios1651-v1.8.102-build136-fixed-pixel-raw-memory-audit-UNSIGNED-UNVERIFIED
+          TAG="ios1651-v1.8.102-build136-memory-fix-${GITHUB_SHA:0:12}-UNSIGNED-UNVERIFIED"
           HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
           if [ "$HEAD" != "$GITHUB_SHA" ]; then
             echo "::error::Release forbidden: latest branch $HEAD differs from tested $GITHUB_SHA"
@@ -1036,15 +1048,16 @@ jobs:
           ASSET=ios/build/release/SpektraFilm-1.8.102-Build136-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
           ID=ios/build/release/verification-build136.json
-          NOTES='Build136 unsigned iPhoneOS16.5.1 arm64 candidate. Adds explicit 720/800/900/1000/1200 ten-thousand-pixel JPEG/Photos/TIFF16 output choices. P1 RAW ACES16 always completes whole-source Float64 film/paper/scanner first; final file-only Double-area downsampling is user-confirmed and does NOT lower source memory peak, change DNG, or silently switch algorithms. Full-source RAW memory plus separate file buffers are checked using real OS process headroom. Removes historical SciPy 1500MB and FFT 512MB arbitrary ceilings, keeps real 70%-80% Jetsam safeguards and FFT geometry, aligns scan-glare/film-halation 13MP source guard, and avoids extra whole-frame RGBA8 preview buffer. Source memory audit is ios/docs/BUILD136_MEMORY_AUDIT.md. Original rawpy full-image parity, signed iPhone installation, 12.19MP RAW JPEG/TIFF16 file export and device peak memory remain UNVERIFIED.'
+          NOTES='Build136 unsigned iPhoneOS16.5.1 arm64 candidate. Adds explicit 720/800/900/1000/1200 ten-thousand-pixel JPEG/Photos/TIFF16 output choices. P1 RAW ACES16 always completes whole-source Float64 film/paper/scanner first; final file-only Double-area downsampling is user-confirmed and does NOT lower source memory peak, change DNG, or silently switch algorithms. Full-source RAW memory plus separate file buffers are checked using real OS process headroom. Removes historical SciPy 1500MB and FFT 512MB arbitrary ceilings, keeps real 70%-80% Jetsam safeguards and FFT geometry, aligns scan-glare/film-halation 13MP source guard, and avoids extra whole-frame RGBA8 preview buffer. Source memory audit is ios/docs/BUILD136_MEMORY_AUDIT.md. Original rawpy full-image parity, signed iPhone installation, 12.19MP RAW JPEG/TIFF16 file export and device peak memory remain UNVERIFIED. Follow-up same Build136: eliminated duplicate Float64 quantization buffer (24 B/px), released full-resolution RAW RGB before reduced JPEG/TIFF16 encode, memory-mapped ICC validation reads, and reused output Data. Original io.py reference numeric and byte packing are re-tested in CI. This release has its own SHA-specific tag; earlier Build136 assets stay unchanged.'
+          # Keep earlier Build136 release immutable. A rerun for this exact
+          # SHA leaves its existing assets untouched instead of clobbering.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
-            gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
-          else
-            gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
-              --target "$GITHUB_SHA" --prerelease \
-              --title "Build136 iOS16.5.1 fixed pixel RAW original optics and memory audit - unsigned unverified" \
-              --notes "$NOTES"
+            echo "::notice::Release for this SHA already exists, preserving assets."
+            exit 0
           fi
+          gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Build136 output-memory improvements (same build, new source SHA) - unsigned unverified" \
+            --notes "$NOTES"
           gh release view "$TAG" --json tagName,url,assets
           echo "PASS Build118 separate large-frame Float64 source grain experimental unsigned IPA at SHA $GITHUB_SHA."
