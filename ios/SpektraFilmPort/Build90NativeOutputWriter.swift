@@ -170,13 +170,14 @@ enum Build90NativeOutputWriter {
             // CGColorSpace(iccData:) receives the correct original.
             // Correct the on-disk APP2/iCCP/TIFF ICC tag to the actual
             // exact upstream bytes, then independently re-parse it.
-            let nativeFile=try Data(contentsOf:url)
+            let nativeFile=try Data(contentsOf:url,options:.mappedIfSafe)
             let data=try Build90OriginalICCContainer.embed(
                 sourceICC:icc,inEncoded:nativeFile,format:options.format
             )
             try data.write(to:url,options:.atomic)
             guard try Build90OriginalICCContainer.extract(
-                from:Data(contentsOf:url),format:options.format
+                from:Data(contentsOf:url,options:.mappedIfSafe),
+                format:options.format
             ) == icc else {
                 throw Failure.invalid(
                     "文件保存后原版 ICC 容器级字节比对失败"
