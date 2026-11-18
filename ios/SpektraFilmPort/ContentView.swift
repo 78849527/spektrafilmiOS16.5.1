@@ -2607,9 +2607,10 @@ final class PhotoEditorModel: ObservableObject {
             }
             if rawOriginalSourceActive {
                 guard sourcePhysicalDirectEnabled,capturedRAWURL != nil,
-                      resolution == .original else {
+                      resolution.permitsRAWFullOpticalExport else {
                     throw ImageProcessingError.invalid(
-                        "P1 RAW 全光学目前仅支持原尺寸；禁止隐式缩图、转 TIFF 或快速模式"
+                        "RAW 精细冲印可选原尺寸或固定 720/800/900/1000/1200 万；" +
+                        "禁止自动安全档静默降采样或兼容回退"
                     )
                 }
                 _ = try sourcePhysicalParameters()
@@ -2656,14 +2657,17 @@ final class PhotoEditorModel: ObservableObject {
                     ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0))
                 : (tiff16
                    ? Build96TIFF16Writer.estimatedBytesPerPixel
-                   : SafeExportResolution.estimatedBytesPerPixel)
+                   : SafeExportResolution.estimatedBytesPerPixel),
+            fullSourceProcessing:rawOriginalSourceActive &&
+                sourcePixelIOEnabled && sourcePhysicalDirectEnabled
         )
         if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
             // The entire optical chain is now bounded by the SELECTED
             // output geometry. Original selection never silently shrinks;
             // safe/economy never silently changes the selected stage order.
             try OriginalSourcePhysicalImage.validateMemoryBudget(
-                width:plan.dimensions.width,height:plan.dimensions.height,
+                width:rawOriginalSourceActive ? Int(bounds.width) : plan.dimensions.width,
+                height:rawOriginalSourceActive ? Int(bounds.height) : plan.dimensions.height,
                 additionalBytesPerPixel:
                     (tiff16 ? 24 : 0) +
                     (sourceScannerOpticalEnabled
@@ -2723,14 +2727,14 @@ final class PhotoEditorModel: ObservableObject {
         if sourcePixelIOEnabled {
             if rawOriginalSourceActive {
                 guard sourcePhysicalDirectEnabled,
-                      resolution == .original,
+                      resolution.permitsRAWFullOpticalExport,
                       let rawURL=capturedRAWURL,
                       let plan=confirmedPlan,
                       plan.mode==resolution,
                       plan.sourceWidth==Int(imageSource.extent.integral.width),
                       plan.sourceHeight==Int(imageSource.extent.integral.height) else {
                     throw ImageProcessingError.invalid(
-                        "RAW 精细 JPEG 必须使用当前原片、已确认的原尺寸；禁止兼容回退"
+                        "RAW 精细 JPEG 必须选择当前原片、原尺寸或固定像素档位；禁止兼容回退"
                     )
                 }
                 try SafeExportResolution.validateBeforeRender(plan)
@@ -2740,8 +2744,15 @@ final class PhotoEditorModel: ObservableObject {
                         let result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical
                         )
-                        return try Build90NativeOutputWriter.write(
+                        // Full source RAW optics are finished before
+                        // user-requested output-only Double downsampling.
+                        let output=try Build136RAWOutputResize.resample(
                             width:result.width,height:result.height,rgb:result.rgb,
+                            targetWidth:plan.dimensions.width,
+                            targetHeight:plan.dimensions.height
+                        )
+                        return try Build90NativeOutputWriter.write(
+                            width:output.width,height:output.height,rgb:output.rgb,
                             options:.init(
                                 format:.jpeg,bitDepth:8,outputSpace:"sRGB",
                                 cctfEncoded:optical.sourceOutputCCTFEncoding
@@ -2749,8 +2760,9 @@ final class PhotoEditorModel: ObservableObject {
                         )
                     }
                 }.value
-                status="RAW 原片 ACES16 → Float64 原版冲印 JPEG 已输出；" +
-                    "rawpy/设备对照尚未认证，原 RAW 未改动"
+                status="RAW 原片 ACES16 → Float64 原尺寸冲印 → " +
+                    "\(plan.dimensions.width)×\(plan.dimensions.height) JPEG 已输出；" +
+                    "原片 DNG 不变，rawpy 数值尚未认证"
                 return url
             }
             let (data,stage)=try validateSourcePixelIO()
@@ -2842,12 +2854,13 @@ final class PhotoEditorModel: ObservableObject {
                 )
             }
             if rawOriginalSourceActive {
-                guard resolution == .original,let rawURL=capturedRAWURL,
+                guard resolution.permitsRAWFullOpticalExport,
+                      let rawURL=capturedRAWURL,
                       confirmedPlan.mode==resolution,
                       confirmedPlan.sourceWidth==Int(imageSource.extent.integral.width),
                       confirmedPlan.sourceHeight==Int(imageSource.extent.integral.height) else {
                     throw ImageProcessingError.invalid(
-                        "RAW 原版 TIFF16 只支持已确认原尺寸，禁止静默缩图"
+                        "RAW TIFF16 仅支持已确认原尺寸或固定像素档位；禁止静默缩图"
                     )
                 }
                 try SafeExportResolution.validateBeforeRender(confirmedPlan)
@@ -2857,8 +2870,13 @@ final class PhotoEditorModel: ObservableObject {
                         let result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical
                         )
-                        return try Build90NativeOutputWriter.write(
+                        let output=try Build136RAWOutputResize.resample(
                             width:result.width,height:result.height,rgb:result.rgb,
+                            targetWidth:confirmedPlan.dimensions.width,
+                            targetHeight:confirmedPlan.dimensions.height
+                        )
+                        return try Build90NativeOutputWriter.write(
+                            width:output.width,height:output.height,rgb:output.rgb,
                             options:.init(
                                 format:.tiff,bitDepth:16,outputSpace:"sRGB",
                                 cctfEncoded:optical.sourceOutputCCTFEncoding
@@ -2866,8 +2884,9 @@ final class PhotoEditorModel: ObservableObject {
                         )
                     }
                 }.value
-                status="RAW 原片 ACES16 → Float64 光学 TIFF16 已输出；" +
-                    "原始 RAW 未修改，rawpy 与真机数值尚未认证"
+                status="RAW 原片 ACES16 → Float64 原尺寸冲印 → " +
+                    "\(confirmedPlan.dimensions.width)×\(confirmedPlan.dimensions.height) TIFF16；" +
+                    "原片 DNG 不变，rawpy 数值尚未认证"
                 return url
             }
             let (bytes, _)=try validateSourcePixelIO()
@@ -3324,7 +3343,12 @@ struct ContentView: View {
                                 .font(.system(size: 14, design: .monospaced))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
-                            Text("实际内存会波动。此模式按确认的输出尺寸执行完整显影；失败会提示，不会擅自降低像素或切换颗粒算法。")
+                            Text(proposal.plan.fullSourceProcessing
+                                ? "RAW 精细冲印始终按 RAW 原尺寸完成 Float64 光学计算，" +
+                                  "只在冲印完成后缩小成品；不会减少冲印内存峰值。" +
+                                  "低内存时明确拒绝，不会降级算法或暗中缩图。"
+                                : "实际内存会波动。按确认输出尺寸显影，" +
+                                  "失败会提示，不会擅自缩图或切换算法。")
                                 .font(.footnote)
                                 .foregroundColor(.secondary)
                             Button {
