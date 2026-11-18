@@ -2741,7 +2741,7 @@ final class PhotoEditorModel: ObservableObject {
                 let optical=try sourcePhysicalParameters()
                 let url=try await Task.detached(priority:.userInitiated) {
                     try autoreleasepool { () throws -> URL in
-                        let result=try P1OriginalRawACESIngress.developSourceCandidate(
+                        var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical
                         )
                         // Full source RAW optics are finished before
@@ -2751,6 +2751,11 @@ final class PhotoEditorModel: ObservableObject {
                             targetWidth:plan.dimensions.width,
                             targetHeight:plan.dimensions.height
                         )
+                        // The source Float64 frame is no longer needed after
+                        // output-only resampling. Release its RGB storage
+                        // before native packing and exact ICC verification.
+                        // No-resize output keeps its own Array COW ownership.
+                        result.rgb.removeAll(keepingCapacity:false)
                         return try Build90NativeOutputWriter.write(
                             width:output.width,height:output.height,rgb:output.rgb,
                             options:.init(
@@ -2867,7 +2872,7 @@ final class PhotoEditorModel: ObservableObject {
                 let optical=try sourcePhysicalParameters()
                 let url=try await Task.detached(priority:.userInitiated) {
                     try autoreleasepool { () throws -> URL in
-                        let result=try P1OriginalRawACESIngress.developSourceCandidate(
+                        var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical
                         )
                         let output=try Build136RAWOutputResize.resample(
@@ -2875,6 +2880,11 @@ final class PhotoEditorModel: ObservableObject {
                             targetWidth:confirmedPlan.dimensions.width,
                             targetHeight:confirmedPlan.dimensions.height
                         )
+                        // The source Float64 frame is no longer needed after
+                        // output-only resampling. Release its RGB storage
+                        // before native packing and exact ICC verification.
+                        // No-resize output keeps its own Array COW ownership.
+                        result.rgb.removeAll(keepingCapacity:false)
                         return try Build90NativeOutputWriter.write(
                             width:output.width,height:output.height,rgb:output.rgb,
                             options:.init(
