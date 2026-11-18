@@ -6,6 +6,34 @@ enum Build90SourceIOQuantizationValidation {
     static func doubleArray(_ a:[NSNumber])->[Double] {
         a.map{$0.doubleValue}
     }
+    /// Frozen pre-optimization byte packing. Compare the streaming encoder
+    /// against the independently quantized source oracle for every format.
+    static func packedFromQuantized(
+        _ values:[Double],
+        storage:Build90SourceOutputQuantization.Storage
+    )->Data {
+        var data=Data(capacity:values.count*(storage.bitsPerChannel/8))
+        for x in values {
+            switch storage {
+            case .uint8:
+                data.append(UInt8(x))
+            case .uint16:
+                let v=UInt16(x)
+                data.append(UInt8((v>>8)&255))
+                data.append(UInt8(v&255))
+            case .float16:
+                let v=Float16(x).bitPattern
+                data.append(UInt8(v&255))
+                data.append(UInt8((v>>8)&255))
+            case .float32:
+                let v=Float(x).bitPattern
+                for shift in stride(from:0,to:32,by:8) {
+                    data.append(UInt8((v>>shift)&255))
+                }
+            }
+        }
+        return data
+    }
     static func main()throws {
         guard CommandLine.arguments.count==2 else {
             throw Failure.invalid("Need pinned source io.py numeric output fixture")
@@ -55,6 +83,14 @@ enum Build90SourceIOQuantizationValidation {
                 raw,as:spec
             )
             let requiredBytes=expected.count*(spec.storage.bitsPerChannel/8)
+            let baselineBytes=packedFromQuantized(
+                encoded,storage:spec.storage
+            )
+            guard byteData==baselineBytes else {
+                throw Failure.invalid(
+                    "Streaming output differs from original quantize() byte packing"
+                )
+            }
             guard encoded.count==expected.count,
                   byteData.count==requiredBytes else {
                 throw Failure.invalid("Source OIIO buffer size/dtype wrong")
