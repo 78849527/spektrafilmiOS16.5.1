@@ -1,6 +1,6 @@
-# Build135: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
-# Build135 UI audit keeps source controls/layout but derives smart budget from live OS headroom, not fixed 1300MB.
-# Build135 carry-forward UI audit updated to exercise dynamic preflight, not obsolete fixed MB literal contracts.
+# Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
+# Build136 UI audit keeps source controls/layout but derives smart budget from live OS headroom, not fixed 1300MB.
+# Build136 carry-forward UI audit updated to exercise dynamic preflight, not obsolete fixed MB literal contracts.
 # Build134 carried-forward GUI test updated to test the new real UIKit double tap and top status placement.
 # Build133 Swift typecheck fix: explicit multiline checkpoint strings and read-only source geometry.
 # Build133 current memory ledger is 104 B/px after source scratch reuse; retained full FIR/YVV parity.
@@ -64,7 +64,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-name: Build135 iOS16.5.1 dynamic RAW TIFF16 and button memory admission IPA
+name: Build136 iOS16.5.1 five megapixel RAW export presets and memory audit IPA
 
 on:
   push:
@@ -132,6 +132,7 @@ jobs:
           python3 ios/scripts/build133_raw_memory_stage_audit.py
           python3 ios/scripts/build134_raw_cleanup_ui_audit.py
           python3 ios/scripts/build135_dynamic_memory_admission_audit.py
+          python3 ios/scripts/build136_memory_constants_audit.py
           python3 ios/scripts/validate_nextlevel_camera_integration.py
           # Fail-fast all carried-forward Build103/Build100 UI invariants before Mac source generation.
           python3 ios/scripts/build103_device_metrics_audit.py /tmp/build115-early-ui-audit.json
@@ -145,11 +146,11 @@ jobs:
           sys.path.insert(0,'ios/scripts')
           from build_ci_version_floor import minimum_build, minimum_minor
           project=Path('ios/project.yml').read_text()
-          assert minimum_build(project,135)
-          assert minimum_minor(project,101)
-          assert not minimum_build(project,136)
-          assert not minimum_minor(project,102)
-          print('PASS current 1.8.101/135 and all carried-forward minimum release contracts')
+          assert minimum_build(project,136)
+          assert minimum_minor(project,102)
+          assert not minimum_build(project,137)
+          assert not minimum_minor(project,103)
+          print('PASS current 1.8.102/136, memory audit and all carried-forward minimum release contracts')
           PY
           git diff --exit-code
 
@@ -187,13 +188,28 @@ jobs:
           ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
             ios/SpektraFilmPort/ContentView.swift \
             ios/SpektraFilmPort/FloatingEditorWorkspace.swift \
-            ios/SpektraFilmPort/Build128RAWFloat32Transport.swift
+            ios/SpektraFilmPort/Build128RAWFloat32Transport.swift \
+            ios/SpektraFilmPort/Build136RAWOutputResize.swift \
+            ios/SpektraFilmPort/OriginalSourcePixelIO.swift \
+            ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift \
+            ios/SpektraFilmPort/OriginalSourceDiffusion.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
+            ios/SpektraFilmPort/OriginalSourceFilmHalation.swift
           swiftc -frontend -parse \
             ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift \
             ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
             ios/SpektraFilmPort/SourceGrainScalarGaussian.swift
           # Python audit needs generated original-source manifest, checked
           # in the next source-reference step after original fixture generation.
+      - name: Build136 first compile typed fixed RAW output presets and Float64 signed area resampler
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/SafeExportResolution.swift \
+            ios/SpektraFilmPort/Build136RAWOutputResize.swift \
+            ios/tests/Build136RAWOutputResizeValidation.swift \
+            -o /tmp/Build136RAWOutputResizeValidation
+          /tmp/Build136RAWOutputResizeValidation
       - name: Build131 real TIFF32 negative/superwhite unchanged ingress and original ICC matrix
         run: |
           set -euo pipefail
@@ -249,11 +265,18 @@ jobs:
                 'ios/SpektraFilmPort/Build134LocalRAWManager.swift',
                 'ios/SpektraFilmPort/OriginalSourcePixelIO.swift',
                 'ios/SpektraFilmPort/PhotoProcessor.swift',
-                # Build135 memory-admission-only changes; no optical
+                # Build136 memory-admission-only changes; no optical
                 # numerical kernels or original film algorithms changed.
                 'ios/SpektraFilmPort/Build95LibRaw16Ingress.swift',
                 'ios/SpektraFilmPort/Build96TIFF16Writer.swift',
                 'ios/SpektraFilmPort/OriginalMetalGrain.swift',
+                # Build136 memory estimates/size guards and output-only
+                # resampling; no original film numeric kernels altered.
+                'ios/SpektraFilmPort/Build136RAWOutputResize.swift',
+                'ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift',
+                'ios/SpektraFilmPort/OriginalSourceDiffusion.swift',
+                'ios/SpektraFilmPort/OriginalSourceScannerGlare.swift',
+                'ios/SpektraFilmPort/OriginalSourceFilmHalation.swift',
                 'ios/SpektraFilmPort/OriginalHanatosResponse.swift',
                 'ios/SpektraFilmPort/OriginalSourceCameraOptics.swift',
                 'ios/SpektraFilmPort/SpectralPhysics.swift'
@@ -417,7 +440,7 @@ jobs:
             -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
             -I ios/SpektraFilmPort \
             ios/SpektraFilmPort/SFNativeCaptureSafety.m
-      - name: Build114 deterministic 1300MB safe output and late headroom rejection
+      - name: Build136 dynamic safe output, fixed pixel presets and late headroom refusal
         run: |
           set -euo pipefail
           swiftc -parse-as-library -O \
@@ -639,8 +662,8 @@ jobs:
           grep -Fq 'Build104DeviceGrainEvidence.capture(' ios/SpektraFilmPort/ContentView.swift
           grep -Fq 'Build104-device-grain-' ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
           grep -Fq 'onRunBuild104Grain()' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.101"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "135"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.102"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "136"' ios/project.yml
       - uses: actions/setup-python@v5
         with:
           # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
@@ -757,8 +780,8 @@ jobs:
           grep -Fq 'tests/SourcePhysicalImageParity.swift' ios/project.yml
           grep -Fq 'generated-physical-v1.8.22' ios/project.yml
           grep -Fq 'Build92DeviceSourceStageDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.101"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "135"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.102"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "136"' ios/project.yml
           test -s ios/SpektraFilmPort/Build91PhysicalMemory.swift
           test -s ios/SpektraFilmPort/Build91MemoryProductionDiagnostic.swift
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
@@ -912,8 +935,8 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -s "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.101
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 135
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.102
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 136
           /usr/libexec/PlistBuddy -c 'Print :SFSourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
           # Native libraw symbols must actually be linked, no stub.
           xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_dcraw_process'
@@ -936,8 +959,8 @@ jobs:
           mkdir -p "$ROOT/Payload" ios/build/release
           ditto "$APP" "$ROOT/Payload/SpektraFilmPort.app"
           (cd "$ROOT" && zip -q -r -X \
-             ../release/SpektraFilm-1.8.101-Build135-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
-          IPA=ios/build/release/SpektraFilm-1.8.101-Build135-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+             ../release/SpektraFilm-1.8.102-Build136-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
+          IPA=ios/build/release/SpektraFilm-1.8.102-Build136-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           test -s "$IPA"
           unzip -t "$IPA" | tail -1 | grep -F 'No errors detected'
           unzip -Z -1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
@@ -950,14 +973,14 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           import hashlib,os,plistlib,subprocess,json
-          package=Path('ios/build/release/SpektraFilm-1.8.101-Build135-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
+          package=Path('ios/build/release/SpektraFilm-1.8.102-Build136-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
           commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           assert commit==os.environ['GITHUB_SHA'], 'app sources/IPA do not match action commit'
           with ZipFile(package) as z:
               p=plistlib.loads(z.read('Payload/SpektraFilmPort.app/Info.plist'))
               assert p['CFBundleIdentifier']=='com.twogou.spektrafilmport'
-              assert p['CFBundleShortVersionString']=='1.8.101'
-              assert p['CFBundleVersion']=='135'
+              assert p['CFBundleShortVersionString']=='1.8.102'
+              assert p['CFBundleVersion']=='136'
               assert p.get('SFSourceCommit')==commit, 'IPA embedded Git SHA is missing or incorrect'
               assert p['MinimumOSVersion'].startswith('16.5')
               assert 'Payload/SpektraFilmPort.app/default.metallib' in z.namelist()
@@ -969,27 +992,27 @@ jobs:
               'ipa_name':package.name,
               'ipa_sha256':hashlib.sha256(package.read_bytes()).hexdigest(),
               'ipa_size_bytes':package.stat().st_size,
-              'version':'1.8.101',
-              'build':'135',
+              'version':'1.8.102',
+              'build':'136',
               'ios_minimum':'16.5',
               'architecture':'arm64',
               'signing':'UNSIGNED; requires user signing to install',
               'certification':'P1 candidate: rawpy-style LibRaw ACES16 direct RAW -> Float64 optical preview / source JPEG/TIFF16 for RAF/DNG <=13MP, no TIFF intermediate and no source RGB global [0,1] clipping. Linux static gates and Python synthetic reference may pass; actual RAW pixel/colour and full-stage parity, X-T5 40MP memory, iOS16.5.1 device tests and signed installation NOT CERTIFIED',
               'release_authority':'actual GitHub Actions xcodebuild -sdk iphoneos',
           }
-          Path('ios/build/release/verification-build135.json').write_text(
+          Path('ios/build/release/verification-build136.json').write_text(
               json.dumps(identity,indent=2,sort_keys=True)+'\n')
           print('PASS exact signed-off source SHA/IPA identity',identity)
           PY
-          cat ios/build/release/verification-build135.json
+          cat ios/build/release/verification-build136.json
       - name: Upload Build111 input color-profile plus old four-mode experimental unsigned IPA and source tapes
         uses: actions/upload-artifact@v4
         with:
-          name: Build135-1.8.101-arm64-dynamic-original-tiff16-unsigned-unverified
+          name: Build136-1.8.102-arm64-fixed-pixel-raw-memory-audit-unsigned-unverified
           path: |
             ios/build/release/*.ipa
             ios/build/release/*.sha256
-            ios/build/release/verification-build135.json
+            ios/build/release/verification-build136.json
             ios/build/release/build114-four-gate-certification-ledger.json
             ios/build/release/build114-unseeded-numba-source-statistics.json
             ios/build/release/build115-swift-parallel-stats.json
@@ -1004,23 +1027,23 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH=work/build129-raw-float32-srgb-icc-admission-ios1651
-          TAG=ios1651-v1.8.101-build135-dynamic-raw-tiff16-memory-UNSIGNED-UNVERIFIED
+          TAG=ios1651-v1.8.102-build136-fixed-pixel-raw-memory-audit-UNSIGNED-UNVERIFIED
           HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
           if [ "$HEAD" != "$GITHUB_SHA" ]; then
             echo "::error::Release forbidden: latest branch $HEAD differs from tested $GITHUB_SHA"
             exit 1
           fi
-          ASSET=ios/build/release/SpektraFilm-1.8.101-Build135-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+          ASSET=ios/build/release/SpektraFilm-1.8.102-Build136-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
-          ID=ios/build/release/verification-build135.json
-          NOTES='Build135 unsigned iPhoneOS16.5.1 arm64 candidate. Removed obsolete hard-coded 1500MB export/CI TIFF16/RAW Float32/Metal IIR, 1400MB LibRaw Swift/native, 1300MB smart mode budget ceilings; admission now driven by OS process live headroom 70%-90% with explicit safety margins and fail-closed original Float64 output. 3024x4032 RAW TIFF16 1560MB estimated peak is permitted only when current iOS memory supports it, without downscaling, quantization or algorithm fallback. Retained source 512MB FFT scratch, OS-backed 70%-80% source memory protection, 13MP original source and 12MP/7.2MP elective geometry ceilings. This IPA is unsigned and actual RAW TIFF16 file export is NOT YET DEVICE CERTIFIED.'
+          ID=ios/build/release/verification-build136.json
+          NOTES='Build136 unsigned iPhoneOS16.5.1 arm64 candidate. Adds explicit 720/800/900/1000/1200 ten-thousand-pixel JPEG/Photos/TIFF16 output choices. P1 RAW ACES16 always completes whole-source Float64 film/paper/scanner first; final file-only Double-area downsampling is user-confirmed and does NOT lower source memory peak, change DNG, or silently switch algorithms. Full-source RAW memory plus separate file buffers are checked using real OS process headroom. Removes historical SciPy 1500MB and FFT 512MB arbitrary ceilings, keeps real 70%-80% Jetsam safeguards and FFT geometry, aligns scan-glare/film-halation 13MP source guard, and avoids extra whole-frame RGBA8 preview buffer. Source memory audit is ios/docs/BUILD136_MEMORY_AUDIT.md. Original rawpy full-image parity, signed iPhone installation, 12.19MP RAW JPEG/TIFF16 file export and device peak memory remain UNVERIFIED.'
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --target "$GITHUB_SHA" --prerelease --notes "$NOTES"
             gh release upload "$TAG" "$ASSET" "$SUM" "$ID" --clobber
           else
             gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
               --target "$GITHUB_SHA" --prerelease \
-              --title "Build135 iOS16.5.1 dynamic memory original RAW TIFF16 - unsigned unverified" \
+              --title "Build136 iOS16.5.1 fixed pixel RAW original optics and memory audit - unsigned unverified" \
               --notes "$NOTES"
           fi
           gh release view "$TAG" --json tagName,url,assets
