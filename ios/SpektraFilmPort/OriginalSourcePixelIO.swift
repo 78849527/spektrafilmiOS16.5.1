@@ -373,35 +373,81 @@ enum OriginalSourcePixelIO {
         return cg
     }
 
-    /// Render the SAME completed Float64 optical frame to a compact UI-only
-    /// preview. This never alters, clips or resamples the optical data sent
-    /// to full-size TIFF/JPEG export. Resident UIImage memory is bounded.
+    /// Build136 UI-only memory optimization: project the finished Double
+    /// optical frame DIRECTLY to a bounded 8-bit preview. Previously the
+    /// 12MP RAW display first allocated a full-size RGBA8 image + Data copy
+    /// (~98MB transient) and only THEN reduced it to 1600px. No such
+    /// full-size intermediary is needed for the display-only preview.
+    ///
+    /// Optical source, export Float64 RGB, TIFF16/JPEG, original RAW DNG and
+    /// the numerical algorithm remain unchanged. Only the UI preview uses
+    /// bilinear sampling in the rendered display-sRGB domain.
     static func displayPreviewImage(
         _ frame:Frame,maxEdge:Int=1600
     ) throws -> CGImage {
-        let full=try displayImage(frame)
-        let maxDimension=max(full.width,full.height)
-        guard maxEdge>=256,maxDimension>0 else {
+        let w=frame.width,h=frame.height
+        guard w>0,h>0,w<=8192,h<=8192,
+              w<=16_000_000/h,
+              frame.rgb.count==w*h*3,maxEdge>=256 else {
             throw Failure.invalid("RAW 显示预览尺寸无效")
         }
-        if maxDimension<=maxEdge { return full }
-        let width=max(1,Int((Double(full.width)*Double(maxEdge) /
-                            Double(maxDimension)).rounded()))
-        let height=max(1,Int((Double(full.height)*Double(maxEdge) /
-                             Double(maxDimension)).rounded()))
-        guard let context=CGContext(
-            data:nil,width:width,height:height,
-            bitsPerComponent:8,bytesPerRow:0,
-            space:srgb,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            throw Failure.invalid("无法为 RAW 全图生成受限内存显示缓冲区")
+        let longest=max(w,h)
+        if longest<=maxEdge {return try displayImage(frame)}
+        // Keep the full-frame finite check from the former displayImage()
+        // path, even for samples not used by this smaller UI image.
+        guard frame.rgb.allSatisfy({$0.isFinite}) else {
+            throw Failure.invalid("RAW 显示预览包含 NaN/Inf")
         }
-        context.interpolationQuality = .high
-        context.draw(full,in:CGRect(x:0,y:0,width:width,height:height))
-        guard let preview=context.makeImage() else {
-            throw Failure.invalid("无法生成 RAW 原版光学显示预览")
+        let outW=max(1,Int((Double(w)*Double(maxEdge)/Double(longest)).rounded()))
+        let outH=max(1,Int((Double(h)*Double(maxEdge)/Double(longest)).rounded()))
+        var rgba=[UInt8](repeating:255,count:outW*outH*4)
+        for y in 0..<outH {
+            let sy=(Double(y)+0.5)*Double(h)/Double(outH)-0.5
+            let y0=max(0,min(h-1,Int(floor(sy))))
+            let y1=min(h-1,y0+1)
+            let fy=max(0,min(1,sy-Double(y0)))
+            for x in 0..<outW {
+                let sx=(Double(x)+0.5)*Double(w)/Double(outW)-0.5
+                let x0=max(0,min(w-1,Int(floor(sx))))
+                let x1=min(w-1,x0+1)
+                let fx=max(0,min(1,sx-Double(x0)))
+                let dst=(y*outW+x)*4
+                let a=(y0*w+x0)*3
+                let b=(y0*w+x1)*3
+                let c=(y1*w+x0)*3
+                let d=(y1*w+x1)*3
+                for ch in 0..<3 {
+                    // Convert each sample to display sRGB just as the old
+                    // full-frame preview did, then interpolate. No colour
+                    // transform is applied to the export/source buffers.
+                    let v00=min(1,max(0,frame.rgb[a+ch]))
+                    let v01=min(1,max(0,frame.rgb[b+ch]))
+                    let v10=min(1,max(0,frame.rgb[c+ch]))
+                    let v11=min(1,max(0,frame.rgb[d+ch]))
+                    let top=v00+(v01-v00)*fx
+                    let bottom=v10+(v11-v10)*fx
+                    let color=top+(bottom-top)*fy
+                    rgba[dst+ch]=UInt8(
+                        (min(1,max(0,color))*255).rounded(.toNearestOrEven)
+                    )
+                }
+            }
         }
-        return preview
+        let data=rgba.withUnsafeBytes {Data($0)} as CFData
+        guard let provider=CGDataProvider(data:data),
+              let output=CGImage(
+                width:outW,height:outH,
+                bitsPerComponent:8,bitsPerPixel:32,
+                bytesPerRow:outW*4,space:srgb,
+                bitmapInfo:CGBitmapInfo(rawValue:
+                    CGImageAlphaInfo.noneSkipLast.rawValue |
+                    CGBitmapInfo.byteOrder32Big.rawValue),
+                provider:provider,decode:nil,
+                shouldInterpolate:false,intent:.defaultIntent
+              ) else {
+            throw Failure.invalid("无法生成受限内存 RAW 光学显示预览")
+        }
+        return output
     }
 
     /// Runs in GitHub's macOS native validation executable as well as on
