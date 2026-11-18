@@ -201,7 +201,7 @@ jobs:
             ios/SpektraFilmPort/SourceGrainScalarGaussian.swift
           # Python audit needs generated original-source manifest, checked
           # in the next source-reference step after original fixture generation.
-      - name: Build136 first compile typed fixed RAW output presets and Float64 signed area resampler
+      - name: Build136 compile and execute typed fixed RAW output presets and Float64 signed area resampler
         run: |
           set -euo pipefail
           swiftc -O -parse-as-library \

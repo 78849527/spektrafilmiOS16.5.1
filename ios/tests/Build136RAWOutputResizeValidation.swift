@@ -3,8 +3,7 @@ import Foundation
 @main
 struct Build136RAWOutputResizeValidation {
     static func main() throws {
-        precondition(ExportResolutionMode.presetWanPixels==
-            [720,800,900,1000,1200])
+        precondition(ExportResolutionMode.presetWanPixels == [720,800,900,1000,1200])
         for count in ExportResolutionMode.presetWanPixels {
             let plan=try SafeExportResolution.plan(
                 width:4032,height:3024,
@@ -16,8 +15,7 @@ struct Build136RAWOutputResizeValidation {
             precondition(plan.dimensions.pixels<=UInt64(count*10_000))
             precondition(plan.dimensions.pixels>UInt64(count*10_000-20_000))
             precondition(plan.fullSourceProcessing && plan.dimensions.reduced)
-            precondition(plan.estimatedPeakBytes>
-                         UInt64(4032*3024)*128)
+            precondition(plan.estimatedPeakBytes > UInt64(4032*3024)*128)
             try SafeExportResolution.validateForHeadroom(
                 plan,processAvailableMemory:5_000_000_000)
         }
