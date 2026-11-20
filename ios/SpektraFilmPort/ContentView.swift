@@ -1048,6 +1048,185 @@ final class PhotoEditorModel: ObservableObject {
         queueSpectralPreview()
     }
 
+    /// Build142: current-photo factory reset only. All defaults below are
+    /// copied from this class's actual @Published declarations, NOT from an
+    /// independently maintained recipe, migration or experimental profile.
+    ///
+    /// Keeps current image/RAW, crop coordinates, local RAW gallery, saved
+    /// recipes and session; the selected film/paper reset to actual defaults.
+    /// For a verified RAW, preserve mandatory direct original Float64
+    /// prerequisites (not the old mobile/8-bit pipeline).
+    func resetAllProcessingToDefaults() throws {
+        guard hasPhoto,!busy,!isRecipeApplying else {
+            throw ImageProcessingError.invalid(
+                "冲印正在执行或没有照片；无法恢复默认配置"
+            )
+        }
+        let rawMode=rawOriginalSourceActive && capturedRAWURL != nil
+        let defaultFilm="kodak_portra_400"
+        let defaultPaper="kodak_portra_endura"
+        guard SpectralPhysics.supportedFilmIDs.contains(defaultFilm),
+              SpectralPhysics.supportedPaperIDs.contains(defaultPaper) else {
+            throw ImageProcessingError.invalid(
+                "原版默认胶片或相纸不可用；未更改当前参数"
+            )
+        }
+        if rawMode {
+            guard let url=capturedRAWURL,
+                  try Build79RAWSignature.probeFile(url) != nil else {
+                throw ImageProcessingError.invalid(
+                    "当前 RAW 原片不可验证；拒绝重置为兼容模式"
+                )
+            }
+        }
+        // Refuse an in-progress render; invalidate any pending or failed
+        // previous settings before mutating the 100 image adjustments.
+        invalidateSimulation()
+        recipeUndo=nil
+        recipeFilmSelectionToIgnore=nil
+        recipePaperSelectionToIgnore=nil
+        originalMetalPreviewVersion &+= 1
+        filmExposureEV=0.0
+        printExposureEV=0.0
+        hanatosOriginalPrecisionEnabled=true
+        scatterEnabled=false
+        halationEnabled=false
+        halationAmount=1.0
+        grainEnabled=false
+        grainAmount=1.0
+        grainSublayersEnabled=false
+        grainDiscreteParticlesEnabled=false
+        grainOriginalMetalEnabled=false
+        grainOriginalSciPyEnabled=false
+        originalScannerEnabled=false
+        scannerCAM16Enabled=false
+        scannerBlackWhiteEnabled=false
+        scannerFinishingEnabled=false
+        scannerSharpenAmount=0.7
+        exposureReferenceEnabled=false
+        printMorphEnabled=false
+        printGamma=1.0
+        printFastGamma=1.0
+        printSlowGamma=1.0
+        printDeveloperExhaustion=0.0
+        originalPrintOpticsEnabled=false
+        printIlluminant=.thKG3
+        neutralPrintFiltersFromDatabase=true
+        printSourceDiffusionEnabled=false
+        printSourceDiffusionFamily=.blackProMist
+        printSourceDiffusionStrength=0.5
+        printSourceDiffusionSpatialScale=1.0
+        printSourceDiffusionWarmth=0.0
+        printSourceDiffusionCoreIntensity=1.0
+        printSourceDiffusionCoreSize=1.0
+        printSourceDiffusionHaloIntensity=1.0
+        printSourceDiffusionHaloSize=1.0
+        printSourceDiffusionBloomIntensity=1.0
+        printSourceDiffusionBloomSize=1.0
+        normalizePrintExposure=true
+        printExposureCompensation=true
+        printCyanShift=0.0
+        printMagentaShift=0.0
+        printYellowShift=0.0
+        preflashEnabled=false
+        preflashExposure=0.0
+        preflashMagentaShift=0.0
+        preflashYellowShift=0.0
+        spatialDIREnabled=false
+        spatialDIRRadiusScale=1.0
+        spatialDIRSourceConvolutionEnabled=true
+        sourcePixelIOEnabled=false
+        sourcePhysicalDirectEnabled=false
+        sourcePhysicalCAM16DefaultGamutEnabled=false
+        sourcePhysicalInputOklchEnabled=false
+        sourceScannerOpticalEnabled=false
+        sourceScannerLensBlurSigma=0.0
+        sourceScannerUnsharpSigma=1.0
+        sourceScannerUnsharpAmount=0.7
+        sourceScannerGlareEnabled=false
+        sourceScannerGlarePercent=0.03
+        sourceScannerGlareRoughness=0.7
+        sourceScannerGlareBlur=0.5
+        sourcePhysicalGrainEnabled=false
+        sourceGrainUseUnseededParallel=false
+        sourceGrainFastStatsEnabled=false
+        sourcePhysicalGrainBlur=0.65
+        sourcePhysicalGrainDyeCloudBlur=1.0
+        sourcePhysicalGrainMicroUM=0.2
+        sourcePhysicalGrainMicroNM=30.0
+        sourceCameraPreFilmEnabled=false
+        sourceCameraMeteringMethod=.centerWeighted
+        sourceCameraHighlightBoostEV=0.0
+        sourceCameraHighlightBoostRange=0.3
+        sourceCameraHighlightProtectEV=4.0
+        sourceCameraLensBlurUM=0.0
+        sourceCameraDiffusionEnabled=false
+        sourceCameraDiffusionFamily=.blackProMist
+        sourceCameraDiffusionStrength=0.5
+        sourceCameraDiffusionSpatialScale=1.0
+        sourceCameraDiffusionWarmth=0.0
+        sourceCameraDiffusionCoreIntensity=1.0
+        sourceCameraDiffusionCoreSize=1.0
+        sourceCameraDiffusionHaloIntensity=1.0
+        sourceCameraDiffusionHaloSize=1.0
+        sourceCameraDiffusionBloomIntensity=1.0
+        sourceCameraDiffusionBloomSize=1.0
+        sourceCameraRawMethod=.hanatos2025
+        sourceHanatosFullRecompute=false
+        sourceCameraUVEnabled=false
+        sourceCameraUVAmount=1.0
+        sourceCameraUVCutoffNM=410.0
+        sourceCameraUVWidthNM=8.0
+        sourceCameraIREnabled=false
+        sourceCameraIRAmount=1.0
+        sourceCameraIRCutoffNM=675.0
+        sourceCameraIRWidthNM=15.0
+        sourceFilmHalationEnabled=false
+        sourceFilmScatterAmount=1.0
+        sourceFilmScatterScale=1.0
+        sourceFilmHalationAmount=1.0
+        sourceFilmHalationScale=1.0
+
+        // Camera/Photos/Files input and crop are NOT processing presets.
+        // A RAW must remain in full optical mode after factory reset.
+        if rawMode {
+            strength=1.0
+            hanatosOriginalPrecisionEnabled=true
+            originalScannerEnabled=true
+            originalPrintOpticsEnabled=true
+            spatialDIREnabled=true
+            spatialDIRSourceConvolutionEnabled=true
+            sourcePixelIOEnabled=true
+            sourcePhysicalDirectEnabled=true
+            rawOriginalSourceActive=true
+        }
+        rawFullResolutionPreview=false
+        // Source/raw transport is preserved but stale optical simulation
+        // and imported compatibility LUT must not be presented as defaults.
+        lut=nil
+        densityGrainStage=nil
+        spatialDIRStage=nil
+
+        let previousFilm=UserDefaults.standard.string(
+            forKey:"compactFilmStock") ?? defaultFilm
+        let previousPaper=UserDefaults.standard.string(
+            forKey:"compactPaperStock") ?? defaultPaper
+        // The parent @AppStorage onChange must not queue another preview:
+        // this reset transaction owns the single new optical generation.
+        if previousFilm != defaultFilm {
+            recipeFilmSelectionToIgnore=defaultFilm
+            UserDefaults.standard.set(defaultFilm,forKey:"compactFilmStock")
+        }
+        if previousPaper != defaultPaper {
+            recipePaperSelectionToIgnore=defaultPaper
+            UserDefaults.standard.set(defaultPaper,forKey:"compactPaperStock")
+        }
+        status="已恢复默认冲印配置：胶片、相纸与全部调节归零；" +
+            (rawMode ? "保留 RAW 原版 Float64 精细模式、" : "") +
+            "照片及裁切不变，重新生成预览"
+        queueSpectralPreview()
+    }
+
     /// A display-only preference; unchanged source stock and full export.
     func selectRAWPreview(fullResolution:Bool) {
         guard rawOriginalSourceActive && sourcePhysicalDirectEnabled &&
