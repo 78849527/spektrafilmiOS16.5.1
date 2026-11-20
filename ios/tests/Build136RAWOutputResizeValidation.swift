@@ -15,7 +15,12 @@ struct Build136RAWOutputResizeValidation {
             precondition(plan.dimensions.pixels<=UInt64(count*10_000))
             precondition(plan.dimensions.pixels>UInt64(count*10_000-20_000))
             precondition(plan.fullSourceProcessing && plan.dimensions.reduced)
-            precondition(plan.estimatedPeakBytes > UInt64(4032*3024)*128)
+            // Build140: optical arrays and final packing do not peak
+            // concurrently; reserve the larger stage, NOT their sum.
+            let sourcePeak=UInt64(4032*3024)*128
+            let packingPeak=UInt64(4032*3024)*24+
+                plan.dimensions.pixels*48
+            precondition(plan.estimatedPeakBytes==max(sourcePeak,packingPeak))
             try SafeExportResolution.validateForHeadroom(
                 plan,processAvailableMemory:5_000_000_000)
         }
