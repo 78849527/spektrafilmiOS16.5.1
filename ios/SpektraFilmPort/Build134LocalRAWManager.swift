@@ -153,9 +153,13 @@ enum Build134LocalRAWStorage {
     }
 
     static func isManaged(_ url:URL) -> Bool {
-        (try? list().contains(where:{
-            $0.url.standardizedFileURL==url.standardizedFileURL
-        })) == true
+        guard let root=try? documents(),
+              accepted(url,documents:root) != nil,
+              let attributes=try? url.resourceValues(
+                forKeys:[.isRegularFileKey,.isSymbolicLinkKey]
+              ) else {return false}
+        return attributes.isRegularFile == true &&
+               attributes.isSymbolicLink != true
     }
 
     /// Catalog-only embedded preview fallback for older DNG/RAF captures.
