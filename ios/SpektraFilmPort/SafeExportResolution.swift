@@ -189,13 +189,18 @@ enum SafeExportResolution {
             dimensions: dimensions, effectiveBudgetBytes: budget,
             processHeadroomBytes: processAvailableMemory,
             allocationAllowanceBytes: allowance,
-            // Original RAW optics still allocates full source pixels even
-            // if the user selects a smaller final JPEG/TIFF16 file.
-            estimatedPeakBytes:
-                (fullSourceProcessing ? sourcePixels : dimensions.pixels) *
-                    estimatedBytesPerPixel +
-                (fullSourceProcessing && dimensions.reduced
-                    ? dimensions.pixels * 48 : 0),
+            // The full-source optical scratch peak and FINAL file packing
+            // occur at DIFFERENT times. Before Build140 they were added,
+            // double-charging buffers that the engine has already released.
+            // Keep the larger stage's conservative bound, never the sum.
+            // Original RAW is ALWAYS developed at sourcePixels; choosing a
+            // smaller output only changes packaging memory, not source optics.
+            estimatedPeakBytes: fullSourceProcessing
+                ? max(
+                    sourcePixels * estimatedBytesPerPixel,
+                    sourcePixels * 24 + dimensions.pixels * 48
+                  )
+                : dimensions.pixels * estimatedBytesPerPixel,
             fullSourceProcessing: fullSourceProcessing
         )
     }
