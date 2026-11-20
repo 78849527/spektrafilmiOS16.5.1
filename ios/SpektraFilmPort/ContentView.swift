@@ -1062,7 +1062,12 @@ final class PhotoEditorModel: ObservableObject {
                 "冲印正在执行或没有照片；无法恢复默认配置"
             )
         }
-        let rawMode=rawOriginalSourceActive && capturedRAWURL != nil
+        let rawMode=rawOriginalSourceActive
+        if rawMode && capturedRAWURL == nil {
+            throw ImageProcessingError.invalid(
+                "当前 RAW 原片不存在；未修改任何处理配置"
+            )
+        }
         let defaultFilm="kodak_portra_400"
         let defaultPaper="kodak_portra_endura"
         guard SpectralPhysics.supportedFilmIDs.contains(defaultFilm),
