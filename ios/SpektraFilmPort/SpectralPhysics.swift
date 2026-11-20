@@ -43,6 +43,11 @@ struct SpectralPhysics {
         let channelDensity: [Float]       // 81 x 3, wavelength-major
         let baseDensity: [Float]          // 81; absent entries packed as zero
         let scannerWavelengthValid: [Bool] // 81 dye/base scanner validity
+        // Build137: immutable per-stock scanner data, prepared once for
+        // the whole RAW frame. Values keep their original Double bits.
+        let preparedScannerValidWavelengths: [Int]
+        let preparedScannerBaseDensity: [Double]
+        let preparedScannerDyeAbsorbance: [Double]
         let baseWavelengthValid: [Bool]    // 81 base-only preflash validity
         let sensitivitySampleValid: [Bool] // 243 paper sensitivity validity
         let logExposure: [Float]          // 256
@@ -72,15 +77,19 @@ struct SpectralPhysics {
             }
             self.id = id
             logSensitivity = try Self.decode(record.logSensitivity, count: 243)
-            channelDensity = try Self.decode(record.channelDensity, count: 243)
-            baseDensity = try Self.decode(record.baseDensity, count: 81)
+            let channelDensitySamples = try Self.decode(record.channelDensity, count: 243)
+            let baseDensitySamples = try Self.decode(record.baseDensity, count: 81)
+            channelDensity = channelDensitySamples
+            baseDensity = baseDensitySamples
             guard let valid = Data(base64Encoded: record.scannerValidWavelengths),
                   valid.count == 81,
                   valid.allSatisfy({ $0 == 0 || $0 == 1 }),
                   valid.contains(1) else {
                 throw PhysicsError.invalid("原版扫描缺失波长标记无效：" + id)
             }
-            scannerWavelengthValid = valid.map { $0 == 1 }
+            let scannerMask = valid.map { $0 == 1 }
+            scannerWavelengthValid = scannerMask
+            preparedScannerValidWavelengths = (0..<81).filter { scannerMask[$0] }
             guard let baseMask = Data(base64Encoded: record.baseValidWavelengths),
                   baseMask.count == 81,
                   baseMask.allSatisfy({ $0 == 0 || $0 == 1 }),
@@ -103,14 +112,22 @@ struct SpectralPhysics {
                 record.sourceLogSensitivityF64, count:243,
                 enabled:sourceMeasuredFloat64
             )
-            sourceChannelDensityF64 = try Self.decodeOptionalSource(
+            let sourceDyeSamples = try Self.decodeOptionalSource(
                 record.sourceChannelDensityF64, count:243,
                 enabled:sourceMeasuredFloat64
             )
-            sourceBaseDensityF64 = try Self.decodeOptionalSource(
+            let sourceBaseSamples = try Self.decodeOptionalSource(
                 record.sourceBaseDensityF64, count:81,
                 enabled:sourceMeasuredFloat64
             )
+            sourceChannelDensityF64 = sourceDyeSamples
+            sourceBaseDensityF64 = sourceBaseSamples
+            // Only move data selection outside the per-pixel wavelength loop.
+            // No rounding, spectral coefficients, or wavelength order changes.
+            preparedScannerDyeAbsorbance = sourceDyeSamples ??
+                channelDensitySamples.map(Double.init)
+            preparedScannerBaseDensity = sourceBaseSamples ??
+                baseDensitySamples.map(Double.init)
             sourceLogExposureF64 = try Self.decodeOptionalSource(
                 record.sourceLogExposureF64, count:256,
                 enabled:sourceMeasuredFloat64
@@ -411,13 +428,11 @@ struct SpectralPhysics {
         }
 
         func dyeAbsorbance(_ wavelengthIndex: Int, _ ch: Int) -> Double {
-            sourceChannelDensityF64?[wavelengthIndex * 3 + ch] ??
-                Double(channelDensity[wavelengthIndex * 3 + ch])
+            preparedScannerDyeAbsorbance[wavelengthIndex * 3 + ch]
         }
 
         func base(_ wavelengthIndex: Int) -> Double {
-            sourceBaseDensityF64?[wavelengthIndex] ??
-                Double(baseDensity[wavelengthIndex])
+            preparedScannerBaseDensity[wavelengthIndex]
         }
     }
 
@@ -453,6 +468,9 @@ struct SpectralPhysics {
     /// spectral Y endpoints. nil keeps legacy scanner behavior unchanged.
     private var sourceReferencePrepared: Build87OriginalColorReference.Prepared? = nil
     private var sourceFilmingExposureFactor: Double = 1.0
+    // This source exposure reference does not depend on the pixel. Cache
+    // log2 after preparing the reference rather than once per RGB sample.
+    private var sourceFilmingExposureEVOffset: Double = 0.0
     private let defaultCAM16Gamut: Bool
     private let viewingStock: String
     private let viewingNormalization: Double
@@ -942,6 +960,7 @@ struct SpectralPhysics {
             )
             sourceReferencePrepared=prepared
             sourceFilmingExposureFactor=factor
+            sourceFilmingExposureEVOffset=log2(factor)
             correctedReferenceBlack=yBlack
             correctedReferenceWhite=yWhite
         }
@@ -1701,7 +1720,7 @@ struct SpectralPhysics {
         }
         let logE = Self.filmLogExposure(
             raw:raw,
-            exposureEV:cameraEV+log2(sourceFilmingExposureFactor)
+            exposureEV:cameraEV+sourceFilmingExposureEVOffset
         )
         let initial = (0..<3).map {
             film.curve(logE[$0],channel:$0)
@@ -2242,13 +2261,12 @@ struct SpectralPhysics {
                                  weights: [[Double]],
                                  clampDensity: Bool = true) -> [Double] {
         var raw = [0.0, 0.0, 0.0]
-        for i in 0..<81 {
+        for i in film.preparedScannerValidWavelengths {
             // Source PrintingStage._film_cmy_to_print_log_raw calls
             // compute_density_spectral, then density_to_light. Any absent
             // CMY dye measurement makes that wavelength NaN (even NaN*0);
             // density_to_light sets its *transmitted light* to zero.
             // Previously packing null -> Float32(0) added false exposure.
-            if !film.scannerWavelengthValid[i] { continue }
             var spectralDensity = film.base(i)
             for c in 0..<3 {
                 spectralDensity += film.dyeAbsorbance(i, c) * filmDensities[c]
@@ -2319,8 +2337,7 @@ struct SpectralPhysics {
         normalization: Double,sourceLogEpsilon:Bool=false
     ) -> [Double] {
         var xyz = [0.0, 0.0, 0.0]
-        for wl in 0..<81 {
-            if !paper.scannerWavelengthValid[wl] { continue }
+        for wl in paper.preparedScannerValidWavelengths {
             var density = paper.base(wl)
             for channel in 0..<3 {
                 density += paper.dyeAbsorbance(wl,channel)*densities[channel]
@@ -2339,8 +2356,7 @@ struct SpectralPhysics {
     private static func scanLinear(_ densities: [Double], paper: Profile,
                                    weights: [[Double]], mediaWhite: [Double]) -> [Double] {
         var xyz = [0.0, 0.0, 0.0]
-        for i in 0..<81 {
-            if !paper.scannerWavelengthValid[i] { continue }
+        for i in paper.preparedScannerValidWavelengths {
             var density = paper.base(i)
             for c in 0..<3 {
                 density += paper.dyeAbsorbance(i, c) * densities[c]
