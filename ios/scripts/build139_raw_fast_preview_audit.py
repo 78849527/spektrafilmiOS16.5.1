@@ -11,7 +11,7 @@ reducer=load("ios/SpektraFilmPort/Build139RAWPreviewDownsample.swift")
 test=load("ios/tests/Build139RAWPreviewDownsampleValidation.swift")
 project=load("ios/project.yml")
 
-assert 'maxLongEdge: Int = 1280' in ingress
+assert 'maxLongEdge:Int=1280' in ingress or 'maxLongEdge: Int = 1280' in ingress
 assert 'static func developPreviewCandidate(' in ingress
 quick=ingress.split("static func developPreviewCandidate(",1)[1].split(
     "    /// Match original rawpy:",1
