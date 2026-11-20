@@ -2896,6 +2896,13 @@ final class PhotoEditorModel: ObservableObject {
         guard let src = source else {
             throw ImageProcessingError.invalid("请先导入照片")
         }
+        let bounds=src.extent.integral
+        // Native LibRaw geometry (captured from the uncropped source render).
+        // Output-only resolution choices do not affect these optical pixels.
+        let inputCrop=rawOriginalSourceActive ? rawCropSelection : nil
+        try inputCrop?.validate()
+        let opticalWidth=inputCrop?.width ?? Int(bounds.width)
+        let opticalHeight=inputCrop?.height ?? Int(bounds.height)
         guard Build99InteractionRules.canExport(
             pendingSelectedMaterial:simulationAwaitingCurrentSettings
         ) else {
@@ -2931,9 +2938,8 @@ final class PhotoEditorModel: ObservableObject {
                     )
                 }
                 let settings=try sourcePhysicalParameters()
-                let geometry=src.extent.integral
                 try OriginalSourcePhysicalImage.validateMemoryBudget(
-                    width:Int(geometry.width),height:Int(geometry.height),
+                    width:opticalWidth,height:opticalHeight,
                     parameters:settings
                 )
             } else {
@@ -2948,8 +2954,8 @@ final class PhotoEditorModel: ObservableObject {
                 )
             }
         }
-        let bounds = src.extent.integral
-        // Build140: one accounting envelope for ALL selected source options.
+        // Build140/141: one accounting envelope for ALL selected
+        // source optics, evaluated over the CONFIRMED cropped RAW pixels.
         // The RAW export case uses precisely the runtime film/paper/film grain,
         // scanner, glare, camera, halation, output gamut and FFT settings.
         // No legacy fixed 224 B/px grain adder, no lowered Jetsam threshold.
@@ -2959,14 +2965,22 @@ final class PhotoEditorModel: ObservableObject {
             ? try sourcePhysicalParameters() : nil
         let rawOpticalPeakBPP:UInt64?=rawPhysicalSettings.map { settings in
             let footprint=OriginalSourcePhysicalImage.memoryEnvelope(
-                width:Int(bounds.width),height:Int(bounds.height),
+                width:opticalWidth,height:opticalHeight,
                 parameters:settings
             )
+            // Native LibRaw still decodes the ORIGINAL full sensor before
+            // a packed ACES16 crop. Reserve this immutable RGB16 buffer
+            // alongside the smaller optical frame: no false "free crop".
+            let decoderOverhead:UInt64=inputCrop == nil ? 0 :
+                (UInt64(inputCrop!.sourceWidth) *
+                 UInt64(inputCrop!.sourceHeight) * 6 +
+                 UInt64(opticalWidth*opticalHeight)-1) /
+                 UInt64(opticalWidth*opticalHeight)
             return OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
-                footprint.additionalBytesPerPixel
+                footprint.additionalBytesPerPixel + decoderOverhead
         }
         let plan = try SafeExportResolution.capture(
-            width: Int(bounds.width), height: Int(bounds.height),
+            width: opticalWidth, height: opticalHeight,
             mode: resolution,
             estimatedBytesPerPixel:
                 rawOpticalPeakBPP ??
@@ -2997,10 +3011,10 @@ final class PhotoEditorModel: ObservableObject {
                 sourcePixelIOEnabled && sourcePhysicalDirectEnabled
         )
         if let rawPhysicalSettings {
-            // RAW always develops actual ORIGINAL dimensions regardless
-            // of the export's explicitly chosen final image size.
+            // RAW develops its selected original-RAW crop, even if final
+            // JPEG/TIFF16 output is explicitly downsampled further.
             try OriginalSourcePhysicalImage.validateMemoryBudget(
-                width:Int(bounds.width),height:Int(bounds.height),
+                width:opticalWidth,height:opticalHeight,
                 parameters:rawPhysicalSettings
             )
         } else if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
