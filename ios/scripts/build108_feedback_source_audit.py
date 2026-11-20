@@ -66,7 +66,12 @@ assert 'firstFailure:measured && touched ? nil' in source
 assert 'status:passed ?' in source
 assert 'code:103' in source
 assert 'stageObserverBytesPerPixel: UInt64 = 960' in ledger
-assert memory.count('Build106SourceMemoryLedger.productionAdditional(') == 2
+# Build140: one shared envelope prevents RAW predecode / renderer drift.
+# The old count of two independently constructed ledgers was intentional
+# before Build140; it must not be reinstated merely to pass this legacy gate.
+assert memory.count('Build106SourceMemoryLedger.productionAdditional(') == 1
+assert 'static func memoryEnvelope(' in memory
+assert 'stageObserver:stageDoubleObserver != nil' in memory
 assert 'let conservative=additional(' in ledger
 assert 'return conservative' in ledger
 assert grain.index('stageObserver?("sourceGrainDyeClouds",out)') < grain.index('layerInputs.removeAll(keepingCapacity:false)') < grain.index('let microStd=settings.microstructureNM')
