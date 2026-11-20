@@ -85,6 +85,43 @@ enum P1OriginalRawACESIngress {
         return frame
     }
 
+    /// Build139: automatic speed-oriented preview ONLY. Full JPEG/TIFF16
+    /// export always uses developSourceCandidate() unchanged. It first
+    /// decodes the real full sensor RAW as ACES16, averages those LINEAR
+    /// samples into a bounded preview frame without creating a full Double
+    /// image, then runs the SAME source Float64 optical engine on that grid.
+    /// The spatial grain/halation result is not pixel-identical to a full
+    /// optical render subsequently reduced for display.
+    static func developPreviewCandidate(
+        _ rawURL: URL,
+        opticalSettings: OriginalSourcePhysicalImage.Parameters,
+        maxLongEdge: Int = 1280
+    ) throws -> OriginalSourcePixelIO.Frame {
+        var selected=opticalSettings
+        selected.cameraInputColorSpace = .acesLinear
+        try selected.validate()
+        // Decode safety and original-RAW pixel ceiling are unchanged.
+        let decoded=try open(
+            rawURL,
+            maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        )
+        let reduced=try Build139RAWPreviewDownsample.frame(
+            packedRGB16:decoded.packedRGB16,
+            width:decoded.width,height:decoded.height,
+            maxLongEdge:maxLongEdge
+        )
+        try OriginalSourcePhysicalImage.validateMemoryBudget(
+            width:reduced.width,height:reduced.height
+        )
+        var frame=OriginalSourcePixelIO.Frame(
+            width:reduced.width,height:reduced.height,rgb:reduced.rgb
+        )
+        try OriginalSourcePhysicalImage.developInPlace(
+            &frame,parameters:selected
+        )
+        return frame
+    }
+
     /// Match original rawpy: np.float32(uint16) / np.float32(65535).
     /// Values are promoted to Double only after that source quantization.
     /// Caller must separately validate downstream memory and stage gamut.
