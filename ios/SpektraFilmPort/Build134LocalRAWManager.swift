@@ -160,11 +160,12 @@ enum Build134LocalRAWStorage {
 
     /// Catalog-only embedded preview fallback for older DNG/RAF captures.
     /// Never create a thumbnail by demosaicing a full-size sensor RAW.
-    static func thumbnail(for url:URL) -> UIImage? {
+    static func thumbnailData(for url:URL) -> Data? {
         guard isManaged(url) else {return nil}
         if let preview=try? thumbnailURL(for:url),
-           let stored=UIImage(contentsOfFile:preview.path) {
-            return stored
+           let data=try? Data(contentsOf:preview),
+           !data.isEmpty {
+            return data
         }
         guard let source=CGImageSourceCreateWithURL(
             url as CFURL,[kCGImageSourceShouldCache:false] as CFDictionary
@@ -175,7 +176,12 @@ enum Build134LocalRAWStorage {
                 kCGImageSourceShouldCacheImmediately:false
             ] as CFDictionary
         ) else {return nil}
-        return UIImage(cgImage:image)
+        let output=NSMutableData()
+        guard let dest=CGImageDestinationCreateWithData(
+            output,UTType.jpeg.identifier as CFString,1,nil
+        ) else {return nil}
+        CGImageDestinationAddImage(dest,image,nil)
+        return CGImageDestinationFinalize(dest) ? output as Data : nil
     }
     static func delete(_ url: URL) throws {
         let root=try documents()
@@ -225,9 +231,10 @@ private struct Build134RAWThumbnail: View {
         .task(id:item.id) {
             image=nil
             let url=item.url
-            image=await Task.detached(priority:.utility) {
-                Build134LocalRAWStorage.thumbnail(for:url)
+            let bytes=await Task.detached(priority:.utility) {
+                Build134LocalRAWStorage.thumbnailData(for:url)
             }.value
+            image=bytes.flatMap { UIImage(data:$0) }
         }
         .accessibilityLabel(item.cameraCapture
             ? "相机 RAW 缩略图" : "导入 RAW 缩略图")
