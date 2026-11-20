@@ -1,3 +1,4 @@
+# Build138 hotfix: direct Float64 RAW source DIR must bypass absent mobile DIR cache; preserve full optical quality.
 # Build138 release identity correction: package/app/IPA must be 1.8.104 Build138 (not Build136).
 # Build138 retry: fix UIKit UIImage orientation label and Swift 5 status concatenation; preserve all optical calculations.
 # Build138 retry: historical Build103 GUI test recognizes source RAW no-LUT exact mode.
