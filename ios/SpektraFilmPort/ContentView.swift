@@ -1015,6 +1015,25 @@ final class PhotoEditorModel: ObservableObject {
         pendingRender = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 380_000_000)
             guard !Task.isCancelled && generation == renderGeneration else { return }
+            if rawOriginalSourceActive && sourcePhysicalDirectEnabled {
+                // Build138: precision RAW renders straight from LibRaw + the
+                // selected source film/paper. The 17^3 compatibility LUT and
+                // mobile DIR stage are NOT consumed in this route; do not
+                // generate them just to make the selected stock take effect.
+                activeSimulationGeneration=generation
+                busy=true
+                do {
+                    try refresh()
+                } catch {
+                    guard generation == renderGeneration else {return}
+                    activeSimulationGeneration=nil
+                    busy=false
+                    processedPreview=nil
+                    status="RAW 精细冲印无法执行（未降级）："+
+                        error.localizedDescription
+                }
+                return
+            }
             applyMeasuredSimulation(generation: generation)
         }
     }
@@ -1500,9 +1519,8 @@ final class PhotoEditorModel: ObservableObject {
                             dimensions:"\(decoded.0.width) × \(decoded.0.height) · 相机 DNG / Apple RAW"
                         )
                         try activateDirectRAWPrecision()
-                        status="DNG 原片已保存，自动启用精细冲印与当前胶片／相纸；" +
-                            "当前为 Apple RAW 兼容显影，非 Python rawpy 精确等价；" +
-                            "JPEG 伴随片没有进入编辑器。"
+                        status="DNG 原片已保存，自动启用当前胶片／相纸的 Float64 精细冲印；" +
+                            "Apple RAW 仅用于初始预览，JPEG 伴随片未进入光学计算。"
                     } catch {
                         pendingImportedRAWURL=rawFile
                         rawNeedsChoice=true
@@ -1593,11 +1611,12 @@ final class PhotoEditorModel: ObservableObject {
                 } else {
                     rawOriginalSourceActive=false
                 }
-                status=(preferOriginalSource
-                    ? "RAW 原片直通精细冲印已自动启用，使用当前胶卷和相纸；"
-                    : "已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；") +
-                    "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
-                    "不是 Python rawpy 原版数值等价。"
+                status=preferOriginalSource
+                    ? "RAW 原片直通已自动进入 Float64 精细冲印，" +
+                      "使用当前胶卷及相纸；Apple RAW 仅用于初始预览。"
+                    : "已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；" +
+                      "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
+                      "不是 Python rawpy 原版数值等价。"
             } catch {
                 status="Apple RAW 兼容解码失败（原始 RAW 仍保留）：" +
                     error.localizedDescription
@@ -1643,6 +1662,11 @@ final class PhotoEditorModel: ObservableObject {
         rawOriginalSourceActive=true
         sourcePixelIOEnabled=true
         sourcePhysicalDirectEnabled=true
+        // Discard stale compatibility material nodes: source RAW uses the
+        // selected film/paper directly, not a 17^3 preview cube.
+        lut=nil
+        densityGrainStage=nil
+        spatialDIRStage=nil
         // Re-evaluate the ALREADY selected Portra 400 or other stock.
         // No manual switch away-and-back is necessary.
         queueSpectralPreview()
@@ -1761,11 +1785,12 @@ final class PhotoEditorModel: ObservableObject {
                 } else {
                     rawOriginalSourceActive=false
                 }
-                status = (preferOriginalSource
-                    ? "RAW 原片直通精细冲印已自动启用，使用当前胶卷和相纸；"
-                    : "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；") +
-                    "输入为 16-bit sRGB 高位深兼容数据，最终 JPEG 仍为 8-bit；" +
-                    "原始 RAF 不变，不代表 Python Float64 原版数值等价。"
+                status = preferOriginalSource
+                    ? "RAF 原片直通已自动进入 Float64 精细冲印，" +
+                      "使用当前胶卷及相纸；16-bit RGB 仅用于初始预览。"
+                    : "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；" +
+                      "输入为 16-bit sRGB 高位深兼容数据，最终 JPEG 仍为 8-bit；" +
+                      "原始 RAF 不变，不代表 Python Float64 原版数值等价。"
             } catch {
                 status = "LibRaw 16-bit 失败（未降级，原始 RAF 保留）：" +
                     error.localizedDescription
@@ -2186,6 +2211,7 @@ final class PhotoEditorModel: ObservableObject {
                     )
                 }
                 let physical=try sourcePhysicalParameters()
+                let activeRAWGeneration=activeSimulationGeneration
                 status="RAW 原片直接进入 ACES16 / Float64 原版光学预览；" +
                     "rawpy 数值尚未认证，失败不会改用 Apple 兼容图"
                 Task.detached(priority:.userInitiated) {
@@ -2204,6 +2230,12 @@ final class PhotoEditorModel: ObservableObject {
                         await MainActor.run {
                             guard revision==self.originalMetalPreviewVersion else {return}
                             self.processedPreview=result
+                            if let generation=activeRAWGeneration,
+                               generation==self.activeSimulationGeneration {
+                                self.simulationAwaitingCurrentSettings=false
+                                self.activeSimulationGeneration=nil
+                                self.busy=false
+                            }
                             self.status="RAW 原版光学测试预览完成｜" + self.photoDimensions +
                                 "｜未通过 Python rawpy/iOS16.5.1 实图认证"
                             self.finishRecipePreview()
@@ -2212,6 +2244,13 @@ final class PhotoEditorModel: ObservableObject {
                         await MainActor.run {
                             guard revision==self.originalMetalPreviewVersion else {return}
                             self.processedPreview=nil
+                            if let generation=activeRAWGeneration,
+                               generation==self.activeSimulationGeneration {
+                                // Keep the selected material pending so a
+                                // failed RAW render cannot export an old frame.
+                                self.activeSimulationGeneration=nil
+                                self.busy=false
+                            }
                             self.status="RAW 原片精细冲印失败（禁止降级）：" +
                                 error.localizedDescription
                         }
