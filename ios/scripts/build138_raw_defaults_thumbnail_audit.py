@@ -50,6 +50,10 @@ for required in (
 assert "try activateDirectRAWPrecision()" in app
 assert "func loadPhotoFile(_ url: URL)" in app
 assert "func selectFromPhotos(_ selection: PhotosPickerItem?)" in app
+assert "private func preservePickerRAWIfPresent(" in app
+assert "if let preserved=try preservePickerRAWIfPresent(data)" in app
+assert "if pickerAdvertisesRAW(selection)" in app
+assert "照片选择器没有提供可验证的 RAW 原始字节" in app
 assert "try loadPhoto(Data(contentsOf: url),entry:.file)" in app
 
 # Full RAW exposure/H-D/scan reads the actual selected stock IDs and bypasses
