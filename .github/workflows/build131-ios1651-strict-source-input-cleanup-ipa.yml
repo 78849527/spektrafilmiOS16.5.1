@@ -1,3 +1,4 @@
+# Build137 retry 2026-11-20: correct verifier guard parsing; no optical math changes.
 # Build137: source-only RAW optical speed optimization; preserve Float64 values and wavelength order.
 # Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
 # Build136 UI audit keeps source controls/layout but derives smart budget from live OS headroom, not fixed 1300MB.
