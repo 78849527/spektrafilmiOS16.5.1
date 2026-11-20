@@ -21,10 +21,12 @@ assert "frame.rgb.count==w*h*3" in physical
 assert "let committedInputBytes=UInt64(frame.rgb.count)" in physical
 assert "alreadyCommittedInputBytes:committedInputBytes" in physical
 # The raw ImageIO/preview pre-decode path must have no committed credit.
-assert "additionalBytesPerPixel:preflightAdditional," in physical
-assert "alreadyCommittedInputBytes:committedInputBytes" not in physical.split(
-    "let preflightAdditional=Build106SourceMemoryLedger.productionAdditional("
-)[1]
+# Build140: source predecode calls the shared memory envelope and must
+# NEVER credit the input frame before it is actually allocated.
+assert "static func memoryEnvelope(" in physical
+assert "stageObserver:stageDoubleObserver != nil" in physical
+assert "alreadyCommittedInputBytes:committedInputBytes" in physical
+assert "width:targetW,height:targetH,parameters:parameters" in physical
 assert "lateAdmissionRefused=error is Build91PhysicalMemory.Failure" in stress
 assert 'lateAdmissionRefused ? "refused_by_production_memory_gate"' in stress
 assert "build==\"119\"" in stress
