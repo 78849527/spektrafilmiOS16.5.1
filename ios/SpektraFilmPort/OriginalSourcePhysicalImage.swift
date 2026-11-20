@@ -375,6 +375,14 @@ enum OriginalSourcePhysicalImage {
         }
         let committedInputBytes=UInt64(frame.rgb.count) *
             UInt64(MemoryLayout<Double>.stride)
+        let activePrintDiffusion=parameters.printDiffusion.active &&
+            parameters.printDiffusion.strength>0 &&
+            parameters.printDiffusion.spatialScale>0
+        let controlledScannerGlare=parameters.scannerGlare.active &&
+            parameters.scannerGlare.percent>0
+        let controlledFilmGrain=parameters.sourceGrain.active
+        let capturePaperStages=stageDoubleObserver != nil &&
+            !SpectralPhysics.isPositiveFilm(parameters.filmID)
         // Build140: exactly the same feature/FFT envelope as RAW
         // predecode and export admission, with ONLY the existing input
         // Float64 frame counted as already committed.
