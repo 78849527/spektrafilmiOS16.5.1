@@ -99,7 +99,7 @@ enum Build134LocalRAWStorage {
 
     private static func thumbnailURL(for raw:URL) throws -> URL {
         try previewDirectory().appendingPathComponent(
-            raw.lastPathComponent+".jpg"
+            raw.lastPathComponent+".upright-v2.jpg"
         )
     }
 
@@ -109,6 +109,7 @@ enum Build134LocalRAWStorage {
         ),let thumb=CGImageSourceCreateThumbnailAtIndex(
             source,0,[
                 kCGImageSourceCreateThumbnailFromImageAlways:true,
+                kCGImageSourceCreateThumbnailWithTransform:true,
                 kCGImageSourceThumbnailMaxPixelSize:320,
                 kCGImageSourceShouldCacheImmediately:true
             ] as CFDictionary
@@ -162,6 +163,38 @@ enum Build134LocalRAWStorage {
                attributes.isSymbolicLink != true
     }
 
+    /// Legacy thumbnails were encoded without the original EXIF orientation.
+    /// Repair ONLY their 320px JPEG pixels; never decode or edit source RAW.
+    private static func orientLegacyThumbnail(_ data:Data,rawURL:URL)->Data {
+        guard let source=CGImageSourceCreateWithURL(
+            rawURL as CFURL,[kCGImageSourceShouldCache:false] as CFDictionary
+        ),let props=CGImageSourceCopyPropertiesAtIndex(source,0,nil)
+            as? [CFString:Any],
+          let exif=props[kCGImagePropertyOrientation] as? NSNumber,
+          let image=UIImage(data:data),let cg=image.cgImage else {
+            return data
+        }
+        let orientation:UIImage.Orientation
+        switch exif.intValue {
+        case 2: orientation = .upMirrored
+        case 3: orientation = .down
+        case 4: orientation = .downMirrored
+        case 5: orientation = .leftMirrored
+        case 6: orientation = .right
+        case 7: orientation = .rightMirrored
+        case 8: orientation = .left
+        default: return data
+        }
+        let turns = [5,6,7,8].contains(exif.intValue)
+        let size=turns
+            ? CGSize(width:cg.height,height:cg.width)
+            : CGSize(width:cg.width,height:cg.height)
+        let upright=UIImage(cgImage:cg,scale:1,imageOrientation:orientation)
+        return UIGraphicsImageRenderer(size:size).image { _ in
+            upright.draw(in:CGRect(origin:.zero,size:size))
+        }.jpegData(compressionQuality:0.82) ?? data
+    }
+
     /// Catalog-only embedded preview fallback for older DNG/RAF captures.
     /// Never create a thumbnail by demosaicing a full-size sensor RAW.
     static func thumbnailData(for url:URL) -> Data? {
@@ -171,11 +204,23 @@ enum Build134LocalRAWStorage {
            !data.isEmpty {
             return data
         }
+        let legacy=try? previewDirectory().appendingPathComponent(
+            url.lastPathComponent+".jpg"
+        )
+        if let legacy, let bytes=try? Data(contentsOf:legacy),
+           !bytes.isEmpty {
+            let corrected=orientLegacyThumbnail(bytes,rawURL:url)
+            if let target=try? thumbnailURL(for:url) {
+                try? corrected.write(to:target,options:.atomic)
+            }
+            return corrected
+        }
         guard let source=CGImageSourceCreateWithURL(
             url as CFURL,[kCGImageSourceShouldCache:false] as CFDictionary
         ),let image=CGImageSourceCreateThumbnailAtIndex(
             source,0,[
                 kCGImageSourceCreateThumbnailFromImageIfAbsent:false,
+                kCGImageSourceCreateThumbnailWithTransform:true,
                 kCGImageSourceThumbnailMaxPixelSize:320,
                 kCGImageSourceShouldCacheImmediately:false
             ] as CFDictionary
@@ -185,7 +230,12 @@ enum Build134LocalRAWStorage {
             output,UTType.jpeg.identifier as CFString,1,nil
         ) else {return nil}
         CGImageDestinationAddImage(dest,image,nil)
-        return CGImageDestinationFinalize(dest) ? output as Data : nil
+        guard CGImageDestinationFinalize(dest) else {return nil}
+        let bytes=output as Data
+        if let target=try? thumbnailURL(for:url) {
+            try? bytes.write(to:target,options:.atomic)
+        }
+        return bytes
     }
     static func delete(_ url: URL) throws {
         let root=try documents()
@@ -202,6 +252,11 @@ enum Build134LocalRAWStorage {
         if let preview=try? thumbnailURL(for:target) {
             try? FileManager.default.removeItem(at:preview)
         }
+        if let old=try? previewDirectory().appendingPathComponent(
+            target.lastPathComponent+".jpg"
+        ) {
+            try? FileManager.default.removeItem(at:old)
+        }
     }
 }
 
@@ -210,6 +265,19 @@ enum Build134LocalRAWStorage {
 private struct Build134RAWThumbnail: View {
     let item: Build134LocalRAWStorage.Entry
     @State private var image:UIImage?
+
+    private var actualAspectRatio:CGFloat {
+        guard let image else {return 4.0/3.0}
+        let width=image.size.width
+        let height=image.size.height
+        guard width>0,height>0 else {return 4.0/3.0}
+        switch image.imageOrientation {
+        case .left,.right,.leftMirrored,.rightMirrored:
+            return height/width
+        default:
+            return width/height
+        }
+    }
 
     var body:some View {
         ZStack {
@@ -231,7 +299,7 @@ private struct Build134RAWThumbnail: View {
                 .foregroundColor(.secondary)
             }
         }
-        .aspectRatio(4.0/3.0,contentMode:.fit)
+        .aspectRatio(actualAspectRatio,contentMode:.fit)
         .task(id:item.id) {
             image=nil
             let url=item.url
