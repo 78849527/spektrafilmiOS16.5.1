@@ -1,4 +1,4 @@
-# Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
+# Build137: source-only RAW optical speed optimization; preserve Float64 values and wavelength order.\n# Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
 # Build136 UI audit keeps source controls/layout but derives smart budget from live OS headroom, not fixed 1300MB.
 # Build136 carry-forward UI audit updated to exercise dynamic preflight, not obsolete fixed MB literal contracts.
 # Build134 carried-forward GUI test updated to test the new real UIKit double tap and top status placement.
@@ -64,7 +64,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-name: Build136 iOS16.5.1 five megapixel RAW export presets and memory audit IPA
+name: Build136 iOS16.5.1 RAW full-optical memory and Build137 speed-preserving IPA
 
 on:
   push:
@@ -198,6 +198,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Build137 RAW optical speed regression source and parse gate
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/SpectralPhysics.swift \
+            ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift \
+            ios/tests/SourcePhysicalImageParity.swift \
+            ios/tests/SourceFloat64ProfileValidation.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('ios/SpektraFilmPort/SpectralPhysics.swift').read_text()
+          physical=Path('ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift').read_text()
+          parity=Path('ios/tests/SourcePhysicalImageParity.swift').read_text()
+          assert 'preparedScannerValidWavelengths' in source
+          assert 'preparedScannerDyeAbsorbance' in source
+          assert 'preparedScannerBaseDensity' in source
+          assert 'for wl in paper.preparedScannerValidWavelengths' in source
+          assert 'for i in film.preparedScannerValidWavelengths' in source
+          assert 'let transmitted = pow(10.0,-density)' in source
+          assert 'sourceFilmingExposureEVOffset=log2(factor)' in source
+          assert 'return pow(2.0,cameraEV+sourceFilmingExposureEVOffset)' in source
+          assert 'preparedExposureMultiplier:preparedExposureMultiplier' in physical
+          assert 'try SpectralPhysics.verifyPreparedScannerSamples()' in parity
+          assert 'try SpectralPhysics.verifyPreparedCameraMultiplier()' in parity
+          assert Path('ios/docs/BUILD137_RAW_SPEED_OPTIMIZATION.md').is_file()
+          print('PASS Build137 source-only optimization contract; numeric parity and device timing remain separate gates')
+          PY
       - name: Build108 immediate Swift syntax gate for 1MP/2MP real renderer and source UI
         run: |
           set -euo pipefail
@@ -1061,7 +1088,7 @@ jobs:
           ASSET=ios/build/release/SpektraFilm-1.8.102-Build136-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
           ID=ios/build/release/verification-build136.json
-          NOTES='Build136 unsigned iPhoneOS16.5.1 arm64 candidate. Adds explicit 720/800/900/1000/1200 ten-thousand-pixel JPEG/Photos/TIFF16 output choices. P1 RAW ACES16 always completes whole-source Float64 film/paper/scanner first; final file-only Double-area downsampling is user-confirmed and does NOT lower source memory peak, change DNG, or silently switch algorithms. Full-source RAW memory plus separate file buffers are checked using real OS process headroom. Removes historical SciPy 1500MB and FFT 512MB arbitrary ceilings, keeps real 70%-80% Jetsam safeguards and FFT geometry, aligns scan-glare/film-halation 13MP source guard, and avoids extra whole-frame RGBA8 preview buffer. Source memory audit is ios/docs/BUILD136_MEMORY_AUDIT.md. Original rawpy full-image parity, signed iPhone installation, 12.19MP RAW JPEG/TIFF16 file export and device peak memory remain UNVERIFIED. Follow-up same Build136: eliminated duplicate Float64 quantization buffer (24 B/px), released full-resolution RAW RGB before reduced JPEG/TIFF16 encode, memory-mapped ICC validation reads, and reused output Data. Original io.py reference numeric and byte packing are re-tested in CI. This release also adds continuous camera RAW capture with original DNG archival, bounded JPEG-only gallery thumbnails, two-column in-App RAW library, reopen-to-precision action and scoped deletion. It does not batch-develop or use the JPEG companion as optical input. Real iPhone16.5.1 camera burst, gallery reopen, embedded RAF thumbnails, long-run memory peak and RAW optical output remain UNVERIFIED. This release has its own SHA-specific tag; earlier Build136 assets stay unchanged.'
+          NOTES='Build136 unsigned iPhoneOS16.5.1 arm64 candidate. Adds explicit 720/800/900/1000/1200 ten-thousand-pixel JPEG/Photos/TIFF16 output choices. P1 RAW ACES16 always completes whole-source Float64 film/paper/scanner first; final file-only Double-area downsampling is user-confirmed and does NOT lower source memory peak, change DNG, or silently switch algorithms. Full-source RAW memory plus separate file buffers are checked using real OS process headroom. Removes historical SciPy 1500MB and FFT 512MB arbitrary ceilings, keeps real 70%-80% Jetsam safeguards and FFT geometry, aligns scan-glare/film-halation 13MP source guard, and avoids extra whole-frame RGBA8 preview buffer. Source memory audit is ios/docs/BUILD136_MEMORY_AUDIT.md. Original rawpy full-image parity, signed iPhone installation, 12.19MP RAW JPEG/TIFF16 file export and device peak memory remain UNVERIFIED. Follow-up same Build136: eliminated duplicate Float64 quantization buffer (24 B/px), released full-resolution RAW RGB before reduced JPEG/TIFF16 encode, memory-mapped ICC validation reads, and reused output Data. Original io.py reference numeric and byte packing are re-tested in CI. This release also adds continuous camera RAW capture with original DNG archival, bounded JPEG-only gallery thumbnails, two-column in-App RAW library, reopen-to-precision action and scoped deletion. It does not batch-develop or use the JPEG companion as optical input. Real iPhone16.5.1 camera burst, gallery reopen, embedded RAF thumbnails, long-run memory peak and RAW optical output remain UNVERIFIED. Build137 incremental RAW direct speed cleanup prepares scanner wavelength samples and camera exposure constants once per frame, retaining exact Float64 operations and unchanged film/paper profiles. Linux synthetic kernel microbenchmark is not an iPhone speed certification; real-device benchmark and stage output parity still required. This release has its own SHA-specific tag; earlier Build136 assets stay unchanged.'
           # Keep earlier Build136 release immutable. A rerun for this exact
           # SHA leaves its existing assets untouched instead of clobbering.
           if gh release view "$TAG" >/dev/null 2>&1; then
