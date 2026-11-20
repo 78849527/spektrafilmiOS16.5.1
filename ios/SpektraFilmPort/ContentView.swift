@@ -2371,34 +2371,48 @@ final class PhotoEditorModel: ObservableObject {
                 let physical=try sourcePhysicalParameters()
                 let activeRAWGeneration=activeSimulationGeneration
                 let fullSourcePreview=rawFullResolutionPreview
-                status=fullSourcePreview
-                    ? "RAW 完整精细预览：ACES16 原尺寸 → Float64 光学计算中…"
-                    : "RAW 快速预览：真实 ACES16 先缩至最长边 1280px → 原版 Float64 光学计算中…"
+                let selectedCrop=rawCropSelection
+                status=(fullSourcePreview
+                    ? "RAW 完整精细预览：原始 ACES16 → Float64"
+                    : "RAW 快速预览：ACES16 1280px → Float64") +
+                    (selectedCrop != nil ? "（冲印前已裁切）" : "") +
+                    " 光学计算中…"
                 Task.detached(priority:.userInitiated) {
                     do {
-                        let rendered=try autoreleasepool { () throws -> (UIImage,Int,Int) in
+                        let rendered=try autoreleasepool { () throws -> (UIImage,Int,Int,Int,Int) in
                             let frame:OriginalSourcePixelIO.Frame
+                            let rawWidth:Int,rawHeight:Int
                             if fullSourcePreview {
                                 frame=try P1OriginalRawACESIngress.developSourceCandidate(
-                                    rawURL,opticalSettings:physical
+                                    rawURL,opticalSettings:physical,crop:selectedCrop
                                 )
+                                rawWidth=selectedCrop?.sourceWidth ?? frame.width
+                                rawHeight=selectedCrop?.sourceHeight ?? frame.height
                             } else {
-                                frame=try P1OriginalRawACESIngress.developPreviewCandidate(
-                                    rawURL,opticalSettings:physical,maxLongEdge:1280
+                                let preview=try P1OriginalRawACESIngress.developPreviewWithGeometry(
+                                    rawURL,opticalSettings:physical,
+                                    maxLongEdge:1280,crop:selectedCrop
                                 )
+                                frame=preview.frame
+                                rawWidth=preview.sourceWidth
+                                rawHeight=preview.sourceHeight
                             }
-                            // For full preview, downsample only AFTER source
-                            // optics. Fast preview runs the same source Float64
-                            // engine on a smaller grid; its spatial effects
-                            // are not guaranteed full-resolution parity.
+                            // Build141: source and crop geometry match the
+                            // decoder orientation; final UIImage is display only.
                             let image=try OriginalSourcePixelIO.displayPreviewImage(
                                 frame,maxEdge:1600
                             )
-                            return (UIImage(cgImage:image),frame.width,frame.height)
+                            return (UIImage(cgImage:image),frame.width,frame.height,
+                                    rawWidth,rawHeight)
                         }
                         await MainActor.run {
                             guard revision==self.originalMetalPreviewVersion else {return}
                             self.processedPreview=rendered.0
+                            if selectedCrop==nil {
+                                self.rawCropReferencePreview=rendered.0
+                                self.rawCropReferenceWidth=rendered.3
+                                self.rawCropReferenceHeight=rendered.4
+                            }
                             if let generation=activeRAWGeneration,
                                generation==self.activeSimulationGeneration {
                                 self.simulationAwaitingCurrentSettings=false
@@ -2409,7 +2423,10 @@ final class PhotoEditorModel: ObservableObject {
                                 ? "完整精细预览"
                                 : "快速预览（空间效果与原尺寸结果可能不同）") +
                                 "｜光学计算 \(rendered.1)×\(rendered.2)｜" +
-                                "导出始终重新以 RAW 原尺寸计算｜rawpy 实图未认证"
+                                (selectedCrop != nil
+                                    ? "仅裁切区域进入原版光学计算｜"
+                                    : "原图区域进入光学计算｜") +
+                                "导出仍为 Float64 精细冲印｜rawpy 实图未认证"
                             self.finishRecipePreview()
                         }
                     } catch {
