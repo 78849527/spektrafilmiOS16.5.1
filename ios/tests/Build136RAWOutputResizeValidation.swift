@@ -18,7 +18,7 @@ struct Build136RAWOutputResizeValidation {
             // Build140: optical arrays and final packing do not peak
             // concurrently; reserve the larger stage, NOT their sum.
             let sourcePeak=UInt64(4032*3024)*128
-            let packingPeak=UInt64(4032*3024)*24+
+            let packingPeak=UInt64(4032*3024)*24 +
                 plan.dimensions.pixels*48
             precondition(plan.estimatedPeakBytes==max(sourcePeak,packingPeak))
             try SafeExportResolution.validateForHeadroom(
