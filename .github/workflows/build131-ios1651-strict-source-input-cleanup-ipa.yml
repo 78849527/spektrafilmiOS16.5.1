@@ -1,3 +1,4 @@
+# Build140 legacy source verification: check shared staged MemoryEnvelope, not removed per-render duplicate variable.
 # Build140 retry: historical Build108 audit now recognizes a single unified RAW memory envelope; all numerical gates unchanged.
 # Build140 retry: correct Swift binary operator whitespace in source output resize regression.
 # Build140 retry: historical Build136 regression now asserts max(sequential optical peak, final encoding peak), not impossible concurrent sum.
@@ -894,7 +895,7 @@ jobs:
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
           test -s ios/tests/Build91DoubleFFTBenchmark.swift
           grep -q 'Build91PhysicalMemory.plan' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
-          grep -q 'extraPeakBytesPerPixel' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
+          grep -q 'additionalBytesPerPixel:envelope.additionalBytesPerPixel' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
           grep -q 'static func memoryEnvelope(' ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift
           grep -q 'cachedPipelineStats' ios/SpektraFilmPort/OriginalMetalIIR.swift
           grep -q 'Build91MemoryProductionDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
