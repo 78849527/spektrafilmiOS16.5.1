@@ -1,3 +1,4 @@
+# Build138 retry: preserve legacy RAW no-JPEG contract; source mode/thumbnail integration remains unchanged.
 # Build138: per-RAW auto-precise mode, portrait/EXIF thumbnails, and stock initialization; original optics unchanged.
 # Build137 retry 2026-11-20: correct verifier guard parsing; no optical math changes.
 # Build137: source-only RAW optical speed optimization; preserve Float64 values and wavelength order.
