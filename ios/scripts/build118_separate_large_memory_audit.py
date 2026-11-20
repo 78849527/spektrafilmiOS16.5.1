@@ -45,7 +45,12 @@ for term in [
     "real_source_render_failed_or_unmeasured",
 ]:
     assert term in stress,term
-assert physical.count("Build106SourceMemoryLedger.productionAdditional(")==2
+# Build140: renderer, RAW ingress and ordinary-photo predecode share one
+# conservative exact source-option ledger. No independent magic coefficients.
+assert physical.count("Build106SourceMemoryLedger.productionAdditional(")==1
+assert "static func memoryEnvelope(" in physical
+assert "stageObserver:stageDoubleObserver != nil" in physical
+assert physical.count("parameters:parameters")>=2
 for term in [
     "phaseMemoryObserver: ((String) -> Void)? = nil",
     "grainSublayers:parameters.sourceGrain.sublayersActive",
