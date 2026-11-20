@@ -1734,8 +1734,19 @@ struct SpectralPhysics {
         )
     }
 
+    /// Source camera EV and reference are constant for the entire image.
+    /// Preparing this multiplier once avoids millions of identical pow calls.
+    /// The exact old pow(2, cameraEV + log2(reference)) is retained.
+    func prepareSourceSpatialExposureMultiplier(cameraEV:Double) throws -> Double {
+        guard cameraEV.isFinite && abs(cameraEV)<=4 else {
+            throw PhysicsError.invalid("源逐像素 Hanatos 输入或曝光无效")
+        }
+        return pow(2.0,cameraEV+sourceFilmingExposureEVOffset)
+    }
+
     func sourceSpatialInput(
-        encodedRGB: [Double], cameraEV: Double
+        encodedRGB: [Double], cameraEV: Double,
+        preparedExposureMultiplier: Double? = nil
     ) throws -> SourceSpatialInput {
         guard encodedRGB.count == 3,
               encodedRGB.allSatisfy({ $0.isFinite }),
@@ -1757,10 +1768,14 @@ struct SpectralPhysics {
         guard raw.count == 3 && raw.allSatisfy({ $0.isFinite }) else {
             throw PhysicsError.invalid("原版相机光谱重建响应非有限")
         }
-        let logE = Self.filmLogExposure(
-            raw:raw,
-            exposureEV:cameraEV+sourceFilmingExposureEVOffset
-        )
+        let logE: [Double]
+        if let multiplier=preparedExposureMultiplier {
+            logE=Self.filmLogExposure(raw:raw,multiplier:multiplier)
+        } else {
+            logE=Self.filmLogExposure(
+                raw:raw,exposureEV:cameraEV+sourceFilmingExposureEVOffset
+            )
+        }
         let initial = (0..<3).map {
             film.curve(logE[$0],channel:$0)
         }
@@ -2281,6 +2296,12 @@ struct SpectralPhysics {
         raw: [Double], exposureEV: Double
     ) -> [Double] {
         let multiplier=pow(2.0,exposureEV)
+        return filmLogExposure(raw:raw,multiplier:multiplier)
+    }
+
+    private static func filmLogExposure(
+        raw: [Double], multiplier: Double
+    ) -> [Double] {
         return raw.map { log10(max(0,$0*multiplier)+1e-10) }
     }
 
