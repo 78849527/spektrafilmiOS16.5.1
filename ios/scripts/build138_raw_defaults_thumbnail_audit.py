@@ -67,6 +67,19 @@ assert "activeSimulationGeneration=generation" in app
 assert "try refresh()" in app
 assert "simulationAwaitingCurrentSettings=false" in app
 assert "try P1OriginalRawACESIngress.developSourceCandidate(" in app
+# Regression for the actual reported Build138 runtime failure:
+# RAW full-optical source DIR must NOT be disabled by the removed mobile
+# spatialDIRStage cache. The normal photo contract keeps that stage gate.
+physical_parameters=app.split("private func sourcePhysicalParameters()",1)[1].split(
+    "    /// A PhotosPicker",1
+)[0]
+assert "let physicalDIR:SpatialDIRSettings = rawOriginalSourceActive" in physical_parameters
+assert "enabled:spatialDIREnabled" in physical_parameters
+assert "sourceConvolutionEnabled:spatialDIRSourceConvolutionEnabled" in physical_parameters
+assert "dir:physicalDIR,print:print,morph:morph" in physical_parameters
+assert ": spatialDIRSettings" in physical_parameters
+assert "spatialDIRStage=nil" in activate
+assert "enabled: spatialDIREnabled && spatialDIRStage != nil" in app
 assert 'UserDefaults.standard.string(forKey:"compactFilmStock")' in app
 assert 'UserDefaults.standard.string(forKey:"compactPaperStock")' in app
 assert "let sourceRAWReady=model.rawOriginalSourceActive &&" in ui
