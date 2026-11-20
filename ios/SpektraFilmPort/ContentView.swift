@@ -26,6 +26,12 @@ final class PhotoEditorModel: ObservableObject {
     /// User can explicitly opt into full source-resolution optical preview.
     /// This state never affects export, which ALWAYS develops original RAW.
     @Published private(set) var rawFullResolutionPreview = false
+    /// Build141: non-destructive selection in native LibRaw ACES16 pixel
+    /// coordinates, captured from an UNCROPPED source optical preview.
+    @Published private(set) var rawCropSelection:Build141RAWPreCrop.Selection?
+    @Published private(set) var rawCropReferencePreview:UIImage?
+    @Published private(set) var rawCropReferenceWidth=0
+    @Published private(set) var rawCropReferenceHeight=0
     private var photoOriginalBeforeColorConversion: Data?
     var photoDirectInputReady:Bool {
         (originalPhotoData != nil && !rawFastModeActive &&
@@ -1005,6 +1011,43 @@ final class PhotoEditorModel: ObservableObject {
     private var photoTransferActive = false
     private var photoTransferTask: Task<Void, Never>?
 
+    /// Build141: crop applies to packed LibRaw ACES16 BEFORE the Float64
+    /// frame, memory admission, DIR, grain and print. Coordinates are always
+    /// the native LibRaw image, never the Apple/JPEG compatible thumbnail.
+    func setRAWCrop(
+        normalizedX:Double,normalizedY:Double,
+        normalizedWidth:Double,normalizedHeight:Double
+    ) throws {
+        guard rawOriginalSourceActive && sourcePhysicalDirectEnabled,
+              capturedRAWURL != nil,source != nil,
+              !busy && !simulationAwaitingCurrentSettings,
+              rawCropReferencePreview != nil,
+              rawCropReferenceWidth>0,rawCropReferenceHeight>0 else {
+            throw ImageProcessingError.invalid(
+                "RAW 原片预览尚未生成或冲印正在运行，暂不能确认裁切"
+            )
+        }
+        let selection=try Build141RAWPreCrop.selection(
+            sourceWidth:rawCropReferenceWidth,
+            sourceHeight:rawCropReferenceHeight,
+            normalizedX:normalizedX,normalizedY:normalizedY,
+            normalizedWidth:normalizedWidth,normalizedHeight:normalizedHeight
+        )
+        rawCropSelection=selection.isWholeSource ? nil : selection
+        status="RAW 冲印前裁切：原始 \(rawCropReferenceWidth)×\(rawCropReferenceHeight) → " +
+            "\(selection.width)×\(selection.height)，正在重新计算光学预览；原片不变"
+        queueSpectralPreview()
+    }
+
+    func clearRAWCrop() {
+        guard rawOriginalSourceActive && sourcePhysicalDirectEnabled,
+              !busy && !simulationAwaitingCurrentSettings,
+              rawCropSelection != nil else {return}
+        rawCropSelection=nil
+        status="已恢复 RAW 全图精细冲印；原片从未修改"
+        queueSpectralPreview()
+    }
+
     /// A display-only preference; unchanged source stock and full export.
     func selectRAWPreview(fullResolution:Bool) {
         guard rawOriginalSourceActive && sourcePhysicalDirectEnabled &&
@@ -1083,6 +1126,11 @@ final class PhotoEditorModel: ObservableObject {
         let rawOriginal: Bool
         let originalPreview: UIImage?
         let processedPreview: UIImage?
+        let crop:Build141RAWPreCrop.Selection?
+        let cropReference:UIImage?
+        let cropReferenceWidth:Int
+        let cropReferenceHeight:Int
+        let fullRAWPreview:Bool
         let dimensions: String
         let sourcePixel: Bool
         let sourcePhysical: Bool
@@ -1098,6 +1146,10 @@ final class PhotoEditorModel: ObservableObject {
             needsRAWChoice:rawNeedsChoice, rawFastMode:rawFastModeActive,
             rawOriginal:rawOriginalSourceActive,
             originalPreview:originalPreview, processedPreview:processedPreview,
+            crop:rawCropSelection,cropReference:rawCropReferencePreview,
+            cropReferenceWidth:rawCropReferenceWidth,
+            cropReferenceHeight:rawCropReferenceHeight,
+            fullRAWPreview:rawFullResolutionPreview,
             dimensions:photoDimensions,
             sourcePixel:sourcePixelIOEnabled,
             sourcePhysical:sourcePhysicalDirectEnabled,
@@ -1119,6 +1171,11 @@ final class PhotoEditorModel: ObservableObject {
         rawOriginalSourceActive=prior.rawOriginal
         originalPreview=prior.originalPreview
         processedPreview=prior.processedPreview
+        rawCropSelection=prior.crop
+        rawCropReferencePreview=prior.cropReference
+        rawCropReferenceWidth=prior.cropReferenceWidth
+        rawCropReferenceHeight=prior.cropReferenceHeight
+        rawFullResolutionPreview=prior.fullRAWPreview
         photoDimensions=prior.dimensions
         sourcePixelIOEnabled=prior.sourcePixel
         sourcePhysicalDirectEnabled=prior.sourcePhysical
@@ -1155,6 +1212,10 @@ final class PhotoEditorModel: ObservableObject {
         rawFastModeActive=rawCompatible
         rawOriginalSourceActive=false
         rawFullResolutionPreview=false
+        rawCropSelection=nil
+        rawCropReferencePreview=nil
+        rawCropReferenceWidth=0
+        rawCropReferenceHeight=0
         capturedRAWURL=rawURL
         do {
             try refresh()
@@ -1203,6 +1264,10 @@ final class PhotoEditorModel: ObservableObject {
             originalPreview=nil
             processedPreview=nil
             capturedRAWURL=nil
+            rawCropSelection=nil
+            rawCropReferencePreview=nil
+            rawCropReferenceWidth=0
+            rawCropReferenceHeight=0
             rawFastModeActive=false
             rawOriginalSourceActive=false
             rawFullResolutionPreview=false
