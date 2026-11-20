@@ -49,6 +49,28 @@ enum P1OriginalRawACESIngress {
                       decoderVersion: result.decoder)
     }
 
+    struct PreviewWithGeometry {
+        let frame:OriginalSourcePixelIO.Frame
+        let sourceWidth:Int
+        let sourceHeight:Int
+    }
+
+    /// No Float64 source frame is ever created before the user-confirmed
+    /// packed-ACES16 crop. The immutable original file and saved LibRaw
+    /// decoder output remain untouched.
+    private static func selectedSource(
+        _ decoded:Source,crop:Build141RAWPreCrop.Selection?
+    ) throws -> Source {
+        guard let crop else {return decoded}
+        let bytes=try Build141RAWPreCrop.cropPackedRGB16(
+            decoded.packedRGB16,
+            sourceWidth:decoded.width,sourceHeight:decoded.height,
+            selection:crop
+        )
+        return Source(width:crop.width,height:crop.height,
+                      packedRGB16:bytes,decoderVersion:decoded.decoderVersion)
+    }
+
     /// Diagnostic-only full original optical engine call from a preserved RAW
     /// file. The decoder and image are NEVER passed through Apple CI or TIFF.
     /// Critical: this does NOT establish rawpy/LibRaw equality; it is not
@@ -59,7 +81,8 @@ enum P1OriginalRawACESIngress {
     /// frame, and the existing original film/paper/scanner engine is reused.
     /// No new optical approximation, LUT substitution or mode fallback.
     static func developSourceCandidate(
-        _ rawURL: URL, opticalSettings: OriginalSourcePhysicalImage.Parameters
+        _ rawURL: URL, opticalSettings: OriginalSourcePhysicalImage.Parameters,
+        crop:Build141RAWPreCrop.Selection? = nil
     ) throws -> OriginalSourcePixelIO.Frame {
         var selected = opticalSettings
         // Python raw_file_processor outputs linear ACES2065-1 by default;
@@ -73,13 +96,14 @@ enum P1OriginalRawACESIngress {
             rawURL,
             maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
         )
-        // Predecode uses the SAME option-dependent memory estimate as
-        // the full optical renderer; no stale grain-only 224 B/px gate.
+        // Build141: geometry and memory are based on selected RAW pixels,
+        // NOT the final JPEG/TIFF size; this is before original-wide Double.
+        let working=try selectedSource(decoded,crop:crop)
         try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width:decoded.width,height:decoded.height,parameters:selected
+            width:working.width,height:working.height,parameters:selected
         )
         var frame = try makeSourceFrame(
-            decoded, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
+            working, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
         )
         try OriginalSourcePhysicalImage.developInPlace(
             &frame, parameters: selected
@@ -95,10 +119,24 @@ enum P1OriginalRawACESIngress {
     /// The spatial grain/halation result is not pixel-identical to a full
     /// optical render subsequently reduced for display.
     static func developPreviewCandidate(
-        _ rawURL: URL,
-        opticalSettings: OriginalSourcePhysicalImage.Parameters,
-        maxLongEdge: Int = 1280
+        _ rawURL:URL,
+        opticalSettings:OriginalSourcePhysicalImage.Parameters,
+        maxLongEdge:Int=1280
     ) throws -> OriginalSourcePixelIO.Frame {
+        try developPreviewWithGeometry(
+            rawURL,opticalSettings:opticalSettings,maxLongEdge:maxLongEdge
+        ).frame
+    }
+
+    /// The reference geometry belongs to the FULL LibRaw frame even when
+    /// a small preview is requested; the visual crop sheet needs these exact
+    /// coordinates and must not guess from Apple RAW/JPEG orientation.
+    static func developPreviewWithGeometry(
+        _ rawURL:URL,
+        opticalSettings:OriginalSourcePhysicalImage.Parameters,
+        maxLongEdge:Int=1280,
+        crop:Build141RAWPreCrop.Selection?=nil
+    ) throws -> PreviewWithGeometry {
         var selected=opticalSettings
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
@@ -107,9 +145,10 @@ enum P1OriginalRawACESIngress {
             rawURL,
             maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
         )
+        let working=try selectedSource(decoded,crop:crop)
         let reduced=try Build139RAWPreviewDownsample.frame(
-            packedRGB16:decoded.packedRGB16,
-            width:decoded.width,height:decoded.height,
+            packedRGB16:working.packedRGB16,
+            width:working.width,height:working.height,
             maxLongEdge:maxLongEdge
         )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
@@ -121,7 +160,9 @@ enum P1OriginalRawACESIngress {
         try OriginalSourcePhysicalImage.developInPlace(
             &frame,parameters:selected
         )
-        return frame
+        return PreviewWithGeometry(
+            frame:frame,sourceWidth:decoded.width,sourceHeight:decoded.height
+        )
     }
 
     /// Match original rawpy: np.float32(uint16) / np.float32(65535).
