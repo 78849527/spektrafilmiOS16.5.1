@@ -1403,6 +1403,40 @@ final class PhotoEditorModel: ObservableObject {
         return p
     }
 
+    /// A PhotosPicker Data representation is NOT necessarily the RAW master.
+    /// Classify its real header, archive a verified original if supplied,
+    /// and refuse a JPEG representation when the picker advertises RAW.
+    /// This never relabels an Apple-rendered image as sensor data.
+    private func preservePickerRAWIfPresent(
+        _ data:Data
+    ) throws -> Build79RAWStorage.Preserved? {
+        let header=Data(data.prefix(512*1024))
+        for kind in Build79RAWSignature.Kind.allCases {
+            guard (try? Build79RAWSignature.classify(
+                filename:"selected."+kind.rawValue,header:header
+            )) == kind else {continue}
+            let temp=FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString+"."+kind.rawValue)
+            try data.write(to:temp,options:.atomic)
+            defer {try? FileManager.default.removeItem(at:temp)}
+            return try Build79RAWStorage.preserve(temp,kind:kind)
+        }
+        return nil
+    }
+
+    private func pickerAdvertisesRAW(_ selection:PhotosPickerItem)->Bool {
+        let extensions:Set<String>=[
+            "dng","raf","arw","nef","cr2","cr3","orf","rw2","pef",
+            "srw","raw","rwl","3fr","iiq","k25","erf"
+        ]
+        return selection.supportedContentTypes.contains { type in
+            let ext=type.preferredFilenameExtension?.lowercased() ?? ""
+            let id=type.identifier.lowercased()
+            return extensions.contains(ext) || id.contains("raw-image") ||
+                   id.contains("digital-negative")
+        }
+    }
+
     func selectFromPhotos(_ selection: PhotosPickerItem?) {
         guard let selection else { return }
         // A new selection supersedes only an in-flight Photos transfer.
@@ -1432,6 +1466,32 @@ final class PhotoEditorModel: ObservableObject {
                     throw ImageProcessingError.invalid("相册未提供照片数据")
                 }
                 guard !Task.isCancelled && token == photoTransferToken else {
+                    return
+                }
+                if let preserved=try preservePickerRAWIfPresent(data) {
+                    pendingImportedRAWURL=preserved.url
+                    rawNeedsChoice = !(preserved.format == .dng ||
+                                       preserved.format == .raf)
+                    status="已验证相册返回真实 RAW 原片，已无损归档；"+
+                        (rawNeedsChoice
+                         ? "该 RAW 格式暂不支持自动精细冲印，请手动选择解码。"
+                         : "自动使用当前胶片／相纸进入精细冲印。")
+                    if !rawNeedsChoice {
+                        // Defer until this transfer task's busy cleanup has
+                        // finished; otherwise RAW decoder would be refused.
+                        Task { @MainActor in
+                            guard token == self.photoTransferToken,
+                                  self.pendingImportedRAWURL==preserved.url,
+                                  !self.photoTransferActive else {return}
+                            self.openPreservedRAWDirect()
+                        }
+                    }
+                    return
+                }
+                if pickerAdvertisesRAW(selection) {
+                    status="照片选择器没有提供可验证的 RAW 原始字节，"+
+                        "不能把 JPEG/HEIC 兼容图当作 RAW 精细冲印。"+
+                        "请从「文件」导入原始 DNG/RAF；当前编辑未改变。"
                     return
                 }
                 try loadPhoto(data)
