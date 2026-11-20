@@ -249,6 +249,7 @@ enum SourceFloat64ProfileValidation {
         // Build137: the fast scanner's immutable prepared wavelength data
         // must exactly match the former per-pixel lookup for every stock.
         try SpectralPhysics.verifyPreparedScannerSamples()
+        try SpectralPhysics.verifyPreparedCameraMultiplier()
         print("PASS original Float64 source profiles: 28 materials, " +
               "\(preciseSamples) measured channels, " +
               "\(truncatedMobile) were rounded in legacy Float32; " +
