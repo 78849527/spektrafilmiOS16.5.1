@@ -90,6 +90,79 @@ enum OriginalSourcePhysicalImage {
         )
     }
 
+    /// Build140: one source-of-truth for opt-in FULL-OPTICAL memory.
+    /// The UI, predecode and renderer must use identical switches/FFT
+    /// geometry. A peak is stage-local: camera/paper FFT work SEQUENTIALLY.
+    struct MemoryEnvelope {
+        let additionalBytesPerPixel: UInt64
+        let cameraDiffusion: (settings:OriginalSourceDiffusion.Settings,
+                              pixelUM:Double)?
+        let paperDiffusion: (settings:OriginalSourceDiffusion.Settings,
+                             pixelUM:Double)?
+    }
+
+    static func memoryEnvelope(
+        width:Int,height:Int,parameters:Parameters,
+        stageObserver:Bool=false
+    ) -> MemoryEnvelope {
+        let paperActive=parameters.printDiffusion.active &&
+            parameters.printDiffusion.strength>0 &&
+            parameters.printDiffusion.spatialScale>0
+        let cameraActive=(parameters.cameraOptics.active ||
+                          parameters.filmHalation.active) &&
+            parameters.cameraOptics.diffusion.active &&
+            parameters.cameraOptics.diffusion.strength>0 &&
+            parameters.cameraOptics.diffusion.spatialScale>0
+        let pixelUM=parameters.cameraOptics.filmFormatMM * 1000.0 /
+            Double(max(1,max(width,height)))
+        let camera:(settings:OriginalSourceDiffusion.Settings,
+                    pixelUM:Double)?=cameraActive
+            ? (parameters.cameraOptics.diffusion,pixelUM) : nil
+        let paper:(settings:OriginalSourceDiffusion.Settings,
+                   pixelUM:Double)?=paperActive
+            ? (parameters.printDiffusion,pixelUM) : nil
+        let extra=Build106SourceMemoryLedger.productionAdditional(
+            scannerFinish:parameters.scannerOptics.active,
+            scannerGlare:parameters.scannerGlare.active &&
+                parameters.scannerGlare.percent>0,
+            grain:parameters.sourceGrain.active,
+            grainSublayers:parameters.sourceGrain.sublayersActive,
+            cameraActive:parameters.cameraOptics.active,
+            cameraLens:parameters.cameraOptics.needsWholeImageBlur,
+            filmHalation:parameters.filmHalation.active,
+            paperDiffusion:parameters.printDiffusion.active,
+            stageObserver:stageObserver,
+            paperStageObserver:stageObserver &&
+                !SpectralPhysics.isPositiveFilm(parameters.filmID),
+            outputGamut:parameters.sourceOutputGamut != nil,
+            parallelGrain:parameters.sourceGrain.useUnseededParallel
+        )
+        return MemoryEnvelope(
+            additionalBytesPerPixel:extra,
+            cameraDiffusion:camera,paperDiffusion:paper
+        )
+    }
+
+    /// Never replace the live 80% Jetsam gate or arbitrarily credit future
+    /// scratch. The renderer may credit ONLY its already allocated RGB24 B/px.
+    static func validateMemoryBudget(
+        width:Int,height:Int,parameters:Parameters,
+        stageObserver:Bool=false,
+        alreadyCommittedInputBytes:UInt64=0
+    ) throws {
+        let envelope=memoryEnvelope(
+            width:width,height:height,parameters:parameters,
+            stageObserver:stageObserver
+        )
+        try validateMemoryBudget(
+            width:width,height:height,
+            additionalBytesPerPixel:envelope.additionalBytesPerPixel,
+            alreadyCommittedInputBytes:alreadyCommittedInputBytes,
+            cameraDiffusion:envelope.cameraDiffusion,
+            paperDiffusion:envelope.paperDiffusion
+        )
+    }
+
     struct Parameters {
         let filmID: String
         let paperID: String
@@ -302,51 +375,13 @@ enum OriginalSourcePhysicalImage {
         }
         let committedInputBytes=UInt64(frame.rgb.count) *
             UInt64(MemoryLayout<Double>.stride)
-        let activePrintDiffusion=parameters.printDiffusion.active &&
-            parameters.printDiffusion.strength>0 &&
-            parameters.printDiffusion.spatialScale>0
-        let controlledScannerGlare=parameters.scannerGlare.active &&
-            parameters.scannerGlare.percent>0
-        let controlledFilmGrain=parameters.sourceGrain.active
-        // The production paper taps are opt-in; reserve their 2x3 Double
-        // buffers in the memory gate BEFORE any full-frame allocation.
-        let capturePaperStages=stageDoubleObserver != nil &&
-            !SpectralPhysics.isPositiveFilm(parameters.filmID)
-        let cameraDiffusionEnabled=(parameters.cameraOptics.active ||
-            parameters.filmHalation.active) &&
-            parameters.cameraOptics.diffusion.active &&
-            parameters.cameraOptics.diffusion.strength>0 &&
-            parameters.cameraOptics.diffusion.spatialScale>0
-        let pixelUMForFFT=parameters.cameraOptics.filmFormatMM *
-            1000.0 / Double(max(w,h))
-        let cameraFFT:(settings:OriginalSourceDiffusion.Settings,
-                       pixelUM:Double)? = cameraDiffusionEnabled
-            ? (parameters.cameraOptics.diffusion,pixelUMForFFT) : nil
-        let paperFFT:(settings:OriginalSourceDiffusion.Settings,
-                      pixelUM:Double)? = activePrintDiffusion
-            ? (parameters.printDiffusion,pixelUMForFFT) : nil
-        // Build106: ONE audited feature ledger for both pre-decode and
-        // the actual in-place renderer. A diagnostic callback may retain
-        // every source Float64 tap, not just the latest three-channel tap.
-        let extraPeakBytesPerPixel=Build106SourceMemoryLedger.productionAdditional(
-            scannerFinish:parameters.scannerOptics.active,
-            scannerGlare:controlledScannerGlare,
-            grain:controlledFilmGrain,
-            grainSublayers:parameters.sourceGrain.sublayersActive,
-            cameraActive:parameters.cameraOptics.active,
-            cameraLens:parameters.cameraOptics.needsWholeImageBlur,
-            filmHalation:parameters.filmHalation.active,
-            paperDiffusion:parameters.printDiffusion.active,
-            stageObserver:stageDoubleObserver != nil,
-            paperStageObserver:capturePaperStages,
-            outputGamut:parameters.sourceOutputGamut != nil,
-            parallelGrain:parameters.sourceGrain.useUnseededParallel
-        )
+        // Build140: exactly the same feature/FFT envelope as RAW
+        // predecode and export admission, with ONLY the existing input
+        // Float64 frame counted as already committed.
         try validateMemoryBudget(
-            width:w,height:h,
-            additionalBytesPerPixel:extraPeakBytesPerPixel,
-            alreadyCommittedInputBytes:committedInputBytes,
-            cameraDiffusion:cameraFFT,paperDiffusion:paperFFT
+            width:w,height:h,parameters:parameters,
+            stageObserver:stageDoubleObserver != nil,
+            alreadyCommittedInputBytes:committedInputBytes
         )
         // Python's FilmingStage accepts finite source RGB without global
         // [0,1] clipping. It applies colour-space CCTF/CAT16 in the
@@ -859,44 +894,8 @@ extension OriginalSourcePixelIO {
         }
         let targetW=resizedTo?.width ?? w.intValue
         let targetH=resizedTo?.height ?? h.intValue
-        let sourcePixelsUM=parameters.cameraOptics.filmFormatMM *
-            1000.0 / Double(max(targetW,targetH))
-        let cameraEnabled=(parameters.cameraOptics.active ||
-            parameters.filmHalation.active) &&
-            parameters.cameraOptics.diffusion.active &&
-            parameters.cameraOptics.diffusion.strength>0 &&
-            parameters.cameraOptics.diffusion.spatialScale>0
-        let paperEnabled=parameters.printDiffusion.active &&
-            parameters.printDiffusion.strength>0 &&
-            parameters.printDiffusion.spatialScale>0
-        let preflightCamera:(settings:OriginalSourceDiffusion.Settings,
-                             pixelUM:Double)?=cameraEnabled
-            ? (parameters.cameraOptics.diffusion,sourcePixelsUM):nil
-        let preflightPaper:(settings:OriginalSourceDiffusion.Settings,
-                            pixelUM:Double)?=paperEnabled
-            ? (parameters.printDiffusion,sourcePixelsUM):nil
-        // Build106: call the EXACT same source-feature ledger as the
-        // renderer; the export has no stage observer. No unsafe optimistic
-        // budget before ImageIO allocates full-resolution Float64 buffers.
-        let preflightAdditional=Build106SourceMemoryLedger.productionAdditional(
-            scannerFinish:parameters.scannerOptics.active,
-            scannerGlare:parameters.scannerGlare.active &&
-                parameters.scannerGlare.percent>0,
-            grain:parameters.sourceGrain.active,
-            grainSublayers:parameters.sourceGrain.sublayersActive,
-            cameraActive:parameters.cameraOptics.active,
-            cameraLens:parameters.cameraOptics.needsWholeImageBlur,
-            filmHalation:parameters.filmHalation.active,
-            paperDiffusion:parameters.printDiffusion.active,
-            stageObserver:false,
-            paperStageObserver:false,
-            outputGamut:parameters.sourceOutputGamut != nil,
-            parallelGrain:parameters.sourceGrain.useUnseededParallel
-        )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width:targetW,height:targetH,
-            additionalBytesPerPixel:preflightAdditional,
-            cameraDiffusion:preflightCamera,paperDiffusion:preflightPaper
+            width:targetW,height:targetH,parameters:parameters
         )
         var frame=try decode(
             data,maximumAllowedPixels:originalLimit,resizedTo:resizedTo
