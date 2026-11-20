@@ -1,3 +1,4 @@
+# Build141 retry: retain Build139 1280px invariant across Swift signature formatting; source crop unchanged.
 # Build141: native RAW crop before Float64 development; original file/source optical kernels unchanged, new UI + strict source tests.
 # Build140 legacy source verification: check shared staged MemoryEnvelope, not removed per-render duplicate variable.
 # Build140 retry: historical Build108 audit now recognizes a single unified RAW memory envelope; all numerical gates unchanged.
