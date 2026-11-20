@@ -3080,13 +3080,14 @@ final class PhotoEditorModel: ObservableObject {
         }
         if sourcePixelIOEnabled {
             if rawOriginalSourceActive {
+                let crop=rawCropSelection
                 guard sourcePhysicalDirectEnabled,
                       resolution.permitsRAWFullOpticalExport,
                       let rawURL=capturedRAWURL,
                       let plan=confirmedPlan,
                       plan.mode==resolution,
-                      plan.sourceWidth==Int(imageSource.extent.integral.width),
-                      plan.sourceHeight==Int(imageSource.extent.integral.height) else {
+                      plan.sourceWidth==(crop?.width ?? Int(imageSource.extent.integral.width)),
+                      plan.sourceHeight==(crop?.height ?? Int(imageSource.extent.integral.height)) else {
                     throw ImageProcessingError.invalid(
                         "RAW 精细 JPEG 必须选择当前原片、原尺寸或固定像素档位；禁止兼容回退"
                     )
@@ -3096,7 +3097,7 @@ final class PhotoEditorModel: ObservableObject {
                 let url=try await Task.detached(priority:.userInitiated) {
                     try autoreleasepool { () throws -> URL in
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
-                            rawURL,opticalSettings:optical
+                            rawURL,opticalSettings:optical,crop:crop
                         )
                         // Full source RAW optics are finished before
                         // user-requested output-only Double downsampling.
@@ -3119,9 +3120,11 @@ final class PhotoEditorModel: ObservableObject {
                         )
                     }
                 }.value
-                status="RAW 原片 ACES16 → Float64 原尺寸冲印 → " +
+                status=(crop != nil
+                    ? "RAW ACES16 先裁切 → Float64 全裁切区冲印 → "
+                    : "RAW ACES16 全图 → Float64 冲印 → ") +
                     "\(plan.dimensions.width)×\(plan.dimensions.height) JPEG 已输出；" +
-                    "原片 DNG 不变，rawpy 数值尚未认证"
+                    "原片 RAW 不变，rawpy 数值尚未认证"
                 return url
             }
             let (data,stage)=try validateSourcePixelIO()
@@ -3213,11 +3216,12 @@ final class PhotoEditorModel: ObservableObject {
                 )
             }
             if rawOriginalSourceActive {
+                let crop=rawCropSelection
                 guard resolution.permitsRAWFullOpticalExport,
                       let rawURL=capturedRAWURL,
                       confirmedPlan.mode==resolution,
-                      confirmedPlan.sourceWidth==Int(imageSource.extent.integral.width),
-                      confirmedPlan.sourceHeight==Int(imageSource.extent.integral.height) else {
+                      confirmedPlan.sourceWidth==(crop?.width ?? Int(imageSource.extent.integral.width)),
+                      confirmedPlan.sourceHeight==(crop?.height ?? Int(imageSource.extent.integral.height)) else {
                     throw ImageProcessingError.invalid(
                         "RAW TIFF16 仅支持已确认原尺寸或固定像素档位；禁止静默缩图"
                     )
@@ -3227,7 +3231,7 @@ final class PhotoEditorModel: ObservableObject {
                 let url=try await Task.detached(priority:.userInitiated) {
                     try autoreleasepool { () throws -> URL in
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
-                            rawURL,opticalSettings:optical
+                            rawURL,opticalSettings:optical,crop:crop
                         )
                         let output=try Build136RAWOutputResize.resample(
                             width:result.width,height:result.height,rgb:result.rgb,
@@ -3248,9 +3252,11 @@ final class PhotoEditorModel: ObservableObject {
                         )
                     }
                 }.value
-                status="RAW 原片 ACES16 → Float64 原尺寸冲印 → " +
+                status=(crop != nil
+                    ? "RAW ACES16 先裁切 → Float64 全裁切区冲印 → "
+                    : "RAW ACES16 全图 → Float64 冲印 → ") +
                     "\(confirmedPlan.dimensions.width)×\(confirmedPlan.dimensions.height) TIFF16；" +
-                    "原片 DNG 不变，rawpy 数值尚未认证"
+                    "原片 RAW 不变，rawpy 数值尚未认证"
                 return url
             }
             let (bytes, _)=try validateSourcePixelIO()
