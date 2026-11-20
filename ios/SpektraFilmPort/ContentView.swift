@@ -1425,6 +1425,34 @@ final class PhotoEditorModel: ObservableObject {
         }
     }
 
+    /// Save first, edit later. Never run a full-resolution RAW decoder or
+    /// mutate the current edit during a camera burst.
+    func archiveCapturedRAWForLater(_ capture:NextLevelCapturedPhoto) throws {
+        guard !busy,capture.format.contains("RAW"),
+              let raw=capture.rawDNG,!raw.isEmpty else {
+            throw ImageProcessingError.invalid(
+                "当前拍摄不是有效 RAW，或 App 正在处理，未保存到素材库"
+            )
+        }
+        let url=try Build134LocalRAWStorage.archiveCameraRAW(
+            raw:raw,companion:capture.processed
+        )
+        status="RAW DNG 已保存至素材库（"+url.lastPathComponent+"）；"
+            + "可继续拍摄，稍后从缩略图选择冲印。"
+    }
+
+    /// Reopen an app-owned source RAW from the catalog. The exact-source
+    /// RAW contract and its memory gate are unchanged.
+    func openSavedRAWFromLibrary(_ url:URL) {
+        guard !busy,Build134LocalRAWStorage.isManaged(url) else {
+            status="素材库原片不存在或当前正在冲印；拒绝打开"
+            return
+        }
+        pendingImportedRAWURL=url
+        rawNeedsChoice=false
+        openPreservedRAWDirect()
+    }
+
     /// RAW camera captures enter the editor through a real DNG decoder.
     /// The camera's companion JPEG is never used as the RAW source.
     /// Preserve DNG bytes before decoding; failure keeps the prior edit.
@@ -3266,8 +3294,17 @@ struct ContentView: View {
                 NativeCameraScreen(
                     onCancel: { cameraPresented = false },
                     onCapture: { photo in
+                        if photo.rawDNG != nil {
+                            do {
+                                try model.archiveCapturedRAWForLater(photo)
+                                return nil
+                            } catch {
+                                return error.localizedDescription
+                            }
+                        }
                         cameraPresented = false
                         model.loadCapturedPhoto(photo)
+                        return nil
                     }
                 )
             }
