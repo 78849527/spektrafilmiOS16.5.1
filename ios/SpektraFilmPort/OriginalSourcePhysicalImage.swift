@@ -391,6 +391,17 @@ enum OriginalSourcePhysicalImage {
         // claim that original ProPhoto/RAW/crop are fully implemented.
         let cameraPreActive=parameters.cameraOptics.active ||
             parameters.filmHalation.active
+        // For the direct RAW -> Hanatos -> film pathway, EV and the
+        // film-reference factor do not vary across pixels. Preserve the
+        // exact Float64 multiplier; prepare it once for the whole frame.
+        let preparedExposureMultiplier: Double?
+        if cameraPreActive {
+            preparedExposureMultiplier=nil
+        } else {
+            preparedExposureMultiplier=try engine.prepareSourceSpatialExposureMultiplier(
+                cameraEV:parameters.cameraEV
+            )
+        }
         var rgbPreObserved:[Double]? = stageDoubleObserver != nil &&
             cameraPreActive ? [Double](repeating:0,count:size) : nil
 
@@ -488,7 +499,8 @@ enum OriginalSourcePhysicalImage {
                     sample,filmingReferenceScale:parameters.cameraFilmingReferenceScale
                 )
                 : engine.sourceSpatialInput(
-                    encodedRGB:sample,cameraEV:parameters.cameraEV
+                    encodedRGB:sample,cameraEV:parameters.cameraEV,
+                    preparedExposureMultiplier:preparedExposureMultiplier
                 )
             let initialDensity=try dynamicDIR?.develop(
                 initial.rawLog,corrected:false
