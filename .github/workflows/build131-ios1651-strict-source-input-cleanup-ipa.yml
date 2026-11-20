@@ -159,7 +159,7 @@ jobs:
           assert minimum_minor(project,104)
           assert not minimum_build(project,139)
           assert not minimum_minor(project,105)
-          print('PASS current 1.8.104/136, memory audit and all carried-forward minimum release contracts')
+          print('PASS current 1.8.104/138, memory audit and all carried-forward minimum release contracts')
           PY
           git diff --exit-code
       - name: Build136 source io.py and Swift Float16/32 exact bytes on Linux
