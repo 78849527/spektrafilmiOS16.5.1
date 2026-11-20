@@ -33,7 +33,7 @@ assert "sourceScannerGlareEnabled && sourceScannerGlarePercent>0" in app
 source=raw.split("static func developSourceCandidate(",1)[1].split(
     "/// Build139:",1
 )[0]
-assert "width:decoded.width,height:decoded.height,parameters:selected" in source
+assert "width:working.width,height:working.height,parameters:selected" in source
 assert "try OriginalSourcePhysicalImage.developInPlace(" in source
 assert "Build139RAWPreviewDownsample" not in source
 assert "width:reduced.width,height:reduced.height,parameters:selected" in raw
