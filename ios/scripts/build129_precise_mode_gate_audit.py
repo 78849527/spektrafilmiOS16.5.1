@@ -21,7 +21,11 @@ assert '点「精细冲印」打开输入检测' in bar
 mode=ui.split("    private func requestSourceMode(",1)[1].split("    private func commitSourceMode(",1)[0]
 assert 'sourceInputCompatibilityAlert=true' in mode
 assert '!model.photoDirectInputReady' in mode
-assert 'model.lut != nil, model.originalPixelInputAvailable' in mode
+# Build138 source RAW precision is not a compatibility LUT operation.
+# Ordinary images still require their validated LUT/input prerequisites.
+assert 'let sourceRAWReady=model.rawOriginalSourceActive &&' in mode
+assert '(model.lut != nil || (mode == .physical && sourceRAWReady))' in mode
+assert 'model.originalPixelInputAvailable' in mode
 assert "if mode == .pixel &&" not in mode or "spatialDIREnabled" not in mode
 changes=ui.split("    private func requiredChanges(",1)[1].split("    private func requestSourceMode(",1)[0]
 assert 'changes.append("启用胶片层间扩散")' in changes
