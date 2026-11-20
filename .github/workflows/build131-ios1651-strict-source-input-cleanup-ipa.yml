@@ -1,4 +1,5 @@
-# Build137: source-only RAW optical speed optimization; preserve Float64 values and wavelength order.\n# Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
+# Build137: source-only RAW optical speed optimization; preserve Float64 values and wavelength order.
+# Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
 # Build136 UI audit keeps source controls/layout but derives smart budget from live OS headroom, not fixed 1300MB.
 # Build136 carry-forward UI audit updated to exercise dynamic preflight, not obsolete fixed MB literal contracts.
 # Build134 carried-forward GUI test updated to test the new real UIKit double tap and top status placement.
