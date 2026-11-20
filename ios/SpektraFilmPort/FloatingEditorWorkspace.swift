@@ -2145,6 +2145,44 @@ struct FloatingEditorWorkspace: View {
                 .disabled(!model.hasPhoto || model.busy)
                 .accessibilityHint("点击后检查照片输入；不符合时提供 RAW Float32 或普通照片高位深副本选项；条件符合后再确认光学依赖")
             }
+            // Build139: RAW preview quality is independently selectable.
+            // These controls never change the original-size export route.
+            if model.rawOriginalSourceActive && fullPhysicalMode {
+                HStack(spacing:6) {
+                    Button {
+                        model.selectRAWPreview(fullResolution:false)
+                    } label: {
+                        Text("快速预览")
+                            .font(.system(size:11,weight:.semibold))
+                            .frame(maxWidth:.infinity,minHeight:28)
+                            .foregroundColor(!model.rawFullResolutionPreview
+                                ? .accentColor : .primary)
+                            .background(!model.rawFullResolutionPreview
+                                ? Color.accentColor.opacity(0.15)
+                                : Color.primary.opacity(0.06),
+                                in:RoundedRectangle(cornerRadius:8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.busy)
+                    Button {
+                        model.selectRAWPreview(fullResolution:true)
+                    } label: {
+                        Text("完整精细预览")
+                            .font(.system(size:11,weight:.semibold))
+                            .frame(maxWidth:.infinity,minHeight:28)
+                            .foregroundColor(model.rawFullResolutionPreview
+                                ? .accentColor : .primary)
+                            .background(model.rawFullResolutionPreview
+                                ? Color.accentColor.opacity(0.15)
+                                : Color.primary.opacity(0.06),
+                                in:RoundedRectangle(cornerRadius:8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.busy)
+                }
+                Text("默认快速预览按低像素运行同一 Float64 光学算法；空间效果与完整图可能不同。导出始终重新以 RAW 原尺寸精细冲印。")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
             if !model.originalPixelInputAvailable && model.hasPhoto {
                 Text("原版像素尚未认证。点「精细冲印」打开输入检测，可明确生成高位深 TIFF 副本；不会自动降为 8-bit。")
                     .font(.caption2).foregroundColor(.secondary)
