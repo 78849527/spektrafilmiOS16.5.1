@@ -22,6 +22,10 @@ final class PhotoEditorModel: ObservableObject {
     @Published var photoInputConvertedFromP3 = false
     /// Explicit true RAW source; never use compatible CI preview as optical input.
     @Published var rawOriginalSourceActive = false
+    /// Build139: default FAST optical preview from reduced linear RAW.
+    /// User can explicitly opt into full source-resolution optical preview.
+    /// This state never affects export, which ALWAYS develops original RAW.
+    @Published private(set) var rawFullResolutionPreview = false
     private var photoOriginalBeforeColorConversion: Data?
     var photoDirectInputReady:Bool {
         (originalPhotoData != nil && !rawFastModeActive &&
@@ -1001,6 +1005,19 @@ final class PhotoEditorModel: ObservableObject {
     private var photoTransferActive = false
     private var photoTransferTask: Task<Void, Never>?
 
+    /// A display-only preference; unchanged source stock and full export.
+    func selectRAWPreview(fullResolution:Bool) {
+        guard rawOriginalSourceActive && sourcePhysicalDirectEnabled &&
+              capturedRAWURL != nil else {return}
+        guard !busy else {
+            status="RAW 冲印尚未完成，无法更改预览尺寸"
+            return
+        }
+        guard rawFullResolutionPreview != fullResolution else {return}
+        rawFullResolutionPreview=fullResolution
+        queueSpectralPreview()
+    }
+
     func queueSpectralPreview() {
         pendingRender?.cancel()
         renderGeneration &+= 1
@@ -1137,6 +1154,7 @@ final class PhotoEditorModel: ObservableObject {
         photoDimensions=dimensions
         rawFastModeActive=rawCompatible
         rawOriginalSourceActive=false
+        rawFullResolutionPreview=false
         capturedRAWURL=rawURL
         do {
             try refresh()
@@ -1187,6 +1205,7 @@ final class PhotoEditorModel: ObservableObject {
             capturedRAWURL=nil
             rawFastModeActive=false
             rawOriginalSourceActive=false
+            rawFullResolutionPreview=false
             sourcePixelIOEnabled=false
             sourcePhysicalDirectEnabled=false
             photoDimensions=""
@@ -1735,6 +1754,7 @@ final class PhotoEditorModel: ObservableObject {
         rawOriginalSourceActive=true
         sourcePixelIOEnabled=true
         sourcePhysicalDirectEnabled=true
+        rawFullResolutionPreview=false
         // Discard stale compatibility material nodes: source RAW uses the
         // selected film/paper directly, not a 17^3 preview cube.
         lut=nil
@@ -2285,32 +2305,46 @@ final class PhotoEditorModel: ObservableObject {
                 }
                 let physical=try sourcePhysicalParameters()
                 let activeRAWGeneration=activeSimulationGeneration
-                status="RAW 原片直接进入 ACES16 / Float64 原版光学预览；" +
-                    "rawpy 数值尚未认证，失败不会改用 Apple 兼容图"
+                let fullSourcePreview=rawFullResolutionPreview
+                status=fullSourcePreview
+                    ? "RAW 完整精细预览：ACES16 原尺寸 → Float64 光学计算中…"
+                    : "RAW 快速预览：真实 ACES16 先缩至最长边 1280px → 原版 Float64 光学计算中…"
                 Task.detached(priority:.userInitiated) {
                     do {
-                        let result=try autoreleasepool { () throws -> UIImage in
-                            let frame=try P1OriginalRawACESIngress.developSourceCandidate(
-                                rawURL,opticalSettings:physical
-                            )
-                            // Output calculation stays full resolution; only
-                            // the persistent SwiftUI display gets downsampled.
+                        let rendered=try autoreleasepool { () throws -> (UIImage,Int,Int) in
+                            let frame:OriginalSourcePixelIO.Frame
+                            if fullSourcePreview {
+                                frame=try P1OriginalRawACESIngress.developSourceCandidate(
+                                    rawURL,opticalSettings:physical
+                                )
+                            } else {
+                                frame=try P1OriginalRawACESIngress.developPreviewCandidate(
+                                    rawURL,opticalSettings:physical,maxLongEdge:1280
+                                )
+                            }
+                            // For full preview, downsample only AFTER source
+                            // optics. Fast preview runs the same source Float64
+                            // engine on a smaller grid; its spatial effects
+                            // are not guaranteed full-resolution parity.
                             let image=try OriginalSourcePixelIO.displayPreviewImage(
                                 frame,maxEdge:1600
                             )
-                            return UIImage(cgImage:image)
+                            return (UIImage(cgImage:image),frame.width,frame.height)
                         }
                         await MainActor.run {
                             guard revision==self.originalMetalPreviewVersion else {return}
-                            self.processedPreview=result
+                            self.processedPreview=rendered.0
                             if let generation=activeRAWGeneration,
                                generation==self.activeSimulationGeneration {
                                 self.simulationAwaitingCurrentSettings=false
                                 self.activeSimulationGeneration=nil
                                 self.busy=false
                             }
-                            self.status="RAW 原版光学测试预览完成｜" + self.photoDimensions +
-                                "｜未通过 Python rawpy/iOS16.5.1 实图认证"
+                            self.status=(fullSourcePreview
+                                ? "完整精细预览"
+                                : "快速预览（空间效果与原尺寸结果可能不同）") +
+                                "｜光学计算 \(rendered.1)×\(rendered.2)｜" +
+                                "导出始终重新以 RAW 原尺寸计算｜rawpy 实图未认证"
                             self.finishRecipePreview()
                         }
                     } catch {
