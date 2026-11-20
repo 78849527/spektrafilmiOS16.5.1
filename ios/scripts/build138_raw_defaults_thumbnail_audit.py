@@ -17,6 +17,10 @@ assert ".aspectRatio(actualAspectRatio,contentMode:.fit)" in gallery
 assert gallery.count("kCGImageSourceCreateThumbnailWithTransform:true") >= 2
 assert "orientLegacyThumbnail(_ data:Data,rawURL:URL)" in gallery
 assert 'raw.lastPathComponent+".upright-v2.jpg"' in gallery
+assert "UIImage(cgImage:cg,scale:1,orientation:orientation)" in gallery
+assert 'imageOrientation:orientation' not in gallery
+assert 'status="RAW 精细冲印无法执行（未降级）：" +' in app
+assert 'status="已验证相册返回真实 RAW 原片，已无损归档；" +' in app
 assert "kCGImageSourceThumbnailMaxPixelSize:320" in gallery
 assert "CIImage(" not in gallery and "CIRAWFilter(" not in gallery
 assert "try raw.write(to:target,options:.atomic)" in gallery
