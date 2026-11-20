@@ -1,0 +1,109 @@
+import Foundation
+
+/// Build139: PRE-OPTICAL preview input geometry only.
+///
+/// A full source-quality export NEVER calls this helper. It consumes real
+/// LibRaw ACES16 RGB data (not the DNG JPEG), quantizes each UInt16 through
+/// the exact existing Float32 -> Double mapping and averages LINEAR samples.
+/// Spatial optics/grain on the smaller grid are an intentionally approximate
+/// preview; no claim of pixel parity with full-resolution optical development.
+enum Build139RAWPreviewDownsample {
+    enum Failure: LocalizedError {
+        case invalid(String)
+        var errorDescription: String? {
+            if case .invalid(let message) = self { return message }
+            return nil
+        }
+    }
+
+    struct Frame {
+        let width: Int
+        let height: Int
+        let rgb: [Double]
+    }
+
+    private struct Tap {
+        let index: Int
+        let weight: Double
+    }
+
+    private static func taps(source: Int, target: Int) -> [[Tap]] {
+        let scale = Double(source) / Double(target)
+        return (0..<target).map { pixel in
+            let start = Double(pixel) * scale
+            let end = Double(pixel + 1) * scale
+            let first = Int(start.rounded(.down))
+            let last = Int(end.rounded(.up))
+            return (first..<last).compactMap { sample -> Tap? in
+                guard sample >= 0, sample < source else { return nil }
+                let overlap = min(end,Double(sample+1)) -
+                              max(start,Double(sample))
+                return overlap > 0
+                    ? Tap(index:sample,weight:overlap/scale)
+                    : nil
+            }
+        }
+    }
+
+    static func frame(
+        packedRGB16: Data,
+        width: Int,
+        height: Int,
+        maxLongEdge: Int = 1280
+    ) throws -> Frame {
+        guard width > 0, height > 0, width <= 8192, height <= 8192,
+              width <= 13_000_000 / height,
+              maxLongEdge >= 256, maxLongEdge <= 2048,
+              packedRGB16.count == width*height*3*2 else {
+            throw Failure.invalid(
+                "RAW 快速预览输入不合法；只接受真实完整 ACES16 缓冲，禁止 JPEG 替代"
+            )
+        }
+        let factor = min(1.0,Double(maxLongEdge)/Double(max(width,height)))
+        let outW = max(1,min(width,Int((Double(width)*factor).rounded())))
+        let outH = max(1,min(height,Int((Double(height)*factor).rounded())))
+        let count = outW*outH*3
+        var rgb = [Double](repeating:0,count:count)
+
+        // For tiny RAWs (no resize), retain the exact existing integer
+        // -> Float32 / 65535 -> Double path with no additional averaging.
+        if outW == width && outH == height {
+            packedRGB16.withUnsafeBytes { bytes in
+                let input=bytes.bindMemory(to:UInt8.self)
+                for i in 0..<count {
+                    let v=UInt16(input[i*2]) |
+                        (UInt16(input[i*2+1]) << 8)
+                    rgb[i]=Double(Float(v)/Float(65535.0))
+                }
+            }
+            return Frame(width:outW,height:outH,rgb:rgb)
+        }
+        // Area-overlap source sampling: no full-sized Float64 image is ever
+        // allocated for the preview. Intermediate values stay Double and
+        // luminance/color are never gamma-encoded or clipped.
+        let xt=taps(source:width,target:outW)
+        let yt=taps(source:height,target:outH)
+        packedRGB16.withUnsafeBytes { bytes in
+            let input=bytes.bindMemory(to:UInt8.self)
+            for y in 0..<outH {
+                for x in 0..<outW {
+                    let dst=(y*outW+x)*3
+                    for row in yt[y] {
+                        for col in xt[x] {
+                            let src=(row.index*width+col.index)*6
+                            let weight=row.weight*col.weight
+                            for ch in 0..<3 {
+                                let off=src+ch*2
+                                let v=UInt16(input[off]) |
+                                    (UInt16(input[off+1]) << 8)
+                                rgb[dst+ch] +=
+                                    Double(Float(v)/Float(65535.0))*weight
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return Frame(width:outW,height:outH,rgb:rgb)
+    }
+}
