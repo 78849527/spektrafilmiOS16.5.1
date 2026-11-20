@@ -189,7 +189,7 @@ enum Build134LocalRAWStorage {
         let size=turns
             ? CGSize(width:CGFloat(cg.height),height:CGFloat(cg.width))
             : CGSize(width:CGFloat(cg.width),height:CGFloat(cg.height))
-        let upright=UIImage(cgImage:cg,scale:1,imageOrientation:orientation)
+        let upright=UIImage(cgImage:cg,scale:1,orientation:orientation)
         return UIGraphicsImageRenderer(size:size).image { _ in
             upright.draw(in:CGRect(origin:.zero,size:size))
         }.jpegData(compressionQuality:0.82) ?? data
