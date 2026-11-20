@@ -1115,10 +1115,10 @@ final class PhotoEditorModel: ObservableObject {
         printSlowGamma=1.0
         printDeveloperExhaustion=0.0
         originalPrintOpticsEnabled=false
-        printIlluminant=.thKG3
+        printIlluminant = .thKG3
         neutralPrintFiltersFromDatabase=true
         printSourceDiffusionEnabled=false
-        printSourceDiffusionFamily=.blackProMist
+        printSourceDiffusionFamily = .blackProMist
         printSourceDiffusionStrength=0.5
         printSourceDiffusionSpatialScale=1.0
         printSourceDiffusionWarmth=0.0
@@ -1160,13 +1160,13 @@ final class PhotoEditorModel: ObservableObject {
         sourcePhysicalGrainMicroUM=0.2
         sourcePhysicalGrainMicroNM=30.0
         sourceCameraPreFilmEnabled=false
-        sourceCameraMeteringMethod=.centerWeighted
+        sourceCameraMeteringMethod = .centerWeighted
         sourceCameraHighlightBoostEV=0.0
         sourceCameraHighlightBoostRange=0.3
         sourceCameraHighlightProtectEV=4.0
         sourceCameraLensBlurUM=0.0
         sourceCameraDiffusionEnabled=false
-        sourceCameraDiffusionFamily=.blackProMist
+        sourceCameraDiffusionFamily = .blackProMist
         sourceCameraDiffusionStrength=0.5
         sourceCameraDiffusionSpatialScale=1.0
         sourceCameraDiffusionWarmth=0.0
@@ -1176,7 +1176,7 @@ final class PhotoEditorModel: ObservableObject {
         sourceCameraDiffusionHaloSize=1.0
         sourceCameraDiffusionBloomIntensity=1.0
         sourceCameraDiffusionBloomSize=1.0
-        sourceCameraRawMethod=.hanatos2025
+        sourceCameraRawMethod = .hanatos2025
         sourceHanatosFullRecompute=false
         sourceCameraUVEnabled=false
         sourceCameraUVAmount=1.0
