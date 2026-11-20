@@ -492,8 +492,11 @@ private final class NativeCameraController:NSObject,ObservableObject {
 
 struct NativeCameraScreen:View {
     let onCancel:()->Void
-    let onCapture:(NextLevelCapturedPhoto)->Void
+    /// Return an error only when the RAW archive itself failed.
+    /// Non-RAW photos continue to enter the editor immediately.
+    let onCapture:(NextLevelCapturedPhoto)->String?
     @StateObject private var camera=NativeCameraController()
+    @State private var savedRAWCount=0
     var body:some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -604,6 +607,15 @@ struct NativeCameraScreen:View {
                                         ? "拍摄真实 Bayer RAW DNG" : "拍摄照片")
                     Spacer()
                 }
+                if camera.format == .raw {
+                    Text(savedRAWCount == 0
+                        ? "连续拍摄：每张完整 DNG 和缩略图会存入本机 RAW 素材库；拍摄结束点击左上角关闭。"
+                        : "本次已保存 \(savedRAWCount) 张 RAW · 可继续拍摄，退出后从素材库选片冲印")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                }
                 Text(camera.capturing ? "正在写入照片…" :
                      (camera.ready && camera.format == .raw && !camera.rawAvailable)
                      ? "该镜头不支持 Bayer RAW；请换支持 RAW 的镜头，或主动选择 JPEG"
@@ -620,7 +632,13 @@ struct NativeCameraScreen:View {
             .padding(.vertical,12)
         }
         .onAppear {
-            camera.onCapture=onCapture
+            camera.onCapture={ photo in
+                if let error=onCapture(photo) {
+                    camera.errorMessage="照片归档失败："+error
+                } else if photo.rawDNG != nil {
+                    savedRAWCount+=1
+                }
+            }
             camera.start()
         }
         .onDisappear {camera.stop()}
