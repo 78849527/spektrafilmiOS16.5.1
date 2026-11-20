@@ -2848,10 +2848,11 @@ final class PhotoEditorModel: ObservableObject {
                         "禁止自动安全档静默降采样或兼容回退"
                     )
                 }
-                _ = try sourcePhysicalParameters()
+                let settings=try sourcePhysicalParameters()
                 let geometry=src.extent.integral
                 try OriginalSourcePhysicalImage.validateMemoryBudget(
-                    width:Int(geometry.width),height:Int(geometry.height)
+                    width:Int(geometry.width),height:Int(geometry.height),
+                    parameters:settings
                 )
             } else {
                 let (data, _) = try validateSourcePixelIO()
@@ -2866,11 +2867,28 @@ final class PhotoEditorModel: ObservableObject {
             }
         }
         let bounds = src.extent.integral
+        // Build140: one accounting envelope for ALL selected source options.
+        // The RAW export case uses precisely the runtime film/paper/film grain,
+        // scanner, glare, camera, halation, output gamut and FFT settings.
+        // No legacy fixed 224 B/px grain adder, no lowered Jetsam threshold.
+        let rawPhysicalSettings:OriginalSourcePhysicalImage.Parameters? =
+            rawOriginalSourceActive && sourcePixelIOEnabled &&
+            sourcePhysicalDirectEnabled
+            ? try sourcePhysicalParameters() : nil
+        let rawOpticalPeakBPP:UInt64?=rawPhysicalSettings.map { settings in
+            let footprint=OriginalSourcePhysicalImage.memoryEnvelope(
+                width:Int(bounds.width),height:Int(bounds.height),
+                parameters:settings
+            )
+            return OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
+                footprint.additionalBytesPerPixel
+        }
         let plan = try SafeExportResolution.capture(
             width: Int(bounds.width), height: Int(bounds.height),
             mode: resolution,
             estimatedBytesPerPixel:
-                sourcePixelIOEnabled && sourcePhysicalDirectEnabled
+                rawOpticalPeakBPP ??
+                (sourcePixelIOEnabled && sourcePhysicalDirectEnabled
                 ? (OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
                    (tiff16 ? 24 : 0) +
                    (sourceScannerOpticalEnabled
@@ -2892,14 +2910,19 @@ final class PhotoEditorModel: ObservableObject {
                     ? OriginalSourcePhysicalImage.printDiffusionExtraBytesPerPixel : 0))
                 : (tiff16
                    ? Build96TIFF16Writer.estimatedBytesPerPixel
-                   : SafeExportResolution.estimatedBytesPerPixel),
+                   : SafeExportResolution.estimatedBytesPerPixel)),
             fullSourceProcessing:rawOriginalSourceActive &&
                 sourcePixelIOEnabled && sourcePhysicalDirectEnabled
         )
-        if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
-            // The entire optical chain is now bounded by the SELECTED
-            // output geometry. Original selection never silently shrinks;
-            // safe/economy never silently changes the selected stage order.
+        if let rawPhysicalSettings {
+            // RAW always develops actual ORIGINAL dimensions regardless
+            // of the export's explicitly chosen final image size.
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:Int(bounds.width),height:Int(bounds.height),
+                parameters:rawPhysicalSettings
+            )
+        } else if sourcePixelIOEnabled && sourcePhysicalDirectEnabled {
+            // Ordinary non-RAW full-physical handling remains unchanged.
             try OriginalSourcePhysicalImage.validateMemoryBudget(
                 width:rawOriginalSourceActive ? Int(bounds.width) : plan.dimensions.width,
                 height:rawOriginalSourceActive ? Int(bounds.height) : plan.dimensions.height,
