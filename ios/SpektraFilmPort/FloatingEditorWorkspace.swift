@@ -65,6 +65,7 @@ struct FloatingEditorWorkspace: View {
     @State private var savedFastSettings: FastSettingsSnapshot?
     @State private var comparisonEnabled = false
     @State private var statusReportPresented = false
+    @State private var resetAllParametersAlert = false
     @State private var rawCropEditorPresented = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
@@ -858,6 +859,7 @@ struct FloatingEditorWorkspace: View {
                 rawCropEditorPresented=false
                 originalHeld=false
                 comparisonEnabled=false
+                resetAllParametersAlert=false
                 photoScale=1
                 compareFraction=0.5
                 pendingSourceMode=nil
@@ -1561,6 +1563,38 @@ struct FloatingEditorWorkspace: View {
                 }
                 .accessibilityLabel("高级菜单：仅验证状态与开发者诊断")
                 Spacer(minLength: 0)
+                Button {
+                    resetAllParametersAlert=true
+                } label: {
+                    VStack(spacing:1) {
+                        Image(systemName:"arrow.counterclockwise")
+                            .font(.system(size:14,weight:.medium))
+                        Text("重置").font(.system(size:9,weight:.semibold))
+                    }
+                    .frame(width:40,height:34)
+                    .contentShape(Rectangle())
+                }
+                .disabled(!model.hasPhoto || model.busy ||
+                          model.isRecipeApplying)
+                .accessibilityLabel("一键恢复所有冲印调节和默认胶片相纸")
+                .alert("恢复全部默认配置？",
+                       isPresented:$resetAllParametersAlert) {
+                    Button("取消",role:.cancel) {}
+                    Button("恢复默认配置",role:.destructive) {
+                        do {
+                            try model.resetAllProcessingToDefaults()
+                            savedFastSettings=nil
+                            precisionEdit=nil
+                        } catch {
+                            model.status="恢复默认配置失败：" +
+                                error.localizedDescription
+                        }
+                    }
+                } message: {
+                    Text("胶片、相纸、所有开关与滑块恢复源码默认值。" +
+                         "当前照片、RAW 原片、已裁切区域和已保存配方保留。" +
+                         "RAW 继续使用完整 Float64 精细冲印所需基础开关。")
+                }
                 if selectedEditorPage == .adjustment {
                     Button {
                         model.applyMeasuredSimulation()
