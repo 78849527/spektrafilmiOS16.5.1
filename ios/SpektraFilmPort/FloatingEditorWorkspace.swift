@@ -65,6 +65,7 @@ struct FloatingEditorWorkspace: View {
     @State private var savedFastSettings: FastSettingsSnapshot?
     @State private var comparisonEnabled = false
     @State private var statusReportPresented = false
+    @State private var rawCropEditorPresented = false
     @State private var compareFraction = 0.5
     @State private var photoScale: CGFloat = 1.0
     // Build127: material browsing state never alters optical settings.
@@ -842,6 +843,9 @@ struct FloatingEditorWorkspace: View {
             .sheet(item:$precisionEdit) { request in
                 PrecisionEntrySheet(request:request)
             }
+            .sheet(isPresented:$rawCropEditorPresented) {
+                Build141RAWCropSheet(model:model)
+            }
             .sheet(isPresented: $statusReportPresented,
                    onDismiss: onDiagnosticSheetDismissed) {
                 statusReportSheet
@@ -851,6 +855,7 @@ struct FloatingEditorWorkspace: View {
             .onChange(of: model.photoSessionRevision) { _ in
                 // A new photo of identical dimensions is a new session.
                 savedFastSettings=nil
+                rawCropEditorPresented=false
                 originalHeld=false
                 comparisonEnabled=false
                 photoScale=1
@@ -1037,6 +1042,16 @@ struct FloatingEditorWorkspace: View {
 
             toolButton("folder", name: "从文件导入照片", action: onOpenPhotoFile)
                 .disabled(model.busy)
+            if model.rawOriginalSourceActive &&
+               model.sourcePhysicalDirectEnabled &&
+               model.capturedRAWURL != nil {
+                toolButton("crop.rotate",
+                           name:"RAW 冲印前裁切",
+                           action:{rawCropEditorPresented=true})
+                    .disabled(model.busy ||
+                              model.simulationAwaitingCurrentSettings ||
+                              model.rawCropReferencePreview == nil)
+            }
             toolButton("cube", name: "导入 .cube LUT", action: onOpenLUT)
             // Keep both original buttons in place. Each opens a size menu:
             // original unchanged; smart up to 12MP/live OS headroom,
