@@ -73,8 +73,10 @@ enum P1OriginalRawACESIngress {
             rawURL,
             maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
         )
+        // Predecode uses the SAME option-dependent memory estimate as
+        // the full optical renderer; no stale grain-only 224 B/px gate.
         try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width: decoded.width, height: decoded.height
+            width:decoded.width,height:decoded.height,parameters:selected
         )
         var frame = try makeSourceFrame(
             decoded, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
@@ -111,7 +113,7 @@ enum P1OriginalRawACESIngress {
             maxLongEdge:maxLongEdge
         )
         try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width:reduced.width,height:reduced.height
+            width:reduced.width,height:reduced.height,parameters:selected
         )
         var frame=OriginalSourcePixelIO.Frame(
             width:reduced.width,height:reduced.height,rgb:reduced.rgb
