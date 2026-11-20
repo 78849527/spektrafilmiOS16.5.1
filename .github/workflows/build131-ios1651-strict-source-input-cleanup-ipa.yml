@@ -1,3 +1,4 @@
+# Build140 retry: historical Build108 audit now recognizes a single unified RAW memory envelope; all numerical gates unchanged.
 # Build140 retry: correct Swift binary operator whitespace in source output resize regression.
 # Build140 retry: historical Build136 regression now asserts max(sequential optical peak, final encoding peak), not impossible concurrent sum.
 # Build140: reconcile preflight and renderer optical memory; dynamic Jetsam guards and original Float64 untouched.
