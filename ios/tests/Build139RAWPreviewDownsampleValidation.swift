@@ -69,9 +69,9 @@ struct Build139RAWPreviewDownsampleValidation {
         } catch Build139RAWPreviewDownsample.Failure.invalid {
             // Must reject instead of decoding an embedded JPEG fallback.
         }
-        print("PASS Build139 RAW linear ACES16 area input: 512x384 -> 256x192, "+
+        print("PASS Build139 RAW linear ACES16 area input: 512x384 -> 256x192, " +
               "Float32 quantization, bounded RGB, no source mutation or fallback")
-        print("NOT CERTIFIED: low-resolution spatial optics/grain do not equal "+
+        print("NOT CERTIFIED: low-resolution spatial optics/grain do not equal " +
               "full-resolution Float64 results; test on physical iPhone 16.5.1")
     }
 }
