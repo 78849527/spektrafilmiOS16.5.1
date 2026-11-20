@@ -1,3 +1,4 @@
+# Build138: per-RAW auto-precise mode, portrait/EXIF thumbnails, and stock initialization; original optics unchanged.
 # Build137 retry 2026-11-20: correct verifier guard parsing; no optical math changes.
 # Build137: source-only RAW optical speed optimization; preserve Float64 values and wavelength order.
 # Build136: update Build97 40MP regression to enforce dynamic headroom (admit when sufficient; reject when insufficient) without reintroducing fixed-MB ceilings.
@@ -66,7 +67,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-name: Build136 iOS16.5.1 RAW full-optical memory and Build137 speed-preserving IPA
+name: Build138 RAW auto-precise import, portrait gallery, and film initialization IPA
 
 on:
   push:
@@ -134,6 +135,7 @@ jobs:
           python3 ios/scripts/build133_raw_memory_stage_audit.py
           python3 ios/scripts/build134_raw_cleanup_ui_audit.py
           python3 ios/scripts/raw_gallery_source_audit.py
+          python3 ios/scripts/build138_raw_defaults_thumbnail_audit.py
           python3 ios/scripts/build135_dynamic_memory_admission_audit.py
           python3 ios/scripts/build136_memory_constants_audit.py
           python3 ios/scripts/validate_nextlevel_camera_integration.py
@@ -200,6 +202,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Build138 RAW portrait EXIF and auto-precision Swift syntax and source gates
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse \
+            ios/SpektraFilmPort/Build134LocalRAWManager.swift \
+            ios/SpektraFilmPort/ContentView.swift \
+            ios/SpektraFilmPort/FloatingEditorWorkspace.swift
+          python3 ios/scripts/build138_raw_defaults_thumbnail_audit.py
       - name: Build137 RAW optical speed regression source and parse gate
         run: |
           set -euo pipefail
