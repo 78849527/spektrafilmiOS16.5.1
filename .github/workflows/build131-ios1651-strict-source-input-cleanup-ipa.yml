@@ -1,3 +1,4 @@
+# Build139 strict-scope retry: allow ONLY preview reducer new file; original Float64 optical engines frozen.
 # Build139 retry: correct Swift numeric test print syntax; all optical and export source unchanged.
 # Build139: fast 1280px LINEAR RAW -> same Float64 optics for PREVIEW only; full-size RAW exports unchanged.
 # Build138 hotfix: direct Float64 RAW source DIR must bypass absent mobile DIR cache; preserve full optical quality.
@@ -339,6 +340,10 @@ jobs:
                 # historical strict source-scope regression.
                 'ios/SpektraFilmPort/Build94LibRawIngress.swift',
                 'ios/SpektraFilmPort/P1OriginalRawACESIngress.swift',
+                # Build139 ONLY: the new isolated display-resolution linear
+                # ACES16 preview reducer. Original optical and export engines
+                # are not included in this exception.
+                'ios/SpektraFilmPort/Build139RAWPreviewDownsample.swift',
                 'ios/SpektraFilmPort/Build133RAWMemoryLadder.swift',
                 'ios/SpektraFilmPort/Build134LocalRAWManager.swift',
                 'ios/SpektraFilmPort/OriginalSourcePixelIO.swift',
