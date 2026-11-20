@@ -1580,7 +1580,7 @@ final class PhotoEditorModel: ObservableObject {
                         )
                         try activateDirectRAWPrecision()
                         status="DNG 原片已保存，自动启用当前胶片／相纸的 Float64 精细冲印；" +
-                            "Apple RAW 仅用于初始预览，JPEG 伴随片未进入光学计算。"
+                            "Apple RAW 仅用于初始预览，JPEG 伴随片没有进入编辑器，也未进入光学计算。"
                     } catch {
                         pendingImportedRAWURL=rawFile
                         rawNeedsChoice=true
