@@ -169,7 +169,7 @@ enum Build134LocalRAWStorage {
         guard let source=CGImageSourceCreateWithURL(
             rawURL as CFURL,[kCGImageSourceShouldCache:false] as CFDictionary
         ),let props=CGImageSourceCopyPropertiesAtIndex(source,0,nil)
-            as? [CFString:Any],
+            as NSDictionary?,
           let exif=props[kCGImagePropertyOrientation] as? NSNumber,
           let image=UIImage(data:data),let cg=image.cgImage else {
             return data
@@ -187,8 +187,8 @@ enum Build134LocalRAWStorage {
         }
         let turns = [5,6,7,8].contains(exif.intValue)
         let size=turns
-            ? CGSize(width:cg.height,height:cg.width)
-            : CGSize(width:cg.width,height:cg.height)
+            ? CGSize(width:CGFloat(cg.height),height:CGFloat(cg.width))
+            : CGSize(width:CGFloat(cg.width),height:CGFloat(cg.height))
         let upright=UIImage(cgImage:cg,scale:1,imageOrientation:orientation)
         return UIGraphicsImageRenderer(size:size).image { _ in
             upright.draw(in:CGRect(origin:.zero,size:size))
