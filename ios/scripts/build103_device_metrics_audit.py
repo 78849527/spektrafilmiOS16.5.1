@@ -310,7 +310,8 @@ checks.update({
     "a07_no_raw_false_precise_claim":
         "var originalPixelInputAvailable: Bool" in main and
         "model.originalPixelInputAvailable" in ui and
-        "guard model.lut != nil, model.originalPixelInputAvailable" in ui,
+        "(model.lut != nil || (mode == .physical && sourceRAWReady))" in ui and
+        "let sourceRAWReady=model.rawOriginalSourceActive &&" in ui,
     "a08_diag_moved_off_bottom_toolbar":
         "probeBuild81OriginalGeometry()" not in toolbar and
         "probePreservedRAWBackend()" not in toolbar and
