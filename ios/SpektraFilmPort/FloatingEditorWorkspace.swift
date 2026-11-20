@@ -556,7 +556,10 @@ struct FloatingEditorWorkspace: View {
         // Build129: one-step precise mode can confirm+enable DIR
         // prerequisites. An unavailable LUT reports its real dependency
         // instead of leaving an apparently dead/disabled "精细冲印".
-        guard model.lut != nil, model.originalPixelInputAvailable else {
+        let sourceRAWReady=model.rawOriginalSourceActive &&
+            model.capturedRAWURL != nil
+        guard (model.lut != nil || (mode == .physical && sourceRAWReady)),
+              model.originalPixelInputAvailable else {
             model.status="精细冲印尚缺胶片／相纸模拟 LUT 或已认证原图像素。" +
                 model.photoInputSummary+"。请在图像输入检测中查看转换方案。"
             return
@@ -571,6 +574,9 @@ struct FloatingEditorWorkspace: View {
     private func commitSourceMode(_ mode: SourceModeChange) {
         // Called only after confirmation of the affected settings.
         if mode == .disablePixel {
+            if model.rawOriginalSourceActive {
+                model.rawOriginalSourceActive=false
+            }
             if model.sourcePhysicalDirectEnabled {
                 // Prevent silent reassignment of source photon optics to
                 // legacy CI effects when leaving full original mode.
@@ -588,6 +594,12 @@ struct FloatingEditorWorkspace: View {
         }
         if mode == .disablePhysical {
             model.sourcePhysicalDirectEnabled = false
+            if model.rawOriginalSourceActive {
+                // RAW cannot remain in the 8-bit direct DIR channel.
+                // This is only an explicit user-requested exit to fast mode.
+                model.rawOriginalSourceActive=false
+                model.sourcePixelIOEnabled=false
+            }
             // Ordinary 8-bit direct DIR rejects these old CI effects.
             model.scatterEnabled = false
             model.halationEnabled = false
@@ -627,7 +639,10 @@ struct FloatingEditorWorkspace: View {
                                    mode: SourceModeChange) -> some View {
         let isOn = mode == .pixel
             ? model.sourcePixelIOEnabled : model.sourcePhysicalDirectEnabled
-        let prerequisite = model.hasPhoto && model.lut != nil &&
+        let sourceRAWReady=model.rawOriginalSourceActive &&
+            model.capturedRAWURL != nil
+        let prerequisite = model.hasPhoto &&
+            (model.lut != nil || (mode == .physical && sourceRAWReady)) &&
             model.originalPixelInputAvailable &&
             (mode == .pixel || model.sourcePixelIOEnabled)
         // Keep mode switch actionable so a failed source can open
@@ -636,7 +651,9 @@ struct FloatingEditorWorkspace: View {
         let reason:String? = {
             if !model.hasPhoto { return "先从相册或文件打开照片。" }
             if model.busy { return "正在处理照片，完成后即可操作。" }
-            if model.lut == nil { return "请先选择可用的胶片／相纸材料并生成 LUT。" }
+            if model.lut == nil && !sourceRAWReady {
+                return "请先选择可用的胶片／相纸材料并生成 LUT。"
+            }
             if !model.spatialDIREnabled {
                 return "请先在「工艺 → 胶片」开启「胶片层间扩散」。"
             }
