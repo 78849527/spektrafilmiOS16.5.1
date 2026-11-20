@@ -61,8 +61,9 @@ for name,section in [("JPEG",jpeg),("TIFF16",tiff)]:
 assert 'model.selectRAWPreview(fullResolution:false)' in ui
 assert 'model.selectRAWPreview(fullResolution:true)' in ui
 assert '导出始终重新以 RAW 原尺寸精细冲印' in ui
-assert 'CURRENT_PROJECT_VERSION: "139"' in project
-assert 'MARKETING_VERSION: "1.8.105"' in project
+from build_ci_version_floor import minimum_build,minimum_minor
+assert minimum_build(project,139)
+assert minimum_minor(project,105)
 assert 'IPHONEOS_DEPLOYMENT_TARGET: "16.5"' in project
 print("PASS Build139: bounded genuine RAW preview, full-preview choice, unchanged full optical JPEG/TIFF16 export")
 print("NOT CERTIFIED: measured on-device speed, full-size spatial parity, RAW sensor/source rawpy parity")
