@@ -1,3 +1,4 @@
+# Build139 retry: correct Swift numeric test print syntax; all optical and export source unchanged.
 # Build139: fast 1280px LINEAR RAW -> same Float64 optics for PREVIEW only; full-size RAW exports unchanged.
 # Build138 hotfix: direct Float64 RAW source DIR must bypass absent mobile DIR cache; preserve full optical quality.
 # Build138 release identity correction: package/app/IPA must be 1.8.105 Build138 (not Build136).
