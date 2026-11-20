@@ -506,8 +506,7 @@ struct SpectralPhysics {
                         let k=wl*3+ch
                         let previousDye=material.sourceChannelDensityF64?[k] ??
                             Double(material.channelDensity[k])
-                        guard material.dyeAbsorbance(wl,ch).bitPattern==
-                                previousDye.bitPattern else {
+                        guard material.dyeAbsorbance(wl,ch).bitPattern == previousDye.bitPattern else {
                             throw PhysicsError.invalid(
                                 "Build137 scanner dye bits changed: " + stock
                             )
@@ -547,10 +546,8 @@ struct SpectralPhysics {
                     encodedRGB:rgb,cameraEV:ev,
                     preparedExposureMultiplier:multiplier
                 )
-                guard old.rawLog.map({$0.bitPattern})==
-                        prepared.rawLog.map({$0.bitPattern}),
-                      old.initialDensity.map({$0.bitPattern})==
-                        prepared.initialDensity.map({$0.bitPattern}) else {
+                guard old.rawLog.map({$0.bitPattern}) == prepared.rawLog.map({$0.bitPattern}),
+                      old.initialDensity.map({$0.bitPattern}) == prepared.initialDensity.map({$0.bitPattern}) else {
                     throw PhysicsError.invalid(
                         "Build137 prepared RAW exposure changed the Float64 H-D bits"
                     )
