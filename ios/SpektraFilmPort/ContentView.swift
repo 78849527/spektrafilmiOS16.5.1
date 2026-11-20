@@ -1499,7 +1499,8 @@ final class PhotoEditorModel: ObservableObject {
                             data:nil,rawURL:rawFile,rawCompatible:true,
                             dimensions:"\(decoded.0.width) × \(decoded.0.height) · 相机 DNG / Apple RAW"
                         )
-                        status="已从真实 DNG 解码并进入胶片／相纸冲印；原片无损保存。" +
+                        try activateDirectRAWPrecision()
+                        status="DNG 原片已保存，自动启用精细冲印与当前胶片／相纸；" +
                             "当前为 Apple RAW 兼容显影，非 Python rawpy 精确等价；" +
                             "JPEG 伴随片没有进入编辑器。"
                     } catch {
@@ -1538,11 +1539,16 @@ final class PhotoEditorModel: ObservableObject {
                 // Do not clear the current edit before a chosen decoder
                 // has both decoded the new RAW and produced a valid preview.
                 pendingImportedRAWURL=saved.url
-                rawNeedsChoice=true
+                rawNeedsChoice = !(kind == .raf || kind == .dng)
                 status="已无损导入 ."+kind.rawValue.uppercased()
                     + " 原片，SHA256="+String(saved.sha256.prefix(12))
                     + "…，已保存至「文件」/ SpektraFilm RAW Imports。"
-                    + "请选择显影后替换当前照片，或仅保存原片；当前编辑不变。"
+                    + (rawNeedsChoice
+                        ? "尚未支持自动精细冲印，请选择其他解码方式；当前编辑不变。"
+                        : "自动启用 RAW 原片直通精细冲印；当前编辑在解码成功后替换。")
+                if !rawNeedsChoice {
+                    openPreservedRAWDirect()
+                }
                 return
             }
             try loadPhoto(Data(contentsOf: url),entry:.file)
@@ -1582,8 +1588,14 @@ final class PhotoEditorModel: ObservableObject {
                     data:nil, rawURL:url, rawCompatible:true,
                     dimensions:"\(decoded.0.width) × \(decoded.0.height) · RAW Apple 兼容模式"
                 )
-                rawOriginalSourceActive=preferOriginalSource
-                status="已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；" +
+                if preferOriginalSource {
+                    try activateDirectRAWPrecision()
+                } else {
+                    rawOriginalSourceActive=false
+                }
+                status=(preferOriginalSource
+                    ? "RAW 原片直通精细冲印已自动启用，使用当前胶卷和相纸；"
+                    : "已用 Apple RAW 真实解码 .\(decoded.0.format.rawValue.uppercased())；") +
                     "原片完整保存，编辑/输出走 Apple RAW 兼容模式，" +
                     "不是 Python rawpy 原版数值等价。"
             } catch {
@@ -1591,6 +1603,49 @@ final class PhotoEditorModel: ObservableObject {
                     error.localizedDescription
             }
         }
+    }
+
+    /// Build138: RAW-only default. This configures the SAME full-physical
+    /// prerequisites as the explicit "精细冲印" switch, without touching
+    /// optical algorithms, user-selected stocks, RAW bytes or ordinary photos.
+    /// Always queue a new render even if the visible film ID has not changed.
+    private func activateDirectRAWPrecision() throws {
+        guard rawFastModeActive,source != nil,
+              let url=capturedRAWURL,
+              try Build79RAWSignature.probeFile(url) != nil else {
+            throw ImageProcessingError.invalid(
+                "RAW 精细冲印没有可验证原片；保持旧预览，不允许静默降级"
+            )
+        }
+        let filmID=UserDefaults.standard.string(forKey:"compactFilmStock")
+            ?? "kodak_portra_400"
+        let paperID=UserDefaults.standard.string(forKey:"compactPaperStock")
+            ?? "kodak_portra_endura"
+        guard SpectralPhysics.supportedFilmIDs.contains(filmID),
+              SpectralPhysics.supportedPaperIDs.contains(paperID) else {
+            throw ImageProcessingError.invalid(
+                "当前胶片或相纸材料不可用；RAW 原片保留，未启动错误的默认冲印"
+            )
+        }
+        strength=1.0
+        grainEnabled=false
+        scannerFinishingEnabled=false
+        spatialDIREnabled=true
+        spatialDIRSourceConvolutionEnabled=true
+        hanatosOriginalPrecisionEnabled=true
+        originalScannerEnabled=true
+        if !SpectralPhysics.isPositiveFilm(filmID) {
+            originalPrintOpticsEnabled=true
+        }
+        scannerCAM16Enabled=false
+        scannerBlackWhiteEnabled=false
+        exposureReferenceEnabled=false
+        rawOriginalSourceActive=true
+        sourcePixelIOEnabled=true
+        sourcePhysicalDirectEnabled=true
+        // Re-evaluate the ALREADY selected Portra 400 or other stock.
+        // No manual switch away-and-back is necessary.
+        queueSpectralPreview()
     }
 
     /// Import preview remains independent from source-original RAW pixels.
@@ -1627,9 +1682,9 @@ final class PhotoEditorModel: ObservableObject {
             guard try Build79RAWSignature.probeFile(url) != nil else {
                 throw ImageProcessingError.invalid("RAW 原文件签名无效")
             }
-            rawOriginalSourceActive=true
-            status="原 RAW 直通准备完成。点击「精细冲印」确认原版设置。" +
-                "精确处理将读取 RAW ACES16，而非兼容预览；数值仍待认证。"
+            try activateDirectRAWPrecision()
+            status="已自动启用 RAW 原片直通精细冲印；当前胶卷及相纸正在重新应用。" +
+                "光学计算读取 RAW ACES16，失败不回退 Apple RAW 预览。"
         } catch {
             status="RAW 直通检查失败：" + error.localizedDescription
         }
@@ -1701,8 +1756,14 @@ final class PhotoEditorModel: ObservableObject {
                     data:nil, rawURL:url, rawCompatible:true,
                     dimensions:"\(decoded.0.width) × \(decoded.0.height) · LibRaw RGB16"
                 )
-                rawOriginalSourceActive=preferOriginalSource
-                status = "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；" +
+                if preferOriginalSource {
+                    try activateDirectRAWPrecision()
+                } else {
+                    rawOriginalSourceActive=false
+                }
+                status = (preferOriginalSource
+                    ? "RAW 原片直通精细冲印已自动启用，使用当前胶卷和相纸；"
+                    : "LibRaw \(decoded.0.librawVersion) 16-bit RGB 导入完成；") +
                     "输入为 16-bit sRGB 高位深兼容数据，最终 JPEG 仍为 8-bit；" +
                     "原始 RAF 不变，不代表 Python Float64 原版数值等价。"
             } catch {
