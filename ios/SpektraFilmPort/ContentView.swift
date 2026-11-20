@@ -1342,10 +1342,23 @@ final class PhotoEditorModel: ObservableObject {
         )
         sourceHalation.halationFirstSigmaUM=stockHalation.sigmaUM
         sourceHalation.halationStrength=stockHalation.strength
+        // Build138 hotfix: a direct RAW has no mobile 17^3 DIR cache.
+        // spatialDIRSettings intentionally disables mobile DIR until
+        // spatialDIRStage exists. The Float64 RAW renderer does NOT consume
+        // that cache: its source FIR/YVV is built from the actual switches.
+        // Ordinary photo/compatibility input retains its old stage gate.
+        let physicalDIR:SpatialDIRSettings = rawOriginalSourceActive
+            ? SpatialDIRSettings(
+                enabled:spatialDIREnabled,
+                diffusionRadiusScale:spatialDIRRadiusScale,
+                tailWeight:0.06,
+                sourceConvolutionEnabled:spatialDIRSourceConvolutionEnabled
+            )
+            : spatialDIRSettings
         var p=OriginalSourcePhysicalImage.Parameters(
             filmID:filmID,paperID:paperID,
             cameraEV:filmExposureEV,paperEV:printExposureEV,
-            dir:spatialDIRSettings,print:print,morph:morph,
+            dir:physicalDIR,print:print,morph:morph,
             scannerOptics:sourceScan,
             scannerGlare:OriginalSourceScannerGlare.Settings(
                 active:sourceScannerGlareEnabled,
