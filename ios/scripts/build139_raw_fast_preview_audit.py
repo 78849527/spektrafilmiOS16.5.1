@@ -42,7 +42,7 @@ refresh=app.split("    func refresh() throws {",1)[1].split(
 assert 'let fullSourcePreview=rawFullResolutionPreview' in refresh
 assert 'if fullSourcePreview {' in refresh
 assert 'P1OriginalRawACESIngress.developSourceCandidate(' in refresh
-assert 'P1OriginalRawACESIngress.developPreviewCandidate(' in refresh
+assert 'P1OriginalRawACESIngress.developPreviewWithGeometry(' in refresh
 assert 'maxLongEdge:1280' in refresh
 assert 'self.processedPreview=rendered.0' in refresh
 assert 'rawFullResolutionPreview=false' in app
@@ -55,7 +55,7 @@ tiff=app.split("    func exportTIFF16(",1)[1].split(
 )[0] if "    /// Export a truthful MACHINE-READABLE" in app.split("    func exportTIFF16(",1)[1] else app.split("    func exportTIFF16(",1)[1]
 for name,section in [("JPEG",jpeg),("TIFF16",tiff)]:
     assert 'P1OriginalRawACESIngress.developSourceCandidate(' in section,name
-    assert 'P1OriginalRawACESIngress.developPreviewCandidate(' not in section,name
+    assert 'P1OriginalRawACESIngress.developPreviewWithGeometry(' not in section,name
     assert 'Build136RAWOutputResize.resample(' in section,name
 
 assert 'model.selectRAWPreview(fullResolution:false)' in ui
