@@ -1029,7 +1029,7 @@ final class PhotoEditorModel: ObservableObject {
                     activeSimulationGeneration=nil
                     busy=false
                     processedPreview=nil
-                    status="RAW 精细冲印无法执行（未降级）："+
+                    status="RAW 精细冲印无法执行（未降级）：" +
                         error.localizedDescription
                 }
                 return
@@ -1472,7 +1472,7 @@ final class PhotoEditorModel: ObservableObject {
                     pendingImportedRAWURL=preserved.url
                     rawNeedsChoice = !(preserved.format == .dng ||
                                        preserved.format == .raf)
-                    status="已验证相册返回真实 RAW 原片，已无损归档；"+
+                    status="已验证相册返回真实 RAW 原片，已无损归档；" +
                         (rawNeedsChoice
                          ? "该 RAW 格式暂不支持自动精细冲印，请手动选择解码。"
                          : "自动使用当前胶片／相纸进入精细冲印。")
@@ -1489,8 +1489,8 @@ final class PhotoEditorModel: ObservableObject {
                     return
                 }
                 if pickerAdvertisesRAW(selection) {
-                    status="照片选择器没有提供可验证的 RAW 原始字节，"+
-                        "不能把 JPEG/HEIC 兼容图当作 RAW 精细冲印。"+
+                    status="照片选择器没有提供可验证的 RAW 原始字节，" +
+                        "不能把 JPEG/HEIC 兼容图当作 RAW 精细冲印。" +
                         "请从「文件」导入原始 DNG/RAF；当前编辑未改变。"
                     return
                 }
