@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+import UIKit
+import ImageIO
+import UniformTypeIdentifiers
 
 /// Build134: only files created by SpektraFilm are eligible for in-app removal.
 /// Imported originals held by a Files provider or Photos are never enumerated.
@@ -76,6 +79,104 @@ enum Build134LocalRAWStorage {
             ($0.updated ?? .distantPast) > ($1.updated ?? .distantPast)
         }
     }
+
+    /// The DNG is authoritative. The small JPEG is a catalog-only thumbnail,
+    /// NEVER an input to either Apple RAW or Float64 source rendering.
+    private static func previewDirectory() throws -> URL {
+        guard let support=FileManager.default.urls(
+            for:.applicationSupportDirectory,in:.userDomainMask
+        ).first else {
+            throw Failure.invalid("无法找到 App 缩略图目录")
+        }
+        let folder=support.appendingPathComponent(
+            "SpektraFilm RAW Thumbnails",isDirectory:true
+        )
+        try FileManager.default.createDirectory(
+            at:folder,withIntermediateDirectories:true
+        )
+        return folder
+    }
+
+    private static func thumbnailURL(for raw:URL) throws -> URL {
+        try previewDirectory().appendingPathComponent(
+            raw.lastPathComponent+".jpg"
+        )
+    }
+
+    private static func makeSmallJPEG(_ companion:Data) -> Data? {
+        guard let source=CGImageSourceCreateWithData(
+            companion as CFData,[kCGImageSourceShouldCache:false] as CFDictionary
+        ),let thumb=CGImageSourceCreateThumbnailAtIndex(
+            source,0,[
+                kCGImageSourceCreateThumbnailFromImageAlways:true,
+                kCGImageSourceThumbnailMaxPixelSize:320,
+                kCGImageSourceShouldCacheImmediately:true
+            ] as CFDictionary
+        ) else { return nil }
+        let data=NSMutableData()
+        guard let writer=CGImageDestinationCreateWithData(
+            data,UTType.jpeg.identifier as CFString,1,nil
+        ) else {return nil}
+        CGImageDestinationAddImage(
+            writer,thumb,[
+                kCGImageDestinationLossyCompressionQuality:0.78
+            ] as CFDictionary
+        )
+        return CGImageDestinationFinalize(writer) ? data as Data : nil
+    }
+
+    /// Capture once, return its retained DNG URL. A thumbnail failure must
+    /// not discard the RAW or silently replace it with the companion JPEG.
+    static func archiveCameraRAW(
+        raw:Data,companion:Data
+    ) throws -> URL {
+        guard !raw.isEmpty else {
+            throw Failure.invalid("拍摄未返回 DNG 原始数据")
+        }
+        let folder=try documents().appendingPathComponent(
+            "SpektraFilm RAW",isDirectory:true
+        )
+        try FileManager.default.createDirectory(
+            at:folder,withIntermediateDirectories:true
+        )
+        let target=folder.appendingPathComponent(
+            "SF-RAW-"+UUID().uuidString+".dng"
+        )
+        try raw.write(to:target,options:.atomic)
+        // DNG keeps its bytes and metadata. Thumbnail is derived only from
+        // the already-returned companion JPEG and is capped at 320px.
+        if let bytes=makeSmallJPEG(companion),
+           let thumb=try? thumbnailURL(for:target) {
+            try? bytes.write(to:thumb,options:.atomic)
+        }
+        return target
+    }
+
+    static func isManaged(_ url:URL) -> Bool {
+        (try? list().contains(where:{
+            $0.url.standardizedFileURL==url.standardizedFileURL
+        })) == true
+    }
+
+    /// Catalog-only embedded preview fallback for older DNG/RAF captures.
+    /// Never create a thumbnail by demosaicing a full-size sensor RAW.
+    static func thumbnail(for url:URL) -> UIImage? {
+        guard isManaged(url) else {return nil}
+        if let preview=try? thumbnailURL(for:url),
+           let stored=UIImage(contentsOfFile:preview.path) {
+            return stored
+        }
+        guard let source=CGImageSourceCreateWithURL(
+            url as CFURL,[kCGImageSourceShouldCache:false] as CFDictionary
+        ),let image=CGImageSourceCreateThumbnailAtIndex(
+            source,0,[
+                kCGImageSourceCreateThumbnailFromImageIfAbsent:false,
+                kCGImageSourceThumbnailMaxPixelSize:320,
+                kCGImageSourceShouldCacheImmediately:false
+            ] as CFDictionary
+        ) else {return nil}
+        return UIImage(cgImage:image)
+    }
     static func delete(_ url: URL) throws {
         let root=try documents()
         guard accepted(url,documents:root) != nil else {
@@ -88,6 +189,48 @@ enum Build134LocalRAWStorage {
             throw Failure.invalid("文件已移动或不属于 App 保存的 RAW 列表")
         }
         try FileManager.default.removeItem(at:target)
+        if let preview=try? thumbnailURL(for:target) {
+            try? FileManager.default.removeItem(at:preview)
+        }
+    }
+}
+
+/// Async, capped preview for catalog use. An unavailable embedded thumbnail
+/// is represented by an icon, not a full-size RAW decode or JPEG optical input.
+private struct Build134RAWThumbnail: View {
+    let item: Build134LocalRAWStorage.Entry
+    @State private var image:UIImage?
+
+    var body:some View {
+        ZStack {
+            RoundedRectangle(cornerRadius:9).fill(Color.secondary.opacity(0.09))
+            if let image {
+                Image(uiImage:image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth:.infinity,maxHeight:.infinity)
+                    .clipped()
+                    .cornerRadius(9)
+            } else {
+                VStack(spacing:5) {
+                    Image(systemName:"photo.on.rectangle.angled")
+                        .font(.system(size:27))
+                    Text("RAW")
+                        .font(.caption2)
+                }
+                .foregroundColor(.secondary)
+            }
+        }
+        .aspectRatio(4.0/3.0,contentMode:.fit)
+        .task(id:item.id) {
+            image=nil
+            let url=item.url
+            image=await Task.detached(priority:.utility) {
+                Build134LocalRAWStorage.thumbnail(for:url)
+            }.value
+        }
+        .accessibilityLabel(item.cameraCapture
+            ? "相机 RAW 缩略图" : "导入 RAW 缩略图")
     }
 }
 
@@ -97,6 +240,10 @@ struct Build134LocalRAWManagerView: View {
     @State private var saved=[Build134LocalRAWStorage.Entry]()
     @State private var selected:Build134LocalRAWStorage.Entry?
     @State private var failure:String?
+    private let columns=[
+        GridItem(.flexible(),spacing:10),
+        GridItem(.flexible(),spacing:10)
+    ]
 
     private func reload() {
         do {
@@ -107,61 +254,95 @@ struct Build134LocalRAWManagerView: View {
         }
     }
 
+    private func openForProcessing(_ item:Build134LocalRAWStorage.Entry) {
+        guard !model.busy else {return}
+        guard Build134LocalRAWStorage.isManaged(item.url) else {
+            failure="RAW 原片已移动或删除，无法打开"
+            reload()
+            return
+        }
+        model.openSavedRAWFromLibrary(item.url)
+        dismiss()
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Text("这里只管理 App 自己保存的 RAW 原片副本。删除后不可撤销；不会删除照片图库或其他文件夹中的原片。若没有外部备份，删除会永久丢失该 DNG／RAF。")
+            ScrollView {
+                VStack(alignment:.leading,spacing:14) {
+                    Text("先连续拍摄，再从这里选 RAW 冲印。缩略图只用于浏览；冲印仍读取完整 DNG／RAF 原片。")
                         .font(.footnote)
                         .foregroundColor(.secondary)
+                    Text("本机 RAW · \(saved.count) 张")
+                        .font(.subheadline.weight(.semibold))
                     if let failure {
                         Text("操作失败："+failure)
-                            .foregroundColor(.red)
                             .font(.footnote)
+                            .foregroundColor(.red)
                     }
-                }
-                Section("本机 RAW · \(saved.count) 个") {
                     if saved.isEmpty {
-                        Text("没有 App 保存的 RAW 文件")
+                        Text("暂无本机 RAW。相机选择 RAW DNG，拍摄后会自动保存在这里。")
+                            .font(.footnote)
                             .foregroundColor(.secondary)
+                            .padding(.vertical,24)
                     }
-                    ForEach(saved) { item in
-                        HStack(spacing:10) {
-                            VStack(alignment:.leading,spacing:4) {
-                                Text(item.cameraCapture ? "相机 DNG" : "导入 RAW 副本")
-                                    .font(.subheadline)
-                                Text(item.url.lastPathComponent)
-                                    .font(.system(size:10,design:.monospaced))
-                                    .lineLimit(1)
-                                Text(ByteCountFormatter.string(
-                                    fromByteCount:item.bytes,countStyle:.file))
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                if model.isCurrentSavedRAW(item.url) {
-                                    Text("当前编辑正在使用")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                    LazyVGrid(columns:columns,spacing:12) {
+                        ForEach(saved) { item in
+                            VStack(alignment:.leading,spacing:6) {
+                                Button {openForProcessing(item)} label: {
+                                    VStack(alignment:.leading,spacing:5) {
+                                        Build134RAWThumbnail(item:item)
+                                        Text(item.cameraCapture ? "相机 DNG" : "导入 RAW")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.primary)
+                                        Text(item.url.lastPathComponent)
+                                            .font(.system(size:10,design:.monospaced))
+                                            .lineLimit(1)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
+                                .buttonStyle(.plain)
+                                .disabled(model.busy)
+                                HStack(spacing:3) {
+                                    Text(ByteCountFormatter.string(
+                                        fromByteCount:item.bytes,countStyle:.file
+                                    ))
+                                    .lineLimit(1)
+                                    Spacer(minLength:2)
+                                    if model.isCurrentSavedRAW(item.url) {
+                                        Image(systemName:"checkmark.circle.fill")
+                                            .accessibilityLabel("当前编辑中")
+                                    }
+                                    Button(role:.destructive) {
+                                        selected=item
+                                    } label: {
+                                        Image(systemName:"trash")
+                                            .frame(width:30,height:32)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .disabled(model.busy)
+                                    .accessibilityLabel("删除本机文件 "+item.url.lastPathComponent)
+                                }
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                             }
-                            Spacer(minLength:8)
-                            Button(role:.destructive) {
-                                selected=item
-                            } label: {
-                                Image(systemName:"trash")
-                                    .frame(width:36,height:36)
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(model.busy)
-                            .accessibilityLabel("删除本机文件 "+item.url.lastPathComponent)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius:12)
+                                    .fill(Color.secondary.opacity(0.05))
+                            )
                         }
                     }
                 }
+                .padding(12)
             }
-            .navigationTitle("本机 RAW 管理")
+            .navigationTitle("本机 RAW 素材库")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement:.navigationBarLeading) {
+                    Button("刷新") {reload()}
+                }
                 ToolbarItem(placement:.navigationBarTrailing) {
-                    Button("完成") { dismiss() }
+                    Button("完成") {dismiss()}
                 }
             }
             .onAppear(perform:reload)
@@ -179,7 +360,8 @@ struct Build134LocalRAWManagerView: View {
                         do {
                             guard !model.busy else {
                                 throw Build134LocalRAWStorage.Failure.invalid(
-                                    "正在冲印，禁止删除所需 RAW")
+                                    "正在冲印，禁止删除所需 RAW"
+                                )
                             }
                             try Build134LocalRAWStorage.delete(item.url)
                             model.didDeleteSavedRAW(item.url)
