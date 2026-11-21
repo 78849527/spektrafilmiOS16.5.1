@@ -115,6 +115,10 @@ enum OriginalSourcePhysicalImage {
         // Upstream SettingsParams.rgb_to_raw_method plus camera UV/IR
         // spectral bandpass; all stages remain per-pixel Double.
         var cameraRawMethod: SpectralPhysics.CameraRawMethod = .hanatos2025
+        // The app's current strict 8-bit ingress is explicitly sRGB.
+        // ProPhoto linear is a separate *numerical engine* source branch
+        // until real ICC/raw ingress has passed independent verification.
+        var cameraInputColorSpace: OriginalHanatosResponse.InputColorSpace = .sRGB
         var cameraBandpass: OriginalSourceCameraBandpass.Settings = .init()
         // Original PrintingStage.expose: optical paper photon domain,
         // after enlarger/preflash/EV and before paper H-D.
@@ -146,6 +150,13 @@ enum OriginalSourcePhysicalImage {
             try cameraOptics.validate()
             try filmHalation.validate()
             try cameraBandpass.validate()
+            if cameraInputColorSpace == .proPhotoLinear &&
+                cameraRawMethod != .hanatos2025 {
+                throw Failure.invalid(
+                    "原版 ProPhoto 仅在完整 Hanatos 光谱输入路径已实现，"
+                    + "不支持当前 Mallett 组合"
+                )
+            }
             try printDiffusion.validate()
             if printDiffusion.active && printDiffusion.strength>0 &&
                 printDiffusion.spatialScale>0 &&
@@ -182,6 +193,7 @@ enum OriginalSourcePhysicalImage {
                 hanatosPrecision: .originalFloat64,
                 sourceMeasuredFloat64: true,
                 cameraRawMethod: cameraRawMethod,
+                cameraInputColorSpace:cameraInputColorSpace,
                 cameraBandpass: cameraBandpass
             )
         }
@@ -221,6 +233,10 @@ enum OriginalSourcePhysicalImage {
         let controlledScannerGlare=parameters.scannerGlare.active &&
             parameters.scannerGlare.percent>0
         let controlledFilmGrain=parameters.sourceGrain.active
+        // The production paper taps are opt-in; reserve their 2x3 Double
+        // buffers in the memory gate BEFORE any full-frame allocation.
+        let capturePaperStages=stageDoubleObserver != nil &&
+            !SpectralPhysics.isPositiveFilm(parameters.filmID)
         try validateMemoryBudget(
             width:w,height:h,
             additionalBytesPerPixel:
@@ -229,7 +245,9 @@ enum OriginalSourcePhysicalImage {
                 (controlledFilmGrain ? OriginalSourcePhysicalGrain.extraBytesPerPixel : 0) +
                 (parameters.cameraOptics.needsWholeImageBlur ? cameraLensExtraBytesPerPixel : 0) +
                 (parameters.filmHalation.active ? filmHalationExtraBytesPerPixel : 0) +
-                (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0)
+                (parameters.printDiffusion.active ? printDiffusionExtraBytesPerPixel : 0) +
+                (capturePaperStages ? 48 : 0) +
+                (stageDoubleObserver != nil ? 24 : 0)
         )
         guard frame.rgb.count==w*h*3,
               frame.rgb.allSatisfy({ $0.isFinite && (0...1).contains($0) })
@@ -246,6 +264,14 @@ enum OriginalSourcePhysicalImage {
         var inhibitors=[Double](repeating:0,count:size)
         var initialObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
+        // Capture only the actual encoded RGB multiplied by source metering
+        // BEFORE conversion into film photons. This is the source rgb_pre
+        // interface on supported no-crop/no-rescale sRGB inputs, NOT a
+        // claim that original ProPhoto/RAW/crop are fully implemented.
+        let cameraPreActive=parameters.cameraOptics.active ||
+            parameters.filmHalation.active
+        var rgbPreObserved:[Double]? = stageDoubleObserver != nil &&
+            cameraPreActive ? [Double](repeating:0,count:size) : nil
 
         // Original Python chronological camera stage:
         // 1. full-frame decoded RGB -> source exposure-metering preview,
@@ -258,7 +284,7 @@ enum OriginalSourcePhysicalImage {
         //
         // RAW modes are disabled by default; the established v1.8.29 path
         // below remains byte-for-byte unchanged if all options are off.
-        if parameters.cameraOptics.active || parameters.filmHalation.active {
+        if cameraPreActive {
             let autoEV=try OriginalSourceCameraOptics.measureAutoExposureEV(
                 encodedRGB:frame.rgb,width:w,height:h,
                 method:parameters.cameraOptics.metering
@@ -275,10 +301,16 @@ enum OriginalSourcePhysicalImage {
                     frame.rgb[k+1]*autoScale,
                     frame.rgb[k+2]*autoScale
                 ]
+                // Store the same pre-exposure input that the production
+                // photon conversion consumes, without recalculating it.
+                for c in 0..<3 { rgbPreObserved?[k+c]=rgb[c] }
                 let photons=try engine.sourceCameraRaw(
                     encodedRGB:rgb,cameraEV:parameters.cameraEV
                 )
                 for c in 0..<3 { frame.rgb[k+c]=photons[c] }
+            }
+            if let rgbPreObserved {
+                stageDoubleObserver?("rgbPre",rgbPreObserved)
             }
             stageDoubleObserver?("cameraRaw",frame.rgb)
             try OriginalSourceCameraOptics.boostHighlightsInPlace(
@@ -317,6 +349,12 @@ enum OriginalSourcePhysicalImage {
                 )
                 stageDoubleObserver?("filmScatterHalation",frame.rgb)
             }
+        }
+        // If no camera pre-stage was selected, source pre-processing is
+        // identity on the supported uncropped, 1:1 8-bit sRGB input.
+        // Preserve the exact former production image (no copies if not observed).
+        if !cameraPreActive {
+            stageDoubleObserver?("rgbPre",frame.rgb)
         }
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
@@ -370,6 +408,22 @@ enum OriginalSourcePhysicalImage {
             ? nil : [Double](repeating:0,count:size)
         var densityObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
+        var paperLogObserved:[Double]? = capturePaperStages
+            ? [Double](repeating:0,count:size) : nil
+        var paperDensityObserved:[Double]? = capturePaperStages
+            ? [Double](repeating:0,count:size) : nil
+        // The exact source PrintingStage is fused with the scanner in the
+        // current iOS implementation. Observe its REAL computed Double
+        // boundaries from BOTH print paths, never call a second renderer.
+        func recordPaper(_ offset:Int) -> (([Double],[Double]) -> Void)? {
+            guard capturePaperStages else { return nil }
+            return { logExposure,developedDensity in
+                for ch in 0..<3 {
+                    paperLogObserved?[offset+ch]=logExposure[ch]
+                    paperDensityObserved?[offset+ch]=developedDensity[ch]
+                }
+            }
+        }
         // Each corrected pixel is completely consumed before its
         // historical camera log buffer is overwritten by final scan RGB.
         for p in 0..<(w*h) {
@@ -397,15 +451,18 @@ enum OriginalSourcePhysicalImage {
                 // Store actual developed PAPER XYZ in the reusable Double
                 // frame, not sRGB or post-gamut RGB.
                 rgb=try engine.sourceSpatialScanXYZ(
-                    filmDensity:density,paperEV:parameters.paperEV
+                    filmDensity:density,paperEV:parameters.paperEV,
+                    paperStageObserver:recordPaper(k)
                 )
             } else {
                 rgb=try parameters.scannerOptics.active
                     ? engine.sourceSpatialScanLinear(
-                        filmDensity:density,paperEV:parameters.paperEV
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:recordPaper(k)
                       )
                     : engine.sourceSpatialScan(
-                        filmDensity:density,paperEV:parameters.paperEV
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:recordPaper(k)
                       )
             }
             for c in 0..<3 {
@@ -443,15 +500,18 @@ enum OriginalSourcePhysicalImage {
                     )
                 } else if controlledScannerGlare {
                     printed=try engine.sourceSpatialScanXYZ(
-                        filmDensity:density,paperEV:parameters.paperEV
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:recordPaper(k)
                     )
                 } else {
                     printed=try parameters.scannerOptics.active
                         ? engine.sourceSpatialScanLinear(
-                            filmDensity:density,paperEV:parameters.paperEV
+                            filmDensity:density,paperEV:parameters.paperEV,
+                            paperStageObserver:recordPaper(k)
                           )
                         : engine.sourceSpatialScan(
-                            filmDensity:density,paperEV:parameters.paperEV
+                            filmDensity:density,paperEV:parameters.paperEV,
+                            paperStageObserver:recordPaper(k)
                           )
                 }
                 for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
@@ -472,10 +532,17 @@ enum OriginalSourcePhysicalImage {
                 let output=try engine.sourceSpatialScanPrintedPhoton(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
                     sourceLinearOutput:parameters.scannerOptics.active,
-                    sourceXYZOutput:controlledScannerGlare
+                    sourceXYZOutput:controlledScannerGlare,
+                    paperStageObserver:recordPaper(k)
                 )
                 for c in 0..<3 { frame.rgb[k+c]=output[c] }
             }
+        }
+        if let paperLogObserved {
+            stageDoubleObserver?("paperLogExposure",paperLogObserved)
+        }
+        if let paperDensityObserved {
+            stageDoubleObserver?("paperDevelopedDensity",paperDensityObserved)
         }
         if controlledScannerGlare {
             // Python scanning.py exact sequence for negative prints:
