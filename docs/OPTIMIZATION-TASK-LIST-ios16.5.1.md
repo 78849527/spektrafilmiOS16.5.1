@@ -99,6 +99,11 @@
 - 每个光学 engine 准备一次有序、有效波长的紧凑 Row（Double 片基/三个染料吸收系数/SIMD3 Double 权重），当前负片印相及正片/相纸 XYZ 扫描的生产像素路径复用；放大机扩散前真实 paper photon 同样复用。保留 81 波长原掩码、三个密度加法顺序、pow(10,-density)、clamp、XYZ 归一化/CCTF、全部原始标量诊断及初始化参考。不是光谱近似/全图缓存。
 - -O/-Onone 使用真实生产 helper 各 768 组独立标量 bitwise 对照；实测所有材料诊断追加真实 plan 对照。实际耗时及设备整图数值未认证。继续使用原生产 memory admission 与 13MP 界限。此轮仅 CI，不发布 IPA。
 
+## CI 复验补充
+
+- 45775750265：Linux PASS；macOS 止于历史 Build116 源码范围检查，明确拒绝三个新优化文件。未运行到这些模块的数值验证。只加入三个实际批准的文件路径，保留其余白名单，不降低任何数值容差。
+- 将实际 SciPy golden、Numba counts-only golden/后续 RNG、80 个动态 DIR Python 原版用例的独立 Swift 可执行验证显式纳入本轮 macOS CI，防止仅编译测试源码却未执行。新印相扫描候选合并后统一重跑。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

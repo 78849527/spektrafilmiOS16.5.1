@@ -433,6 +433,12 @@ jobs:
                 'ios/SpektraFilmPort/Build90OriginalICCContainer.swift',
                 'ios/SpektraFilmPort/Build90NativeOutputWriter.swift',
                 'ios/SpektraFilmPort/OriginalSourceSciPyParticles.swift',
+                # Explicit Build143 follow-up scope: original ordered RNG
+                # allocation-only changes and H-D segment reciprocals.
+                # Independent source oracles are mandatory below.
+                'ios/SpektraFilmPort/OriginalSourceSciPySampler.swift',
+                'ios/SpektraFilmPort/OriginalSourceNumbaFastCounts.swift',
+                'ios/SpektraFilmPort/Build84OriginalFilmDIR.swift',
                 'ios/SpektraFilmPort/OriginalSourceDiffusion.swift',
                 'ios/SpektraFilmPort/OriginalSourceScannerGlare.swift',
                 'ios/SpektraFilmPort/OriginalSourceFilmHalation.swift',
@@ -1090,6 +1096,29 @@ jobs:
             ios/SpektraFilmPort/Build103VerificationEvidence.swift \
             /tmp/build103-metrics/main.swift
           /tmp/build103-metrics/test
+      - name: OPT actual SciPy and Numba original RNG and 80-case H-D numeric regressions
+        run: |
+          set -euo pipefail
+          P=ios/SpektraFilmPort
+          swiftc -O -parse-as-library \
+            "$P/GeneratedSourceMT19937Reference.swift" \
+            "$P/OriginalSourceMT19937.swift" \
+            "$P/GeneratedOriginalSciPyRNGReference.swift" \
+            "$P/OriginalSourceSciPySampler.swift" \
+            ios/tests/OriginalSciPyRNGValidation.swift -o /tmp/OPTOriginalSciPy
+          /tmp/OPTOriginalSciPy
+          swiftc -O -parse-as-library \
+            "$P/GeneratedSourceMT19937Reference.swift" \
+            "$P/OriginalSourceMT19937.swift" \
+            "$P/OriginalSourceNumbaSingleThreadNormal.swift" \
+            "$P/OriginalSourceNumbaFastCounts.swift" \
+            "$P/GeneratedSourceNumbaFastCountsReference.swift" \
+            ios/tests/SourceNumbaFastCountsValidation.swift -o /tmp/OPTOriginalNumba
+          /tmp/OPTOriginalNumba
+          python ios/scripts/build84_dynamic_dir_oracle.py /tmp/OPTBuild84Source.json
+          swiftc -O -parse-as-library "$P/Build84OriginalFilmDIR.swift" \
+            ios/tests/Build84DynamicDIR80StockValidation.swift -o /tmp/OPTBuild84
+          /tmp/OPTBuild84 /tmp/OPTBuild84Source.json
       - name: OPT Hanatos exact Mitchell SIMD measured LUT regression
         run: |
           set -euo pipefail
