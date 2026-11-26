@@ -141,6 +141,7 @@ enum SourcePhysicalImageParity {
         // exposure gates whenever the real Python physical tapes are checked.
         try SpectralPhysics.verifyPreparedScannerSamples()
         try SpectralPhysics.verifySpectralSIMD()
+        try SpectralPhysics.verifyPreparedMeasuredHD()
         try SpectralPhysics.verifyPreparedCameraMultiplier()
         let doc=try Data(
             contentsOf:fixtures.appendingPathComponent("manifest.json")

@@ -53,6 +53,30 @@ struct SourcePreparedSpectralSum {
         return SourceSpectralTriplet.channels(sum)
     }
 }
+/// Immutable measured-axis interval reciprocals. Never sorts or
+/// replaces knots. The caller keeps the exact source upper-bound search.
+/// Zero-width intervals keep the original +0.0 reciprocal.
+enum SourcePreparedHDIntervals {
+    static func prepare(_ axis:[Double]) -> [Double] {
+        guard axis.count>1 else {return []}
+        return (0..<(axis.count-1)).map { i in
+            let dx=axis[i+1]-axis[i]
+            return dx == 0 ? 0.0 : 1.0/dx
+        }
+    }
+
+    @inline(__always)
+    static func fraction(_ x:Double,axis:[Double],lower:Int,
+                         prepared:[Double]?) -> Double {
+        let reciprocal:Double
+        if let prepared {reciprocal=prepared[lower]}
+        else {
+            let dx=axis[lower+1]-axis[lower]
+            reciprocal=dx == 0 ? 0.0 : 1.0/dx
+        }
+        return (x-axis[lower])*reciprocal
+    }
+}
 // END OPT_SOURCE_SPECTRAL_SIMD
 
 /// iOS 16.5.1 measured-spectra photo simulation.
@@ -117,6 +141,7 @@ struct SpectralPhysics {
         let sourceChannelDensityF64: [Double]?
         let sourceBaseDensityF64: [Double]?
         let sourceLogExposureF64: [Double]?
+        let preparedSourceExposureReciprocals:[Double]?
         let sourceDensityCurvesF64: [Double]?
         let sourceDensityCurvesLayersF64: [Double]?
         let sourceCorrectedCurvesF64: [Double]?
@@ -182,10 +207,12 @@ struct SpectralPhysics {
                 channelDensitySamples.map(Double.init)
             preparedScannerBaseDensity = sourceBaseSamples ??
                 baseDensitySamples.map(Double.init)
-            sourceLogExposureF64 = try Self.decodeOptionalSource(
+            let exposure64=try Self.decodeOptionalSource(
                 record.sourceLogExposureF64, count:256,
                 enabled:sourceMeasuredFloat64
             )
+            sourceLogExposureF64=exposure64
+            preparedSourceExposureReciprocals=exposure64.map(SourcePreparedHDIntervals.prepare)
             sourceDensityCurvesF64 = try Self.decodeOptionalSource(
                 record.sourceDensityCurvesF64, count:768,
                 enabled:sourceMeasuredFloat64
@@ -349,7 +376,8 @@ struct SpectralPhysics {
         }
 
         func curve(_ logE: Double, channel: Int,
-                   correctedBeforeDIR: Bool = false) -> Double {
+                   correctedBeforeDIR: Bool = false,
+                   usePreparedReciprocals:Bool=true) -> Double {
             let first = sourceLogExposureF64?[0] ?? Double(logExposure[0])
             let last = sourceLogExposureF64?[255] ?? Double(logExposure[255])
             let useCorrected = correctedBeforeDIR && !dirCorrectedCurves.isEmpty
@@ -379,9 +407,8 @@ struct SpectralPhysics {
                     else { lo=mid+1 }
                 }
                 let lower=lo-1
-                let dx=axis[lo]-axis[lower]
-                let invDx=dx == 0 ? 0.0 : 1.0/dx
-                let t=(logE-axis[lower])*invDx
+                let t=SourcePreparedHDIntervals.fraction(logE,axis:axis,lower:lower,
+                    prepared:usePreparedReciprocals ? preparedSourceExposureReciprocals : nil)
                 let y0=sample(lower*3+channel)
                 let y1=sample(lo*3+channel)
                 return max(0,y0+t*(y1-y0)-minDensity)
@@ -621,6 +648,55 @@ struct SpectralPhysics {
                             throw PhysicsError.invalid("OPT spectral scan SIMD bit mismatch: "+stock)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// Real material knot and interior probes, including endpoints.
+    /// The old scalar reciprocal is available solely for regression.
+    static func verifyPreparedMeasuredHD() throws {
+        for stock in supportedFilmIDs + supportedPaperIDs {
+            let profile=try Profile(id:stock,sourceMeasuredFloat64:true)
+            guard let axis=profile.sourceLogExposureF64,axis.count==256 else {
+                throw PhysicsError.invalid("OPT source H-D missing axis "+stock)
+            }
+            let samples=axis+[axis[0]-1,axis[255]+1]+(0..<255).map { i in
+                axis[i]+(axis[i+1]-axis[i])*0.37
+            }
+            for x in samples {
+                for ch in 0..<3 {
+                    for corrected in [false,true] {
+                        let old=profile.curve(x,channel:ch,correctedBeforeDIR:corrected,
+                                              usePreparedReciprocals:false)
+                        let new=profile.curve(x,channel:ch,correctedBeforeDIR:corrected)
+                        guard old.bitPattern==new.bitPattern else {
+                            throw PhysicsError.invalid("OPT measured H-D bit mismatch "+stock)
+                        }
+                    }
+                }
+            }
+        }
+        // Production channel-only measured inversion versus the old
+        // all-channel scalar path, using real negative and reversal stock.
+        let representatives=["kodak_portra_400"]+Array(supportedFilmIDs.filter{isPositiveFilm($0)}.prefix(1))
+        for stock in representatives {
+            let engine=try SpectralPhysics(filmID:stock,paperID:"kodak_portra_endura",
+                sourceScanner:true,sourceMeasuredFloat64:true,cameraInputColorSpace:.acesLinear)
+            let scalar=try engine.sourceSpatialGrainLayers(usePreparedReciprocals:false)
+            let prepared=try engine.sourceSpatialGrainLayers()
+            guard let channelWriter=prepared.channelSublayersInto else {
+                throw PhysicsError.invalid("OPT missing production grain channel writer")
+            }
+            for i in 0..<256 {
+                let density=(0..<3).map { ch in
+                    Double((i*17+ch*31)%256)/73.0-0.03
+                }
+                let expected=try scalar.sublayers(density)
+                var actual=[Double](repeating:0,count:9)
+                for ch in 0..<3 {try channelWriter(density,ch,&actual)}
+                guard expected.map({$0.bitPattern})==actual.map({$0.bitPattern}) else {
+                    throw PhysicsError.invalid("OPT grain inversion bit mismatch "+stock)
                 }
             }
         }
@@ -1690,7 +1766,7 @@ struct SpectralPhysics {
         return source.densityMaximum
     }
 
-    func sourceSpatialGrainLayers() throws -> OriginalSourcePhysicalGrain.MeasuredLayers {
+    func sourceSpatialGrainLayers(usePreparedReciprocals:Bool=true) throws -> OriginalSourcePhysicalGrain.MeasuredLayers {
         let maxima=film.sublayerMaxima
         guard useOriginalScanner,
               film.sourceDensityCurvesLayersF64 != nil,
@@ -1717,6 +1793,7 @@ struct SpectralPhysics {
                  profile.minimumDensity[ch]) * sign
             }
         }
+        let reciprocals=axes.map(SourcePreparedHDIntervals.prepare)
         let layers=(0..<(256*9)).map { profile.layerAt($0) }
         func writeSourceSublayers(
             _ density:[Double],_ result:inout [Double],
@@ -1748,9 +1825,8 @@ struct SpectralPhysics {
                     }
                     first=low-1
                     second=low
-                    let delta=axis[second]-axis[first]
-                    let reciprocal=delta == 0 ? 0.0 : 1.0/delta
-                    t=(desired-axis[first])*reciprocal
+                    t=SourcePreparedHDIntervals.fraction(desired,axis:axis,lower:first,
+                        prepared:usePreparedReciprocals ? reciprocals[ch] : nil)
                 }
                 for sl in 0..<3 {
                     let li=sl*3+ch

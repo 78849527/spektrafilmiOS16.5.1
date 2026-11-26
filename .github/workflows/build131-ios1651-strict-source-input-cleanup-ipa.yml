@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build143: unmarked pushes compile only. OPT follow-up: compact ordered printing/scanning spectral plans.
+# Build143: unmarked pushes compile only. OPT follow-up: measured H-D and sublayer interval plans.
 name: Build143 optimization regression and explicitly requested device IPA
 
 on:

@@ -69,6 +69,28 @@ struct OPTSpectralSIMDValidation {
                 }
             }
         }
+        var intervals=0
+        let axes:[[Double]] = [
+            [-2,-1,0,1,2],
+            [-2,-1,-1,0,1],
+            [3,2,1,0,-1],
+            [-0.0,0.0,0.25,0.75],
+            [0,0.03,0.1,0.2,0.9]
+        ]
+        for axis in axes {
+            let plan=SourcePreparedHDIntervals.prepare(axis)
+            for lower in 0..<(axis.count-1) {
+                let dx=axis[lower+1]-axis[lower]
+                for ratio in [-0.0,0.0,0.125,0.37,0.5,0.999,1.0] {
+                    let x=axis[lower]+ratio*dx
+                    let expected=(x-axis[lower])*(dx == 0 ? 0.0 : 1.0/dx)
+                    let actual=SourcePreparedHDIntervals.fraction(x,axis:axis,lower:lower,prepared:plan)
+                    precondition(expected.bitPattern==actual.bitPattern,"OPT H-D reciprocal mismatch")
+                    intervals+=1
+                }
+            }
+        }
+        print("PASS OPT prepared H-D intervals \(intervals) bitwise")
         print("PASS OPT prepared spectral sum \(preparedCases) cases, scalar bitwise")
         print("PASS OPT spectral SIMD \(cases) ordered accumulation cases, bitwise every wavelength")
     }
