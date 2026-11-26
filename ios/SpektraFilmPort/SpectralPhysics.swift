@@ -39,6 +39,13 @@ struct SourcePreparedSpectralSum {
 
     @inline(__always)
     func evaluate(_ densities:[Double],clampDensity:Bool,scan:Bool) -> [Double] {
+        let sum=evaluateLanes(SIMD3<Double>(densities[0],densities[1],densities[2]),
+                              clampDensity:clampDensity,scan:scan)
+        return SourceSpectralTriplet.channels(sum)
+    }
+
+    @inline(__always)
+    func evaluateLanes(_ densities:SIMD3<Double>,clampDensity:Bool,scan:Bool) -> SIMD3<Double> {
         let c0=densities[0],c1=densities[1],c2=densities[2]
         var sum=SIMD3<Double>(repeating:0.0)
         for row in rows {
@@ -50,7 +57,37 @@ struct SourcePreparedSpectralSum {
             let products=scan ? transmitted*row.weights : row.weights*transmitted
             sum = sum + products
         }
-        return SourceSpectralTriplet.channels(sum)
+        return sum
+    }
+}
+/// Original print exposure and scanner finish value-domain adapters.
+/// Keep both epsilon floors, division, libm pow/log10 and exact order.
+/// No vector approximation, FMA or reciprocal substitution.
+enum OPTSourceOpticalTriplets {
+    @inline(__always)
+    static func paperLog(_ raw:SIMD3<Double>,reference:Double,
+                         preflash:SIMD3<Double>,printEV:Double) -> SIMD3<Double> {
+        let exposure=pow(2.0,printEV)
+        let divisor=max(reference,1e-10)
+        var result=SIMD3<Double>(repeating:0)
+        for c in 0..<3 {
+            let rawBeforeEnlarger=max(0,raw[c]/divisor+preflash[c])+1e-10
+            let total=rawBeforeEnlarger*exposure
+            result[c]=log10(max(0,total)+1e-10)
+        }
+        return result
+    }
+
+    @inline(__always)
+    static func finishXYZ(_ sum:SIMD3<Double>,normalization:Double,
+                          sourceLogEpsilon:Bool) -> SIMD3<Double> {
+        let safe=max(normalization,1e-12)
+        var xyz=SIMD3<Double>(repeating:0)
+        for c in 0..<3 {
+            let normalized=max(0.0,sum[c]/safe)
+            xyz[c]=sourceLogEpsilon ? pow(10.0,log10(normalized+1e-10)) : normalized
+        }
+        return xyz
     }
 }
 /// Immutable measured-axis interval reciprocals. Never sorts or
@@ -627,6 +664,20 @@ struct SpectralPhysics {
                         guard actual.map({$0.bitPattern})==scalar.map({$0.bitPattern}),
                               prepared.map({$0.bitPattern})==scalar.map({$0.bitPattern}) else {
                             throw PhysicsError.invalid("OPT spectral print SIMD bit mismatch: "+stock)
+                        }
+                        let rawLanes=plan.evaluateLanes(
+                            SIMD3<Double>(densities[0],densities[1],densities[2]),
+                            clampDensity:clamp,scan:false)
+                        for ev in [-4.0,0.0,2.5] {
+                            let flash=[0.0,0.02,-0.01]
+                            let oldLog=OriginalPrintOptics.paperLogExposure(
+                                raw:scalar,reference:0.37,preflash:flash,printEV:ev)
+                            let newLog=OPTSourceOpticalTriplets.paperLog(rawLanes,
+                                reference:0.37,preflash:SIMD3<Double>(flash[0],flash[1],flash[2]),printEV:ev)
+                            guard SourceSpectralTriplet.channels(newLog).map({$0.bitPattern}) ==
+                                  oldLog.map({$0.bitPattern}) else {
+                                throw PhysicsError.invalid("OPT source paper log exposure bits changed: "+stock)
+                            }
                         }
                     }
                     var xyz=[0.0,0.0,0.0]
@@ -1959,7 +2010,7 @@ struct SpectralPhysics {
         let initial=(0..<3).map {
             film.curve(logRaw[$0],channel:$0)
         }
-        guard (logRaw+initial).allSatisfy({ $0.isFinite }) else {
+        guard logRaw.allSatisfy({$0.isFinite}),initial.allSatisfy({$0.isFinite}) else {
             throw PhysicsError.invalid("原版镜头后 H-D 出现 Inf/NaN")
         }
         return SourceSpatialInput(
@@ -2012,7 +2063,7 @@ struct SpectralPhysics {
         let initial = (0..<3).map {
             film.curve(logE[$0],channel:$0)
         }
-        guard (logE+initial).allSatisfy({ $0.isFinite }) else {
+        guard logE.allSatisfy({$0.isFinite}),initial.allSatisfy({$0.isFinite}) else {
             throw PhysicsError.invalid("源胶片 H-D 输入或输出非有限")
         }
         return SourceSpatialInput(rawLog:logE,initialDensity:initial)
@@ -2068,16 +2119,27 @@ struct SpectralPhysics {
             throw PhysicsError.invalid(
                 "原版放大机扩散只能接入负片→原版光学印相→相纸 H-D 链，禁止近似")
         }
-        let raw=Self.printRaw(
-            filmDensities:filmDensity,film:film,
-            weights:paperWeights,clampDensity:false,prepared:preparedPrintSum
-        )
-        let sourceLog=OriginalPrintOptics.paperLogExposure(
-            raw:raw,reference:printReference,
-            preflash:opticalPreflashRaw,
-            printEV:paperEV+correctedPrintExposureEV
-        )
-        let irradiance=sourceLog.map { pow(10.0,$0) }
+        let irradiance:[Double]
+        if let prepared=preparedPrintSum {
+            let raw=prepared.evaluateLanes(
+                SIMD3<Double>(filmDensity[0],filmDensity[1],filmDensity[2]),
+                clampDensity:false,scan:false)
+            let sourceLog=OPTSourceOpticalTriplets.paperLog(raw,reference:printReference,
+                preflash:SIMD3<Double>(opticalPreflashRaw[0],opticalPreflashRaw[1],opticalPreflashRaw[2]),
+                printEV:paperEV+correctedPrintExposureEV)
+            irradiance=[pow(10.0,sourceLog[0]),pow(10.0,sourceLog[1]),pow(10.0,sourceLog[2])]
+        } else {
+            let raw=Self.printRaw(
+                filmDensities:filmDensity,film:film,
+                weights:paperWeights,clampDensity:false,prepared:nil
+            )
+            let sourceLog=OriginalPrintOptics.paperLogExposure(
+                raw:raw,reference:printReference,
+                preflash:opticalPreflashRaw,
+                printEV:paperEV+correctedPrintExposureEV
+            )
+            irradiance=sourceLog.map { pow(10.0,$0) }
+        }
         guard irradiance.allSatisfy({ $0.isFinite && $0>=0 }) else {
             throw PhysicsError.invalid("原版相纸曝光之前光谱 RAW 非有限")
         }
@@ -2592,6 +2654,24 @@ struct SpectralPhysics {
                                        paperStageObserver: (([Double], [Double]) -> Void)? = nil,
                                        prepared:SourcePreparedSpectralSum?=nil
     ) -> [Double] {
+        // Exact prepared source path keeps the spectral sum and paper
+        // log exposure in fixed-size values. Only materialize log exposure
+        // if the real paper stage observer requested it.
+        if opticalPrint,let prepared,let sourceHD {
+            let density=SIMD3<Double>(filmDensities[0],filmDensities[1],filmDensities[2])
+            let raw=prepared.evaluateLanes(density,clampDensity:false,scan:false)
+            let exposure=OPTSourceOpticalTriplets.paperLog(raw,reference:reference,
+                preflash:SIMD3<Double>(preflashRaw[0],preflashRaw[1],preflashRaw[2]),printEV:printEV)
+            let developed=[sourceHD.density(exposure[0],channel:0),
+                           sourceHD.density(exposure[1],channel:1),
+                           sourceHD.density(exposure[2],channel:2)]
+            if let paperStageObserver {
+                paperStageObserver(SourceSpectralTriplet.channels(exposure),developed)
+            }
+            return developed
+        }
+        // Original scalar/array reference remains available via nil plan,
+        // and compatibility print morphology is unchanged.
         let raw = printRaw(
             filmDensities: filmDensities, film: film, weights: weights,
             clampDensity: !opticalPrint,prepared:prepared
@@ -2643,10 +2723,12 @@ struct SpectralPhysics {
         prepared:SourcePreparedSpectralSum?=nil
     ) -> [Double] {
         if let prepared {
-            return Build88OriginalScannerSpectrum.finishXYZ(
-                prepared.evaluate(densities,clampDensity:false,scan:true),
-                normalization:normalization,sourceLogEpsilon:sourceLogEpsilon
-            )
+            let sum=prepared.evaluateLanes(
+                SIMD3<Double>(densities[0],densities[1],densities[2]),
+                clampDensity:false,scan:true)
+            let xyz=OPTSourceOpticalTriplets.finishXYZ(sum,normalization:normalization,
+                                                       sourceLogEpsilon:sourceLogEpsilon)
+            return SourceSpectralTriplet.channels(xyz)
         }
         var xyz = SIMD3<Double>(repeating:0.0)
         for wl in paper.preparedScannerValidWavelengths {

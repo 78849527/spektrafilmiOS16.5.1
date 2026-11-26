@@ -157,6 +157,13 @@
 - DIR inhibitor 不再拼接 density+maximum+matrix+[shift] 临时数组，单独校验等价；按 donor 原顺序逐次 SIMD3 加权，保留 highExposureShift 的运算顺序和原标量参考。80 real-stock Python oracle 加精确位比较。不得宣称减少实际 ARC 或已经改善真机性能。
 - compile-only，原分支、生产串行、原 FFT、Float64 和内存预算不变。下一阶段继续减少相机/印相 API 边界数组并改进交替测量。
 
+## 印相扫描值类型优化
+
+- 45823480259 / 90965d7：Linux 6/6、macOS 69 passed + 4 packaging skips，上一轮 Hanatos/DIR 数值与编译 gates 完成；非真机性能验证。
+- PreparedSpectralSum 增加 evaluateLanes，保留旧 Array API 作为边界；原版印相把波长积分结果直接传至固定三通道曝光和 source CDF H-D，不再为 raw/log exposure 各分配数组（有真实 paper observer 时才转换 log exposure）。相纸扩散前光子与 scanner XYZ 归一化、log10→pow10 同样减少中间数组。保持原版两个 1e-10 floors、归一化除法、源顺序、libm 调用、原随机数及所有空间滤波。兼容印相、nil plan 原数组路径保留；无缓存语义变化。
+- 相机 H-D 有限值校验不再拼接两个 3 通道数组。新增固定值/边界/符号零测试和实际 stock 印相 log bits 对照，继续 Debug/Release helper 验证及原版历史 gates。实际 A15 提速待测。
+- 下一阶段审计 stage cache 的完整依赖键与逐阶段失效策略；本轮未实现整图结果缓存或线程转正，不申请 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

@@ -69,6 +69,34 @@ struct OPTSpectralSIMDValidation {
                 }
             }
         }
+        var opticalCases=0
+        for raw in [SIMD3<Double>(0,-0.0,0),SIMD3<Double>(0.1,0.3,1.5),
+                    SIMD3<Double>(-1,1e-12,2.0),SIMD3<Double>(1e-100,1e100,1e-10)] {
+            for reference in [-0.0,1e-12,0.37,1.0,4.2] {
+                for flash in [SIMD3<Double>(repeating:0),SIMD3<Double>(-0.03,0.02,0.1)] {
+                    for ev in [-4.0,-0.25,0.0,1.25,4.0] {
+                        let old=(0..<3).map { c -> Double in
+                            let before=max(0,raw[c]/max(reference,1e-10)+flash[c])+1e-10
+                            let total=before*pow(2.0,ev)
+                            return log10(max(0,total)+1e-10)
+                        }
+                        let actual=OPTSourceOpticalTriplets.paperLog(raw,reference:reference,preflash:flash,printEV:ev)
+                        precondition(SourceSpectralTriplet.channels(actual).map{$0.bitPattern}==old.map{$0.bitPattern})
+                        opticalCases+=1
+                    }
+                }
+                for eps in [false,true] {
+                    let old=(0..<3).map { c -> Double in
+                        let normalized=max(0.0,raw[c]/max(reference,1e-12))
+                        return eps ? pow(10.0,log10(normalized+1e-10)) : normalized
+                    }
+                    let actual=OPTSourceOpticalTriplets.finishXYZ(raw,normalization:reference,sourceLogEpsilon:eps)
+                    precondition(SourceSpectralTriplet.channels(actual).map{$0.bitPattern}==old.map{$0.bitPattern})
+                    opticalCases+=1
+                }
+            }
+        }
+        print("PASS OPT source optical triplet paper floors and scanner log/inverse \(opticalCases) bitwise")
         var intervals=0
         let axes:[[Double]] = [
             [-2,-1,0,1,2],
