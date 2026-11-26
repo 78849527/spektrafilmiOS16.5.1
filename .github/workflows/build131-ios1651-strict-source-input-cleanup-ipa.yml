@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build145: explicitly requested device candidate, serial remains production default; full CI before publication.
+# Build145 follow-up: allocation-free Hanatos inner lanes and ordered DIR donor SIMD; compile-only.
 name: Build145 optimization regression and explicitly requested device IPA
 
 on:

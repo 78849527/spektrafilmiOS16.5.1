@@ -213,12 +213,28 @@ enum Build84OriginalFilmDIR {
     /// Upstream FilmingStage currently passes a zero shift by default.
     static func inhibitors(
         density: [Double], maximum: [Double], matrix: [Double],
-        positive: Bool, highExposureShift: Double = 0
+        positive: Bool, highExposureShift: Double = 0,
+        scalarReference:Bool=false
     ) throws -> [Double] {
         guard density.count == 3, maximum.count == 3, matrix.count == 9,
-              (density+maximum+matrix+[highExposureShift])
-                  .allSatisfy({ $0.isFinite }) else {
+              density.allSatisfy({$0.isFinite}),
+              maximum.allSatisfy({$0.isFinite}),
+              matrix.allSatisfy({$0.isFinite}),
+              highExposureShift.isFinite else {
             throw Failure.invalid("Build84 原版 DIR 银密度或矩阵无效")
+        }
+        if !scalarReference {
+            var sum=SIMD3<Double>(repeating:0.0)
+            for donor in 0..<3 {
+                let original=positive ? maximum[donor]-density[donor] : density[donor]
+                let silver=original+highExposureShift*original*original
+                let k=donor*3
+                sum=sum+silver*SIMD3<Double>(matrix[k],matrix[k+1],matrix[k+2])
+            }
+            guard sum[0].isFinite,sum[1].isFinite,sum[2].isFinite else {
+                throw Failure.invalid("Build84 原版 DIR 抑制量溢出")
+            }
+            return [sum[0],sum[1],sum[2]]
         }
         let silver = (0..<3).map { donor -> Double in
             let original = positive

@@ -150,6 +150,13 @@
 - 45808271485 / 482ad5e：Linux 6/6 通过，macOS 未分配运行器；本次不声称新增并行路径已通过。集中候选 v1.8.111/145，一次性 [runner:intel] [device-ipa:145]，使用 Build144 已成功的 Intel 主机，不改变将来的 Apple Silicon 默认或 iPhoneOS arm64 目标。所有旧数值门槛及新增独立像素 worker gate、真实 Xcode 编译和 exact-SHA 发布门槛全部保留。
 - 设备操作：高级 → 验证状态与诊断 → Float64 串行 / 多核对照，自动 1/2/4 worker 与两种固定输入场景；分享单份性能反馈 JSON。此次仅对照，不改变正式冲印线程数或用户设置；并行整图候选需设备数值、速度、内存证据，测试不能代替全尺寸 RAW 原版认证。
 
+## Build145 A15 对照结论与串行热循环
+
+- 真机 9903c72 / iOS16.5.1：固定无颗粒 1/2/4 workers 2.646252/2.859015/4.768409s，受控九层颗粒+相纸扩散 1.430958/1.452164/1.822058s；6/6 bitMismatches=0、maxAbsoluteError=0。无颗粒 4 worker 仅15个采样（约190个理论25ms周期），峰值不能严格比较；线程调度、ARC、热状态均是待验证假设。保持生产1 worker，不转正多核。
+- Hanatos rawLanes 使用 SIMD3 XYZ/输出及 SIMD4 Mitchell 权重，消除 XYZ、两组权重、旧标量 scratch 和中间结果数组；保留零起始、RGB donor、16个 reflected taps、原 pow 与归一化除法、brightness 乘法。旧 scalarInterpolation=true 完整参考保留。Array API 仅在边界构建输出；所有实际测量 stock×3 color space 的扩充样本验证 bitwise，包括 signed zero 和极小值。尚未实测提速。
+- DIR inhibitor 不再拼接 density+maximum+matrix+[shift] 临时数组，单独校验等价；按 donor 原顺序逐次 SIMD3 加权，保留 highExposureShift 的运算顺序和原标量参考。80 real-stock Python oracle 加精确位比较。不得宣称减少实际 ARC 或已经改善真机性能。
+- compile-only，原分支、生产串行、原 FFT、Float64 和内存预算不变。下一阶段继续减少相机/印相 API 边界数组并改进交替测量。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

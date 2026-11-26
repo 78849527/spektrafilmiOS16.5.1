@@ -97,6 +97,12 @@ enum Build84DynamicDIR80StockValidation {
                 let correctedLog:[Double]
                 if active {
                     let inhibitors=try prepared.inhibitor(developed)
+                    let scalar=try Build84OriginalFilmDIR.inhibitors(
+                        density:developed,maximum:prepared.maximum,matrix:prepared.matrix,
+                        positive:prepared.positive,highExposureShift:settings.highExposureShift,
+                        scalarReference:true)
+                    precondition(inhibitors.map(\.bitPattern)==scalar.map(\.bitPattern),
+                                 "OPT DIR donor SIMD changed ordered bits")
                     correctedLog=(0..<3).map {
                         input[$0]-inhibitors[$0]
                     }

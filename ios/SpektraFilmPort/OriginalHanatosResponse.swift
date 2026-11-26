@@ -168,6 +168,10 @@ struct OriginalHanatosResponse {
 
     func raw(linearRGB: [Double],scalarInterpolation:Bool=false) -> [Double] {
         guard linearRGB.count == 3 else { return [] }
+        if !scalarInterpolation {
+            let raw=rawLanes(SIMD3<Double>(linearRGB[0],linearRGB[1],linearRGB[2]))
+            return [raw[0],raw[1],raw[2]]
+        }
         // Original _rgb_to_tc_b: selected source linear RGB -> XYZ
         // with the selected stock's reference illuminant and CAT16.
         // The precise sRGB/ProPhoto matrix comes from colour.RGB_to_XYZ.
@@ -186,6 +190,55 @@ struct OriginalHanatosResponse {
         let ty = min(1.0, max(0.0, y / max(1.0 - x, 1e-10)))
         let lut = interpolateMitchell(x: tx, y: ty,scalarReference:scalarInterpolation)
         return lut.map { $0 * brightness }
+    }
+
+    // Fixed-size value path. No XYZ, wx/wy, scalar scratch or result
+    // arrays in the inner pixel calculation. Preserve initial +0.0,
+    // donor order, multiplication order, reflected taps and division.
+    @inline(__always)
+    func rawLanes(_ rgb:SIMD3<Double>) -> SIMD3<Double> {
+        let m=rgbToXYZ
+        var xyz=SIMD3<Double>(repeating:0.0)
+        for donor in 0..<3 {
+            let k=donor*3
+            xyz=xyz + SIMD3<Double>(m[k],m[k+1],m[k+2])*rgb[donor]
+        }
+        var brightness=0.0
+        for c in 0..<3 {brightness += xyz[c]}
+        let den=max(brightness,1e-10)
+        let x=xyz[0]/den
+        let y=xyz[1]/den
+        let tx=min(1.0,max(0.0,(1.0-x)*(1.0-x)))
+        let ty=min(1.0,max(0.0,y/max(1.0-x,1e-10)))
+        let upper=Double(n-1)
+        let xx=min(upper,max(0.0,tx*upper))
+        let yy=min(upper,max(0.0,ty*upper))
+        let baseX=min(n-2,Int(floor(xx)))
+        let baseY=min(n-2,Int(floor(yy)))
+        let fracX=xx-Double(baseX)
+        let fracY=yy-Double(baseY)
+        var wx=SIMD4<Double>(repeating:0)
+        var wy=SIMD4<Double>(repeating:0)
+        for i in 0..<4 {
+            wx[i]=Self.mitchell(fracX+1.0-Double(i))
+            wy[i]=Self.mitchell(fracY+1.0-Double(i))
+        }
+        var lanes=SIMD3<Double>(repeating:0.0)
+        var total=0.0
+        for i in 0..<4 {
+            let ix=Self.reflected(baseX-1+i,n)
+            for j in 0..<4 {
+                let iy=Self.reflected(baseY-1+j,n)
+                let weight=wx[i]*wy[j]
+                total += weight
+                let offset=(ix*n+iy)*3
+                let values=SIMD3<Double>(rawLUT[offset],rawLUT[offset+1],rawLUT[offset+2])
+                let products=weight*values
+                lanes=lanes+products
+            }
+        }
+        if total != 0 {lanes=lanes/total}
+        return lanes*brightness
     }
 
     private func interpolateMitchell(x: Double, y: Double,scalarReference:Bool) -> [Double] {
