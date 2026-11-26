@@ -178,6 +178,12 @@
 - 实际 fixture 增加冷渲染中主动清理、过期写入拒绝、下一次必 miss、最终输出逐位相同。单独 UI「Float64 胶片密度缓存对照」，固定 1024×768 ACES 输入，每个 case 独立原版 fused vs split/hot：冷、相纸 EV、纸种、扫描 lens、相机 EV、DIR、输入变化、渲染中清理后重建、再命中；显式不支持颗粒测试。记录真实 bits、maxError、冷热耗时、温度状态、25ms memory；真机小图不代表全尺寸收益或 Python 认证。
 - 与其他 RAW/FFT/多核诊断共享互斥，静态门槛明确六入口。仍不启用真实 RAW 缓存或改生产线程，额外 24 B/px conservative admission 不变。CI 尚待本提交执行；计划集中 Build146，未发布。
 
+## Build146 集中设备候选
+
+- v1.8.112/146：合并 Build145 后 Hanatos/有序 DIR、印相/扫描 Float64 值类型优化及局部胶片密度复用诊断。45833771720/ec0cbba 查询时 Linux 6/6、macOS 已进入真实 iPhoneOS 编译，尚不能宣称通过。集中工作流重新执行全部历史及新增 gates，再以精确 SHA 发布未签名 IPA。沿用已成功 Intel 主机，本次显式 [runner:intel] [device-ipa:146]；Apple Silicon 默认、iPhoneOS arm64、iOS16.5 部署目标不变。
+- 设备测试：高级 → 验证状态与诊断 → Float64 胶片密度缓存对照；使用固定 1024×768 ACES 图，检查9个冷热/失效场景及不支持颗粒的拒绝；另建议同一 12MP RAW 无颗粒/九层颗粒精细预览与 JPEG/TIFF16，回传性能 JSON。固定图和真实 RAW 不混作同一 benchmark；不同输入不声称严格加速比。
+- 生产仍串行，原版 FFT、颗粒随机序列、Float64、动态内存准入、13MP 几何门槛不变；缓存仅局部诊断，任何候选不自动转正。无真机报告不声称完整原版认证或实际提速。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
