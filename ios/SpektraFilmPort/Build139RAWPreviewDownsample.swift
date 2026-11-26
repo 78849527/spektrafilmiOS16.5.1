@@ -99,6 +99,8 @@ enum Build139RAWPreviewDownsample {
         private let lock=NSLock()
         private var entry:(key:FullSourceKey,value:Value)?
         private var generation:UInt64=0
+        // Record only fixed disposition labels, never source identity.
+        private var lastDisposition="cold"
 
         func begin() -> UInt64 {
             lock.lock()
@@ -108,27 +110,48 @@ enum Build139RAWPreviewDownsample {
         }
 
         func take(_ key:FullSourceKey?,generation expected:UInt64) -> Value? {
+            takeWithDisposition(key,generation:expected).value
+        }
+
+        func takeWithDisposition(_ key:FullSourceKey?,generation expected:UInt64)
+            -> (value:Value?,reason:String) {
             lock.lock()
             defer {lock.unlock()}
-            guard expected==generation else {return nil}
+            guard expected==generation else {return (nil,"lease_revoked")}
+            let reason:String
+            if key==nil {reason="identity_unavailable"}
+            else if entry==nil {reason=lastDisposition}
+            else if entry?.key != key {reason="identity_changed"}
+            else {reason="hit"}
             let value = key != nil && entry?.key==key ? entry?.value : nil
             entry=nil
-            return value
+            lastDisposition=value == nil ? reason : "consumed"
+            return (value,reason)
         }
 
+        @discardableResult
         func store(_ value:Value,key:FullSourceKey,generation expected:UInt64,
-                   canRetain:Bool) {
+                   canRetain:Bool) -> String {
             lock.lock()
             defer {lock.unlock()}
-            guard expected==generation,canRetain,!Task.isCancelled else {return}
+            // A stale job cannot overwrite the newer lease's disposition.
+            guard expected==generation else {return "lease_revoked"}
+            guard !Task.isCancelled else {return "cancelled"}
+            guard canRetain else {
+                if entry==nil {lastDisposition="headroom_policy"}
+                return "headroom_policy"
+            }
             entry=(key,value)
+            lastDisposition="stored"
+            return "stored"
         }
 
-        func clear() {
+        func clear(reason:String="explicit_clear") {
             lock.lock()
             defer {lock.unlock()}
             generation &+= 1
             entry=nil
+            lastDisposition=reason
         }
     }
 

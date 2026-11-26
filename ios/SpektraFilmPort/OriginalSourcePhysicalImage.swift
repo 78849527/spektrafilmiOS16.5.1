@@ -425,6 +425,7 @@ enum OriginalSourcePhysicalImage {
         try Task.checkCancellation()
         phaseMemoryObserver?("source_input_ready")
         let engine=try parameters.createEngine()
+        phaseMemoryObserver?("optical_engine_ready")
         let source=try engine.sourceSpatialFilmParameters()
         let dynamicDIR:Build84OriginalFilmDIR.Prepared?
         if let custom=parameters.sourceDIR {
@@ -439,6 +440,7 @@ enum OriginalSourcePhysicalImage {
             dynamicDIR=nil
         }
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
+        phaseMemoryObserver?("optical_parameters_ready")
         let size=w*h*3
         var initialObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
@@ -541,6 +543,7 @@ enum OriginalSourcePhysicalImage {
                 stageDoubleObserver?("filmScatterHalation",frame.rgb)
             }
         }
+        if cameraPreActive {phaseMemoryObserver?("camera_pre_optics_ready")}
         // If no camera pre-stage was selected, source pre-processing is
         // identity on the supported uncropped, 1:1 8-bit sRGB input.
         // Preserve the exact former production image (no copies if not observed).
@@ -780,6 +783,9 @@ enum OriginalSourcePhysicalImage {
                 for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
             }
         }
+        if controlledFilmGrain || activePrintDiffusion {
+            phaseMemoryObserver?("print_or_scan_pixels_ready")
+        }
         if activePrintDiffusion {
             let pixelUM=parameters.cameraOptics.filmFormatMM * 1000.0 /
                 Double(max(w,h))
@@ -790,6 +796,7 @@ enum OriginalSourcePhysicalImage {
                 settings:parameters.printDiffusion
             )
             stageDoubleObserver?("printDiffusion",frame.rgb)
+            phaseMemoryObserver?("paper_diffusion_ready")
             for p in 0..<(w*h) {
                 if p & 4095 == 0 { try Task.checkCancellation() }
                 let k=p*3
@@ -804,6 +811,7 @@ enum OriginalSourcePhysicalImage {
                 for c in 0..<3 { frame.rgb[k+c]=output[c] }
             }
         }
+        if activePrintDiffusion {phaseMemoryObserver?("paper_scan_pixels_ready")}
         if let paperLogObserved {
             stageDoubleObserver?("paperLogExposure",paperLogObserved)
         }
@@ -825,6 +833,7 @@ enum OriginalSourcePhysicalImage {
                 controlledSeed:parameters.scannerGlareSeed
             )
             stageDoubleObserver?("scannerGlareXYZ",frame.rgb)
+            phaseMemoryObserver?("scanner_glare_ready")
         }
         if let exactGamut=parameters.sourceOutputGamut {
             // Build89 source order: FULL spectral XYZ incl black/white
@@ -860,6 +869,9 @@ enum OriginalSourcePhysicalImage {
             }
             stageDoubleObserver?("scannerGlareLinearRGB",frame.rgb)
         }
+        if parameters.sourceOutputGamut != nil || controlledScannerGlare {
+            phaseMemoryObserver?("scanner_gamut_ready")
+        }
         if parameters.scannerOptics.active {
             // Source ScanningStage applies lens FIR/YVV and Unsharp only
             // AFTER the true XYZ→gamut RGB conversion.
@@ -869,6 +881,7 @@ enum OriginalSourcePhysicalImage {
                 stageDoubleObserver:stageDoubleObserver
             )
         }
+        if parameters.scannerOptics.active {phaseMemoryObserver?("scanner_lens_ready")}
         if parameters.sourceOutputCCTFEncoding &&
            (parameters.sourceOutputGamut != nil ||
             parameters.scannerOptics.active || controlledScannerGlare) {

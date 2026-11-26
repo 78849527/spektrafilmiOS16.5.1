@@ -3977,7 +3977,7 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(
                 for:UIApplication.didReceiveMemoryWarningNotification
             )) { _ in
-                P1OriginalRawACESIngress.clearAllInputCaches()
+                P1OriginalRawACESIngress.clearAllInputCaches(reason:"memory_warning")
                 OriginalSourceDiffusion.clearPreparedPSFCache()
             }
             .onAppear {

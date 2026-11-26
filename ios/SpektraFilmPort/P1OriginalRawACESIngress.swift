@@ -39,9 +39,9 @@ enum P1OriginalRawACESIngress {
         previewInputCache.clear()
     }
 
-    static func clearAllInputCaches() {
+    static func clearAllInputCaches(reason:String="source_invalidation") {
         previewInputCache.clear()
-        fullInputCache.clear()
+        fullInputCache.clear(reason:reason)
     }
 
     struct Source {
@@ -118,7 +118,8 @@ enum P1OriginalRawACESIngress {
     ) throws -> (source:Source,key:Build139RAWPreviewDownsample.FullSourceKey?,generation:UInt64) {
         let generation=fullInputCache.begin()
         let key=try fullSourceKey(url)
-        if let cached=fullInputCache.take(key,generation:generation) {
+        let lookup=fullInputCache.takeWithDisposition(key,generation:generation)
+        if let cached=lookup.value {
             // No new native allocation on hit; the decoded bytes are
             // already resident. Keep the full-grid admission contract.
             guard cached.width>0,cached.height>0,
@@ -134,7 +135,7 @@ enum P1OriginalRawACESIngress {
             OPTDeviceFeedback.mark("full_cache_hit",["width":String(cached.width),"height":String(cached.height)])
             return (cached,key,generation)
         }
-        OPTDeviceFeedback.mark("full_cache_miss_decode_begin")
+        OPTDeviceFeedback.mark("full_cache_miss_decode_begin",["reason":lookup.reason])
         let source=try open(url,maximumAllowedPixels:maximumAllowedPixels)
         OPTDeviceFeedback.mark("decode_done",["width":String(source.width),"height":String(source.height)])
         let verifiedKey=try fullSourceKey(url)
@@ -150,7 +151,11 @@ enum P1OriginalRawACESIngress {
         _ source:Source,key:Build139RAWPreviewDownsample.FullSourceKey?,
         generation:UInt64
     ) {
-        guard let key,!Task.isCancelled else {return}
+        guard let key,!Task.isCancelled else {
+            OPTDeviceFeedback.mark("full_cache_retention_policy",
+                ["eligible":"false","disposition":Task.isCancelled ? "cancelled" : "identity_unavailable"])
+            return
+        }
         // This is only a cache-retention heuristic, NOT a render limit.
         // Live headroom already excludes the currently resident buffer.
         // Retain at most one packed ACES16 buffer if ample margin remains.
@@ -160,9 +165,28 @@ enum P1OriginalRawACESIngress {
         let headroom=ProcessInfo.processInfo.physicalMemory/3
         #endif
         let eligible=headroom>0 && UInt64(source.packedRGB16.count)<=headroom/5
-        fullInputCache.store(source,key:key,generation:generation,canRetain:eligible)
+        let disposition=fullInputCache.store(source,key:key,generation:generation,canRetain:eligible)
         OPTDeviceFeedback.mark("full_cache_retention_policy",["eligible":String(eligible),
-            "packedBytes":String(source.packedRGB16.count)])
+            "disposition":disposition,"packedBytes":String(source.packedRGB16.count)])
+    }
+
+    private static func recordOpticalOptions(_ p:OriginalSourcePhysicalImage.Parameters,cropped:Bool) {
+        OPTDeviceFeedback.mark("optical_options",[
+            "cameraEV":String(p.cameraEV),"paperEV":String(p.paperEV),
+            "cropped":String(cropped),"grain":String(p.sourceGrain.active),
+            "grainSublayers":String(p.sourceGrain.sublayersActive),
+            "grainFastStats":String(p.sourceGrain.useFastStats),
+            "grainUnseededParallel":String(p.sourceGrain.useUnseededParallel),
+            "cameraOptics":String(p.cameraOptics.active),
+            "halation":String(p.filmHalation.active),
+            "printDiffusion":String(p.printDiffusion.active),
+            "scannerGlare":String(p.scannerGlare.active),
+            "scannerOptics":String(p.scannerOptics.active),
+            "sourceOutputGamut":String(p.sourceOutputGamut != nil),
+            "outputCCTF":String(p.sourceOutputCCTFEncoding),
+            "dir":String(p.sourceDIR?.active ?? p.sourceCouplersActive),
+            "cameraRawMethod":p.cameraRawMethod.rawValue
+        ])
     }
 
     struct PreviewWithGeometry {
@@ -236,6 +260,7 @@ enum P1OriginalRawACESIngress {
         let working=try selectedSource(decoded,crop:crop)
         OPTDeviceFeedback.mark("full_optical_admission",["width":String(working.width),
             "height":String(working.height),"film":selected.filmID,"paper":selected.paperID])
+        recordOpticalOptions(selected,cropped:crop != nil)
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:working.width,height:working.height,parameters:selected
         )
@@ -290,7 +315,7 @@ enum P1OriginalRawACESIngress {
         // OPT-01: reuse only the original Build139 linear input; all
         // optical settings are applied anew. Full preview/export never use it.
         // Do not stack an unused full-size cache with a quick preview.
-        fullInputCache.clear()
+        fullInputCache.clear(reason:"switch_to_quick_preview")
         try Task.checkCancellation()
         let cropKey = crop.map {
             [$0.sourceWidth,$0.sourceHeight,$0.x,$0.y,$0.width,$0.height]
@@ -336,6 +361,7 @@ enum P1OriginalRawACESIngress {
         try Task.checkCancellation()
         OPTDeviceFeedback.mark("preview_optical_admission",["width":String(reduced.width),
             "height":String(reduced.height),"film":selected.filmID,"paper":selected.paperID])
+        recordOpticalOptions(selected,cropped:crop != nil)
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:reduced.width,height:reduced.height,parameters:selected
         )

@@ -124,6 +124,26 @@ struct Build139RAWPreviewDownsampleValidation {
         full.store(original,key:fullKey,generation:g3,canRetain:true)
         let g4=full.begin()
         require(full.take(fullKey,generation:g4)==nil,"revoked full cache lease")
+        full.clear(reason:"memory_warning")
+        let g5=full.begin()
+        require(full.takeWithDisposition(fullKey,generation:g5).reason=="memory_warning",
+                "eviction reason survives until next decode")
+        require(full.store(original,key:fullKey,generation:g5,canRetain:true)=="stored",
+                "actual successful cache retention")
+        let g6=full.begin()
+        require(full.takeWithDisposition(changedHash,generation:g6).reason=="identity_changed",
+                "same metadata changed content reason")
+        require(full.store(original,key:fullKey,generation:g6,canRetain:false)=="headroom_policy",
+                "actual retention refusal")
+        require(full.takeWithDisposition(fullKey,generation:g6).reason=="headroom_policy",
+                "refusal survives to lookup")
+        full.clear(reason:"switch_to_quick_preview")
+        require(full.store(original,key:fullKey,generation:g6,canRetain:true)=="lease_revoked",
+                "stale store reports revoked")
+        let g7=full.begin()
+        require(full.takeWithDisposition(fullKey,generation:g7).reason=="switch_to_quick_preview",
+                "revoked writer cannot overwrite clear reason")
+        print("PASS OPT full cache actual retention and privacy-safe eviction dispositions")
         print("PASS OPT-01 full packed RAW cache: exact bytes, content key, take, low headroom, eviction")
         print("PASS OPT-01 immutable preview input cache, geometry/file identity and eviction")
         print("PASS Build139 RAW linear ACES16 area input: 512x384 -> 256x192, " +
