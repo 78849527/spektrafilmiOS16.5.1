@@ -223,6 +223,9 @@ enum OriginalSourcePhysicalGrain {
         // Reuse its scalar buffer for full-frame FIR/YVV output.
         var cloud=settings.dyeCloudBlurUM>0
             ? [Double](repeating:0,count:pixels) : []
+        // Private to this render. Allocate only on the first active cloud
+        // blur, then overwrite the same full-frame scalar workspace.
+        var cloudIntermediate=[Double]()
         var controlledFastSampler:OriginalSourceNumbaFastCounts? =
             settings.useFastStats && !settings.useUnseededParallel
                 ? OriginalSourceNumbaFastCounts(seed:settings.fastStatsSeed!)
@@ -241,6 +244,7 @@ enum OriginalSourcePhysicalGrain {
                   )
                 : nil
         for ch in 0..<3 {
+            let uniformity=settings.uniformity[ch]
             if !retainAllSublayers {
                 // Invert only this channel's three measured layers when
                 // the production profile provides its exact channel writer.
@@ -277,10 +281,11 @@ enum OriginalSourcePhysicalGrain {
             for sl in 0..<3 {
                 let li=sl*3+ch
                 let n=particleN[li],od=densityOD[li]
+                let minimum=minLayers[li],maximum=densityMax[li]
                 for p in 0..<pixels {
-                    let sourceD=layerInputs[retainAllSublayers ? p*9+li : p*3+sl]+minLayers[li]
-                    let probability=min(1.0-1e-6,max(1e-6,sourceD/densityMax[li]))
-                    let saturation=1.0-probability*settings.uniformity[ch]*(1.0-1e-6)
+                    let sourceD=layerInputs[retainAllSublayers ? p*9+li : p*3+sl]+minimum
+                    let probability=min(1.0-1e-6,max(1e-6,sourceD/maximum))
+                    let saturation=1.0-probability*uniformity*(1.0-1e-6)
                     probabilities[p]=probability
                     rates[p]=n/saturation
                 }
@@ -310,24 +315,32 @@ enum OriginalSourcePhysicalGrain {
                 let sigma=settings.dyeCloudBlurUM*sqrt(od)
                 if sigma>0 {
                     for p in 0..<pixels {
-                        let saturation=1.0-probabilities[p]*settings.uniformity[ch]*(1.0-1e-6)
+                        let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
                         cloud[p]=Double(counts[p])*od*saturation
                     }
                     // The previous RGB filter wrote channel zero only.
                     // Preserve same full-frame reflect FIR/YVV in Float64,
                     // without allocating two unused RGB channels.
-                    try SourceGrainScalarGaussian.blurInPlace(
-                        &cloud,width:width,height:height,sigma:sigma
-                    )
+                    if retainAllSublayers {
+                        try SourceGrainScalarGaussian.blurInPlace(
+                            &cloud,width:width,height:height,sigma:sigma
+                        )
+                    } else {
+                        try SourceGrainScalarGaussian.blurInPlace(
+                            &cloud,width:width,height:height,sigma:sigma,
+                            intermediate:&cloudIntermediate
+                        )
+                    }
                     for p in 0..<pixels {out[p*3+ch]+=cloud[p]}
                 } else {
                     for p in 0..<pixels {
-                        let saturation=1.0-probabilities[p]*settings.uniformity[ch]*(1.0-1e-6)
+                        let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
                         out[p*3+ch]+=Double(counts[p])*od*saturation
                     }
                 }
             }
         }
+        cloudIntermediate.removeAll(keepingCapacity:false)
         phaseMemoryObserver?("grain_particle_clouds_ready")
         stageObserver?("sourceGrainDyeClouds",out)
 

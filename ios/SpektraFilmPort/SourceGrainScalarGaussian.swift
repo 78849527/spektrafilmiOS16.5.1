@@ -59,6 +59,18 @@ enum SourceGrainScalarGaussian {
     static func blurInPlace(
         _ input:inout [Double],width:Int,height:Int,sigma:Double
     ) throws {
+        var intermediate=[Double]()
+        try blurInPlace(&input,width:width,height:height,sigma:sigma,
+                        intermediate:&intermediate)
+    }
+
+    /// One render may reuse this private scratch plane for all nine layers.
+    /// Each FIR/YVV first pass overwrites every element before any read.
+    /// No cached kernel output, cross-render state or spatial approximation.
+    static func blurInPlace(
+        _ input:inout [Double],width:Int,height:Int,sigma:Double,
+        intermediate:inout [Double]
+    ) throws {
         guard width>0,height>0,width<=8192,height<=8192,
               width<=32_000_000/height,
               input.count==width*height,
@@ -68,7 +80,9 @@ enum SourceGrainScalarGaussian {
         }
         if sigma<=0 {return}
         let pixels=width*height
-        var intermediate=[Double](repeating:0,count:pixels)
+        if intermediate.count != pixels {
+            intermediate=[Double](repeating:0,count:pixels)
+        }
         if sigma<3.0 {
             // Exact Python source order: reflect FIR vertical, horizontal.
             let kernel=weights(sigma)

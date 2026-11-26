@@ -9,6 +9,7 @@ struct Build116GrainScalarGaussianValidation {
         let geometries=[(1,1),(1,13),(17,1),(3,5),(19,23),(101,37)]
         let sigmas:[Double]=[0,0.08,0.4,0.65,1.0,2.99,3.0,3.5,5.5,12.0]
         var cases=0
+        var reused=[Double]()
         for (w,h) in geometries {
             let n=w*h
             let source=(0..<n).map { p in
@@ -20,6 +21,18 @@ struct Build116GrainScalarGaussianValidation {
                 try SourceGrainScalarGaussian.blurInPlace(
                     &scalar,width:w,height:h,sigma:sigma
                 )
+                // Exercise caller-owned workspace repeatedly across FIR,
+                // YVV, zero-sigma and changing geometry. Seed stale scratch
+                // with NaN to detect reads before first-pass overwrite.
+                for i in reused.indices { reused[i]=Double.nan }
+                var reusedScalar=source
+                try SourceGrainScalarGaussian.blurInPlace(
+                    &reusedScalar,width:w,height:h,sigma:sigma,
+                    intermediate:&reused
+                )
+                guard reusedScalar.map(\.bitPattern)==scalar.map(\.bitPattern) else {
+                    fatalError("Build147-C reused scalar cloud workspace changed Float64 bits")
+                }
                 var oldRGB=[Double](repeating:0,count:n*3)
                 for p in 0..<n { oldRGB[p*3]=source[p] }
                 let reference=try SourceSpatialDIRConvolution.diffuseMemoryBounded(

@@ -206,6 +206,13 @@
 - 加强真实 Python 五组四阶段源测试：无 observer 生产输出与有 observer 分配式参考逐位相同；保留通道 writer 调用数及原 Python 容差。增加无尾部 FIR/YVV 和 micro sigma 的独立滤波对照；不修改门槛。待 CI；未发布 IPA，未修改 Build146 版本号。
 - OPT-13 部分完成，后续检查计数/微结构实际生命周期与生产上游 COW；OPT-14 热循环、OPT-15 原尺寸确定性缓存仍待实施，未宣称全面认证。
 
+## Build147-C 第二阶段：染料云 scratch 复用与确定性热循环
+
+- 原版 grain.py 的九次全幅 dye-cloud Gaussian 继续使用同一标量 FIR/YVV 内核。实际源码先前每次分配一个 pixels Double intermediate；新增调用者独占 scratch，由首个有效 sigma 懒分配，每次第一遍完整覆盖，跨 9 层复用，颗粒采样结束前释放；observer 保留每次分配参考。最多避免 8 次 8 B/px 的重复分配/初始化（12.19MP 每次约 97.5MB），不是峰值降低；复用会使 scratch 跨后续 RNG 层存活，可能提高该阶段峰值，必须保留 224/56 B/px 准入并实测。若原尺寸峰值不利，重新评估或撤回该复用。
+- 仅提取每通道 uniformity、每层 minimum/maximum，不将两次乘法合并，不用倒数替代除法，不改 clamp、计数和通道/层序；单层及并行 RNG 代码不动。
+- Build116 60 组旧 RGB 对照增加 caller scratch 分支，每次填充 NaN 测试完整覆盖、跨尺寸、FIR/YVV 与零 sigma，逐位比较原 allocating scalar；五组原 Python stages 与 no-observer final bitwise gate 保留。实际 CI 与设备数值/峰值尚待确认。
+- 上一批 CI 45867442160 查询时 Linux 6/6、macOS queued。为避免 concurrency 取消该独立回归，本次先提交源码及测试，不触发新工作流；后续批次统一触发完整 CI。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
