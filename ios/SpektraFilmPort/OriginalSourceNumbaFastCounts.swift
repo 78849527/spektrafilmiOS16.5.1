@@ -115,6 +115,9 @@ struct OriginalSourceNumbaFastCounts {
         let uniform = rng.nextUniform()
         var cdf = 0.0
         var probability = pow(1.0 - p, Double(n))
+        // Constant for this draw. Preserve division and multiplication
+        // association, including the source k-1 convention.
+        let odds = p / (1.0-p)
         var k: Int64 = 0
         while cdf < uniform && k <= n {
             guard k < 2_000_000 else {
@@ -124,7 +127,7 @@ struct OriginalSourceNumbaFastCounts {
             if k < n {
                 probability = probability *
                     (Double(n-k) / Double(k+1)) *
-                    (p / (1.0-p))
+                    odds
             }
             k += 1
         }
@@ -156,7 +159,8 @@ struct OriginalSourceNumbaFastCounts {
     /// Reuse the caller's whole-layer storage while keeping this worker's
     /// continuous RNG stream. This is NOT the unseeded parallel route.
     mutating func runOriginalTwoPhaseCountsInto(
-        rates:[Double],probabilities:[Double],counts:inout [Int64]
+        rates:[Double],probabilities:[Double],counts:inout [Int64],
+        poissonCompleted:(()->Void)?=nil
     ) throws {
         guard rates.count==probabilities.count else {
             throw Failure.invalid("Numba fast_stats: array shape mismatch")
@@ -168,6 +172,7 @@ struct OriginalSourceNumbaFastCounts {
             if i & 4095 == 0 {try Task.checkCancellation()}
             counts[i]=try fastPoisson(rates[i])
         }
+        poissonCompleted?()
         for i in rates.indices {
             if i & 4095 == 0 {try Task.checkCancellation()}
             counts[i]=try fastBinomial(counts[i],probability:probabilities[i])

@@ -25,13 +25,27 @@ struct OriginalSourceMT19937 {
 
     mutating func nextUInt32() -> UInt32 {
         if index == 624 {
-            // Original in-place MT twist; the modulo-wrapped references
-            // deliberately read previously updated words as NumPy does.
-            for i in 0..<624 {
-                let y = (state[i] & 0x8000_0000) |
-                    (state[(i + 1) % 624] & 0x7fff_ffff)
-                state[i] = state[(i + 397) % 624] ^ (y >> 1) ^
-                    ((y & 1) == 0 ? 0 : 0x9908_b0df)
+            // NumPy's in-place MT twist: split the same ascending
+            // recurrence at 624-397. The wrapped second range and final
+            // word MUST read already updated state, just as the modulo
+            // reference does. One exclusive mutable borrow per twist.
+            state.withUnsafeMutableBufferPointer { words in
+                for i in 0..<227 {
+                    let y=(words[i] & 0x8000_0000) |
+                        (words[i+1] & 0x7fff_ffff)
+                    words[i]=words[i+397] ^ (y >> 1) ^
+                        ((y & 1)==0 ? 0 : 0x9908_b0df)
+                }
+                for i in 227..<623 {
+                    let y=(words[i] & 0x8000_0000) |
+                        (words[i+1] & 0x7fff_ffff)
+                    words[i]=words[i-227] ^ (y >> 1) ^
+                        ((y & 1)==0 ? 0 : 0x9908_b0df)
+                }
+                let y=(words[623] & 0x8000_0000) |
+                    (words[0] & 0x7fff_ffff)
+                words[623]=words[396] ^ (y >> 1) ^
+                    ((y & 1)==0 ? 0 : 0x9908_b0df)
             }
             index = 0
         }
@@ -44,6 +58,7 @@ struct OriginalSourceMT19937 {
         return y
     }
 
+    @inline(__always)
     mutating func randomSample() -> Double {
         let a = Double(nextUInt32() >> 5)
         let b = Double(nextUInt32() >> 6)

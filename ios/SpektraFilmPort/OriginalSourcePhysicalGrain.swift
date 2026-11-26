@@ -292,16 +292,25 @@ enum OriginalSourcePhysicalGrain {
                 // The next iteration may mutate serialCounts without COW.
                 let counts:[Int64]
                 if !retainAllSublayers && (!settings.useFastStats || multiworker==nil) {
+                    // One event at each boundary, never a per-pixel log.
+                    // Timing includes all source RNG draws for that phase.
+                    phaseMemoryObserver?("grain_\(ch)_\(sl)_poisson_begin")
+                    let poissonCompleted:(()->Void)? = phaseMemoryObserver.map { observer in
+                        {observer("grain_\(ch)_\(sl)_poisson_done")}
+                    }
                     if settings.useFastStats {
                         try controlledFastSampler!.runOriginalTwoPhaseCountsInto(
-                            rates:rates,probabilities:probabilities,counts:&serialCounts
+                            rates:rates,probabilities:probabilities,counts:&serialCounts,
+                            poissonCompleted:poissonCompleted
                         )
                     } else {
                         try OriginalSourceSciPySampler.drawLayerInto(
                             rates:rates,probabilities:probabilities,
-                            seed:UInt32(ch+sl*10),counts:&serialCounts
+                            seed:UInt32(ch+sl*10),counts:&serialCounts,
+                            poissonCompleted:poissonCompleted
                         )
                     }
+                    phaseMemoryObserver?("grain_\(ch)_\(sl)_binomial_done")
                     counts=serialCounts
                 } else if settings.useFastStats {
                     if let multiworker {

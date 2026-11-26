@@ -341,7 +341,7 @@ struct OriginalSourceSciPySampler {
     /// participate. Keep the allocating drawLayer as the independent path.
     static func drawLayerInto(
         rates:[Double],probabilities:[Double],seed:UInt32,
-        counts:inout [Int64]
+        counts:inout [Int64],poissonCompleted:(()->Void)?=nil
     ) throws {
         guard rates.count==probabilities.count,!rates.isEmpty else {
             throw Failure.invalid("原版 SciPy 随机场：输入数组尺寸不一致")
@@ -354,6 +354,7 @@ struct OriginalSourceSciPySampler {
             if i & 4095 == 0 {try Task.checkCancellation()}
             counts[i]=try engine.poisson(rates[i])
         }
+        poissonCompleted?()
         for i in rates.indices {
             if i & 4095 == 0 {try Task.checkCancellation()}
             counts[i]=try engine.binomial(counts[i],probability:probabilities[i])

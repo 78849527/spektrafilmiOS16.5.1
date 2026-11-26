@@ -246,6 +246,12 @@
 - 现有真实 NumPy/SciPy 参考计数和后续 MT 门槛保留，新增污染旧 counts 后重复覆盖；Numba 连续两层 counts、后续 uniform、normal cache 位级对照。完整五组 Python 粒子/微结构/最终密度和 observer/no-observer gate 保留。未运行本批测试，不声明速度改善。
 - Build148-A CI 45876274875 查询时 Linux 6/6、macOS 21通过，仍执行；本批暂不改 workflow，避免取消正在跑的回归。后续合并触发。
 
+## Build148-C — MT19937 热循环与粒子阶段测量
+
+- MT19937 twist 624 字严格同一升序更新，分 0..<227、227..<623、末字623；第二段读取已更新的回绕字，末字使用已更新 state[0]/[396]。一次独占 mutable buffer 借用取代每字取模索引，保留所有 tempering、53位 Double 组装及 RNG 状态复制语义；不改变 seed 或采样算法。新增四种种子共400000词与冻结旧 modulo 实现的逐字对照，跨 twist 复制探针；真实 NumPy、SciPy、Numba、Python颗粒阶段回归继续执行。
+- Numba 小方差 inversion 提前固定 odds=p/(1-p)，保持乘法结合顺序及 k-1；不跳过 Knuth/direct trials，不用近似替代。串行复用采样增加每层 poisson_begin / poisson_done / binomial_done 的 phase marker，含耗时/footprint（现有报告环最多160事件，建议每次独立导出）。并行路径未增加此细分。实际 FastStats 瓶颈与收益仍需真机，非运行时间承诺。
+- Build148-A CI 当前 Linux 6/6，macOS 56项通过仍运行；暂不触发新的 workflow 以避免取消。下一次集中加入 MT19937 单文件历史白名单及 CI，不跳过任何数值测试。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

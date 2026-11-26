@@ -5,8 +5,54 @@ import Foundation
 /// the ENTIRE Poisson array before ANY binomial draw.
 @main
 struct OriginalSciPyRNGValidation {
+    // Frozen pre-optimization modulo recurrence. Long-stream comparison
+    // crosses both wrapped ranges and multiple twist/copy boundaries.
+    private struct ModuloMT {
+        var state=[UInt32](repeating:0,count:624)
+        var index=624
+        init(seed:UInt32) {
+            state[0]=seed
+            for i in 1..<624 {
+                let previous=state[i-1]
+                state[i]=1_812_433_253 &* (previous ^ (previous >> 30)) &+ UInt32(i)
+            }
+        }
+        mutating func next()->UInt32 {
+            if index==624 {
+                for i in 0..<624 {
+                    let y=(state[i] & 0x8000_0000) |
+                        (state[(i+1)%624] & 0x7fff_ffff)
+                    state[i]=state[(i+397)%624] ^ (y >> 1) ^
+                        ((y & 1)==0 ? 0 : 0x9908_b0df)
+                }
+                index=0
+            }
+            var y=state[index]
+            index+=1
+            y ^= y >> 11
+            y ^= (y << 7) & 0x9d2c_5680
+            y ^= (y << 15) & 0xefc6_0000
+            y ^= y >> 18
+            return y
+        }
+    }
     static func main() throws {
         setbuf(stdout, nil)
+        for seed:UInt32 in [0,1,8888,UInt32.max] {
+            var original=ModuloMT(seed:seed)
+            var optimized=OriginalSourceMT19937(seed:seed)
+            for i in 0..<100_000 {
+                if i%624==623 {
+                    var copy=optimized
+                    var expected=original
+                    for _ in 0..<3 {
+                        precondition(copy.nextUInt32()==expected.next(),"MT copy across twist differs")
+                    }
+                }
+                precondition(optimized.nextUInt32()==original.next(),"MT long-stream mismatch")
+            }
+        }
+        print("PASS Build148-C MT19937 400000 words and independent copy across twists")
         let cases = GeneratedOriginalSciPyRNGReference.cases
         precondition(cases.count >= 5)
         var count: Int = 0
