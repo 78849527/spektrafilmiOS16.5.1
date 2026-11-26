@@ -152,6 +152,36 @@ enum Build91PhysicalMemoryMatrixValidation {
             throw Failure.invalid("13.105 MP source ceiling bypassed")
         } catch Build91PhysicalMemory.Failure.invalid(_) {}
 
+        // OPT-04: demonstrate large-frame accounting without allocating
+        // giant buffers or changing production geometry admission.
+        for (w,h) in [(4000,4000),(6000,4000),(8000,4000)] {
+            let extended=try Build91PhysicalMemory.plan(
+                width:w,height:h,baseBytesPerPixel:104,
+                physicalMemory:16_000_000_000,processAvailable:12_000_000_000,
+                diagnosticExtendedGeometry:true
+            )
+            guard extended.estimatedPeakBytes==UInt64(w*h)*104 else {
+                throw Failure.invalid("Extended dry-run byte accounting")
+            }
+            try Build91PhysicalMemory.validate(extended)
+            let tight=try Build91PhysicalMemory.plan(
+                width:w,height:h,baseBytesPerPixel:104,
+                physicalMemory:4_000_000_000,processAvailable:900_000_000,
+                diagnosticExtendedGeometry:true
+            )
+            do {
+                try Build91PhysicalMemory.validate(tight)
+                throw Failure.invalid("Extended geometry low memory was admitted")
+            } catch Build91PhysicalMemory.Failure.invalid {}
+        }
+        do {
+            _=try Build91PhysicalMemory.plan(
+                width:8000,height:4001,physicalMemory:128_000_000_000,
+                diagnosticExtendedGeometry:true
+            )
+            throw Failure.invalid("Extended FIR/YVV geometry boundary lost")
+        } catch Build91PhysicalMemory.Failure.invalid {}
+        print("PASS OPT-04: 16/24/32MP dry-run budget; low-headroom refusal; production ceiling unchanged")
         print("PASS BUILD91 SOURCE MEMORY PREFLIGHT: 1,2,4,7.2,12,13MP " +
               "six exact UInt64 peak estimates; dynamic 80% process" +
               " budget and physical-third fallback; 7.2MP complex" +

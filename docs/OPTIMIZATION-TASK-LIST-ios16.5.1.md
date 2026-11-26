@@ -49,6 +49,12 @@
 - [45763431466](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45763431466) / 0f181570506c16c2373348d5aea8fc4603167993：Linux、macOS arm64 两任务 success；Xcode 16.4 BUILD SUCCEEDED、原生 LibRaw、256 内存选项、Build139/141、独立 Python 扩散四族、缓存冷热位级及 Accelerate 候选对照均通过。生产 Swift FFT 与原版 Python 四族最大绝对误差 1.78e-15（门槛 1e-12）；候选 Accelerate 对 Swift 通过现有测试门槛 1e-10 相对/绝对混合，不冒充 Python 直接对照实测误差。Oklch 96、TC 4038、CAM16 216、原版随机与光学参考门槛通过。未构建 IPA，未实机认证。
 - 本轮后续候选：RAW 预览缓存增加 generation lease，清除后拒绝旧任务回填；预览缩减及原始 Float32→Double 解包循环可取消。新增旧 generation 拒绝回填测试。与上述已通过 SHA 区分，需重跑；不改变浮点运算顺序。全尺寸缓存、SIMD、动态尺寸、整帧复用和真机性能仍未完成。
 
+## 第三轮验证与后续候选（2026-11-26）
+
+- [45765344119](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45765344119) / 8da030f89a165348f5b6e15504b65b9e2b873179：Linux 与 macOS 全部 success，缓存失效 lease、输入取消、独立数值回归及 iPhoneOS arm64 完整编译通过，未打包 IPA。
+- 本轮新增候选：OPT-04 16/24/32MP 仅 dry-run 试算与充足/不足 headroom 回归，仍保留生产 13MP 以及各模块 8192/FFT 几何门槛；不将试算视为大图已可导出。
+- OPT-08 眩光二维随机场改为单通道原版 FIR/YVV，保留随机抽样顺序及 /100。原局部滤波缓冲模型 64 B/px -> 16 B/px（13MP 理论少 624MB，非 RSS），仍保持旧生产 96B/px 眩光准入系数，实际内存与速度待测。新增 120 组旧 RGB 对照（6种几何×10个sigma×2种roughness，每组注入/seed），并减少 DIR-off 每像素无用零数组创建。需重跑 CI；不替代真机认证。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

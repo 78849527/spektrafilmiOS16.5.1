@@ -93,12 +93,17 @@ enum Build91PhysicalMemory {
         physicalMemory:UInt64,
         processAvailable:UInt64?=nil,
         camera:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
-        paper:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil
+        paper:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
+        diagnosticExtendedGeometry:Bool=false
     ) throws->Plan {
+        // Extended dry-run only: use the actual existing FIR/YVV backend
+        // geometry envelope. All production callers retain the 13MP gate
+        // until all downstream stages and output contracts are aligned.
+        let pixelLimit=diagnosticExtendedGeometry ? 32_000_000 : 13_000_000
         guard width>0,height>0,width<=8192,height<=8192,
-              width<=13_000_000/height else {
+              width<=pixelLimit/height else {
             throw Failure.invalid(
-                "全光学源工作尺寸不合法或超过 1300 万像素；" +
+                "全光学源工作尺寸不合法或超过 \(pixelLimit/10_000) 万像素；" +
                 "任何输出分辨率必须用户明确选择"
             )
         }

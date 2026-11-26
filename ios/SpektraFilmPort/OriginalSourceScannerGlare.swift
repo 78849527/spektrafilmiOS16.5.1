@@ -103,8 +103,11 @@ enum OriginalSourceScannerGlare {
         var rng = controlledSeed.map {
             OriginalSourceNumbaSingleThreadNormal(seed: $0)
         }
-        var samples = [Double](repeating: 0, count: count * 3)
+        // Original glare is a 2D scalar field. No need to replicate it
+        // into three channels or run three identical Gaussian passes.
+        var samples = [Double](repeating: 0, count: count)
         for pixel in 0..<count {
+            if pixel & 4095 == 0 { try Task.checkCancellation() }
             let normal: Double
             if sigma < 1e-6 {
                 // Source fast_lognormal() avoids RNG draws entirely.
@@ -122,28 +125,25 @@ enum OriginalSourceScannerGlare {
             guard value.isFinite else {
                 throw Failure.invalid("原版眩光：对数正态随机场产生 NaN/Inf")
             }
-            let k = pixel * 3
-            samples[k] = value
-            samples[k + 1] = value
-            samples[k + 2] = value
+            samples[pixel] = value
         }
 
-        // Reuse the already source-validated Double FIR/YVV filtering.
-        // Its RGB channels are identical copies of the original 2D field;
-        // this is not three independent RNG streams.
-        let filtered = try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-            samples, width: width, height: height,
-            coreSigma: settings.blur, tailSigma: 0, tailWeight: 0
+        // Build116 already proved the scalar FIR/YVV bitwise equal to
+        // one channel of diffuseMemoryBounded. Preserve draw order,
+        // coefficients, full-frame boundary and division by 100.
+        try Task.checkCancellation()
+        try SourceGrainScalarGaussian.blurInPlace(
+            &samples,width:width,height:height,sigma:settings.blur
         )
-        var amount = [Double](repeating: 0, count: count)
         for pixel in 0..<count {
-            let result = filtered[pixel * 3] / 100.0
+            if pixel & 4095 == 0 { try Task.checkCancellation() }
+            let result = samples[pixel] / 100.0
             guard result.isFinite else {
                 throw Failure.invalid("原版眩光：反射空间滤波结果无效")
             }
-            amount[pixel] = result
+            samples[pixel] = result
         }
-        return amount
+        return samples
     }
 
     /// True XYZ-domain source addition. Do not feed display RGB here.

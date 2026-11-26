@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Retry 3: verify cache eviction leases and cooperative RAW input cancellation.
+# Retry 4: scalar scanner glare and extended geometry dry-run.
 name: Build142 source baseline optimization regression (compile only by default)
 
 on:
@@ -422,6 +422,9 @@ jobs:
           swiftc -O -D SOURCE_GRAIN_STANDALONE -parse-as-library \
             ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift \
             ios/SpektraFilmPort/SourceGrainScalarGaussian.swift \
+            ios/SpektraFilmPort/OriginalSourceMT19937.swift \
+            ios/SpektraFilmPort/OriginalSourceNumbaSingleThreadNormal.swift \
+            ios/SpektraFilmPort/OriginalSourceScannerGlare.swift \
             ios/tests/Build116GrainScalarGaussianValidation.swift \
             -o /tmp/build116-grain-parity
           /tmp/build116-grain-parity

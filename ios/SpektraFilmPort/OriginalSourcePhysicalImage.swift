@@ -574,20 +574,18 @@ enum OriginalSourcePhysicalImage {
             let initialDensity=try dynamicDIR?.develop(
                 initial.rawLog,corrected:false
             ) ?? initial.initialDensity
-            let sourceInhibition:[Double]
-            if !dirOn {
-                sourceInhibition=[0,0,0]
-            } else if let dynamicDIR {
-                sourceInhibition=try dynamicDIR.inhibitor(initialDensity)
-            } else {
-                sourceInhibition=try Build84OriginalFilmDIR.inhibitors(
-                    density:initialDensity,
-                    maximum:source.densityMaximum,
-                    matrix:source.matrix,
-                    positive:source.positive
-                )
-            }
             if dirOn {
+                let sourceInhibition:[Double]
+                if let dynamicDIR {
+                    sourceInhibition=try dynamicDIR.inhibitor(initialDensity)
+                } else {
+                    sourceInhibition=try Build84OriginalFilmDIR.inhibitors(
+                        density:initialDensity,
+                        maximum:source.densityMaximum,
+                        matrix:source.matrix,
+                        positive:source.positive
+                    )
+                }
                 for receiver in 0..<3 {
                     inhibitors[k+receiver]=sourceInhibition[receiver]
                 }
