@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import CoreGraphics
 import ImageIO
 #if os(iOS)
@@ -250,6 +251,65 @@ enum OriginalSourcePhysicalImage {
             cameraDiffusion:envelope.cameraDiffusion,
             paperDiffusion:envelope.paperDiffusion
         )
+    }
+
+    /// Explicit local diagnostic session; not global or used by production.
+    /// Only the no-grain, no-camera-preoptics, negative Hanatos subset is
+    /// eligible. SHA256 covers actual Float64 frame bytes, including crop
+    /// and reducer output, rather than a path or mutable RAW identity.
+    final class FilmDensityReuse {
+        struct Key:Equatable {
+            let inputSHA256:[UInt8]
+            let width:Int
+            let height:Int
+            let filmID:String
+            let colorSpace:Int
+            let filmBits:[UInt64]
+            let flags:[Bool]
+            let referencePixelSize:UInt64?
+        }
+        private var entry:(Key,[Double])?
+        func clear() {entry=nil}
+        func lookup(_ key:Key)->[Double]? {
+            guard let entry,entry.0==key else {clear();return nil}
+            return entry.1
+        }
+        func store(_ key:Key,_ density:[Double]) {entry=(key,density)}
+    }
+
+    private static func filmDensityReuseKey(
+        frame:OriginalSourcePixelIO.Frame,parameters:Parameters
+    ) throws -> FilmDensityReuse.Key {
+        // Reject unsupported dependencies rather than claiming that a
+        // downstream setting cannot affect a source filming calibration.
+        guard !SpectralPhysics.isPositiveFilm(parameters.filmID),
+              !parameters.sourceGrain.active,
+              !parameters.cameraOptics.active,!parameters.filmHalation.active,
+              !parameters.sourceColorReference.enabled,
+              parameters.sourceDIR==nil,
+              parameters.cameraRawMethod == .hanatos2025,
+              !parameters.cameraBandpass.active,!parameters.hanatosSourceRecompute,
+              parameters.sourceInputGamutAlgorithm == .xy,
+              parameters.deterministicPixelWorkers==1 else {
+            throw Failure.invalid("胶片密度复用候选仅支持无颗粒、无相机前级及参考校准的负片 Hanatos 串行测试")
+        }
+        let space:Int
+        switch parameters.cameraInputColorSpace {
+        case .sRGB:space=0
+        case .proPhotoLinear:space=1
+        case .acesLinear:space=2
+        }
+        var hasher=SHA256()
+        frame.rgb.withUnsafeBytes {hasher.update(bufferPointer:$0)}
+        let digest=Array(hasher.finalize())
+        let bits=([parameters.cameraEV,parameters.cameraFilmingReferenceScale,
+                   parameters.dir.diffusionRadiusScale,parameters.dir.tailWeight]
+                  + parameters.sourceGrain.densityMin).map{$0.bitPattern}
+        return .init(inputSHA256:digest,width:frame.width,height:frame.height,
+            filmID:parameters.filmID,colorSpace:space,filmBits:bits,
+            flags:[parameters.dir.enabled,parameters.dir.sourceConvolutionEnabled,
+                   parameters.sourceCouplersActive,parameters.sourceSpatialDiffusionEnabled],
+            referencePixelSize:parameters.dir.referencePixelSizeUM?.bitPattern)
     }
 
     struct Parameters {
@@ -537,7 +597,8 @@ enum OriginalSourcePhysicalImage {
         _ frame: inout OriginalSourcePixelIO.Frame,
         parameters: Parameters,
         stageDoubleObserver: ((String, [Double]) -> Void)? = nil,
-        phaseMemoryObserver: ((String) -> Void)? = nil
+        phaseMemoryObserver: ((String) -> Void)? = nil,
+        filmDensityReuse:FilmDensityReuse? = nil
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -561,11 +622,24 @@ enum OriginalSourcePhysicalImage {
         // Build140: exactly the same feature/FFT envelope as RAW
         // predecode and export admission, with ONLY the existing input
         // Float64 frame counted as already committed.
-        try validateMemoryBudget(
-            width:w,height:h,parameters:parameters,
-            stageObserver:stageDoubleObserver != nil,
-            alreadyCommittedInputBytes:committedInputBytes
-        )
+        if filmDensityReuse != nil {
+            guard stageDoubleObserver==nil else {
+                throw Failure.invalid("胶片密度复用候选不允许伪造已跳过的阶段观察数据")
+            }
+            // Charge a retained Double CMY frame in addition to the
+            // current envelope. No credit for possible COW release.
+            let envelope=memoryEnvelope(width:w,height:h,parameters:parameters)
+            try validateMemoryBudget(width:w,height:h,
+                additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                alreadyCommittedInputBytes:committedInputBytes,
+                cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+        } else {
+            try validateMemoryBudget(
+                width:w,height:h,parameters:parameters,
+                stageObserver:stageDoubleObserver != nil,
+                alreadyCommittedInputBytes:committedInputBytes
+            )
+        }
         // Python's FilmingStage accepts finite source RGB without global
         // [0,1] clipping. It applies colour-space CCTF/CAT16 in the
         // spectral input, then fmax(raw,0)+1e-10 ONLY at film log10.
@@ -607,6 +681,63 @@ enum OriginalSourcePhysicalImage {
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         phaseMemoryObserver?("optical_parameters_ready")
         let size=w*h*3
+        let reuseKey:FilmDensityReuse.Key?
+        if filmDensityReuse != nil {
+            reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters)
+        } else {reuseKey=nil}
+        var pendingDensity:[Double]?
+        var paperLogObserved:[Double]? = capturePaperStages
+            ? [Double](repeating:0,count:size) : nil
+        var paperDensityObserved:[Double]? = capturePaperStages
+            ? [Double](repeating:0,count:size) : nil
+        // The exact source PrintingStage is fused with the scanner in the
+        // current iOS implementation. Observe its REAL computed Double
+        // boundaries from BOTH print paths, never call a second renderer.
+        func recordPaper(_ offset:Int) -> (([Double],[Double]) -> Void)? {
+            guard capturePaperStages else { return nil }
+            return { logExposure,developedDensity in
+                for ch in 0..<3 {
+                    paperLogObserved?[offset+ch]=logExposure[ch]
+                    paperDensityObserved?[offset+ch]=developedDensity[ch]
+                }
+            }
+        }
+        // Same original PrintingStage / scanner math for either film-density
+        // path; only independent pixels can execute in different workers.
+        func printPixel(_ density:[Double],paperObserver:(([Double],[Double])->Void)?) throws -> [Double] {
+            let rgb:[Double]
+            if activePrintDiffusion {
+                rgb=try engine.sourceSpatialPrintPhoton(
+                    filmDensity:density,paperEV:parameters.paperEV
+                )
+            } else if controlledScannerGlare ||
+                        parameters.sourceOutputGamut != nil {
+                // Store actual developed PAPER XYZ in the reusable Double
+                // frame, not sRGB or post-gamut RGB.
+                rgb=try engine.sourceSpatialScanXYZ(
+                    filmDensity:density,paperEV:parameters.paperEV,
+                    paperStageObserver:paperObserver
+                )
+            } else {
+                rgb=try (parameters.scannerOptics.active ||
+                           !parameters.sourceOutputCCTFEncoding)
+                    ? engine.sourceSpatialScanLinear(
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:paperObserver
+                      )
+                    : engine.sourceSpatialScan(
+                        filmDensity:density,paperEV:parameters.paperEV,
+                        paperStageObserver:paperObserver
+                      )
+            }
+            return rgb
+        }
+        if let reuseKey,let cached=filmDensityReuse?.lookup(reuseKey) {
+            guard cached.count==size else {throw Failure.invalid("胶片密度复用尺寸不一致")}
+            frame.rgb=cached
+            phaseMemoryObserver?("film_density_cache_hit")
+        } else {
+        if reuseKey != nil {phaseMemoryObserver?("film_density_cache_miss")}
         var initialObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
         // Capture only the actual encoded RGB multiplied by source metering
@@ -817,52 +948,6 @@ enum OriginalSourcePhysicalImage {
             ? nil : [Double](repeating:0,count:size)
         var densityObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
-        var paperLogObserved:[Double]? = capturePaperStages
-            ? [Double](repeating:0,count:size) : nil
-        var paperDensityObserved:[Double]? = capturePaperStages
-            ? [Double](repeating:0,count:size) : nil
-        // The exact source PrintingStage is fused with the scanner in the
-        // current iOS implementation. Observe its REAL computed Double
-        // boundaries from BOTH print paths, never call a second renderer.
-        func recordPaper(_ offset:Int) -> (([Double],[Double]) -> Void)? {
-            guard capturePaperStages else { return nil }
-            return { logExposure,developedDensity in
-                for ch in 0..<3 {
-                    paperLogObserved?[offset+ch]=logExposure[ch]
-                    paperDensityObserved?[offset+ch]=developedDensity[ch]
-                }
-            }
-        }
-        // Same original PrintingStage / scanner math for either film-density
-        // path; only independent pixels can execute in different workers.
-        func printPixel(_ density:[Double],paperObserver:(([Double],[Double])->Void)?) throws -> [Double] {
-            let rgb:[Double]
-            if activePrintDiffusion {
-                rgb=try engine.sourceSpatialPrintPhoton(
-                    filmDensity:density,paperEV:parameters.paperEV
-                )
-            } else if controlledScannerGlare ||
-                        parameters.sourceOutputGamut != nil {
-                // Store actual developed PAPER XYZ in the reusable Double
-                // frame, not sRGB or post-gamut RGB.
-                rgb=try engine.sourceSpatialScanXYZ(
-                    filmDensity:density,paperEV:parameters.paperEV,
-                    paperStageObserver:paperObserver
-                )
-            } else {
-                rgb=try (parameters.scannerOptics.active ||
-                           !parameters.sourceOutputCCTFEncoding)
-                    ? engine.sourceSpatialScanLinear(
-                        filmDensity:density,paperEV:parameters.paperEV,
-                        paperStageObserver:paperObserver
-                      )
-                    : engine.sourceSpatialScan(
-                        filmDensity:density,paperEV:parameters.paperEV,
-                        paperStageObserver:paperObserver
-                      )
-            }
-            return rgb
-        }
         func correctedPixel(_ corrected:[Double],paperObserver:(([Double],[Double])->Void)?)
             throws -> (density:[Double],rgb:[Double]) {
             let density:[Double]
@@ -874,7 +959,8 @@ enum OriginalSourcePhysicalImage {
                     : engine.sourceSpatialDevelopInitialLog(corrected)
             }
             // Grain must finish ALL nine layers before any print photons.
-            let rgb=try controlledFilmGrain ? density : printPixel(density,paperObserver:paperObserver)
+            let rgb=try (controlledFilmGrain || reuseKey != nil)
+                ? density : printPixel(density,paperObserver:paperObserver)
             return (density,rgb)
         }
         if parallelPixels {
@@ -919,6 +1005,8 @@ enum OriginalSourcePhysicalImage {
         if let densityObserved {
             stageDoubleObserver?("density",densityObserved)
         }
+        if reuseKey != nil {pendingDensity=frame.rgb}
+        } // cold film development; hot path bypasses only upstream deterministic work
         if controlledFilmGrain {
             let pixelUM=parameters.dir.referencePixelSizeUM ??
                 (parameters.cameraOptics.filmFormatMM * 1000.0 / Double(max(w,h)))
@@ -942,6 +1030,8 @@ enum OriginalSourcePhysicalImage {
             try Task.checkCancellation()
         phaseMemoryObserver?("three_sublayer_grain_ready")
             stageDoubleObserver?("grainDensity",frame.rgb)
+        }
+        if controlledFilmGrain || reuseKey != nil {
             // Grain RNG and full-frame filters have finished. Only the
             // deterministic density-to-paper/scanner mapping is parallel.
             if parallelPixels {
@@ -961,7 +1051,7 @@ enum OriginalSourcePhysicalImage {
                 }
             }
         }
-        if controlledFilmGrain || activePrintDiffusion {
+        if controlledFilmGrain || activePrintDiffusion || reuseKey != nil {
             phaseMemoryObserver?("print_or_scan_pixels_ready")
         }
         if activePrintDiffusion {
@@ -1094,6 +1184,11 @@ enum OriginalSourcePhysicalImage {
         stageDoubleObserver?("printed",frame.rgb)
         guard frame.rgb.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("逐像素源光学计算产生非有限扫描 RGB")
+        }
+        if let reuseKey,let pendingDensity {
+            try Task.checkCancellation()
+            filmDensityReuse?.store(reuseKey,pendingDensity)
+            phaseMemoryObserver?("film_density_cache_stored")
         }
     }
 

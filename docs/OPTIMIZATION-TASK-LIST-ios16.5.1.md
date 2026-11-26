@@ -164,6 +164,14 @@
 - 相机 H-D 有限值校验不再拼接两个 3 通道数组。新增固定值/边界/符号零测试和实际 stock 印相 log bits 对照，继续 Debug/Release helper 验证及原版历史 gates。实际 A15 提速待测。
 - 下一阶段审计 stage cache 的完整依赖键与逐阶段失效策略；本轮未实现整图结果缓存或线程转正，不申请 IPA。
 
+## 胶片密度阶段复用候选 / 编译修复
+
+- 45828944869 / 5e842b2：Linux 6/6；macOS 到 Xcode 编译失败，唯一定位错误为 preparedPrintSum 非 Optional 却使用 if let。改为直接使用已准备的不可选 plan，保留 printRaw nil-plan 参考；不删除数值 gates。
+- 缓存依赖审计：正片黑白参考会影响 filmingExposureFactor，必须排除；负片印相参考与 paperEV 下游可独立。完整相机测光、boost、UV/IR、重算 Hanatos、Oklch、自定义 DIR、颗粒及随机状态暂不纳入。
+- 实现局部 FilmDensityReuse 会话（无全局缓存、未接 P1/editor、未启用生产）。仅负片 Hanatos 单线程无颗粒/无相机前级/无参考校准子集；键含真实输入 Float64 字节 SHA256（含已裁切/缩放像素）、尺寸、filmID、输入色彩空间、EV、参考倍率、DIR 状态/半径/尾权/像素尺寸和 densityMin 精确位模式。条件不满足显式拒绝，禁止伪造 stage taps。
+- 冷路径以现有计算分离胶片 CMY 与印相，热路径绕过确定性相机/DIR/H-D，按当前参数执行原版印相扫描；缓存只在整个渲染成功且未取消后保存。缓存申请额外 24 B/px 动态准入，不抵扣可能释放的内存；1219万像素约额外293MB，故先局部诊断。真实 fixture 增加 fused/cold/hot paperEV 修改逐位对照、输入变化强制 miss；这些设备端验证尚未运行，主机编译不等于执行。
+- 后续需覆盖纸种/扫描设置变化与全部上游键失效、错误/取消/内存告警和 A15 实测；不接入正式 RAW，暂不发布 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

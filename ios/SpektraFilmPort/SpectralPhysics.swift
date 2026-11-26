@@ -2119,27 +2119,15 @@ struct SpectralPhysics {
             throw PhysicsError.invalid(
                 "原版放大机扩散只能接入负片→原版光学印相→相纸 H-D 链，禁止近似")
         }
-        let irradiance:[Double]
-        if let prepared=preparedPrintSum {
-            let raw=prepared.evaluateLanes(
-                SIMD3<Double>(filmDensity[0],filmDensity[1],filmDensity[2]),
-                clampDensity:false,scan:false)
-            let sourceLog=OPTSourceOpticalTriplets.paperLog(raw,reference:printReference,
-                preflash:SIMD3<Double>(opticalPreflashRaw[0],opticalPreflashRaw[1],opticalPreflashRaw[2]),
-                printEV:paperEV+correctedPrintExposureEV)
-            irradiance=[pow(10.0,sourceLog[0]),pow(10.0,sourceLog[1]),pow(10.0,sourceLog[2])]
-        } else {
-            let raw=Self.printRaw(
-                filmDensities:filmDensity,film:film,
-                weights:paperWeights,clampDensity:false,prepared:nil
-            )
-            let sourceLog=OriginalPrintOptics.paperLogExposure(
-                raw:raw,reference:printReference,
-                preflash:opticalPreflashRaw,
-                printEV:paperEV+correctedPrintExposureEV
-            )
-            irradiance=sourceLog.map { pow(10.0,$0) }
-        }
+        // The engine's preparedPrintSum is always present; the scalar
+        // reference remains in printRaw(...prepared:nil) for regression.
+        let raw=preparedPrintSum.evaluateLanes(
+            SIMD3<Double>(filmDensity[0],filmDensity[1],filmDensity[2]),
+            clampDensity:false,scan:false)
+        let sourceLog=OPTSourceOpticalTriplets.paperLog(raw,reference:printReference,
+            preflash:SIMD3<Double>(opticalPreflashRaw[0],opticalPreflashRaw[1],opticalPreflashRaw[2]),
+            printEV:paperEV+correctedPrintExposureEV)
+        let irradiance=[pow(10.0,sourceLog[0]),pow(10.0,sourceLog[1]),pow(10.0,sourceLog[2])]
         guard irradiance.allSatisfy({ $0.isFinite && $0>=0 }) else {
             throw PhysicsError.invalid("原版相纸曝光之前光谱 RAW 非有限")
         }

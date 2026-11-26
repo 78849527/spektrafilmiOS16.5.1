@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build145 follow-up: exact fixed-size print exposure/scan finish and fewer intermediate arrays; compile-only.
+# Build145 follow-up: repair nonoptional prepared plan type and isolated film density reuse diagnostic; compile-only.
 name: Build145 optimization regression and explicitly requested device IPA
 
 on:

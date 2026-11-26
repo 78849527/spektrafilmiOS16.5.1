@@ -230,6 +230,43 @@ enum SourcePhysicalImageParity {
             guard parallelFrame.rgb.map({$0.bitPattern})==actual.rgb.map({$0.bitPattern}) else {
                 throw Failure.invalid("OPT deterministic parallel image bit mismatch "+fixture.name)
             }
+            // Local experimental no-grain density reuse: compare cold
+            // split and hot downstream-only path with original fused math.
+            if !SpectralPhysics.isPositiveFilm(params.filmID) {
+                let session=OriginalSourcePhysicalImage.FilmDensityReuse()
+                var cold=frame
+                var coldPhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&cold,parameters:params,
+                    phaseMemoryObserver:{coldPhases.append($0)},filmDensityReuse:session)
+                guard coldPhases.contains("film_density_cache_stored"),
+                      cold.rgb.map({$0.bitPattern})==actual.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("OPT film density cold split bit mismatch "+fixture.name)
+                }
+                let downstream=OriginalSourcePhysicalImage.Parameters(
+                    filmID:params.filmID,paperID:params.paperID,cameraEV:params.cameraEV,
+                    paperEV:params.paperEV>3.8 ? params.paperEV-0.125 : params.paperEV+0.125,
+                    dir:params.dir,print:params.print,morph:params.morph)
+                let expected=try OriginalSourcePhysicalImage.develop(frame,parameters:downstream)
+                var hot=frame
+                var hotPhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&hot,parameters:downstream,
+                    phaseMemoryObserver:{hotPhases.append($0)},filmDensityReuse:session)
+                guard hotPhases.contains("film_density_cache_hit"),
+                      !hotPhases.contains("camera_photons_ready"),
+                      hot.rgb.map({$0.bitPattern})==expected.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("OPT film density hot downstream bit mismatch "+fixture.name)
+                }
+                var changed=frame
+                changed.rgb[0]+=0.001
+                var missPhases=[String]()
+                let changedExpected=try OriginalSourcePhysicalImage.develop(changed,parameters:downstream)
+                try OriginalSourcePhysicalImage.developInPlace(&changed,parameters:downstream,
+                    phaseMemoryObserver:{missPhases.append($0)},filmDensityReuse:session)
+                guard missPhases.contains("film_density_cache_miss"),
+                      changed.rgb.map({$0.bitPattern})==changedExpected.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("OPT film density input invalidation mismatch "+fixture.name)
+                }
+            }
             // Build77/02: compare the ACTUAL production pre-photon
             // input against ORIGINAL Python SimulationPipeline._preprocess
             // for the explicitly supported sRGB/CCTF, no crop/resize case.
