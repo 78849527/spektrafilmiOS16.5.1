@@ -37,47 +37,6 @@ struct Build116GrainScalarGaussianValidation {
             }
         }
 
-        // Exercise actual optimized glare with injected normals and a
-        // separately repeated seeded stream, including deterministic branch.
-        var glareCases=0
-        for (w,h) in geometries {
-            let n=w*h
-            for blur in sigmas {
-                for roughness in [0.0,0.7] {
-                    let settings=OriginalSourceScannerGlare.Settings(
-                        active:true,percent:0.11,roughness:roughness,blur:blur
-                    )
-                    var rng=OriginalSourceNumbaSingleThreadNormal(seed:8888)
-                    let normals=try (0..<n).map { _ in try rng.nextNormal() }
-                    let mean=settings.percent,std=roughness*mean
-                    let sigma2=log(1.0+(std*std)/(mean*mean))
-                    let sigma=sqrt(sigma2),mu=log(mean)-sigma2/2.0
-                    var rgb=[Double](repeating:0,count:n*3)
-                    for i in 0..<n {
-                        let value=sigma<1e-6 ? exp(mu) : exp(mu+sigma*normals[i])
-                        for c in 0..<3 {rgb[i*3+c]=value}
-                    }
-                    let reference=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-                        rgb,width:w,height:h,coreSigma:blur,tailSigma:0,tailWeight:0
-                    )
-                    let injected=try OriginalSourceScannerGlare.computeAmount(
-                        width:w,height:h,settings:settings,sourceNormals:normals
-                    )
-                    let seeded=try OriginalSourceScannerGlare.computeAmount(
-                        width:w,height:h,settings:settings,controlledSeed:8888
-                    )
-                    for i in 0..<n {
-                        let expected=reference[i*3]/100.0
-                        precondition(injected[i].bitPattern==expected.bitPattern &&
-                                     seeded[i].bitPattern==expected.bitPattern,
-                                     "Scalar glare differs from old RGB path")
-                    }
-                    glareCases+=1
-                }
-            }
-        }
-        print("PASS OPT-08 scanner glare scalar old-RGB bitwise parity \(glareCases)/\(glareCases); seeded and deterministic")
-
         // Filter alone: original cloud RGB + RGB result + 2 scratch planes
         // (24+24+8+8=64 B/px) vs scalar cloud + 1 scratch (8+8=16 B/px).
         // Difference is allocation plan, NOT total process RSS/Jetsam.
