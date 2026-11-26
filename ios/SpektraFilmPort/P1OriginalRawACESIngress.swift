@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 #if os(iOS)
 import os
 #endif
@@ -22,6 +23,7 @@ enum P1OriginalRawACESIngress {
     // lock acquisition; LibRaw itself cannot be interrupted mid-native call.
     private static let editorRAWLock = NSLock()
     private static let previewInputCache = Build139RAWPreviewDownsample.InputCache()
+    private static let fullInputCache = Build139RAWPreviewDownsample.FullInputCache<Source>()
 
     static func withExclusiveRAWWork<T>(_ body: () throws -> T) throws -> T {
         try Task.checkCancellation()
@@ -33,6 +35,11 @@ enum P1OriginalRawACESIngress {
 
     static func clearPreviewInputCache() {
         previewInputCache.clear()
+    }
+
+    static func clearAllInputCaches() {
+        previewInputCache.clear()
+        fullInputCache.clear()
     }
 
     struct Source {
@@ -70,6 +77,85 @@ enum P1OriginalRawACESIngress {
         }
         return Source(width: w, height: h, packedRGB16: bytes,
                       decoderVersion: result.decoder)
+    }
+
+    // Hash the real source in bounded chunks; identical file metadata
+    // alone is insufficient for a full-precision export cache hit.
+    // A missing identity disables reuse, never substitutes a preview.
+    private static func fullSourceKey(_ url:URL) throws
+        -> Build139RAWPreviewDownsample.FullSourceKey? {
+        try Task.checkCancellation()
+        guard let before=Build139RAWPreviewDownsample.CacheKey.make(
+            url:url,crop:[],maxLongEdge:0
+        ) else {return nil}
+        do {
+            let file=try FileHandle(forReadingFrom:url)
+            defer {try? file.close()}
+            var hash=SHA256()
+            while true {
+                try Task.checkCancellation()
+                let bytes=try file.read(upToCount:1024*1024) ?? Data()
+                if bytes.isEmpty {break}
+                hash.update(data:bytes)
+            }
+            guard before==Build139RAWPreviewDownsample.CacheKey.make(
+                url:url,crop:[],maxLongEdge:0
+            ) else {return nil}
+            return .init(metadata:before,sha256:hash.finalize().map {
+                String(format:"%02x",$0)
+            }.joined())
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
+        }
+    }
+
+    private static func openFullEditorSource(
+        _ url:URL,maximumAllowedPixels:Int
+    ) throws -> (source:Source,key:Build139RAWPreviewDownsample.FullSourceKey?,generation:UInt64) {
+        let generation=fullInputCache.begin()
+        let key=try fullSourceKey(url)
+        if let cached=fullInputCache.take(key,generation:generation) {
+            // No new native allocation on hit; the decoded bytes are
+            // already resident. Keep the full-grid admission contract.
+            guard cached.width>0,cached.height>0,
+                  cached.width<=10_000,cached.height<=10_000,
+                  cached.width<=45_000_000/cached.height,
+                  cached.packedRGB16.count==cached.width*cached.height*6,
+                  maximumAllowedPixels>=0,
+                  maximumAllowedPixels==0 ||
+                    cached.width<=maximumAllowedPixels/cached.height else {
+                throw Failure.invalid("RAW 缓存几何超出当前光学输入范围；不缩图")
+            }
+            try Task.checkCancellation()
+            return (cached,key,generation)
+        }
+        let source=try open(url,maximumAllowedPixels:maximumAllowedPixels)
+        let verifiedKey=try fullSourceKey(url)
+        // A changed readable source is not a trustworthy decode cache.
+        // Reject actual identity change rather than display stale bytes.
+        if let key,let verifiedKey,key != verifiedKey {
+            throw Failure.invalid("RAW 在解码过程中发生变化；请重新打开原片")
+        }
+        return (source,key==verifiedKey ? key : nil,generation)
+    }
+
+    private static func retainFullEditorSource(
+        _ source:Source,key:Build139RAWPreviewDownsample.FullSourceKey?,
+        generation:UInt64
+    ) {
+        guard let key,!Task.isCancelled else {return}
+        // This is only a cache-retention heuristic, NOT a render limit.
+        // Live headroom already excludes the currently resident buffer.
+        // Retain at most one packed ACES16 buffer if ample margin remains.
+        #if os(iOS)
+        let headroom=UInt64(os_proc_available_memory())
+        #else
+        let headroom=ProcessInfo.processInfo.physicalMemory/3
+        #endif
+        fullInputCache.store(source,key:key,generation:generation,
+            canRetain:headroom>0 && UInt64(source.packedRGB16.count)<=headroom/5)
     }
 
     struct PreviewWithGeometry {
@@ -120,7 +206,8 @@ enum P1OriginalRawACESIngress {
     /// No new optical approximation, LUT substitution or mode fallback.
     static func developSourceCandidate(
         _ rawURL: URL, opticalSettings: OriginalSourcePhysicalImage.Parameters,
-        crop:Build141RAWPreCrop.Selection? = nil
+        crop:Build141RAWPreCrop.Selection? = nil,
+        retainDecodedSource:Bool = false
     ) throws -> OriginalSourcePixelIO.Frame {
         var selected = opticalSettings
         // Python raw_file_processor outputs linear ACES2065-1 by default;
@@ -132,10 +219,11 @@ enum P1OriginalRawACESIngress {
         // independently; the cropped work grid still passes the full gate.
         clearPreviewInputCache()
         if let crop { try crop.validate() }
-        let decoded = try open(
+        let acquisition=try openFullEditorSource(
             rawURL,
             maximumAllowedPixels: crop == nil ? OriginalSourcePhysicalImage.maximumPixels : 0
         )
+        let decoded=acquisition.source
         // Build141: geometry and memory are based on selected RAW pixels,
         // NOT the final JPEG/TIFF size; this is before original-wide Double.
         let working=try selectedSource(decoded,crop:crop)
@@ -148,6 +236,13 @@ enum P1OriginalRawACESIngress {
         try OriginalSourcePhysicalImage.developInPlace(
             &frame, parameters: selected
         )
+        // Full preview may keep the original packed input; JPEG/TIFF
+        // export consumes it and does not refill the cache. Always rerun
+        // all optical stages, including the original random streams.
+        if retainDecodedSource {
+            retainFullEditorSource(decoded,key:acquisition.key,
+                                   generation:acquisition.generation)
+        }
         return frame
     }
 
@@ -182,6 +277,8 @@ enum P1OriginalRawACESIngress {
         try selected.validate()
         // OPT-01: reuse only the original Build139 linear input; all
         // optical settings are applied anew. Full preview/export never use it.
+        // Do not stack an unused full-size cache with a quick preview.
+        fullInputCache.clear()
         try Task.checkCancellation()
         let cropKey = crop.map {
             [$0.sourceWidth,$0.sourceHeight,$0.x,$0.y,$0.width,$0.height]

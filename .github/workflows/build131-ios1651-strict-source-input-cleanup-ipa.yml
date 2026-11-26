@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Retry 5: run scalar glare only after original RNG and glare reference generation.
+# Retry 6: validate full packed RAW cache, source identity and eviction.
 name: Build142 source baseline optimization regression (compile only by default)
 
 on:

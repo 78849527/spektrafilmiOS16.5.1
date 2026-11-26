@@ -60,6 +60,11 @@
 - [45766811206](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45766811206) / 9fdd5d1：Linux 通过，macOS 第16步编译失败，MT19937 的 GeneratedSourceMT19937Reference 尚未生成；未执行新增眩光数值回归或最终编译。
 - 将新增眩光独立测试移至真实 NumPy/Numba fixture 生成之后，旧单通道 FIR/YVV 测试仍原位执行。明确链接 generated MT19937 与 glare 参考，同时新增 6 组固定原版 Python 眩光与 XYZ 对照；120 组新旧 Swift bitwise 对照仍保留。没有伪造或绕过参考类型。修复提交待复验。
 
+## 第五轮通过与全尺寸 RAW 缓存候选（2026-11-26）
+
+- [45767790114](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45767790114) / 4ee08ed3c547d8b3b42f1024c9e03fcba5b201e0：Linux/macOS success，120/120 单通道眩光 bitwise；独立 Python 6组 maxAmount=2.6020852139652106e-18，maxXYZ=1.1102230246251565e-16；16/24/32MP dry-run 与低内存拒绝通过，Xcode BUILD SUCCEEDED。
+- OPT-01 新候选：完整精细 RAW 预览可保留一条原始 packed ACES16 解码结果（6 B/px），使用文件元数据 + 流式 SHA256 标识；导出或后续完整预览 take 消费，仍执行完整 Float64 光学和实际内存门槛。仅在 packed bytes <= 当前剩余 headroom/5 时保留（缓存策略而非生产准入上限）；换图/内存警告/快速预览清除；generation 拒绝旧任务回填。快速缓存仍独立；不缓存全幅 Double、输出、颗粒或其他随机状态。新增 exact bytes、内容变化、低内存、失效测试。真机缓存命中率、耗时与内存仍待测；当前候选需重跑 CI。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

@@ -1287,7 +1287,7 @@ final class PhotoEditorModel: ObservableObject {
     private func invalidateSimulation() {
         pendingRender?.cancel()
         rawPreviewTask?.cancel()
-        P1OriginalRawACESIngress.clearPreviewInputCache()
+        P1OriginalRawACESIngress.clearAllInputCaches()
         renderGeneration &+= 1
         simulationAwaitingCurrentSettings=false
         // When replacing a photo while an old non-cancellable source task
@@ -2575,7 +2575,8 @@ final class PhotoEditorModel: ObservableObject {
                             let rawWidth:Int,rawHeight:Int
                             if fullSourcePreview {
                                 frame=try P1OriginalRawACESIngress.developSourceCandidate(
-                                    rawURL,opticalSettings:physical,crop:selectedCrop
+                                    rawURL,opticalSettings:physical,crop:selectedCrop,
+                                    retainDecodedSource:true
                                 )
                                 rawWidth=selectedCrop?.sourceWidth ?? frame.width
                                 rawHeight=selectedCrop?.sourceHeight ?? frame.height
@@ -3965,7 +3966,7 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(
                 for:UIApplication.didReceiveMemoryWarningNotification
             )) { _ in
-                P1OriginalRawACESIngress.clearPreviewInputCache()
+                P1OriginalRawACESIngress.clearAllInputCaches()
                 OriginalSourceDiffusion.clearPreparedPSFCache()
             }
             .onAppear {

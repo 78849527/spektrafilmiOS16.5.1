@@ -87,6 +87,51 @@ enum Build139RAWPreviewDownsample {
         }
     }
 
+    // Full-resolution cache is a separate, single-entry lease. It never
+    // stores a developed Float64 frame or a reduced preview. A caller owns
+    // the cached value during rendering, not a second cache reference.
+    struct FullSourceKey: Equatable {
+        let metadata: CacheKey
+        let sha256: String
+    }
+
+    final class FullInputCache<Value> {
+        private let lock=NSLock()
+        private var entry:(key:FullSourceKey,value:Value)?
+        private var generation:UInt64=0
+
+        func begin() -> UInt64 {
+            lock.lock()
+            defer {lock.unlock()}
+            generation &+= 1
+            return generation
+        }
+
+        func take(_ key:FullSourceKey?,generation expected:UInt64) -> Value? {
+            lock.lock()
+            defer {lock.unlock()}
+            guard expected==generation else {return nil}
+            let value = key != nil && entry?.key==key ? entry?.value : nil
+            entry=nil
+            return value
+        }
+
+        func store(_ value:Value,key:FullSourceKey,generation expected:UInt64,
+                   canRetain:Bool) {
+            lock.lock()
+            defer {lock.unlock()}
+            guard expected==generation,canRetain,!Task.isCancelled else {return}
+            entry=(key,value)
+        }
+
+        func clear() {
+            lock.lock()
+            defer {lock.unlock()}
+            generation &+= 1
+            entry=nil
+        }
+    }
+
     private struct Tap {
         let index: Int
         let weight: Double
