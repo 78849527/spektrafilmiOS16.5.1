@@ -92,6 +92,16 @@ struct Build140RAWMemoryAdmissionValidation {
                     !halation && !print && !gamut,
                     "a live extra optical stage cannot receive grain-only credit")
             }
+            let model=Build106SourceMemoryLedger.phaseModel(
+                base:104,admittedAdditional:extra,
+                scannerFinish:scanner,scannerGlare:glare,grain:grain,
+                cameraLens:lens,filmHalation:halation,paperDiffusion:print,
+                stageObserver:false,paperStageObserver:false,parallelGrain:parallel
+            )
+            demand(model.admittedBytesPerPixel==104+extra,"production admission unchanged")
+            demand(model.candidatePeakBytesPerPixel==model.phases.map { $0.bytesPerPixel }.max(),
+                   "candidate is max of sequential phases")
+            demand(model.phases.count==8,"all phase labels retained")
             let all=try Build91PhysicalMemory.plan(
                 width:w,height:h,baseBytesPerPixel:104,
                 additionalBytesPerPixel:extra,

@@ -95,6 +95,7 @@ enum OriginalSourcePhysicalImage {
     /// geometry. A peak is stage-local: camera/paper FFT work SEQUENTIALLY.
     struct MemoryEnvelope {
         let additionalBytesPerPixel: UInt64
+        let phaseModel: Build106SourceMemoryLedger.PhaseModel
         let cameraDiffusion: (settings:OriginalSourceDiffusion.Settings,
                               pixelUM:Double)?
         let paperDiffusion: (settings:OriginalSourceDiffusion.Settings,
@@ -137,8 +138,20 @@ enum OriginalSourcePhysicalImage {
             outputGamut:parameters.sourceOutputGamut != nil,
             parallelGrain:parameters.sourceGrain.useUnseededParallel
         )
+        let phases=Build106SourceMemoryLedger.phaseModel(
+            base:estimatedPeakBytesPerPixel,admittedAdditional:extra,
+            scannerFinish:parameters.scannerOptics.active,
+            scannerGlare:parameters.scannerGlare.active && parameters.scannerGlare.percent>0,
+            grain:parameters.sourceGrain.active,
+            cameraLens:parameters.cameraOptics.needsWholeImageBlur,
+            filmHalation:parameters.filmHalation.active,
+            paperDiffusion:parameters.printDiffusion.active,
+            stageObserver:stageObserver,
+            paperStageObserver:stageObserver && !SpectralPhysics.isPositiveFilm(parameters.filmID),
+            parallelGrain:parameters.sourceGrain.useUnseededParallel
+        )
         return MemoryEnvelope(
-            additionalBytesPerPixel:extra,
+            additionalBytesPerPixel:extra,phaseModel:phases,
             cameraDiffusion:camera,paperDiffusion:paper
         )
     }
@@ -427,7 +440,6 @@ enum OriginalSourcePhysicalImage {
         }
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         let size=w*h*3
-        var inhibitors=[Double](repeating:0,count:size)
         var initialObserved:[Double]?=stageDoubleObserver == nil
             ? nil : [Double](repeating:0,count:size)
         // Capture only the actual encoded RGB multiplied by source metering
@@ -535,6 +547,11 @@ enum OriginalSourcePhysicalImage {
         if !cameraPreActive {
             stageDoubleObserver?("rgbPre",frame.rgb)
         }
+        // OPT-08: defer allocation until camera optics have released
+        // their scratch. DIR-off production needs no zero-filled full frame.
+        // Diagnostics still receive the original complete zero-valued taps.
+        var inhibitors = (dirOn || stageDoubleObserver != nil)
+            ? [Double](repeating:0,count:size) : []
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
         for p in 0..<(w*h) {
@@ -565,8 +582,10 @@ enum OriginalSourcePhysicalImage {
                     positive:source.positive
                 )
             }
-            for receiver in 0..<3 {
-                inhibitors[k+receiver]=sourceInhibition[receiver]
+            if dirOn {
+                for receiver in 0..<3 {
+                    inhibitors[k+receiver]=sourceInhibition[receiver]
+                }
             }
             for c in 0..<3 {
                 frame.rgb[k+c]=initial.rawLog[c]
@@ -590,7 +609,8 @@ enum OriginalSourcePhysicalImage {
         var diffused:[Double]
         if !dirOn {
             // Source active=false: no chemistry, no spatial filter.
-            diffused=[Double](repeating:0,count:size)
+            // Reuse the diagnostic zero tap, or the empty production array.
+            diffused=inhibitors
         } else if !parameters.sourceSpatialDiffusionEnabled ||
                     dynamicDIR?.settings.diffusionSizeUM == 0 {
             // Source diffusion_size_um=0: skip filter, retain inhibitors.
@@ -637,7 +657,8 @@ enum OriginalSourcePhysicalImage {
             if p & 4095 == 0 { try Task.checkCancellation() }
             let k=p*3
             let corrected=(0..<3).map { c in
-                frame.rgb[k+c]-diffused[k+c]
+                // Keep subtraction by +0.0, including signed-zero semantics.
+                frame.rgb[k+c]-(dirOn ? diffused[k+c] : 0.0)
             }
             let density:[Double]
             if let dynamicDIR {

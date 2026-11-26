@@ -71,6 +71,45 @@ enum Build106SourceMemoryLedger {
         return parallelGrain ? 72 : 64
     }
 
+    /// OPT-03: model sequential optical phases separately. The candidate
+    /// is telemetry only: no reduced budget is admitted until real-device
+    /// footprints and source regressions establish the actual lifetimes.
+    /// Observer snapshots are persistent; FFT workspace is reported
+    /// separately by Build91 and is NOT included in these B/px values.
+    struct PhaseEstimate: Codable {
+        let phase: String
+        let bytesPerPixel: UInt64
+    }
+
+    struct PhaseModel: Codable {
+        let phases: [PhaseEstimate]
+        let candidatePeakBytesPerPixel: UInt64
+        let admittedBytesPerPixel: UInt64
+    }
+
+    static func phaseModel(
+        base:UInt64,admittedAdditional:UInt64,
+        scannerFinish:Bool,scannerGlare:Bool,grain:Bool,
+        cameraLens:Bool,filmHalation:Bool,paperDiffusion:Bool,
+        stageObserver:Bool,paperStageObserver:Bool,parallelGrain:Bool
+    ) -> PhaseModel {
+        let observer = (stageObserver ? stageObserverBytesPerPixel : 0)
+            + (paperStageObserver ? paperStageBytesPerPixel : 0)
+        let phases:[PhaseEstimate] = [
+            .init(phase:"camera_photons",bytesPerPixel:base+observer),
+            .init(phase:"camera_lens",bytesPerPixel:base+observer+(cameraLens ? cameraLensBytesPerPixel : 0)),
+            .init(phase:"film_halation",bytesPerPixel:base+observer+(filmHalation ? filmHalationBytesPerPixel : 0)),
+            .init(phase:"spatial_DIR",bytesPerPixel:base+observer),
+            .init(phase:"grain",bytesPerPixel:base+observer+(grain ? grainBytesPerPixel+(parallelGrain ? parallelGrainExtraBytesPerPixel : 0) : 0)),
+            .init(phase:"paper_diffusion",bytesPerPixel:base+observer+(paperDiffusion ? paperDiffusionBytesPerPixel : 0)),
+            .init(phase:"scanner_glare",bytesPerPixel:base+observer+(scannerGlare ? scannerGlareBytesPerPixel : 0)),
+            .init(phase:"scanner_finish",bytesPerPixel:base+observer+(scannerFinish ? scannerFinishBytesPerPixel : 0))
+        ]
+        return PhaseModel(phases:phases,
+            candidatePeakBytesPerPixel:phases.map { $0.bytesPerPixel }.max() ?? base,
+            admittedBytesPerPixel:base+admittedAdditional)
+    }
+
     /// Stable audit of the lifetime boundary in grain.py::apply_grain.
     /// Sub-layer interpolation and particle-count preparations are consumed
     /// BEFORE microstructure. They must NOT leak into the next whole-frame

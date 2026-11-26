@@ -12,6 +12,7 @@ enum Build133RAWMemoryLadder {
         let phase: String
         let seconds: Double
         let residentBytes: UInt64?
+        let physicalFootprintBytes: UInt64?
         let processAvailableBytes: UInt64?
     }
     struct Report: Codable {
@@ -30,6 +31,8 @@ enum Build133RAWMemoryLadder {
         let beforeHeadroom: UInt64?
         let afterHeadroom: UInt64?
         let sampledPeakRSS: UInt64?
+        let sampledPeakPhysicalFootprintBytes: UInt64?
+        let plannedPhaseModel: Build106SourceMemoryLedger.PhaseModel?
         let lowestHeadroom: UInt64?
         let sampleCount: Int
         let outputChecksum: Double?
@@ -54,6 +57,27 @@ enum Build133RAWMemoryLadder {
         return nil
         #endif
     }
+    private static func footprint() -> UInt64? {
+        #if os(iOS)
+        var info=task_vm_info_data_t()
+        var count=mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size
+        )
+        let capacity=Int(count)
+        let rc=withUnsafeMutablePointer(to:&info) { pointer in
+            pointer.withMemoryRebound(to:integer_t.self,capacity:capacity) {
+                task_info(mach_task_self_,task_flavor_t(TASK_VM_INFO),$0,&count)
+            }
+        }
+        guard rc==KERN_SUCCESS,
+              let offset=MemoryLayout<task_vm_info_data_t>.offset(of:\.phys_footprint),
+              Int(count)*MemoryLayout<integer_t>.size >= offset+MemoryLayout.size(ofValue:info.phys_footprint)
+        else { return nil }
+        return UInt64(info.phys_footprint)
+        #else
+        return nil
+        #endif
+    }
     private static func available() -> UInt64? {
         #if os(iOS)
         return UInt64(os_proc_available_memory())
@@ -65,14 +89,17 @@ enum Build133RAWMemoryLadder {
         private let lock=NSLock()
         private var timer:DispatchSourceTimer?
         private var peak:UInt64?
+        private var peakFootprint:UInt64?
         private var lowest:UInt64?
         private var count=0
         func sample() {
             let rss=Build133RAWMemoryLadder.resident()
+            let footprint=Build133RAWMemoryLadder.footprint()
             let free=Build133RAWMemoryLadder.available()
             lock.lock()
             defer {lock.unlock()}
             if let rss {peak=max(peak ?? rss,rss); count+=1}
+            if let footprint {peakFootprint=max(peakFootprint ?? footprint,footprint)}
             if let free {lowest=min(lowest ?? free,free)}
         }
         func start() {
@@ -84,13 +111,13 @@ enum Build133RAWMemoryLadder {
             timer=t
             t.resume()
         }
-        func finish()->(peak:UInt64?,lowest:UInt64?,count:Int) {
+        func finish()->(peak:UInt64?,footprint:UInt64?,lowest:UInt64?,count:Int) {
             timer?.cancel()
             timer=nil
             sample()
             lock.lock()
             defer {lock.unlock()}
-            return (peak,lowest,count)
+            return (peak,peakFootprint,lowest,count)
         }
     }
 
@@ -133,10 +160,12 @@ enum Build133RAWMemoryLadder {
         var status="not_run"
         var outputChecksum:Double?
         var testedWidth:Int?,testedHeight:Int?
+        var plannedPhaseModel:Build106SourceMemoryLedger.PhaseModel?
         func mark(_ label:String) {
             phaseSamples.append(Sample(
                 phase:label,seconds:Date().timeIntervalSince(started),
-                residentBytes:resident(),processAvailableBytes:available()
+                residentBytes:resident(),physicalFootprintBytes:footprint(),
+                processAvailableBytes:available()
             ))
             let checkpoint = [
                 "Build133 RAW diagnostic",
@@ -154,17 +183,23 @@ enum Build133RAWMemoryLadder {
                     NSLocalizedDescriptionKey:"诊断档位无效"])
             }
             if level == 0 {
+                plannedPhaseModel=OriginalSourcePhysicalImage.memoryEnvelope(
+                    width:sourceWidth,height:sourceHeight,parameters:parameters
+                ).phaseModel
                 mark("predecode_budget")
                 // The SAME production guard; a refusal is recorded, not bypassed.
                 try OriginalSourcePhysicalImage.validateMemoryBudget(
-                    width:sourceWidth,height:sourceHeight
+                    width:sourceWidth,height:sourceHeight,parameters:parameters
                 )
                 status="budget_admitted_not_rendered"
             } else {
                 if level == 4 {
+                    plannedPhaseModel=OriginalSourcePhysicalImage.memoryEnvelope(
+                        width:sourceWidth,height:sourceHeight,parameters:parameters
+                    ).phaseModel
                     mark("full_original_predecode_gate")
                     try OriginalSourcePhysicalImage.validateMemoryBudget(
-                        width:sourceWidth,height:sourceHeight
+                        width:sourceWidth,height:sourceHeight,parameters:parameters
                     )
                 }
                 mark("before_real_libraw_aces16")
@@ -177,6 +212,20 @@ enum Build133RAWMemoryLadder {
                 if level == 1 {
                     status="real_raw_aces16_decoded"
                 } else {
+                    // Admit the actual working dimensions before allocating
+                    // the Double frame, using the same options as production.
+                    let workWidth=level==2 ? min(1000,raw.width) : (level==3 ? min(2000,raw.width) : raw.width)
+                    let workHeight=level==2 ? min(1000,raw.height) : (level==3 ? min(2000,raw.height) : raw.height)
+                    var configured=parameters
+                    configured.cameraInputColorSpace = .acesLinear
+                    try configured.validate()
+                    plannedPhaseModel=OriginalSourcePhysicalImage.memoryEnvelope(
+                        width:workWidth,height:workHeight,parameters:configured
+                    ).phaseModel
+                    mark("before_float64_allocation_gate")
+                    try OriginalSourcePhysicalImage.validateMemoryBudget(
+                        width:workWidth,height:workHeight,parameters:configured
+                    )
                     var frame:OriginalSourcePixelIO.Frame
                     if level==2 {
                         frame=diagnosticPatch(raw,width:1000,height:1000)
@@ -190,9 +239,6 @@ enum Build133RAWMemoryLadder {
                     testedWidth=frame.width
                     testedHeight=frame.height
                     mark("float64_source_frame_ready")
-                    var configured=parameters
-                    configured.cameraInputColorSpace = .acesLinear
-                    try configured.validate()
                     try OriginalSourcePhysicalImage.developInPlace(
                         &frame,parameters:configured,
                         stageDoubleObserver:nil,
@@ -227,18 +273,21 @@ enum Build133RAWMemoryLadder {
         ].joined(separator:"\n") + "\n"
         try? final.write(to:checkpointURL,atomically:true,encoding:.utf8)
         return Report(
-            schema:1,version:version,build:build,sourceCommit:commit,
+            schema:2,version:version,build:build,sourceCommit:commit,
             osVersion:osVersion,deviceModel:deviceModel,level:level,
             status:status,sourceWidth:sourceWidth,sourceHeight:sourceHeight,
             testedWidth:testedWidth,testedHeight:testedHeight,
             beforeHeadroom:startingHeadroom,afterHeadroom:endingHeadroom,
-            sampledPeakRSS:observations.peak,lowestHeadroom:observations.lowest,
+            sampledPeakRSS:observations.peak,
+            sampledPeakPhysicalFootprintBytes:observations.footprint,
+            plannedPhaseModel:plannedPhaseModel,lowestHeadroom:observations.lowest,
             sampleCount:observations.count,outputChecksum:outputChecksum,
             firstFailure:failure,phases:phaseSamples,
             limitations:[
                 "Levels 2/3 use unchanged, unresampled center pixels with diagnostic crop boundaries: not a full-frame output or source Python parity.",
                 "Level 4 uses the real production memory guard, no bypass, no Float32/8-bit or resizing fallback.",
-                "25ms sampled RSS may miss transient peaks; iOS Jetsam is not catchable, inspect persistent checkpoint.",
+                "25ms sampled RSS/physical footprint may miss transient peaks; iOS Jetsam is not catchable, inspect persistent checkpoint.",
+                "Phase B/px estimates exclude FFT workspace and are telemetry only; production admission is unchanged.",
                 "The preserved RAW is never modified and no diagnostic image replaces the editor output."
             ]
         )
@@ -266,8 +315,16 @@ enum Build133RAWMemoryLadder {
             "RSS samples: \(report.sampleCount)",
             "Checksum: \(report.outputChecksum.map { String($0) } ?? "none")"
         ]
+        lines.append("Peak sampled physical footprint: "+(report.sampledPeakPhysicalFootprintBytes.map { String($0) } ?? "none"))
+        if let model=report.plannedPhaseModel {
+            lines.append("Candidate phase peak B/px (not admitted): "+String(model.candidatePeakBytesPerPixel))
+            lines.append("Admitted B/px (excluding FFT): "+String(model.admittedBytesPerPixel))
+            for phase in model.phases {
+                lines.append("Model "+phase.phase+": "+String(phase.bytesPerPixel)+" B/px")
+            }
+        }
         for phase in report.phases {
-            lines.append("\(phase.phase): t=\(phase.seconds)s rss=\(phase.residentBytes.map { String($0) } ?? "none") available=\(phase.processAvailableBytes.map { String($0) } ?? "none")")
+            lines.append("\(phase.phase): t=\(phase.seconds)s rss=\(phase.residentBytes.map { String($0) } ?? "none") footprint=\(phase.physicalFootprintBytes.map { String($0) } ?? "none") available=\(phase.processAvailableBytes.map { String($0) } ?? "none")")
         }
         lines.append(contentsOf:report.limitations)
         try lines.joined(separator:"\n").write(
