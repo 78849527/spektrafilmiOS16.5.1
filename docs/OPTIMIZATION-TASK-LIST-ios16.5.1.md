@@ -43,6 +43,12 @@
 - OPT-12：建立历史治理清单，所有既有证据、诊断与工作流保留；没有删除分支或未经认证的科学实现。历史清理待实际回归后分项执行。
 - 兼容性门槛修正：P1 原片未裁切仍受光学尺寸上限，裁切/预览分离 decoder gate；更新旧文本断言验证真实分支、裁切后的全光学预算及无自动降级，不删除保护。
 
+## 集中验证记录（2026-11-26）
+
+- 45763169587 / f93f61b：Linux 前置检查失败于拆分后的 raw_picker_all_files，macOS 未执行；0f18157 修正历史门槛的实际文件位置。
+- [45763431466](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45763431466) / 0f181570506c16c2373348d5aea8fc4603167993：Linux、macOS arm64 两任务 success；Xcode 16.4 BUILD SUCCEEDED、原生 LibRaw、256 内存选项、Build139/141、独立 Python 扩散四族、缓存冷热位级及 Accelerate 候选对照均通过。生产 Swift FFT 与原版 Python 四族最大绝对误差 1.78e-15（门槛 1e-12）；候选 Accelerate 对 Swift 通过现有测试门槛 1e-10 相对/绝对混合，不冒充 Python 直接对照实测误差。Oklch 96、TC 4038、CAM16 216、原版随机与光学参考门槛通过。未构建 IPA，未实机认证。
+- 本轮后续候选：RAW 预览缓存增加 generation lease，清除后拒绝旧任务回填；预览缩减及原始 Float32→Double 解包循环可取消。新增旧 generation 拒绝回填测试。与上述已通过 SHA 区分，需重跑；不改变浮点运算顺序。全尺寸缓存、SIMD、动态尺寸、整帧复用和真机性能仍未完成。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

@@ -78,7 +78,11 @@ struct Build139RAWPreviewDownsampleValidation {
         )!
         let cache=Build139RAWPreviewDownsample.InputCache()
         require(cache.lookup(key)==nil,"cold cache")
-        cache.store(.init(key:key,reduced:preview,sourceWidth:512,sourceHeight:384))
+        let value=Build139RAWPreviewDownsample.CachedInput(
+            key:key,reduced:preview,sourceWidth:512,sourceHeight:384
+        )
+        let lease=cache.clear()
+        cache.store(value,generation:lease)
         let hit=cache.lookup(key)!
         require(hit.sourceWidth==512 && hit.sourceHeight==384,"cached original geometry")
         require(hit.reduced.rgb.map { $0.bitPattern } == preview.rgb.map { $0.bitPattern },
@@ -95,6 +99,12 @@ struct Build139RAWPreviewDownsampleValidation {
         require(cache.lookup(changed)==nil,"file change invalidates key")
         cache.clear()
         require(cache.lookup(key)==nil,"explicit eviction")
+        cache.store(value,generation:lease)
+        require(cache.lookup(key)==nil,"revoked generation cannot repopulate cache")
+        let freshLease=cache.clear()
+        cache.store(value,generation:freshLease)
+        require(cache.lookup(key) != nil,"new generation can fill cache")
+        cache.clear()
         print("PASS OPT-01 immutable preview input cache, geometry/file identity and eviction")
         print("PASS Build139 RAW linear ACES16 area input: 512x384 -> 256x192, " +
               "Float32 quantization, bounded RGB, no source mutation or fallback")

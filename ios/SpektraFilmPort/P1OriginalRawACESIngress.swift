@@ -196,7 +196,7 @@ enum P1OriginalRawACESIngress {
             sourceWidth = cached.sourceWidth
             sourceHeight = cached.sourceHeight
         } else {
-            previewInputCache.clear()
+            let cacheGeneration=previewInputCache.clear()
             // Native LibRaw 45MP/10k and live pre-unpack budget still apply.
             // The small optical preview has its own post-reduction gate.
             let decoded=try open(
@@ -218,7 +218,7 @@ enum P1OriginalRawACESIngress {
                 previewInputCache.store(.init(
                     key:key,reduced:reduced,
                     sourceWidth:decoded.width,sourceHeight:decoded.height
-                ))
+                ),generation:cacheGeneration)
             }
         }
         try Task.checkCancellation()
@@ -251,10 +251,12 @@ enum P1OriginalRawACESIngress {
         guard source.packedRGB16.count == count * 2 else {
             throw Failure.invalid("P1: RAW ACES 原始缓冲区长度改变")
         }
+        try Task.checkCancellation()
         var rgb = [Double](repeating: 0, count: count)
-        source.packedRGB16.withUnsafeBytes { buffer in
+        try source.packedRGB16.withUnsafeBytes { buffer in
             let p = buffer.bindMemory(to: UInt8.self)
             for i in 0..<count {
+                if i & 4095 == 0 { try Task.checkCancellation() }
                 let sample = UInt16(p[i*2]) | (UInt16(p[i*2+1]) << 8)
                 rgb[i] = Double(Float(sample) / Float(65535.0))
             }

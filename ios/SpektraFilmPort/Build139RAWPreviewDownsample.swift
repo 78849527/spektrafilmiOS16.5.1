@@ -56,6 +56,7 @@ enum Build139RAWPreviewDownsample {
     final class InputCache {
         private let lock = NSLock()
         private var entry: CachedInput?
+        private var generation: UInt64 = 0
         private let maximumBytes = 40 * 1024 * 1024
 
         func lookup(_ key: CacheKey) -> CachedInput? {
@@ -65,19 +66,24 @@ enum Build139RAWPreviewDownsample {
             return entry
         }
 
-        func store(_ value: CachedInput) {
+        func store(_ value: CachedInput, generation expected: UInt64) {
             lock.lock()
             defer { lock.unlock() }
-            guard !Task.isCancelled,
+            guard expected == generation, !Task.isCancelled,
                   value.reduced.rgb.count <= maximumBytes / MemoryLayout<Double>.stride
             else { return }
             entry = value
         }
 
-        func clear() {
+        // Capture the generation at the start of a miss. A memory
+        // warning, source invalidation or export can revoke that lease.
+        @discardableResult
+        func clear() -> UInt64 {
             lock.lock()
             defer { lock.unlock() }
+            generation &+= 1
             entry = nil
+            return generation
         }
     }
 
@@ -121,6 +127,7 @@ enum Build139RAWPreviewDownsample {
                 "RAW 快速预览输入不合法；只接受真实完整 ACES16 缓冲，禁止 JPEG 替代"
             )
         }
+        try Task.checkCancellation()
         let factor = min(1.0,Double(maxLongEdge)/Double(max(width,height)))
         let outW = max(1,min(width,Int((Double(width)*factor).rounded())))
         let outH = max(1,min(height,Int((Double(height)*factor).rounded())))
@@ -130,9 +137,10 @@ enum Build139RAWPreviewDownsample {
         // For tiny RAWs (no resize), retain the exact existing integer
         // -> Float32 / 65535 -> Double path with no additional averaging.
         if outW == width && outH == height {
-            packedRGB16.withUnsafeBytes { bytes in
+            try packedRGB16.withUnsafeBytes { bytes in
                 let input=bytes.bindMemory(to:UInt8.self)
                 for i in 0..<count {
+                    if i & 4095 == 0 { try Task.checkCancellation() }
                     let v=UInt16(input[i*2]) |
                         (UInt16(input[i*2+1]) << 8)
                     rgb[i]=Double(Float(v)/Float(65535.0))
@@ -145,9 +153,10 @@ enum Build139RAWPreviewDownsample {
         // luminance/color are never gamma-encoded or clipped.
         let xt=taps(source:width,target:outW)
         let yt=taps(source:height,target:outH)
-        packedRGB16.withUnsafeBytes { bytes in
+        try packedRGB16.withUnsafeBytes { bytes in
             let input=bytes.bindMemory(to:UInt8.self)
             for y in 0..<outH {
+                try Task.checkCancellation()
                 for x in 0..<outW {
                     let dst=(y*outW+x)*3
                     for row in yt[y] {
