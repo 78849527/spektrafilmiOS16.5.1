@@ -1,6 +1,31 @@
 import Foundation
 import CryptoKit
 
+// BEGIN OPT_SOURCE_SPECTRAL_SIMD
+/// Three independent Float64 spectral channels. Do not horizontally reduce
+/// wavelengths, reassociate a sum, or use an explicitly fused multiply-add.
+/// The scalar density and pow(10, -density) remain in the original caller.
+enum SourceSpectralTriplet {
+    @inline(__always)
+    static func printAccumulate(_ sum: inout SIMD3<Double>, weights:[Double],
+                                transmission:Double) {
+        let products=SIMD3<Double>(weights[0],weights[1],weights[2]) * transmission
+        sum = sum + products
+    }
+
+    @inline(__always)
+    static func scanAccumulate(_ sum: inout SIMD3<Double>, weights:[Double],
+                               transmission:Double) {
+        let products=transmission * SIMD3<Double>(weights[0],weights[1],weights[2])
+        sum = sum + products
+    }
+
+    static func channels(_ sum:SIMD3<Double>) -> [Double] {
+        [sum[0],sum[1],sum[2]]
+    }
+}
+// END OPT_SOURCE_SPECTRAL_SIMD
+
 /// iOS 16.5.1 measured-spectra photo simulation.
 /// Ported ORIGINAL Spektrafilm components: Hanatos2025 colour-to-raw LUT,
 /// reflected Mitchell cubic sampling with per-film sensitivity adaptation,
@@ -510,6 +535,52 @@ struct SpectralPhysics {
                             throw PhysicsError.invalid(
                                 "Build137 scanner dye bits changed: " + stock
                             )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Actual material spectra, in both source and compatibility precision,
+    /// exercise the production print and scanner paths against the old
+    /// scalar wavelength accumulation, including missing wavelengths.
+    static func verifySpectralSIMD() throws {
+        for stock in supportedFilmIDs + supportedPaperIDs {
+            for original in [false,true] {
+                let material=try Profile(id:stock,sourceMeasuredFloat64:original)
+                let weights=(0..<81).map { i in
+                    (0..<3).map { c in Double((i*17+c*11)%47-23)/37.0 }
+                }
+                for densities in [[0.0,-0.0,0.0],[-0.05,0.25,1.5],[0.7,1.0,2.1]] {
+                    for clamp in [false,true] {
+                        var scalar=[0.0,0.0,0.0]
+                        for i in material.preparedScannerValidWavelengths {
+                            var density=material.base(i)
+                            for c in 0..<3 {density += material.dyeAbsorbance(i,c)*densities[c]}
+                            let transmission=pow(10.0,-(clamp ? max(0,density) : density))
+                            for c in 0..<3 {scalar[c] += weights[i][c]*transmission}
+                        }
+                        let actual=Self.printRaw(filmDensities:densities,film:material,
+                                                 weights:weights,clampDensity:clamp)
+                        guard actual.map({$0.bitPattern})==scalar.map({$0.bitPattern}) else {
+                            throw PhysicsError.invalid("OPT spectral print SIMD bit mismatch: "+stock)
+                        }
+                    }
+                    var xyz=[0.0,0.0,0.0]
+                    for wl in material.preparedScannerValidWavelengths {
+                        var density=material.base(wl)
+                        for c in 0..<3 {density += material.dyeAbsorbance(wl,c)*densities[c]}
+                        let transmitted=pow(10.0,-density)
+                        for c in 0..<3 {xyz[c] += transmitted*weights[wl][c]}
+                    }
+                    for epsilon in [false,true] {
+                        let expected=Build88OriginalScannerSpectrum.finishXYZ(
+                            xyz,normalization:2.0,sourceLogEpsilon:epsilon)
+                        let actual=Self.scanPhysicalXYZ(densities:densities,paper:material,
+                            weights:weights,normalization:2.0,sourceLogEpsilon:epsilon)
+                        guard expected.map({$0.bitPattern})==actual.map({$0.bitPattern}) else {
+                            throw PhysicsError.invalid("OPT spectral scan SIMD bit mismatch: "+stock)
                         }
                     }
                 }
@@ -2358,7 +2429,7 @@ struct SpectralPhysics {
     private static func printRaw(filmDensities: [Double], film: Profile,
                                  weights: [[Double]],
                                  clampDensity: Bool = true) -> [Double] {
-        var raw = [0.0, 0.0, 0.0]
+        var raw = SIMD3<Double>(repeating:0.0)
         for i in film.preparedScannerValidWavelengths {
             // Source PrintingStage._film_cmy_to_print_log_raw calls
             // compute_density_spectral, then density_to_light. Any absent
@@ -2371,9 +2442,10 @@ struct SpectralPhysics {
             }
             let adjustedDensity = clampDensity ? max(0, spectralDensity) : spectralDensity
             let transmission = pow(10.0, -adjustedDensity)
-            for c in 0..<3 { raw[c] += weights[i][c] * transmission }
+            SourceSpectralTriplet.printAccumulate(&raw,weights:weights[i],
+                                                  transmission:transmission)
         }
-        return raw
+        return SourceSpectralTriplet.channels(raw)
     }
 
     private static func paperDensities(_ filmDensities: [Double], film: Profile,
@@ -2434,19 +2506,18 @@ struct SpectralPhysics {
         densities: [Double], paper: Profile, weights: [[Double]],
         normalization: Double,sourceLogEpsilon:Bool=false
     ) -> [Double] {
-        var xyz = [0.0, 0.0, 0.0]
+        var xyz = SIMD3<Double>(repeating:0.0)
         for wl in paper.preparedScannerValidWavelengths {
             var density = paper.base(wl)
             for channel in 0..<3 {
                 density += paper.dyeAbsorbance(wl,channel)*densities[channel]
             }
             let transmitted = pow(10.0,-density)
-            for channel in 0..<3 {
-                xyz[channel] += transmitted*weights[wl][channel]
-            }
+            SourceSpectralTriplet.scanAccumulate(&xyz,weights:weights[wl],
+                                                 transmission:transmitted)
         }
         return Build88OriginalScannerSpectrum.finishXYZ(
-            xyz,normalization:normalization,
+            SourceSpectralTriplet.channels(xyz),normalization:normalization,
             sourceLogEpsilon:sourceLogEpsilon
         )
     }

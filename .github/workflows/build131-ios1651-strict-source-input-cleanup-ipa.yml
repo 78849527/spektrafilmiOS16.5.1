@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Retry 6: validate full packed RAW cache, source identity and eviction.
+# Retry 7: ordered Float64 SIMD spectral accumulation and scalar regression.
 name: Build142 source baseline optimization regression (compile only by default)
 
 on:
@@ -283,6 +283,25 @@ jobs:
           assert Path('ios/docs/BUILD137_RAW_SPEED_OPTIMIZATION.md').is_file()
           print('PASS Build137 source-only optimization contract; numeric parity and device timing remain separate gates')
           PY
+      - name: OPT-05 actual production spectral SIMD lane and wavelength bitwise parity
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('ios/SpektraFilmPort/SpectralPhysics.swift').read_text()
+          assert source.count('// BEGIN OPT_SOURCE_SPECTRAL_SIMD') == 1
+          assert source.count('// END OPT_SOURCE_SPECTRAL_SIMD') == 1
+          helper=source.split('// BEGIN OPT_SOURCE_SPECTRAL_SIMD',1)[1].split('// END OPT_SOURCE_SPECTRAL_SIMD',1)[0]
+          Path('/tmp/OPTSourceSpectralTriplet.swift').write_text(helper)
+          assert 'SourceSpectralTriplet.printAccumulate(&raw' in source
+          assert 'SourceSpectralTriplet.scanAccumulate(&xyz' in source
+          PY
+          swiftc -O -parse-as-library /tmp/OPTSourceSpectralTriplet.swift \
+            ios/tests/OPTSpectralSIMDValidation.swift -o /tmp/OPTSpectralSIMDValidation
+          /tmp/OPTSpectralSIMDValidation
+          swiftc -Onone -parse-as-library /tmp/OPTSourceSpectralTriplet.swift \
+            ios/tests/OPTSpectralSIMDValidation.swift -o /tmp/OPTSpectralSIMDValidationDebug
+          /tmp/OPTSpectralSIMDValidationDebug
       - name: Build108 immediate Swift syntax gate for 1MP/2MP real renderer and source UI
         run: |
           set -euo pipefail

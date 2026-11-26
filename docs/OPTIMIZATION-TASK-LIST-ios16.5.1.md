@@ -65,6 +65,11 @@
 - [45767790114](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45767790114) / 4ee08ed3c547d8b3b42f1024c9e03fcba5b201e0：Linux/macOS success，120/120 单通道眩光 bitwise；独立 Python 6组 maxAmount=2.6020852139652106e-18，maxXYZ=1.1102230246251565e-16；16/24/32MP dry-run 与低内存拒绝通过，Xcode BUILD SUCCEEDED。
 - OPT-01 新候选：完整精细 RAW 预览可保留一条原始 packed ACES16 解码结果（6 B/px），使用文件元数据 + 流式 SHA256 标识；导出或后续完整预览 take 消费，仍执行完整 Float64 光学和实际内存门槛。仅在 packed bytes <= 当前剩余 headroom/5 时保留（缓存策略而非生产准入上限）；换图/内存警告/快速预览清除；generation 拒绝旧任务回填。快速缓存仍独立；不缓存全幅 Double、输出、颗粒或其他随机状态。新增 exact bytes、内容变化、低内存、失效测试。真机缓存命中率、耗时与内存仍待测；当前候选需重跑 CI。
 
+## SIMD 光谱积分候选（2026-11-26）
+
+- OPT-05：印相光谱累加 printRaw、实际扫描 XYZ scanPhysicalXYZ 改为 SIMD3<Double> 三个独立通道；保留 81 波长顺序/有效掩码、标量密度逐通道求和、pow、clamp、归一化和 CCTF；不横向归约、不显式 FMA、不改随机过程。旧移动 scanLinear 不变；共享 printRaw 的兼容 clamp 分支同样接受 bitwise 验证。
+- 增加真实生产 helper 抽取编译 -O/-Onone 各384组逐波长 bitwise 检查，以及 SourcePhysicalImageParity 内全部实测材料、两种输入精度、三组密度和 clamp/epsilon 分支的旧标量对照。后者需完整源整图诊断实际运行，不能将编译当作执行。A15 速度未测，SIMD 并不保证更快；待 CI 与设备认证。光学全帧中间阶段复用仍待实施。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
