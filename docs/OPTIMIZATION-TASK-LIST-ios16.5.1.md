@@ -133,6 +133,12 @@
 - 45784394788 attempt 1 和 2：Linux 通过，macOS 任务在无步骤记录、无可读取日志的情况下取消；未发现实际 Swift 编译或数值失败，具体取消原因无法确认。
 - 第三次仅通过显式 [runner:intel] push marker 使用既有 macos-15-intel，默认仍为 macos-15 Apple Silicon。保留 Build144、iPhoneOS arm64、原版 Float64、Python 3.11/Numba 0.61.2、所有数值和发布门槛。一次性 [device-ipa:144] 触发相同版本新 SHA 的完整验证发布；无生产源码修改。
 
+## Build144 真机证据及多核候选
+
+- 两份重复日志，共 6 次完成，iOS16.5.1 12.192768MP；无颗粒精细 44.109s、JPEG 44.303s、TIFF16 47.369s，连续 25ms 采样 physical footprint 1013/1007/1019 MB；相机阶段 17.149s，DIR 4.313s，融合显影印相扫描 21.761s。引擎约 5ms，非瓶颈。JPEG 真实缓存命中，TIFF 消费后 miss。FFT 4 族通过 1e-10 门槛但候选 7.832s vs reference 3.915s，保留生产 reference，不宣称整图 FFT 认证。不同 RAW 不作为严格版本 A/B，九层颗粒尚未实测。
+- 新候选：相机 Hanatos/初始 H-D/DIR 抑制及校正 H-D/融合印相扫描独立像素采用最多四线程、同步 bounded wave（每线程 32768 像素）、唯一 inout buffer 借用和不交叠写入。原标量算式共享，所有全图空间卷积及随机粒子顺序不变，任何 worker 错误抛出、父任务每 wave 检查取消。无整图新输出缓冲；观察器模式明确拒绝并行，不静默降级。生产默认 1 worker，尚未启用候选。独立 helper 测试与真实四组原版图像串并行 bitwise gate；后者需实际运行，A15 性能/内存仍待验证。
+- 此轮 compile-only，未构建 IPA。先完成 CI，再集中加入设备对照入口。颗粒后的独立扫描循环和全图空间滤波尚未并行。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

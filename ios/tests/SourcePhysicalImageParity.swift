@@ -222,6 +222,14 @@ enum SourcePhysicalImageParity {
                     traces[stage]=pixels
                 }
             )
+            // Independent full-chain serial/parallel candidate comparison.
+            // No diagnostic observer is shared by threads, no RNG changed.
+            var parallel=params
+            parallel.deterministicPixelWorkers=4
+            let parallelFrame=try OriginalSourcePhysicalImage.develop(frame,parameters:parallel)
+            guard parallelFrame.rgb.map({$0.bitPattern})==actual.rgb.map({$0.bitPattern}) else {
+                throw Failure.invalid("OPT deterministic parallel image bit mismatch "+fixture.name)
+            }
             // Build77/02: compare the ACTUAL production pre-photon
             // input against ORIGINAL Python SimulationPipeline._preprocess
             // for the explicitly supported sRGB/CCTF, no crop/resize case.

@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build144: consolidated device candidate; unmarked pushes compile only.
+# Build144: compile-only deterministic parallel pixel candidate; no production switch.
 name: Build144 optimization regression and explicitly requested device IPA
 
 on:
@@ -326,6 +326,19 @@ jobs:
           swiftc -Onone -parse-as-library /tmp/OPTSourceSpectralTriplet.swift \
             ios/tests/OPTSpectralSIMDValidation.swift -o /tmp/OPTSpectralSIMDValidationDebug
           /tmp/OPTSpectralSIMDValidationDebug
+      - name: OPT deterministic disjoint pixel spans and failure propagation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift').read_text()
+          helper=s.split('// BEGIN OPT_DETERMINISTIC_PIXEL_WORKERS',1)[1].split('// END OPT_DETERMINISTIC_PIXEL_WORKERS',1)[0]
+          Path('/tmp/OPTDeterministicPixels.swift').write_text('import Foundation\n'+helper)
+          PY
+          swiftc -O -parse-as-library /tmp/OPTDeterministicPixels.swift ios/tests/OPTDeterministicPixelsValidation.swift -o /tmp/OPTDeterministicPixels
+          /tmp/OPTDeterministicPixels
+          swiftc -Onone -parse-as-library /tmp/OPTDeterministicPixels.swift ios/tests/OPTDeterministicPixelsValidation.swift -o /tmp/OPTDeterministicPixelsDebug
+          /tmp/OPTDeterministicPixelsDebug
       - name: Build108 immediate Swift syntax gate for 1MP/2MP real renderer and source UI
         run: |
           set -euo pipefail

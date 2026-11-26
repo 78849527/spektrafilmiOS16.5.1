@@ -5,6 +5,82 @@ import ImageIO
 import os
 #endif
 
+// BEGIN OPT_DETERMINISTIC_PIXEL_WORKERS
+/// Synchronous disjoint RGB spans. No full-frame output copy, no shared
+/// mutable engine state, no spatial stencil or stochastic draw in a worker.
+/// The caller must supply a read-only transform; both buffers are uniquely
+/// borrowed for the lifetime of concurrentPerform. Only the failure lock
+/// is shared. Parent cancellation is checked at each bounded wave.
+enum OPTDeterministicPixels {
+    enum Failure:Error {case shape}
+    typealias Transform=(Int,[Double]) throws -> (rgb:[Double],auxiliary:[Double]?)
+    private final class Wave:@unchecked Sendable {
+        let rgb:UnsafeMutablePointer<Double>
+        let aux:UnsafeMutablePointer<Double>?
+        let transform:Transform
+        private let lock=NSLock()
+        private var failure:(Int,Error)?
+        init(rgb:UnsafeMutablePointer<Double>,aux:UnsafeMutablePointer<Double>?,
+             transform:@escaping Transform) {
+            self.rgb=rgb;self.aux=aux;self.transform=transform
+        }
+        func run(_ pixels:Range<Int>) {
+            var sample=[Double](repeating:0,count:3)
+            for p in pixels {
+                let k=p*3
+                sample[0]=rgb[k];sample[1]=rgb[k+1];sample[2]=rgb[k+2]
+                do {
+                    let result=try transform(p,sample)
+                    guard result.rgb.count==3,
+                          (aux == nil ? result.auxiliary==nil : result.auxiliary?.count==3)
+                    else {throw Failure.shape}
+                    for c in 0..<3 {
+                        rgb[k+c]=result.rgb[c]
+                        if let aux,let values=result.auxiliary {aux[k+c]=values[c]}
+                    }
+                } catch {
+                    lock.lock()
+                    if failure == nil || p<failure!.0 {failure=(p,error)}
+                    lock.unlock()
+                    return
+                }
+            }
+        }
+        func check() throws {
+            lock.lock();defer{lock.unlock()}
+            if let failure {throw failure.1}
+        }
+    }
+    static func apply(_ rgb:inout [Double],auxiliary:inout [Double],
+                      workers:Int,transform:@escaping Transform) throws {
+        guard !rgb.isEmpty,rgb.count%3==0,
+              auxiliary.isEmpty || auxiliary.count==rgb.count,
+              (1...4).contains(workers) else {throw Failure.shape}
+        let pixels=rgb.count/3
+        try rgb.withUnsafeMutableBufferPointer { rb in
+            try auxiliary.withUnsafeMutableBufferPointer { ab in
+                guard let base=rb.baseAddress else {throw Failure.shape}
+                let wave=Wave(rgb:base,aux:ab.isEmpty ? nil : ab.baseAddress,transform:transform)
+                let chunk=32768
+                var start=0
+                while start<pixels {
+                    try Task.checkCancellation()
+                    let first=start
+                    let end=min(pixels,first+workers*chunk)
+                    DispatchQueue.concurrentPerform(iterations:workers) { worker in
+                        let lo=first+worker*chunk
+                        if lo<end {wave.run(lo..<min(end,lo+chunk))}
+                    }
+                    try wave.check()
+                    try Task.checkCancellation()
+                    start=end
+                }
+            }
+        }
+    }
+}
+// END OPT_DETERMINISTIC_PIXEL_WORKERS
+
 /// v1.8.22: opt-in full-source *nonlinear* optical spatial image pipeline.
 /// It calls the ACTUAL Swift production Hanatos, H-D, optical enlarger,
 /// s023 paper development and measured-spectrum scanner for EACH pixel.
@@ -240,8 +316,14 @@ enum OriginalSourcePhysicalImage {
         // Original PrintingStage.expose: optical paper photon domain,
         // after enlarger/preflash/EV and before paper H-D.
         var printDiffusion: OriginalSourceDiffusion.Settings = .init()
+        // Explicit candidate only. Production retains serial default until
+        // independent device parity, performance and headroom are measured.
+        var deterministicPixelWorkers:Int=1
 
         func validate() throws {
+            guard (1...4).contains(deterministicPixelWorkers) else {
+                throw Failure.invalid("原版确定性像素线程数无效")
+            }
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
                   SpectralPhysics.supportedPaperIDs.contains(paperID),
                   cameraEV.isFinite && abs(cameraEV) <= 4,
@@ -425,6 +507,10 @@ enum OriginalSourcePhysicalImage {
         try Task.checkCancellation()
         phaseMemoryObserver?("source_input_ready")
         let engine=try parameters.createEngine()
+        let parallelPixels=parameters.deterministicPixelWorkers>1
+        guard !parallelPixels || stageDoubleObserver == nil else {
+            throw Failure.invalid("多线程候选不支持整图阶段观察器；请显式使用串行")
+        }
         phaseMemoryObserver?("optical_engine_ready")
         let source=try engine.sourceSpatialFilmParameters()
         let dynamicDIR:Build84OriginalFilmDIR.Prepared?
@@ -557,15 +643,8 @@ enum OriginalSourcePhysicalImage {
             ? [Double](repeating:0,count:size) : []
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
-        // OPT-05: reuse one RGB scratch value. Array value semantics
-        // preserve any callee-owned copies; numeric evaluation is unchanged.
-        var sample=[Double](repeating:0,count:3)
-        for p in 0..<(w*h) {
-            if p & 4095 == 0 { try Task.checkCancellation() }
-            let k=p*3
-            sample[0]=frame.rgb[k]
-            sample[1]=frame.rgb[k+1]
-            sample[2]=frame.rgb[k+2]
+        // Immutable per-pixel camera transform shared by serial and candidate.
+        func cameraPixel(_ sample:[Double]) throws -> (raw:[Double],density:[Double],inhibition:[Double]?) {
             let initial=try (parameters.cameraOptics.active || parameters.filmHalation.active)
                 ? engine.sourceSpatialInputFromCameraRaw(
                     sample,filmingReferenceScale:parameters.cameraFilmingReferenceScale
@@ -589,13 +668,31 @@ enum OriginalSourcePhysicalImage {
                         positive:source.positive
                     )
                 }
-                for receiver in 0..<3 {
-                    inhibitors[k+receiver]=sourceInhibition[receiver]
-                }
+                return (initial.rawLog,initialDensity,sourceInhibition)
             }
-            for c in 0..<3 {
-                frame.rgb[k+c]=initial.rawLog[c]
-                initialObserved?[k+c]=initialDensity[c]
+            return (initial.rawLog,initialDensity,nil)
+        }
+        if parallelPixels {
+            phaseMemoryObserver?("parallel_camera_begin")
+            try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&inhibitors,
+                workers:parameters.deterministicPixelWorkers) { _,sample in
+                    let result=try cameraPixel(sample)
+                    return (result.raw,result.inhibition)
+                }
+        } else {
+            var sample=[Double](repeating:0,count:3)
+            for p in 0..<(w*h) {
+                if p & 4095 == 0 {try Task.checkCancellation()}
+                let k=p*3
+                for c in 0..<3 {sample[c]=frame.rgb[k+c]}
+                let result=try cameraPixel(sample)
+                if let sourceInhibition=result.inhibition {
+                    for c in 0..<3 {inhibitors[k+c]=sourceInhibition[c]}
+                }
+                for c in 0..<3 {
+                    frame.rgb[k+c]=result.raw[c]
+                    initialObserved?[k+c]=result.density[c]
+                }
             }
         }
         try Task.checkCancellation()
@@ -657,16 +754,9 @@ enum OriginalSourcePhysicalImage {
                 }
             }
         }
-        // Each corrected pixel is completely consumed before its
-        // historical camera log buffer is overwritten by final scan RGB.
-        var corrected=[Double](repeating:0,count:3)
-        for p in 0..<(w*h) {
-            if p & 4095 == 0 { try Task.checkCancellation() }
-            let k=p*3
-            for c in 0..<3 {
-                // Keep subtraction by +0.0, including signed-zero semantics.
-                corrected[c]=frame.rgb[k+c]-(dirOn ? diffused[k+c] : 0.0)
-            }
+        // One pure corrected H-D / print / scan calculation for both paths.
+        func correctedPixel(_ corrected:[Double],paperObserver:(([Double],[Double])->Void)?)
+            throws -> (density:[Double],rgb:[Double]) {
             let density:[Double]
             if let dynamicDIR {
                 density=try dynamicDIR.develop(corrected,corrected:dirOn)
@@ -694,24 +784,48 @@ enum OriginalSourcePhysicalImage {
                 // frame, not sRGB or post-gamut RGB.
                 rgb=try engine.sourceSpatialScanXYZ(
                     filmDensity:density,paperEV:parameters.paperEV,
-                    paperStageObserver:recordPaper(k)
+                    paperStageObserver:paperObserver
                 )
             } else {
                 rgb=try (parameters.scannerOptics.active ||
                            !parameters.sourceOutputCCTFEncoding)
                     ? engine.sourceSpatialScanLinear(
                         filmDensity:density,paperEV:parameters.paperEV,
-                        paperStageObserver:recordPaper(k)
+                        paperStageObserver:paperObserver
                       )
                     : engine.sourceSpatialScan(
                         filmDensity:density,paperEV:parameters.paperEV,
-                        paperStageObserver:recordPaper(k)
+                        paperStageObserver:paperObserver
                       )
             }
-            for c in 0..<3 {
-                correctedObserved?[k+c]=corrected[c]
-                densityObserved?[k+c]=density[c]
-                frame.rgb[k+c]=rgb[c]
+            return (density,rgb)
+        }
+        if parallelPixels {
+            phaseMemoryObserver?("parallel_develop_begin")
+            // diffused is read-only until the synchronous worker wave returns.
+            let field=diffused
+            var noAux=[Double]()
+            try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,
+                workers:parameters.deterministicPixelWorkers) { p,sample in
+                    let k=p*3
+                    let corrected=(0..<3).map {c in sample[c]-(dirOn ? field[k+c] : 0.0)}
+                    let result=try correctedPixel(corrected,paperObserver:nil)
+                    return (result.rgb,nil)
+                }
+        } else {
+            var corrected=[Double](repeating:0,count:3)
+            for p in 0..<(w*h) {
+                if p & 4095 == 0 {try Task.checkCancellation()}
+                let k=p*3
+                for c in 0..<3 {
+                    corrected[c]=frame.rgb[k+c]-(dirOn ? diffused[k+c] : 0.0)
+                }
+                let result=try correctedPixel(corrected,paperObserver:recordPaper(k))
+                for c in 0..<3 {
+                    correctedObserved?[k+c]=corrected[c]
+                    densityObserved?[k+c]=result.density[c]
+                    frame.rgb[k+c]=result.rgb[c]
+                }
             }
         }
         // Build116 memory-only: all corrected film pixels have now
