@@ -24,6 +24,35 @@ enum SourceSpectralTriplet {
         [sum[0],sum[1],sum[2]]
     }
 }
+/// Immutable ordered integration plan: each valid measured wavelength
+/// supplies the exact existing base, three dyes and three weights.
+/// No approximate exponential, reduction reassociation or spectral skipping.
+struct SourcePreparedSpectralSum {
+    struct Row {
+        let base:Double
+        let dye0:Double
+        let dye1:Double
+        let dye2:Double
+        let weights:SIMD3<Double>
+    }
+    let rows:[Row]
+
+    @inline(__always)
+    func evaluate(_ densities:[Double],clampDensity:Bool,scan:Bool) -> [Double] {
+        let c0=densities[0],c1=densities[1],c2=densities[2]
+        var sum=SIMD3<Double>(repeating:0.0)
+        for row in rows {
+            var density=row.base
+            density += row.dye0*c0
+            density += row.dye1*c1
+            density += row.dye2*c2
+            let transmitted=pow(10.0,-(clampDensity ? max(0,density) : density))
+            let products=scan ? transmitted*row.weights : row.weights*transmitted
+            sum = sum + products
+        }
+        return SourceSpectralTriplet.channels(sum)
+    }
+}
 // END OPT_SOURCE_SPECTRAL_SIMD
 
 /// iOS 16.5.1 measured-spectra photo simulation.
@@ -475,6 +504,8 @@ struct SpectralPhysics {
     private let opticalPreflashRaw: [Double]
     private let useOriginalPrintOptics: Bool
     private let scanWeights: [[Double]]   // wavelength -> CIE XYZ
+    private let preparedPrintSum:SourcePreparedSpectralSum
+    private let preparedScanSum:SourcePreparedSpectralSum
     private let mediaWhiteXYZ: [Double]
     private let printReference: Double
     private let neutralOutputRGB: [Double]
@@ -552,6 +583,7 @@ struct SpectralPhysics {
                 let weights=(0..<81).map { i in
                     (0..<3).map { c in Double((i*17+c*11)%47-23)/37.0 }
                 }
+                let plan=Self.prepareSpectralSum(profile:material,weights:weights)
                 for densities in [[0.0,-0.0,0.0],[-0.05,0.25,1.5],[0.7,1.0,2.1]] {
                     for clamp in [false,true] {
                         var scalar=[0.0,0.0,0.0]
@@ -563,7 +595,10 @@ struct SpectralPhysics {
                         }
                         let actual=Self.printRaw(filmDensities:densities,film:material,
                                                  weights:weights,clampDensity:clamp)
-                        guard actual.map({$0.bitPattern})==scalar.map({$0.bitPattern}) else {
+                        let prepared=Self.printRaw(filmDensities:densities,film:material,
+                            weights:weights,clampDensity:clamp,prepared:plan)
+                        guard actual.map({$0.bitPattern})==scalar.map({$0.bitPattern}),
+                              prepared.map({$0.bitPattern})==scalar.map({$0.bitPattern}) else {
                             throw PhysicsError.invalid("OPT spectral print SIMD bit mismatch: "+stock)
                         }
                     }
@@ -579,7 +614,10 @@ struct SpectralPhysics {
                             xyz,normalization:2.0,sourceLogEpsilon:epsilon)
                         let actual=Self.scanPhysicalXYZ(densities:densities,paper:material,
                             weights:weights,normalization:2.0,sourceLogEpsilon:epsilon)
-                        guard expected.map({$0.bitPattern})==actual.map({$0.bitPattern}) else {
+                        let prepared=Self.scanPhysicalXYZ(densities:densities,paper:material,
+                            weights:weights,normalization:2.0,sourceLogEpsilon:epsilon,prepared:plan)
+                        guard expected.map({$0.bitPattern})==actual.map({$0.bitPattern}),
+                              expected.map({$0.bitPattern})==prepared.map({$0.bitPattern}) else {
                             throw PhysicsError.invalid("OPT spectral scan SIMD bit mismatch: "+stock)
                         }
                     }
@@ -994,6 +1032,8 @@ struct SpectralPhysics {
         filmMatrix = matrix
         paperWeights = pWeights
         scanWeights = xyzWeights
+        preparedPrintSum=Self.prepareSpectralSum(profile:originalFilm,weights:pWeights)
+        preparedScanSum=Self.prepareSpectralSum(profile:viewed,weights:xyzWeights)
         mediaWhiteXYZ = white
 
         // The upstream print reference uses develop_simple (NO couplers),
@@ -1547,7 +1587,8 @@ struct SpectralPhysics {
                 preflashRaw: opticalPreflashRaw,
                 opticalPrint: useOriginalPrintOptics,
                 sourceHD: sourcePaperHDCurve,
-                paperStageObserver: paperStageObserver
+                paperStageObserver: paperStageObserver,
+                prepared:preparedPrintSum
             )
             substrate = paper
         }
@@ -1569,7 +1610,8 @@ struct SpectralPhysics {
             var xyz = Self.scanPhysicalXYZ(
                 densities: resultDensity, paper: substrate,
                 weights: scanWeights, normalization: viewingNormalization,
-                sourceLogEpsilon:sourceOriginalXYZLogEpsilon
+                sourceLogEpsilon:sourceOriginalXYZLogEpsilon,
+                prepared:preparedScanSum
             )
             if let reference=sourceReferencePrepared {
                 xyz=reference.correctXYZAfterValidatedSpectralScan(xyz)
@@ -1952,7 +1994,7 @@ struct SpectralPhysics {
         }
         let raw=Self.printRaw(
             filmDensities:filmDensity,film:film,
-            weights:paperWeights,clampDensity:false
+            weights:paperWeights,clampDensity:false,prepared:preparedPrintSum
         )
         let sourceLog=OriginalPrintOptics.paperLogExposure(
             raw:raw,reference:printReference,
@@ -2432,9 +2474,19 @@ struct SpectralPhysics {
         )
     }
 
+    private static func prepareSpectralSum(profile:Profile,weights:[[Double]]) -> SourcePreparedSpectralSum {
+        SourcePreparedSpectralSum(rows:profile.preparedScannerValidWavelengths.map { i in
+            .init(base:profile.base(i),dye0:profile.dyeAbsorbance(i,0),
+                  dye1:profile.dyeAbsorbance(i,1),dye2:profile.dyeAbsorbance(i,2),
+                  weights:SIMD3<Double>(weights[i][0],weights[i][1],weights[i][2]))
+        })
+    }
+
     private static func printRaw(filmDensities: [Double], film: Profile,
                                  weights: [[Double]],
-                                 clampDensity: Bool = true) -> [Double] {
+                                 clampDensity: Bool = true,
+                                 prepared:SourcePreparedSpectralSum?=nil) -> [Double] {
+        if let prepared {return prepared.evaluate(filmDensities,clampDensity:clampDensity,scan:false)}
         var raw = SIMD3<Double>(repeating:0.0)
         for i in film.preparedScannerValidWavelengths {
             // Source PrintingStage._film_cmy_to_print_log_raw calls
@@ -2461,11 +2513,12 @@ struct SpectralPhysics {
                                        preflashRaw: [Double] = [0, 0, 0],
                                        opticalPrint: Bool = false,
                                        sourceHD: OriginalPrintMorph.SourceCurve? = nil,
-                                       paperStageObserver: (([Double], [Double]) -> Void)? = nil
+                                       paperStageObserver: (([Double], [Double]) -> Void)? = nil,
+                                       prepared:SourcePreparedSpectralSum?=nil
     ) -> [Double] {
         let raw = printRaw(
             filmDensities: filmDensities, film: film, weights: weights,
-            clampDensity: !opticalPrint
+            clampDensity: !opticalPrint,prepared:prepared
         )
         let originalExposure = opticalPrint
             ? OriginalPrintOptics.paperLogExposure(
@@ -2510,8 +2563,15 @@ struct SpectralPhysics {
     /// sum_wl(viewing * CIE1931 Ybar), before output color transforms.
     private static func scanPhysicalXYZ(
         densities: [Double], paper: Profile, weights: [[Double]],
-        normalization: Double,sourceLogEpsilon:Bool=false
+        normalization: Double,sourceLogEpsilon:Bool=false,
+        prepared:SourcePreparedSpectralSum?=nil
     ) -> [Double] {
+        if let prepared {
+            return Build88OriginalScannerSpectrum.finishXYZ(
+                prepared.evaluate(densities,clampDensity:false,scan:true),
+                normalization:normalization,sourceLogEpsilon:sourceLogEpsilon
+            )
+        }
         var xyz = SIMD3<Double>(repeating:0.0)
         for wl in paper.preparedScannerValidWavelengths {
             var density = paper.base(wl)

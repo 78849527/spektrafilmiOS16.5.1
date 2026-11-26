@@ -94,6 +94,11 @@
 - H-D：Build84 动态 DIR 已准备的每通道曝光轴，逐段缓存原 1/dx（重复节点仍 0），保留 binary search、端点和 t*(y1-y0) 顺序；80 实测胶片设置的独立原版对照加旧标量 bitwise gate。实际耗时待测。
 - 不改 13MP 准入、生产精度和原版 RNG 参数；此轮仅 CI，无 IPA。
 
+## P0 实图瓶颈优化第三批：印相及扫描
+
+- 每个光学 engine 准备一次有序、有效波长的紧凑 Row（Double 片基/三个染料吸收系数/SIMD3 Double 权重），当前负片印相及正片/相纸 XYZ 扫描的生产像素路径复用；放大机扩散前真实 paper photon 同样复用。保留 81 波长原掩码、三个密度加法顺序、pow(10,-density)、clamp、XYZ 归一化/CCTF、全部原始标量诊断及初始化参考。不是光谱近似/全图缓存。
+- -O/-Onone 使用真实生产 helper 各 768 组独立标量 bitwise 对照；实测所有材料诊断追加真实 plan 对照。实际耗时及设备整图数值未认证。继续使用原生产 memory admission 与 13MP 界限。此轮仅 CI，不发布 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

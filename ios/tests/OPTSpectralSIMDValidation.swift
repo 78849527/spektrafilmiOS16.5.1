@@ -34,6 +34,42 @@ struct OPTSpectralSIMDValidation {
                 }
             }
         }
+        var preparedCases=0
+        for n in [1,3,17,81] {
+            for salt in 0..<48 {
+                let valid=(0..<n).filter { ($0+salt)%11 != 0 || n==1 }
+                let rows=valid.map { i -> SourcePreparedSpectralSum.Row in
+                    let base=Double((i*7+salt)%23-11)/37.0
+                    let a=Double((i*3+salt)%37-18)/17.0
+                    let b=Double((i*5+salt)%41-20)/19.0
+                    let c=Double((i*9+salt)%43-21)/23.0
+                    let weights=SIMD3<Double>(Double(i+1)/81.0,-Double(i)/83.0,
+                                             (i+salt)%7==0 ? -0.0 : 0.125)
+                    return .init(base:base,dye0:a,dye1:b,dye2:c,weights:weights)
+                }
+                let plan=SourcePreparedSpectralSum(rows:rows)
+                let density=[Double(salt%11)/9.0,-0.05,Double(salt%17)/13.0]
+                for scan in [false,true] {
+                    for clamp in [false,true] {
+                        var ref=[0.0,0.0,0.0]
+                        for row in rows {
+                            var d=row.base
+                            let dyes=[row.dye0,row.dye1,row.dye2]
+                            for c in 0..<3 {d += dyes[c]*density[c]}
+                            let transmitted=pow(10.0,-(clamp ? max(0,d) : d))
+                            for c in 0..<3 {
+                                ref[c] += scan ? transmitted*row.weights[c] : row.weights[c]*transmitted
+                            }
+                        }
+                        let result=plan.evaluate(density,clampDensity:clamp,scan:scan)
+                        precondition(result.map{$0.bitPattern}==ref.map{$0.bitPattern},
+                                     "OPT prepared spectral sum changed source bits")
+                        preparedCases+=1
+                    }
+                }
+            }
+        }
+        print("PASS OPT prepared spectral sum \(preparedCases) cases, scalar bitwise")
         print("PASS OPT spectral SIMD \(cases) ordered accumulation cases, bitwise every wavelength")
     }
 }
