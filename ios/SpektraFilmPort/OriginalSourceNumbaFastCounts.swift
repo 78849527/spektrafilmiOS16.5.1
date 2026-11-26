@@ -153,6 +153,27 @@ struct OriginalSourceNumbaFastCounts {
         return counts
     }
 
+    /// Reuse the caller's whole-layer storage while keeping this worker's
+    /// continuous RNG stream. This is NOT the unseeded parallel route.
+    mutating func runOriginalTwoPhaseCountsInto(
+        rates:[Double],probabilities:[Double],counts:inout [Int64]
+    ) throws {
+        guard rates.count==probabilities.count else {
+            throw Failure.invalid("Numba fast_stats: array shape mismatch")
+        }
+        if counts.count != rates.count {
+            counts=[Int64](repeating:0,count:rates.count)
+        }
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            counts[i]=try fastPoisson(rates[i])
+        }
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            counts[i]=try fastBinomial(counts[i],probability:probabilities[i])
+        }
+    }
+
     mutating func runOriginalTwoPhase(
         rates: [Double], probabilities: [Double]
     ) throws -> (poisson: [Int64], binomial: [Int64], afterPoisson: Double,

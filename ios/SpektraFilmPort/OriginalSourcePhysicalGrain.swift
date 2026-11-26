@@ -147,7 +147,6 @@ enum OriginalSourcePhysicalGrain {
         }
         let pixels=width*height
         let maxLayers=measured.maxima
-        var fractions=[Double](repeating:0,count:9)
         var minLayers=[Double](repeating:0,count:9)
         var densityMax=[Double](repeating:0,count:9)
         var particleN=[Double](repeating:0,count:9)
@@ -160,7 +159,6 @@ enum OriginalSourcePhysicalGrain {
             for sl in 0..<3 {
                 let ix=sl*3+ch
                 let fraction=maxLayers[ix]/total
-                fractions[ix]=fraction
                 minLayers[ix]=fraction*settings.densityMin[ch]
                 densityMax[ix]=maxLayers[ix]+minLayers[ix]
                 // grain.py: pixel_area * density_max_fractions /
@@ -240,6 +238,10 @@ enum OriginalSourcePhysicalGrain {
                         : settings.parallelWorkerCount
                   )
                 : nil
+        // One serial count plane per render. No retained alias across
+        // sublayers; release before the late microstructure allocation.
+        // Parallel workers and the observed reference keep their old paths.
+        var serialCounts=[Int64]()
         for ch in 0..<3 {
             let uniformity=settings.uniformity[ch]
             if !retainAllSublayers {
@@ -286,8 +288,22 @@ enum OriginalSourcePhysicalGrain {
                     probabilities[p]=probability
                     rates[p]=n/saturation
                 }
+                // Scoped read-only view dies at the end of this sublayer.
+                // The next iteration may mutate serialCounts without COW.
                 let counts:[Int64]
-                if settings.useFastStats {
+                if !retainAllSublayers && (!settings.useFastStats || multiworker==nil) {
+                    if settings.useFastStats {
+                        try controlledFastSampler!.runOriginalTwoPhaseCountsInto(
+                            rates:rates,probabilities:probabilities,counts:&serialCounts
+                        )
+                    } else {
+                        try OriginalSourceSciPySampler.drawLayerInto(
+                            rates:rates,probabilities:probabilities,
+                            seed:UInt32(ch+sl*10),counts:&serialCounts
+                        )
+                    }
+                    counts=serialCounts
+                } else if settings.useFastStats {
                     if let multiworker {
                         // Default Python fast_stats is unseeded per worker.
                         // The same workers persist through every sublayer.
@@ -341,6 +357,7 @@ enum OriginalSourcePhysicalGrain {
                 }
             }
         }
+        serialCounts.removeAll(keepingCapacity:false)
         phaseMemoryObserver?("grain_particle_clouds_ready")
         stageObserver?("sourceGrainDyeClouds",out)
 

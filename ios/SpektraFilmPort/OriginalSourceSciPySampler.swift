@@ -41,15 +41,19 @@ struct OriginalSourceSciPySampler {
 
     /// Original random_loggam from NumPy 1.26.4; not replaced by lgamma,
     /// because the acceptance branch needs the same numerical comparison.
-    private static func randomLogGam(_ x: Double) -> Double {
-        if x == 1 || x == 2 { return 0 }
-        let a: [Double] = [
+    // Immutable original coefficients; do not rebuild this literal for
+    // every PTRS rejection. Horner evaluation order remains unchanged.
+    private static let logGamCoefficients: [Double] = [
             8.333333333333333e-02, -2.777777777777778e-03,
             7.936507936507937e-04, -5.952380952380952e-04,
             8.417508417508418e-04, -1.917526917526918e-03,
             6.410256410256410e-03, -2.955065359477124e-02,
             1.796443723688307e-01, -1.39243221690590e+00
-        ]
+    ]
+
+    private static func randomLogGam(_ x: Double) -> Double {
+        if x == 1 || x == 2 { return 0 }
+        let a=logGamCoefficients
         let n = x < 7 ? Int(7 - x) : 0
         var x0 = x + Double(n)
         let x2 = (1 / x0) * (1 / x0)
@@ -330,5 +334,29 @@ struct OriginalSourceSciPySampler {
             seeds[index]=developed
         }
         return seeds
+    }
+
+    /// Caller-owned whole-layer count storage. Every element is replaced
+    /// by the Poisson draw BEFORE any Binomial draw; no previous counts
+    /// participate. Keep the allocating drawLayer as the independent path.
+    static func drawLayerInto(
+        rates:[Double],probabilities:[Double],seed:UInt32,
+        counts:inout [Int64]
+    ) throws {
+        guard rates.count==probabilities.count,!rates.isEmpty else {
+            throw Failure.invalid("原版 SciPy 随机场：输入数组尺寸不一致")
+        }
+        if counts.count != rates.count {
+            counts=[Int64](repeating:0,count:rates.count)
+        }
+        var engine=Self(seed:seed)
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            counts[i]=try engine.poisson(rates[i])
+        }
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            counts[i]=try engine.binomial(counts[i],probability:probabilities[i])
+        }
     }
 }

@@ -239,6 +239,13 @@
 - 仅在原有 reduced RAW cache eligibility 中显式允许已验证的 seeded serial grain；原 RNG 每次重新执行，不缓存颗粒输出、不改变种子，不开放 unseeded。full 只开放未裁切、无颗粒、原有支持的 Hanatos 负片参数，使用独立会话和同一完整输入哈希键；24 B/px 额外动态 admission，不降低原预算。全局失效、切换 quick grid、异常、取消和导出完成释放，只有成功 full preview 在密度+packed 总量满足 live retention margin 时可保留。无已存 entry 的 export 不建缓存。缓存可选拒绝不改变算法。
 - 本次提交仅 compile-only；真实编辑、全尺寸 preview→export、memory warning 与跨参数失效仍需真机验证，不称为完全认证。原尺寸颗粒缓存与非受控随机流保持关闭。
 
+## Build148-B — 串行粒子计数生命周期
+
+- 原版九层 ch outer / sl inner、整图 Poisson 后整图 Binomial、SciPy 每层固定 seed、Numba 同一 worker 连续状态保持不变。新增 drawLayerInto / runOriginalTwoPhaseCountsInto，调用者持有一张 Int64 counts，完整覆盖旧值，作用域内只读别名结束后供下层复用。仅生产串行采样使用，observer/并行原路径保留；微结构前显式释放。最多避免 8 次 8 B/px 重复申请（12.19MP 每次约97.5MB），不等于进程峰值下降。Swift COW 实际收益待真机，不下调 ledger。
+- SciPy 原版 randomLogGam 固定系数从函数局部字面量移为静态只读数组，Horner 乘加顺序不变；删未读取 fractions 九元素数组。Poisson 新复用路径加入与 Binomial 相同 4096 间隔取消检查，不改变成功任务随机序列。
+- 现有真实 NumPy/SciPy 参考计数和后续 MT 门槛保留，新增污染旧 counts 后重复覆盖；Numba 连续两层 counts、后续 uniform、normal cache 位级对照。完整五组 Python 粒子/微结构/最终密度和 observer/no-observer gate 保留。未运行本批测试，不声明速度改善。
+- Build148-A CI 45876274875 查询时 Linux 6/6、macOS 21通过，仍执行；本批暂不改 workflow，避免取消正在跑的回归。后续合并触发。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

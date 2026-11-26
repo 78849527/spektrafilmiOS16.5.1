@@ -14,6 +14,7 @@ struct SourceNumbaFastCountsValidation {
         var totalPoisson = 0
         var totalChainBinomial = 0
         var totalFixedBinomial = 0
+        var reused=[Int64]()
         for fixture in fixtures {
             guard fixture.rates.count == fixture.probabilities.count,
                   fixture.poisson.count == fixture.rates.count,
@@ -57,6 +58,27 @@ struct SourceNumbaFastCountsValidation {
             guard optimized==actual.binomial,
                   countsOnly.peekNextUniform().bitPattern==actual.afterBinomial.bitPattern else {
                 fatalError("OPT in-place source Numba count/next RNG mismatch")
+            }
+            // Continuous worker state across two full layers; check
+            // exact counts, next uniform and cached normal against the
+            // original allocating implementation, with poisoned scratch.
+            var reusableEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
+            var allocatingEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
+            for _ in 0..<2 {
+                for i in reused.indices {reused[i] = Int64.min}
+                let reference=try allocatingEngine.runOriginalTwoPhaseCounts(
+                    rates:fixture.rates,probabilities:fixture.probabilities
+                )
+                try reusableEngine.runOriginalTwoPhaseCountsInto(
+                    rates:fixture.rates,probabilities:fixture.probabilities,counts:&reused
+                )
+                guard reused==reference,
+                      reusableEngine.peekNextUniform().bitPattern==allocatingEngine.peekNextUniform().bitPattern else {
+                    fatalError("Reused Numba counts or next uniform diverged")
+                }
+                let a=try reusableEngine.nextMicrostructureNormal()
+                let b=try allocatingEngine.nextMicrostructureNormal()
+                precondition(a.bitPattern==b.bitPattern)
             }
             // Independent offset interval compared with copied slice,
             // including subsequent normal-cache state.

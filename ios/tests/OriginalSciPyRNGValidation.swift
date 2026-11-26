@@ -10,6 +10,7 @@ struct OriginalSciPyRNGValidation {
         let cases = GeneratedOriginalSciPyRNGReference.cases
         precondition(cases.count >= 5)
         var count: Int = 0
+        var reused=[Int64]()
         for sample in cases {
             let n = sample.rates.count
             precondition(n == sample.probabilities.count &&
@@ -54,6 +55,16 @@ struct OriginalSciPyRNGValidation {
                 composite == sample.binomial,
                 "Source 2-array Poisson→Binomial ordering differs"
             )
+            // Poison the previously used count storage, including
+            // equal-sized consecutive arrays and resized fixtures.
+            for _ in 0..<2 {
+                for i in reused.indices {reused[i] = Int64.min}
+                try OriginalSourceSciPySampler.drawLayerInto(
+                    rates:sample.rates,probabilities:sample.probabilities,
+                    seed:sample.seed,counts:&reused
+                )
+                precondition(reused==sample.binomial,"Reused SciPy counts diverged")
+            }
             print("PASS: original SciPy two-stage count/MT stream \(sample.name), pixels=\(n)")
             count += n
         }
