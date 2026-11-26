@@ -197,6 +197,40 @@ enum P1OriginalRawACESIngress {
         ])
     }
 
+    /// Record modeled full-plane payload alongside the existing 25ms
+    /// measured footprint/RSS and actual phase boundaries. Do not apply
+    /// this model to one-layer, unseeded parallel, or non-grain renders.
+    private static func recordSerialGrainLifetime(
+        _ p:OriginalSourcePhysicalImage.Parameters,width:Int,height:Int,
+        cacheAdmitted:Bool
+    ) {
+        guard p.sourceGrain.active,p.sourceGrain.sublayersActive,
+              !p.sourceGrain.useUnseededParallel,width>0,height>0 else{return}
+        let pixelUM=p.dir.referencePixelSizeUM ??
+            (p.cameraOptics.filmFormatMM*1000.0/Double(max(width,height)))
+        guard pixelUM.isFinite,pixelUM>0 else{return}
+        let pixels=UInt64(width)*UInt64(height)
+        guard let life=Build106SourceMemoryLedger.serialGrainLifetime(
+            pixels:pixels,dyeCloud:p.sourceGrain.dyeCloudBlurUM>0,
+            microstructure:p.sourceGrain.microstructureNM*0.001/pixelUM>0.05,
+            microBlur:p.sourceGrain.microstructureUM/pixelUM>0.4,
+            finalBlur:p.sourceGrain.grainBlur>0) else{return}
+        OPTDeviceFeedback.mark("grain_lifetime_model",[
+            "scope":"logical_serial_3x3_payload_not_measured_RSS",
+            "pixels":String(pixels),"pixelUM":String(pixelUM),
+            "inputBytes":String(life.inputBytes),"outputBytes":String(life.outputBytes),
+            "layerBytes":String(life.layerBytes),"probabilityBytes":String(life.probabilityBytes),
+            "ratesBytes":String(life.ratesBytes),"countBytes":String(life.countBytes),
+            "cloudBytes":String(life.cloudBytes),
+            "particlePhaseBytes":String(life.particlePhaseBytes),
+            "releasedScratchBytes":String(life.releasedScratchBytes),
+            "microstructurePhaseBytes":life.microstructurePhaseBytes.map{String($0)} ?? "inactive",
+            "finalBlurPhaseBytes":life.finalBlurPhaseBytes.map{String($0)} ?? "inactive",
+            "logicalPeakBytes":String(life.logicalPeakBytes),
+            "optionalDensityCacheBudgetBytes":String(cacheAdmitted ? pixels*24 : 0),
+            "admissionChanged":"false"])
+    }
+
     struct PreviewWithGeometry {
         let frame:OriginalSourcePixelIO.Frame
         let sourceWidth:Int
@@ -310,6 +344,8 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_density_cache_policy",[
             "eligible":String(reuseAllowed),"reason":reuseReason,
             "densityBytes":String(densityBytes),"retainPreview":String(retainDecodedSource)])
+        recordSerialGrainLifetime(selected,width:working.width,height:working.height,
+                                  cacheAdmitted:reuseAllowed)
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:working.width,height:working.height,parameters:selected
         )
@@ -328,6 +364,7 @@ enum P1OriginalRawACESIngress {
         // Retain only a successful preview, subject to combined live margin.
         // Export, errors and cancelled operations release the density.
         keepDensity=retainDecodedSource && reuseAllowed &&
+            fullDensityCache.hasEntry(expectedGeneration:fullDensityCache.lease()) &&
             canRetainPreviewDensity(bytes:retainedBytes)
         OPTDeviceFeedback.mark("full_density_retention_policy",["retained":String(keepDensity)])
         // The independent packed ACES16 cache keeps its original policy.
@@ -586,6 +623,8 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("preview_density_cache_policy",[
             "eligible":String(reuseAllowed),"reason":reuseReason,
             "densityBytes":String(densityBytes)])
+        recordSerialGrainLifetime(selected,width:reduced.width,height:reduced.height,
+                                  cacheAdmitted:reuseAllowed)
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:reduced.width,height:reduced.height,parameters:selected
         )

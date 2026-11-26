@@ -54,6 +54,34 @@ enum Build106SourceMemoryLedgerValidation {
         try demand(b.scratch(pixels:1_900_000,withDyeCloud:false)
                     .releasedBeforeMicrostructureBytes==91_200_000,
                    "no dye-cloud must not allocate unused cloud buffer")
+        // OPT-20 logical storage, distinct from physical memory or admission.
+        for pixels:UInt64 in [1,1_900_000,12_192_768,13_000_000] {
+            for mask in 0..<16 {
+                let dye=mask&1 != 0,micro=mask&2 != 0
+                let microBlur=mask&4 != 0,final=mask&8 != 0
+                let life=b.serialGrainLifetime(pixels:pixels,dyeCloud:dye,
+                    microstructure:micro,microBlur:microBlur,finalBlur:final)!
+                try demand(life.particlePhaseBytes==pixels*(dye ? 104 : 96),
+                           "serial particle lifetime changed")
+                try demand(life.releasedScratchBytes==pixels*(dye ? 56 : 48),
+                           "serial scratch release changed")
+                try demand(life.countBytes==pixels*8 && life.ratesBytes==pixels*8,
+                           "count or borrowed scratch double counted")
+                try demand(life.microstructurePhaseBytes==(micro ? pixels*(microBlur ? 96 : 72) : nil),
+                           "late microstructure lifetime changed")
+                try demand(life.finalBlurPhaseBytes==(final ? pixels*72 : nil),
+                           "final blur lifetime changed")
+                try demand(life.logicalPeakBytes==life.particlePhaseBytes,
+                           "serial phase peak changed")
+            }
+        }
+        try demand(b.serialGrainLifetime(pixels:0,dyeCloud:false,
+                   microstructure:false,microBlur:false,finalBlur:false)==nil,
+                   "invalid lifetime geometry accepted")
+        try demand(b.serialGrainLifetime(pixels:13_000_001,dyeCloud:false,
+                   microstructure:false,microBlur:false,finalBlur:false)==nil,
+                   "oversized lifetime geometry accepted")
+        print("PASS OPT-20 64 serial logical lifetime combinations + invalid geometry; admission unchanged")
         let cases:[(Int,Int)]=[
             (1000,1000),(1600,1250),(2000,2000),
             (3000,2400),(4000,3000),(5000,2600)

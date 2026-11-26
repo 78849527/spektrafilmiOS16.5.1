@@ -139,6 +139,53 @@ enum Build106SourceMemoryLedger {
         )
     }
 
+    /// OPT-20: logical full-plane payload by lifetime for the serial
+    /// nine-layer no-observer implementation only. Not allocator capacity,
+    /// RSS, physical footprint, or a replacement for productionAdditional.
+    /// Input includes the film-density plane; a cached density may alias
+    /// that input while grain is running, and outlive it in downstream print.
+    /// No credit for such aliasing in the existing admission budget.
+    struct SerialGrainLifetime {
+        let inputBytes:UInt64
+        let outputBytes:UInt64
+        let layerBytes:UInt64
+        let probabilityBytes:UInt64
+        let ratesBytes:UInt64
+        let countBytes:UInt64
+        let cloudBytes:UInt64
+        let particlePhaseBytes:UInt64
+        let releasedScratchBytes:UInt64
+        let microstructurePhaseBytes:UInt64?
+        let finalBlurPhaseBytes:UInt64?
+        let logicalPeakBytes:UInt64
+    }
+
+    static func serialGrainLifetime(
+        pixels:UInt64,dyeCloud:Bool,microstructure:Bool,
+        microBlur:Bool,finalBlur:Bool
+    )->SerialGrainLifetime? {
+        guard pixels>0,pixels<=13_000_000 else{return nil}
+        let scalar=pixels*8,rgb=pixels*24
+        let cloud=dyeCloud ? scalar : 0
+        // 3 RGB-equivalent planes: input, out, current channel's 3
+        // sublayers; probability/rates/counts; optional scalar cloud.
+        // The cloud Gaussian borrows rates after sampling (no new plane).
+        let scratch=rgb+scalar*3+cloud
+        let particle=rgb*2+scratch
+        // After release: input + out. Clump RGB is conditional and its
+        // in-place Gaussian uses three scalar scratch planes.
+        let micro:UInt64?=microstructure
+            ? rgb*3+(microBlur ? scalar*3 : 0) : nil
+        // Clump scope has ended; in-place final Gaussian uses three planes.
+        let final:UInt64?=finalBlur ? rgb*2+scalar*3 : nil
+        return .init(inputBytes:rgb,outputBytes:rgb,layerBytes:rgb,
+            probabilityBytes:scalar,ratesBytes:scalar,countBytes:scalar,
+            cloudBytes:cloud,particlePhaseBytes:particle,
+            releasedScratchBytes:scratch,microstructurePhaseBytes:micro,
+            finalBlurPhaseBytes:final,
+            logicalPeakBytes:max(particle,max(micro ?? 0,final ?? 0)))
+    }
+
     struct Preview {
         let pixels:UInt64
         let additionalBytesPerPixel:UInt64

@@ -258,6 +258,13 @@
 - 新增 0...17 像素尺寸及所有余数、正负零、次正规数、正负正常值的两个实际生产 helper 逐 bitPattern 对照（918 个分量）；原五组 Python 全图阶段与 observer 对照继续保留。未执行新增 CI，SIMD 不等于已获 A15 加速。若无收益需撤回，不改变算法及预算。
 - 148-A 45876274875 查询时 Linux 6/6，macOS 63项通过、实际 iPhoneOS 编译中。B/C/D 集中编译需将 OriginalSourceMT19937.swift 精确加入历史 scope，不允许关闭数值门槛。仍不发 IPA。
 
+## Build148-E — OPT-20 实际作用域内存账本
+
+- 串行无 observer 九层：输入24、输出24、当前通道三亚层24、probability8、rates8、Int64 counts8、可选 dye cloud8 B/px；采样阶段96/104 B/px，rates 被借为 cloud 中间平面，逻辑释放48/56 B/px；微结构有效时输入+输出+clump 72 B/px，若模糊另3标量平面96；最终模糊72。模型只覆盖主要逻辑数组 payload，不含 allocator/ARC/COW、进程其他缓冲、上游保留、FFT 或照片编码，不是 footprint，也不是安全准入。
+- 现有 120/224/56、特例预算、动态 headroom 完全不改。单独记录实际几何与微结构阈值对应的 grain_lifetime_model，和现有25ms峰值/各真实阶段对照；明确可选缓存额外24 B/px；不应用于单层、unseeded parallel 或未开启颗粒。full preview retention telemetry 另验证 entry 真实存在。
+- 新增4几何×16开关=64账本用例及2非法尺寸检查；继续旧 ledger/256组合/原版颗粒/MT/Numba门槛。设备反馈仍是最终依据。Build148-D 前一轮本地 SIMD 声称未见可核查日志，以实际 CI 为准。
+- 上一轮 148-A 仍在 iPhoneOS compile，暂不抢占；本批代码独立提交，随后合并 workflow 触发 B/C/D/E。尚不发IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
