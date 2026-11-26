@@ -70,6 +70,12 @@
 - OPT-05：印相光谱累加 printRaw、实际扫描 XYZ scanPhysicalXYZ 改为 SIMD3<Double> 三个独立通道；保留 81 波长顺序/有效掩码、标量密度逐通道求和、pow、clamp、归一化和 CCTF；不横向归约、不显式 FMA、不改随机过程。旧移动 scanLinear 不变；共享 printRaw 的兼容 clamp 分支同样接受 bitwise 验证。
 - 增加真实生产 helper 抽取编译 -O/-Onone 各384组逐波长 bitwise 检查，以及 SourcePhysicalImageParity 内全部实测材料、两种输入精度、三组密度和 clamp/epsilon 分支的旧标量对照。后者需完整源整图诊断实际运行，不能将编译当作执行。A15 速度未测，SIMD 并不保证更快；待 CI 与设备认证。光学全帧中间阶段复用仍待实施。
 
+## Build143 集中真机候选（2026-11-26）
+
+- [45769345496](https://github.com/78849527/spektrafilmiOS16.5.1/actions/runs/45769345496) / 8159e9f：Linux、macOS 和完整 iPhoneOS arm64 编译均通过。全尺寸 packed RAW cache 独立回归通过。
+- SIMD 候选 189b5ac 合并入此次 Build143（1.8.109）；新独立门槛仍必须实际通过。用户要求必要时构建 IPA，因此本次 head commit 使用 [device-ipa:143] 一次性明确发布标记；普通后续 push 仍只编译。版本/架构/真实 Xcode/完整 SHA 与 ZIP/哈希检查全部通过才发布唯一未签名候选。无设备性能或 RAW 原版认证声明。
+- 真机优先：同一 RAW 冷/热快速和完整预览、同设置原尺寸 JPEG/TIFF16、裁切、8/10/13MP 内存阶梯报告及原版分段对照。Accelerate 不作为生产默认；尚需独立设备性能对照，未解除生产 13MP 尺寸约束。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
