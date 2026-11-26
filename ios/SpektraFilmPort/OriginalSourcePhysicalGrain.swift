@@ -294,10 +294,9 @@ enum OriginalSourcePhysicalGrain {
                         )
                     } else {
                         // Existing certified one-worker source bit replay.
-                        let draw=try controlledFastSampler!.runOriginalTwoPhase(
+                        counts=try controlledFastSampler!.runOriginalTwoPhaseCounts(
                             rates:rates,probabilities:probabilities
                         )
-                        counts=draw.binomial
                     }
                 } else {
                     counts=try OriginalSourceSciPySampler.drawLayer(

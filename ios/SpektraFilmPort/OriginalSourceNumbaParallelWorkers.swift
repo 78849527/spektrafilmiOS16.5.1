@@ -92,11 +92,11 @@ final class OriginalSourceNumbaParallelWorkers {
             let range=interval(index,count:count)
             if range.isEmpty {return}
             do {
-                let value=try worker.source.runOriginalTwoPhase(
-                    rates:Array(rates[range]),
-                    probabilities:Array(probabilities[range])
+                // Read immutable full input arrays over the worker's
+                // original interval; no private rate/probability copies.
+                worker.counts=try worker.source.runOriginalTwoPhaseCounts(
+                    rates:rates,probabilities:probabilities,range:range
                 )
-                worker.counts=value.binomial
             } catch {
                 worker.failure=error.localizedDescription
             }

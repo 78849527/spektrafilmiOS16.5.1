@@ -50,6 +50,33 @@ struct SourceNumbaFastCountsValidation {
                 fatalError("Numba source two-phase MT19937 draw-count mismatch")
             }
 
+            var countsOnly=OriginalSourceNumbaFastCounts(seed:fixture.seed)
+            let optimized=try countsOnly.runOriginalTwoPhaseCounts(
+                rates:fixture.rates,probabilities:fixture.probabilities
+            )
+            guard optimized==actual.binomial,
+                  countsOnly.peekNextUniform().bitPattern==actual.afterBinomial.bitPattern else {
+                fatalError("OPT in-place source Numba count/next RNG mismatch")
+            }
+            // Independent offset interval compared with copied slice,
+            // including subsequent normal-cache state.
+            let lo=fixture.rates.count/4,hi=fixture.rates.count*3/4
+            var rangeEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
+            var sliceEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
+            let rangeCounts=try rangeEngine.runOriginalTwoPhaseCounts(
+                rates:fixture.rates,probabilities:fixture.probabilities,range:lo..<hi
+            )
+            let sliceCounts=try sliceEngine.runOriginalTwoPhase(
+                rates:Array(fixture.rates[lo..<hi]),
+                probabilities:Array(fixture.probabilities[lo..<hi])
+            )
+            guard rangeCounts==sliceCounts.binomial,
+                  rangeEngine.peekNextUniform().bitPattern==sliceCounts.afterBinomial.bitPattern else {
+                fatalError("OPT Numba worker range changed source sequence")
+            }
+            let rangeNormal=try rangeEngine.nextMicrostructureNormal()
+            let sliceNormal=try sliceEngine.nextMicrostructureNormal()
+            precondition(rangeNormal.bitPattern==sliceNormal.bitPattern)
             var fixed = OriginalSourceNumbaFastCounts(seed: fixture.seed &+ 1)
             for i in fixture.fixedNs.indices {
                 let got = try fixed.fastBinomial(

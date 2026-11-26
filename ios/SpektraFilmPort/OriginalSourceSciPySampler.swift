@@ -322,13 +322,13 @@ struct OriginalSourceSciPySampler {
         var seeds = [Int64]()
         seeds.reserveCapacity(rates.count)
         for lambda in rates { seeds.append(try engine.poisson(lambda)) }
-        var developed = [Int64]()
-        developed.reserveCapacity(rates.count)
+        // All Poisson draws have completed. Each old seed is consumed
+        // once, so overwrite it with the Binomial count in the same buffer.
         for index in rates.indices {
-            developed.append(
-                try engine.binomial(seeds[index], probability: probabilities[index])
-            )
+            if index & 4095 == 0 {try Task.checkCancellation()}
+            let developed=try engine.binomial(seeds[index], probability: probabilities[index])
+            seeds[index]=developed
         }
-        return developed
+        return seeds
     }
 }

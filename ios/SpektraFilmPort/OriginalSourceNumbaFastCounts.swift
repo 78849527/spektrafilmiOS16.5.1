@@ -131,6 +131,28 @@ struct OriginalSourceNumbaFastCounts {
         return k - 1
     }
 
+    /// Counts-only production path. Preserve whole-array Poisson then
+    /// whole-array Binomial and identical worker RNG state. The original
+    /// two-field diagnostic below retains both arrays and stream probes.
+    mutating func runOriginalTwoPhaseCounts(
+        rates:[Double],probabilities:[Double],range:Range<Int>?=nil
+    ) throws -> [Int64] {
+        let span=range ?? rates.indices
+        guard rates.count==probabilities.count,
+              span.lowerBound>=0,span.upperBound<=rates.count else {
+            throw Failure.invalid("Numba fast_stats: array shape mismatch")
+        }
+        var counts=[Int64]()
+        counts.reserveCapacity(span.count)
+        for i in span {counts.append(try fastPoisson(rates[i]))}
+        for i in counts.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            let developed=try fastBinomial(counts[i],probability:probabilities[span.lowerBound+i])
+            counts[i]=developed
+        }
+        return counts
+    }
+
     mutating func runOriginalTwoPhase(
         rates: [Double], probabilities: [Double]
     ) throws -> (poisson: [Int64], binomial: [Int64], afterPoisson: Double,
