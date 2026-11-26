@@ -112,7 +112,8 @@ enum Build84OriginalFilmDIR {
     /// Source np.interp: right-sided exact matches, endpoint extension.
     /// Does not sort nodes or silently replace a non-monotonic source axis.
     private static func npInterp(
-        _ x: Double, axis: [Double], values: [Double]
+        _ x: Double, axis: [Double], values: [Double],
+        reciprocals:[Double]?=nil
     ) -> Double {
         let n = axis.count
         if x <= axis[0] { return values[0] }
@@ -125,8 +126,13 @@ enum Build84OriginalFilmDIR {
             else { low = mid + 1 }
         }
         let lo = low - 1
-        let dx = axis[low] - axis[lo]
-        let t = (x - axis[lo]) * (dx == 0 ? 0 : 1.0/dx)
+        let reciprocal:Double
+        if let reciprocals {reciprocal=reciprocals[lo]}
+        else {
+            let dx = axis[low] - axis[lo]
+            reciprocal=dx == 0 ? 0 : 1.0/dx
+        }
+        let t = (x - axis[lo]) * reciprocal
         return values[lo] + t * (values[low] - values[lo])
     }
 
@@ -270,10 +276,12 @@ enum Build84OriginalFilmDIR {
         let matrix: [Double]
         let maximum: [Double]
         let exposureAxes: [[Double]]
+        let exposureReciprocals:[[Double]]
         let initialChannels: [[Double]]
         let correctedChannels: [[Double]]
 
-        func develop(_ logRaw:[Double], corrected:Bool) throws -> [Double] {
+        func develop(_ logRaw:[Double], corrected:Bool,
+                     usePreparedReciprocals:Bool=true) throws -> [Double] {
             guard logRaw.count==3,
                   logRaw.allSatisfy({ $0.isFinite }) else {
                 throw Failure.invalid("Build84 原版 H-D 光子曝光无效")
@@ -282,7 +290,8 @@ enum Build84OriginalFilmDIR {
             var result=[Double](repeating:0,count:3)
             for ch in 0..<3 {
                 result[ch]=Build84OriginalFilmDIR.npInterp(
-                    logRaw[ch],axis:exposureAxes[ch],values:lookup[ch]
+                    logRaw[ch],axis:exposureAxes[ch],values:lookup[ch],
+                    reciprocals:usePreparedReciprocals ? exposureReciprocals[ch] : nil
                 )
             }
             return result
@@ -323,13 +332,20 @@ enum Build84OriginalFilmDIR {
             logExposure:logExposure,densityCurves:normalizedDensityCurves,
             matrix:matrix,positive:positive
         )
+        let axes=(0..<3).map { ch in
+            logExposure.map { $0/settings.gammaRGB[ch] }
+        }
+        let reciprocals=axes.map { axis in
+            (0..<(axis.count-1)).map { i -> Double in
+                let dx=axis[i+1]-axis[i]
+                return dx == 0 ? 0 : 1.0/dx
+            }
+        }
         return Prepared(
             settings:settings,positive:positive,
             logExposure:logExposure,densityCurves:normalizedDensityCurves,
             beforeDIR:corrected,matrix:matrix,maximum:maxDensity,
-            exposureAxes:(0..<3).map { ch in
-                logExposure.map { $0/settings.gammaRGB[ch] }
-            },
+            exposureAxes:axes,exposureReciprocals:reciprocals,
             initialChannels:(0..<3).map { ch in
                 (0..<256).map { normalizedDensityCurves[$0*3+ch] }
             },

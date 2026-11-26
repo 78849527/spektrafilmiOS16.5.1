@@ -87,6 +87,13 @@
 - P0 颗粒：新增 production channelSublayersInto，纯实测 H-D 反演只做当前通道 3 亚层，避免原 3 次重复 9 亚层反演；使用完全相同的 searchsorted、端点和 Float64 插值。诊断仍保存完整九层，既有随机消费顺序和 memory ledger 不变；五组 Python 粒子参考中另测当前通道分支的调用次数、最终密度 bitwise。
 - P0 Hanatos：4×4 Mitchell RGB 3 通道改为 SIMD3<Double> 独立累加，原权重、反射、遍历、total、末端除法保留；真实生成 Float64 LUT 每 stock/3 色域/521 输入与旧标量路径逐位对照，当前候选待 CI。性能未测，不认定必然加速。不发布新 IPA。
 
+## P0 实图瓶颈优化第二批
+
+- SciPy：全 Poisson 结束后将每个已消费的 seed 原地覆盖为 Binomial，避免同时保留两张 Int64 全图；理论少一张 8B/px 计数数组（1219 万像素约 97.5 MB）。原独立 Python 计数向量仍验证实际 drawLayer。未减少生产准入预算，峰值待真机测。
+- Numba：独立 counts-only 两阶段路径同样复用计数数组，不改变原完整诊断双数组路径；并行 worker 只读原 rates/probabilities 的既有区间，不复制两张局部输入。原 worker 区间、种子和正态缓存顺序保持；新增 Python golden counts、后续 RNG 字、切片/区间与下一次 normal 的等价检查。实际并行调度仍不宣称原版逐位一致。
+- H-D：Build84 动态 DIR 已准备的每通道曝光轴，逐段缓存原 1/dx（重复节点仍 0），保留 binary search、端点和 t*(y1-y0) 顺序；80 实测胶片设置的独立原版对照加旧标量 bitwise gate。实际耗时待测。
+- 不改 13MP 准入、生产精度和原版 RNG 参数；此轮仅 CI，无 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

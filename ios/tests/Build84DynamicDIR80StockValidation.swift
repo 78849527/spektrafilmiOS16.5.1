@@ -86,6 +86,13 @@ enum Build84DynamicDIR80StockValidation {
                 let offset=pixel*3
                 let input=Array(raw[offset..<offset+3])
                 let developed=try prepared.develop(input,corrected:false)
+                for corrected in [false,true] {
+                    let reference=try prepared.develop(input,corrected:corrected,
+                                                       usePreparedReciprocals:false)
+                    let optimized=try prepared.develop(input,corrected:corrected)
+                    precondition(reference.map(\.bitPattern)==optimized.map(\.bitPattern),
+                                 "OPT prepared H-D reciprocal changed original bits")
+                }
                 initial+=developed
                 let correctedLog:[Double]
                 if active {
