@@ -85,6 +85,9 @@
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
 # Build146 follow-up: controlled pre-grain density reuse candidate, production still no grain; compile-only.
+# Build147-C compile-only: retain Python five-frame stage oracle and require
+# exact observed allocating versus unobserved in-place grain Float64 output;
+# expanded no-tail FIR/YVV and microstructure sigma regression. No IPA marker.
 name: Build146 optimization regression and explicitly requested device IPA
 
 on:
