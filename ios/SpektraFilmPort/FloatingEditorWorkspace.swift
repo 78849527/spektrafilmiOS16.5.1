@@ -27,6 +27,7 @@ struct FloatingEditorWorkspace: View {
     let onShareOptimizationFeedback: () -> Void
     let onRunOptimizationFFT: () -> Void
     let onRunOptimizationParallel: () -> Void
+    let onRunOptimizationDensityReuse: () -> Void
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
@@ -1320,6 +1321,17 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
                     Text("固定线性 ACES 测试图，1/2/4 线程，分别检查无颗粒和受控九层颗粒+印相扩散；逐位比较、阶段耗时、25ms 内存采样。正式冲印仍串行，结果并入性能反馈 JSON。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunOptimizationDensityReuse()
+                    } label: {
+                        Label("Float64 胶片密度缓存对照",systemImage:"memorychip")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy)
+                    Text("固定 1024×768 线性 ACES；检查相纸/扫描复用、相机/DIR/输入失效及清理代际。与独立原版串行输出逐位比较，记录耗时、热状态和内存。仅诊断，不启用正式缓存。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {

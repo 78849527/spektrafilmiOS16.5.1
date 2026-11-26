@@ -266,6 +266,27 @@ enum SourcePhysicalImageParity {
                       changed.rgb.map({$0.bitPattern})==changedExpected.rgb.map({$0.bitPattern}) else {
                     throw Failure.invalid("OPT film density input invalidation mismatch "+fixture.name)
                 }
+                session.clear()
+                var invalidated=frame
+                var invalidatedPhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&invalidated,parameters:params,
+                    phaseMemoryObserver:{phase in
+                        invalidatedPhases.append(phase)
+                        if phase=="film_density_ready_DIR_released" {session.clear()}
+                    },filmDensityReuse:session)
+                guard invalidatedPhases.contains("film_density_cache_store_invalidated"),
+                      !invalidatedPhases.contains("film_density_cache_stored"),
+                      invalidated.rgb.map({$0.bitPattern})==actual.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("OPT film density stale store mismatch "+fixture.name)
+                }
+                var rebuilt=frame
+                var rebuiltPhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&rebuilt,parameters:params,
+                    phaseMemoryObserver:{rebuiltPhases.append($0)},filmDensityReuse:session)
+                guard rebuiltPhases.contains("film_density_cache_miss"),
+                      rebuiltPhases.contains("film_density_cache_stored") else {
+                    throw Failure.invalid("OPT film density invalidated generation reused "+fixture.name)
+                }
             }
             // Build77/02: compare the ACTUAL production pre-photon
             // input against ORIGINAL Python SimulationPipeline._preprocess

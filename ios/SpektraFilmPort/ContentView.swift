@@ -3732,6 +3732,32 @@ struct ContentView: View {
                         catch {message=error.localizedDescription}
                     }
                 },
+                onRunOptimizationDensityReuse: {
+                    guard !model.busy else {return}
+                    diagnosticDismissPending=true
+                    model.busy=true
+                    model.status="正在验证 Float64 胶片密度缓存"
+                    Task { @MainActor in
+                        defer {model.busy=false}
+                        let result=await Task.detached(priority:.userInitiated) {
+                            Result {
+                                try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"density_reuse_device_compare") {
+                                    try OriginalSourcePhysicalImage.runFilmDensityReuseDeviceComparison {stage,details in
+                                        OPTDeviceFeedback.mark(stage,details)
+                                    }
+                                }
+                            }
+                        }.value
+                        do {
+                            let passed=try result.get()
+                            model.status=passed ? "胶片密度复用对照通过，分享性能报告" : "胶片密度复用对照未通过，分享性能报告"
+                        } catch {
+                            model.status="胶片密度复用对照失败："+error.localizedDescription
+                        }
+                        do {enqueueDiagnosticShare(try OPTDeviceFeedback.export())}
+                        catch {message=error.localizedDescription}
+                    }
+                },
                 onShareBuild100Readiness: {
                     guard !model.busy else { return }
                     diagnosticDismissPending=true

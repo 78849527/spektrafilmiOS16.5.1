@@ -268,13 +268,29 @@ enum OriginalSourcePhysicalImage {
             let flags:[Bool]
             let referencePixelSize:UInt64?
         }
+        private let lock=NSLock()
         private var entry:(Key,[Double])?
-        func clear() {entry=nil}
-        func lookup(_ key:Key)->[Double]? {
-            guard let entry,entry.0==key else {clear();return nil}
-            return entry.1
+        private var generation:UInt64=0
+        func clear() {
+            lock.lock();defer{lock.unlock()}
+            generation &+= 1
+            entry=nil
         }
-        func store(_ key:Key,_ density:[Double]) {entry=(key,density)}
+        // A single transaction per render. Invalidations or another
+        // transaction prevent an older render from repopulating the cache.
+        func begin(_ key:Key)->(generation:UInt64,density:[Double]?) {
+            lock.lock();defer{lock.unlock()}
+            generation &+= 1
+            if let entry,entry.0==key {return (generation,entry.1)}
+            entry=nil
+            return (generation,nil)
+        }
+        func store(_ key:Key,_ density:[Double],generation expected:UInt64)->Bool {
+            lock.lock();defer{lock.unlock()}
+            guard generation==expected else {return false}
+            entry=(key,density)
+            return true
+        }
     }
 
     private static func filmDensityReuseKey(
@@ -576,6 +592,125 @@ enum OriginalSourcePhysicalImage {
         return allPassed
     }
 
+    /// Fixed ACES device-only comparison, independent of user's RAW
+    /// or current settings. Every trial checks actual output bits against
+    /// a fresh fused render. Cache session never escapes this function.
+    static func runFilmDensityReuseDeviceComparison(
+        emit:(String,[String:String])->Void
+    ) throws -> Bool {
+        let width=1024,height=768
+        let input=(0..<(width*height*3)).map { i in
+            Double(Float(UInt16((i*137+31)%65536))/Float(65535))
+        }
+        let session=FilmDensityReuse()
+        #if canImport(UIKit)
+        let warning=NotificationCenter.default.addObserver(
+            forName:UIApplication.didReceiveMemoryWarningNotification,
+            object:nil,queue:nil) { _ in session.clear() }
+        defer {NotificationCenter.default.removeObserver(warning)}
+        #endif
+        defer {session.clear()}
+        var print=OriginalPrintOptics.Settings(enabled:true)
+        print.normalizePrintExposure=false
+        print.printExposureCompensation=false
+        let dir=SpatialDIRSettings(enabled:true,diffusionRadiusScale:1.0,
+            tailWeight:0.06,sourceConvolutionEnabled:true)
+        let paper="kodak_portra_endura"
+        guard let alternative=SpectralPhysics.supportedPaperIDs.sorted().first(where:{$0 != paper})
+        else {throw Failure.invalid("缺少第二种原版相纸")}
+        func parameters(paperID:String="kodak_portra_endura",cameraEV:Double=0,paperEV:Double=0) -> Parameters {
+            var p=Parameters(filmID:"kodak_portra_400",paperID:paperID,
+                cameraEV:cameraEV,paperEV:paperEV,dir:dir,print:print,morph:.init())
+            p.cameraInputColorSpace = .acesLinear
+            return p
+        }
+        var scan=parameters(paperID:alternative,paperEV:0.5)
+        scan.scannerOptics.lensBlurSigma=0.5
+        var changedInput=input
+        changedInput[0]+=0.001
+        var changedDIR=parameters(cameraEV:0.25)
+        changedDIR.sourceSpatialDiffusionEnabled=false
+        var trials:[(String,Parameters,[Double],Bool,Bool)]=[
+            ("cold",parameters(),input,false,false),
+            ("hot_paper_ev",parameters(paperEV:0.5),input,true,false),
+            ("hot_paper_stock",parameters(paperID:alternative,paperEV:0.5),input,true,false),
+            ("hot_scanner_lens",scan,input,true,false),
+            ("miss_camera_ev",parameters(cameraEV:0.25),input,false,false),
+            ("miss_DIR",changedDIR,input,false,false),
+            ("miss_input",changedDIR,changedInput,false,true),
+            ("miss_after_clear_during_render",changedDIR,changedInput,false,false),
+            ("hot_after_rebuild",changedDIR,changedInput,true,false)
+        ]
+        var passedAll=true
+        emit("density_reuse_begin",["width":String(width),"height":String(height),
+            "scope":"fixed_synthetic_no_grain_negative_not_full_RAW",
+            "cacheBytes":String(width*height*24)])
+        for (name,params,pixels,expectHit,clearDuring) in trials {
+            try Task.checkCancellation()
+            let thermalBefore=ProcessInfo.processInfo.thermalState.rawValue
+            emit("density_reuse_trial_begin",["case":name])
+            var baseline=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:pixels)
+            let referenceStart=ProcessInfo.processInfo.systemUptime
+            try developInPlace(&baseline,parameters:params)
+            let referenceSeconds=ProcessInfo.processInfo.systemUptime-referenceStart
+            var actual=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:pixels)
+            var phases=[String]()
+            let sampler=Build133RAWMemoryLadder.RSSSampler()
+            let start=ProcessInfo.processInfo.systemUptime
+            sampler.start()
+            do {
+                try developInPlace(&actual,parameters:params,phaseMemoryObserver:{stage in
+                    phases.append(stage)
+                    if clearDuring && stage=="film_density_ready_DIR_released" {session.clear()}
+                },filmDensityReuse:session)
+            } catch {
+                _=sampler.finish();session.clear();throw error
+            }
+            let elapsed=ProcessInfo.processInfo.systemUptime-start
+            let samples=sampler.finish()
+            var mismatch=0
+            var maxError=0.0
+            for i in baseline.rgb.indices {
+                if i & 4095 == 0 {try Task.checkCancellation()}
+                if baseline.rgb[i].bitPattern != actual.rgb[i].bitPattern {mismatch+=1}
+                maxError=max(maxError,abs(baseline.rgb[i]-actual.rgb[i]))
+            }
+            let hit=phases.contains("film_density_cache_hit")
+            let stored=phases.contains("film_density_cache_stored")
+            let invalidated=phases.contains("film_density_cache_store_invalidated")
+            let upstreamRan=phases.contains("camera_photons_ready")
+            let pass=mismatch==0 && hit==expectHit && upstreamRan != expectHit &&
+                (expectHit || (clearDuring ? invalidated && !stored : stored))
+            passedAll=passedAll && pass
+            emit("density_reuse_trial_result",[
+                "case":name,"expectedHit":String(expectHit),"hit":String(hit),
+                "stored":String(stored),"invalidated":String(invalidated),
+                "upstreamRan":String(upstreamRan),"passed":String(pass),
+                "bitMismatches":String(mismatch),"maxAbsoluteError":String(maxError),
+                "referenceSeconds":String(referenceSeconds),"candidateSeconds":String(elapsed),
+                "thermalBefore":String(thermalBefore),
+                "thermalAfter":String(ProcessInfo.processInfo.thermalState.rawValue),
+                "sampledPeakPhysicalFootprintBytes":samples.footprint.map{String($0)} ?? "not_measured",
+                "sampledPeakRSSBytes":samples.peak.map{String($0)} ?? "not_measured",
+                "sampledLowestHeadroomBytes":samples.lowest.map{String($0)} ?? "not_measured",
+                "sampleCount":String(samples.count)])
+        }
+        trials.removeAll(keepingCapacity:false)
+        // Explicit unsupported settings must not fall back or pretend hit.
+        var unsupported=parameters()
+        unsupported.sourceGrain.active=true
+        var probe=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+        do {
+            try developInPlace(&probe,parameters:unsupported,filmDensityReuse:session)
+            passedAll=false
+            emit("density_reuse_unsupported",["rejected":"false"])
+        } catch Failure.invalid(let reason) where reason.contains("胶片密度复用候选仅支持") {
+            emit("density_reuse_unsupported",["rejected":"true","error":reason])
+        }
+        emit("density_reuse_comparison_result",["passed":String(passedAll)])
+        return passedAll
+    }
+
     static func develop(
         _ input: OriginalSourcePixelIO.Frame,
         parameters: Parameters,
@@ -609,6 +744,11 @@ enum OriginalSourcePhysicalImage {
               frame.rgb.count==w*h*3 else {
             throw Failure.invalid("Build119 已分配 RGB Double 输入尺寸不合法")
         }
+        let reuseKey:FilmDensityReuse.Key?
+        if let filmDensityReuse {
+            do {reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters)}
+            catch {filmDensityReuse.clear();throw error}
+        } else {reuseKey=nil}
         let committedInputBytes=UInt64(frame.rgb.count) *
             UInt64(MemoryLayout<Double>.stride)
         let activePrintDiffusion=parameters.printDiffusion.active &&
@@ -681,10 +821,7 @@ enum OriginalSourcePhysicalImage {
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         phaseMemoryObserver?("optical_parameters_ready")
         let size=w*h*3
-        let reuseKey:FilmDensityReuse.Key?
-        if filmDensityReuse != nil {
-            reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters)
-        } else {reuseKey=nil}
+        let reuseTransaction=reuseKey.flatMap { key in filmDensityReuse?.begin(key) }
         var pendingDensity:[Double]?
         var paperLogObserved:[Double]? = capturePaperStages
             ? [Double](repeating:0,count:size) : nil
@@ -732,7 +869,7 @@ enum OriginalSourcePhysicalImage {
             }
             return rgb
         }
-        if let reuseKey,let cached=filmDensityReuse?.lookup(reuseKey) {
+        if let cached=reuseTransaction?.density {
             guard cached.count==size else {throw Failure.invalid("胶片密度复用尺寸不一致")}
             frame.rgb=cached
             phaseMemoryObserver?("film_density_cache_hit")
@@ -1185,10 +1322,11 @@ enum OriginalSourcePhysicalImage {
         guard frame.rgb.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("逐像素源光学计算产生非有限扫描 RGB")
         }
-        if let reuseKey,let pendingDensity {
+        if let reuseKey,let pendingDensity,let reuseTransaction {
             try Task.checkCancellation()
-            filmDensityReuse?.store(reuseKey,pendingDensity)
-            phaseMemoryObserver?("film_density_cache_stored")
+            let stored=filmDensityReuse?.store(reuseKey,pendingDensity,
+                generation:reuseTransaction.generation) ?? false
+            phaseMemoryObserver?(stored ? "film_density_cache_stored" : "film_density_cache_store_invalidated")
         }
     }
 

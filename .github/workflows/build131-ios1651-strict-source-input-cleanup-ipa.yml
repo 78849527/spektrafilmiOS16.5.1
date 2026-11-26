@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build145 follow-up: repair nonoptional prepared plan type and isolated film density reuse diagnostic; compile-only.
+# Build145 follow-up: bounded local film density reuse generation and device parity diagnostics; compile-only.
 name: Build145 optimization regression and explicitly requested device IPA
 
 on:
@@ -262,15 +262,17 @@ jobs:
           assert 'OPTDeviceFeedback.measure(operation,' in ingress
           assert 'full_cache_hit' in ingress and 'preview_cache_hit' in ingress
           assert ingress.count('phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}')==2
-          # Three existing preview/export routes plus two mutually exclusive
+          # Three existing preview/export routes plus three mutually exclusive
           # device diagnostic routes. Require each explicitly; no count-only waiver.
-          assert editor.count('P1OriginalRawACESIngress.withExclusiveRAWWork(operation:')==5
+          assert editor.count('P1OriginalRawACESIngress.withExclusiveRAWWork(operation:')==6
           assert 'withExclusiveRAWWork(operation:fullSourcePreview ? "full_preview" : "quick_preview")' in editor
-          for operation in ('jpeg_export','tiff16_export','fft_device_compare','parallel_device_compare'):
+          for operation in ('jpeg_export','tiff16_export','fft_device_compare','parallel_device_compare','density_reuse_device_compare'):
               assert editor.count('withExclusiveRAWWork(operation:"'+operation+'")')==1, operation
           assert 'onRunOptimizationFFT' in ui
           assert 'onRunOptimizationParallel' in ui and 'runDeterministicDeviceComparison' in editor
           assert 'Float64 串行 / 多核对照' in ui
+          assert 'onRunOptimizationDensityReuse' in ui and 'runFilmDensityReuseDeviceComparison' in editor
+          assert 'Float64 胶片密度缓存对照' in ui
           assert 'sampledPeakPhysicalFootprintBytes' in feedback
           assert 'try OPTDeviceFeedback.export()' in editor
           assert '导出性能反馈 JSON' in ui
