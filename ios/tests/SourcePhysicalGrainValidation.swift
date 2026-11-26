@@ -66,6 +66,29 @@ enum SourcePhysicalGrainValidation {
               manifest.scope.contains("unmodified original grain.py") else {
             throw Failure.invalid("No original Python grain.py full-frame reference")
         }
+        // Actual production coefficient preparation vs old scalar formula.
+        // Cover inactive boundary, next representable active value, signed
+        // zero normals, realistic micro sizes, underflow and invalid inputs.
+        var preparedChecks=0
+        for std:Double in [0,0.05,Double(0.05).nextUp,0.06,0.5,1,10,1e150] {
+            let prepared=try OriginalSourceMicrostructure.PreparedLognormal(microStd:std)
+            for z:Double in [-100,-8,-1,-0.0,0.0,0.125,1,8] {
+                let reference=try OriginalSourceMicrostructure.lognormal(microStd:std,z:z)
+                let actual=try prepared.sample(z:z)
+                guard actual.bitPattern==reference.bitPattern else {
+                    throw Failure.invalid("Prepared lognormal changed Float64 bits std=\(std) z=\(z)")
+                }
+                preparedChecks+=1
+            }
+        }
+        let prepared=try OriginalSourceMicrostructure.PreparedLognormal(microStd:1)
+        for z in [Double.nan,Double.infinity,1000] {
+            do {
+                _=try prepared.sample(z:z)
+                throw Failure.invalid("Prepared lognormal accepted invalid/overflow sample")
+            } catch OriginalSourceMicrostructure.Failure.invalid {}
+        }
+        print("PASS Build147-C prepared lognormal: \(preparedChecks) exact Float64 comparisons plus invalid/overflow samples")
         var checked=0
         var worst=0.0
         for sample in manifest.cases {

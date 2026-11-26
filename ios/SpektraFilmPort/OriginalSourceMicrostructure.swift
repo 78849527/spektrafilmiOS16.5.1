@@ -48,6 +48,42 @@ enum OriginalSourceMicrostructure {
         return result
     }
 
+    /// Prepared deterministic coefficients for one constant microStd.
+    /// Preserve the scalar reference above and its exact expression order.
+    /// This owns no RNG state; callers still consume each normal in order.
+    struct PreparedLognormal {
+        private let enabled:Bool
+        private let sigma:Double
+        private let mu:Double
+
+        init(microStd:Double) throws {
+            guard microStd.isFinite,microStd>=0 else {
+                throw Failure.invalid("原版微结构：随机样本或标准差无效")
+            }
+            enabled=microStd>0.05
+            if enabled {
+                let sigma2=log(1.0+microStd*microStd)
+                sigma=sqrt(sigma2)
+                mu = -sigma2/2.0
+            } else {
+                sigma=0
+                mu=0
+            }
+        }
+
+        func sample(z:Double) throws -> Double {
+            guard z.isFinite else {
+                throw Failure.invalid("原版微结构：随机样本或标准差无效")
+            }
+            if !enabled {return 1}
+            let result=exp(mu+sigma*z)
+            guard result.isFinite else {
+                throw Failure.invalid("原版微结构：对数正态变换溢出")
+            }
+            return result
+        }
+    }
+
     static func validateSourceMath() throws -> String {
         let cases = GeneratedSourceMicrostructureReference.cases
         guard cases.count >= 5,

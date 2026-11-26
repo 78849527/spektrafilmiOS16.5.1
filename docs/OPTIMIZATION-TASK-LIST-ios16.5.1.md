@@ -213,6 +213,13 @@
 - Build116 60 组旧 RGB 对照增加 caller scratch 分支，每次填充 NaN 测试完整覆盖、跨尺寸、FIR/YVV 与零 sigma，逐位比较原 allocating scalar；五组原 Python stages 与 no-observer final bitwise gate 保留。实际 CI 与设备数值/峰值尚待确认。
 - 上一批 CI 45867442160 查询时 Linux 6/6、macOS queued。为避免 concurrency 取消该独立回归，本次先提交源码及测试，不触发新工作流；后续批次统一触发完整 CI。
 
+## Build147-C 第三阶段：借用已死 rates、微结构确定性系数
+
+- 审计 SciPy drawLayer、Numba serial counts、Numba parallel particleLayer：返回 counts 前均已完成 rates 读取（parallel concurrentPerform 同步返回）。每次下一亚层准备循环完整覆盖 rates。因此生产染料云 intermediate 直接借用 rates，不再额外分配/跨层保留 cloudIntermediate；observer 保留原分配式路径。既有 counts、probabilities、层序、所有随机调用、全图 FIR/YVV 保持。不预扣 ledger，实际 COW/峰值待 A15。
+- 固定 microStd 的 controlled serial lognormal 只在进入微结构时准备 sigma2、sigma、mu，逐样本仍执行原 exp(mu+sigma*z)，保留所有 RNG draws、有限值检查、阈值及原标量 observer 参考。不改 unseeded parallel 的已有准备方式。五组 Python stages/no-observer bitwise 再加 64 组 Float64 对照及 invalid/overflow 拒绝。CI 待执行。
+- OPT-15 审计：当前 FilmDensityReuse 的 SHA256 包含完整已裁切输入 Float64，代际 lease、24 B/px 额外 budget、无颗粒且无相机前级等 admission 已有；P1 正式 full 仍与 preview 缓存隔离。原尺寸候选需要独立诊断而非直接打开生产 full，先验证动态准入及冷/热和告警清除，不将小图或 CI 当成整图认证。
+- 前一 CI 45867442160 查询时 Linux 6/6，Apple Silicon macOS 仍未获 runner。本批合并已有全部 C 代码触发 compile-only，使用已验证 Intel macos-15-intel 备用（默认仍 Apple Silicon）；旧排队任务按现有 concurrency 被替代，不删除历史 gate，不发 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

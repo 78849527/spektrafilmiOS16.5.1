@@ -88,6 +88,8 @@
 # Build147-C compile-only: retain Python five-frame stage oracle and require
 # exact observed allocating versus unobserved in-place grain Float64 output;
 # expanded no-tail FIR/YVV and microstructure sigma regression. No IPA marker.
+# Combined Build147-C: borrow dead particle rates for scalar blur scratch;
+# seeded serial lognormal prepared coefficients checked against scalar bits.
 name: Build146 optimization regression and explicitly requested device IPA
 
 on:

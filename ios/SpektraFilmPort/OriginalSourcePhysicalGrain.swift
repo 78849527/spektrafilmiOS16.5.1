@@ -223,9 +223,6 @@ enum OriginalSourcePhysicalGrain {
         // Reuse its scalar buffer for full-frame FIR/YVV output.
         var cloud=settings.dyeCloudBlurUM>0
             ? [Double](repeating:0,count:pixels) : []
-        // Private to this render. Allocate only on the first active cloud
-        // blur, then overwrite the same full-frame scalar workspace.
-        var cloudIntermediate=[Double]()
         var controlledFastSampler:OriginalSourceNumbaFastCounts? =
             settings.useFastStats && !settings.useUnseededParallel
                 ? OriginalSourceNumbaFastCounts(seed:settings.fastStatsSeed!)
@@ -326,9 +323,13 @@ enum OriginalSourcePhysicalGrain {
                             &cloud,width:width,height:height,sigma:sigma
                         )
                     } else {
+                        // All three samplers have completed synchronously;
+                        // no later code reads rates until the next sublayer
+                        // overwrites every element. Borrow that dead plane.
+                        // No additional scratch survives into the next draw.
                         try SourceGrainScalarGaussian.blurInPlace(
                             &cloud,width:width,height:height,sigma:sigma,
-                            intermediate:&cloudIntermediate
+                            intermediate:&rates
                         )
                     }
                     for p in 0..<pixels {out[p*3+ch]+=cloud[p]}
@@ -340,7 +341,6 @@ enum OriginalSourcePhysicalGrain {
                 }
             }
         }
-        cloudIntermediate.removeAll(keepingCapacity:false)
         phaseMemoryObserver?("grain_particle_clouds_ready")
         stageObserver?("sourceGrainDyeClouds",out)
 
@@ -376,6 +376,10 @@ enum OriginalSourcePhysicalGrain {
                 }
                 // Preserve previously certified single-worker seed 8888.
                 var numba=OriginalSourceNumbaSingleThreadNormal(seed:seed)
+                // Only the deterministic coefficients are reusable.
+                // Observed reference retains the original per-sample math.
+                let prepared=retainAllSublayers ? nil :
+                    try OriginalSourceMicrostructure.PreparedLognormal(microStd:microStd)
                 clump=[Double](repeating:0,count:pixels*3)
                 for ix in clump.indices {
                     let normal:Double
@@ -384,9 +388,13 @@ enum OriginalSourcePhysicalGrain {
                     } else {
                         normal=try numba.nextNormal()
                     }
-                    clump[ix]=try OriginalSourceMicrostructure.lognormal(
-                        microStd:microStd,z:normal
-                    )
+                    if let prepared {
+                        clump[ix]=try prepared.sample(z:normal)
+                    } else {
+                        clump[ix]=try OriginalSourceMicrostructure.lognormal(
+                            microStd:microStd,z:normal
+                        )
+                    }
                 }
             }
             if microBlur>0.4 {
