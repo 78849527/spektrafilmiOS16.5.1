@@ -28,6 +28,7 @@ struct FloatingEditorWorkspace: View {
     let onRunOptimizationFFT: () -> Void
     let onRunOptimizationParallel: () -> Void
     let onRunOptimizationDensityReuse: () -> Void
+    let onRunOptimizationFullDensityReuse: () -> Void
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
@@ -1332,6 +1333,17 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
                     Text("固定 1024×768 线性 ACES；检查相纸/扫描复用、上游失效及清理代际，并验证受控九层颗粒重新抽样。逐位比较、记录耗时、热状态及内存。正式颗粒和原尺寸缓存仍关闭。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunOptimizationFullDensityReuse()
+                    } label: {
+                        Label("原尺寸 RAW / Float64 密度缓存对照",systemImage:"memorychip")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy)
+                    Text("使用当前未裁切真实 RAW、受支持的无颗粒负片设置。四次独立冲印，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝，正式缓存仍关闭。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {

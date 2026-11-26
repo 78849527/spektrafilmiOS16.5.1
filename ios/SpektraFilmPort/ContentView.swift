@@ -3758,6 +3758,37 @@ struct ContentView: View {
                         catch {message=error.localizedDescription}
                     }
                 },
+                onRunOptimizationFullDensityReuse: {
+                    guard !model.busy,model.rawOriginalSourceActive,
+                          let rawURL=model.capturedRAWURL else {
+                        model.status="原尺寸缓存对照需要先选择 RAW 原片直通精细冲印"
+                        return
+                    }
+                    let parameters:OriginalSourcePhysicalImage.Parameters
+                    do {parameters=try model.rawMemoryDiagnosticParameters()}
+                    catch {model.status=error.localizedDescription;return}
+                    diagnosticDismissPending=true
+                    model.busy=true
+                    model.status="正在验证原尺寸 RAW Float64 密度缓存"
+                    Task { @MainActor in
+                        defer {model.busy=false}
+                        let result=await Task.detached(priority:.userInitiated) {
+                            Result {
+                                try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"full_density_reuse_device_compare") {
+                                    try P1OriginalRawACESIngress.runFullDensityReuseComparison(rawURL,opticalSettings:parameters)
+                                }
+                            }
+                        }.value
+                        do {
+                            let passed=try result.get()
+                            model.status=passed ? "原尺寸密度缓存对照通过，分享报告" : "原尺寸密度缓存对照未通过，分享报告"
+                        } catch {
+                            model.status="原尺寸密度缓存对照未完成："+error.localizedDescription
+                        }
+                        do {enqueueDiagnosticShare(try OPTDeviceFeedback.export())}
+                        catch {message=error.localizedDescription}
+                    }
+                },
                 onShareBuild100Readiness: {
                     guard !model.busy else { return }
                     diagnosticDismissPending=true

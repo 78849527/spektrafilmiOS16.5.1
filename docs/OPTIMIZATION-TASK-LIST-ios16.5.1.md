@@ -220,6 +220,13 @@
 - OPT-15 审计：当前 FilmDensityReuse 的 SHA256 包含完整已裁切输入 Float64，代际 lease、24 B/px 额外 budget、无颗粒且无相机前级等 admission 已有；P1 正式 full 仍与 preview 缓存隔离。原尺寸候选需要独立诊断而非直接打开生产 full，先验证动态准入及冷/热和告警清除，不将小图或 CI 当成整图认证。
 - 前一 CI 45867442160 查询时 Linux 6/6，Apple Silicon macOS 仍未获 runner。本批合并已有全部 C 代码触发 compile-only，使用已验证 Intel macos-15-intel 备用（默认仍 Apple Silicon）；旧排队任务按现有 concurrency 被替代，不删除历史 gate，不发 IPA。
 
+## Build147-D：原尺寸 RAW 缓存隔离诊断候选
+
+- 45868857762 Linux 6/6；macOS 止于历史 Build116 白名单，明确唯一未批准文件 OriginalSourceMicrostructure.swift，尚未运行新增完整数值回归。仅准许该真实修改文件，原其他文件范围及全部数值门槛保留。
+- OPT-15 新独立「原尺寸 RAW / Float64 密度缓存对照」入口，与现有 RAW 任务互斥；只接受当前真实未裁切 RAW、支持无颗粒负片 Hanatos 设置，原文件前后 SHA 身份确认，不自动改参数/缩图。独立会话非生产缓存，任何退出及 iOS memory warning 清理，沿用代际保护。
+- 四次同一 ACES16 RAW：两次无缓存（当前 CCTF 与切换 CCTF），再冷缓存及修改 CCTF 热缓存。输出逐次释放，只保留全部 Float64 字节 SHA256；验证冷/热完整字节摘要相同且实际 hit，非逐元素错误统计或 Python 整图认证。记录各次阶段、耗时、25ms physical footprint/RSS/headroom。先额外 24B/px 动态准入，四次逐次复查，不抵扣现存缓存；内存不足明确拒绝，不算通过，不切换快模式。原生产 RAW 路径/缓存/参数均不变。
+- 尚未实现原尺寸颗粒缓存转正、完整原尺寸失效矩阵或生产保留策略。先独立设备数据；CI 只验证编译及既有回归。原尺寸诊断可能因保守预算不准入，此为真实结果非故障掩盖。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

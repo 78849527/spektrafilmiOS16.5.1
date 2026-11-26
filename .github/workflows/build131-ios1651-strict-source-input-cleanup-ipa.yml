@@ -90,6 +90,7 @@
 # expanded no-tail FIR/YVV and microstructure sigma regression. No IPA marker.
 # Combined Build147-C: borrow dead particle rates for scalar blur scratch;
 # seeded serial lognormal prepared coefficients checked against scalar bits.
+# OPT-15 isolated original-size real RAW density cache comparison; compile-only.
 name: Build146 optimization regression and explicitly requested device IPA
 
 on:
@@ -282,14 +283,20 @@ jobs:
           assert 'density_grain_trial_result' in physical
           # Three existing preview/export routes plus three mutually exclusive
           # device diagnostic routes. Require each explicitly; no count-only waiver.
-          assert editor.count('P1OriginalRawACESIngress.withExclusiveRAWWork(operation:')==6
+          assert editor.count('P1OriginalRawACESIngress.withExclusiveRAWWork(operation:')==7
           assert 'withExclusiveRAWWork(operation:fullSourcePreview ? "full_preview" : "quick_preview")' in editor
-          for operation in ('jpeg_export','tiff16_export','fft_device_compare','parallel_device_compare','density_reuse_device_compare'):
+          for operation in ('jpeg_export','tiff16_export','fft_device_compare','parallel_device_compare','density_reuse_device_compare','full_density_reuse_device_compare'):
               assert editor.count('withExclusiveRAWWork(operation:"'+operation+'")')==1, operation
           assert 'onRunOptimizationFFT' in ui
           assert 'onRunOptimizationParallel' in ui and 'runDeterministicDeviceComparison' in editor
           assert 'Float64 串行 / 多核对照' in ui
           assert 'onRunOptimizationDensityReuse' in ui and 'runFilmDensityReuseDeviceComparison' in editor
+          assert 'onRunOptimizationFullDensityReuse' in ui and 'runFullDensityReuseComparison' in editor
+          candidate=ingress.split('static func runFullDensityReuseComparison(',1)[1].split('/// Build139:',1)[0]
+          assert 'additionalBytesPerPixel:envelope.additionalBytesPerPixel+24' in candidate
+          assert 'didReceiveMemoryWarningNotification' in candidate and 'defer {session.clear()}' in candidate
+          assert 'cold.digest==baseline.digest' in candidate and 'hot.digest==baselineChanged.digest' in candidate
+          assert 'hot.hit' in candidate and 'productionEnabled":"false"' in candidate
           assert 'Float64 胶片密度缓存对照' in ui
           assert 'sampledPeakPhysicalFootprintBytes' in feedback
           assert 'try OPTDeviceFeedback.export()' in editor
@@ -433,6 +440,9 @@ jobs:
                 'ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift',
                 'ios/SpektraFilmPort/Build108SourceOpticalDeviceStress.swift',
                 'ios/SpektraFilmPort/OriginalSourcePhysicalGrain.swift',
+                # Build147-C: exact prepared serial lognormal; original scalar
+                # remains the independent reference in the grain stage gate.
+                'ios/SpektraFilmPort/OriginalSourceMicrostructure.swift',
                 'ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift',
                 'ios/SpektraFilmPort/Build115ParallelNumbaEvidence.swift',
                 'ios/SpektraFilmPort/SourceGrainScalarGaussian.swift',

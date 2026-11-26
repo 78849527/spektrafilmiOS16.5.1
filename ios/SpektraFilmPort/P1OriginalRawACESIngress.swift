@@ -1,5 +1,8 @@
 import Foundation
 import CryptoKit
+#if canImport(UIKit)
+import UIKit
+#endif
 #if os(iOS)
 import os
 #endif
@@ -284,6 +287,131 @@ enum P1OriginalRawACESIngress {
                                    generation:acquisition.generation)
         }
         return frame
+    }
+
+    /// OPT-15: isolated full-grid RAW diagnostic, never a production cache.
+    /// No RGB output frames are retained between trials: compare SHA256
+    /// over every actual Float64 byte (including signed zero), rather
+    /// than holding an additional full reference frame in device memory.
+    static func runFullDensityReuseComparison(
+        _ rawURL:URL,opticalSettings:OriginalSourcePhysicalImage.Parameters
+    ) throws -> Bool {
+        var selected=opticalSettings
+        selected.cameraInputColorSpace = .acesLinear
+        try selected.validate()
+        guard OriginalSourcePhysicalImage.canReuseFilmDensity(selected) else {
+            throw Failure.invalid("原尺寸缓存对照需要受支持的无颗粒负片 Hanatos 设置；不自动修改参数")
+        }
+        clearAllInputCaches(reason:"full_density_diagnostic")
+        let session=OriginalSourcePhysicalImage.FilmDensityReuse()
+        let initialLease=session.lease()
+        #if canImport(UIKit)
+        let warning=NotificationCenter.default.addObserver(
+            forName:UIApplication.didReceiveMemoryWarningNotification,
+            object:nil,queue:nil) { _ in session.clear() }
+        defer {NotificationCenter.default.removeObserver(warning)}
+        #endif
+        defer {session.clear()}
+        guard let identity=try fullSourceKey(rawURL) else {
+            throw Failure.invalid("原尺寸缓存对照无法确认 RAW 文件身份")
+        }
+        let source=try open(rawURL,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+        guard try fullSourceKey(rawURL)==identity else {
+            throw Failure.invalid("原尺寸缓存对照 RAW 解码期间身份改变")
+        }
+        let w=source.width,h=source.height
+        let bytes=UInt64(w)*UInt64(h)*24
+        OPTDeviceFeedback.mark("full_density_compare_begin",[
+            "width":String(w),"height":String(h),"cacheBytes":String(bytes),
+            "scope":"actual_uncropped_RAW_no_grain_SHA256_all_Float64_bytes"])
+        var changed=selected
+        // Downstream only, and explicitly reported. No saved user setting
+        // is changed. This compares linear versus encoded scan output.
+        changed.sourceOutputCCTFEncoding.toggle()
+
+        func admit(_ params:OriginalSourcePhysicalImage.Parameters,cache:Bool) throws {
+            if cache {
+                let envelope=OriginalSourcePhysicalImage.memoryEnvelope(width:w,height:h,parameters:params)
+                try OriginalSourcePhysicalImage.validateMemoryBudget(
+                    width:w,height:h,additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                    cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+            } else {
+                try OriginalSourcePhysicalImage.validateMemoryBudget(width:w,height:h,parameters:params)
+            }
+        }
+        func trial(_ name:String,_ params:OriginalSourcePhysicalImage.Parameters,
+                   cache:Bool,expectedLease:UInt64?=nil) throws -> (digest:[UInt8],hit:Bool,stored:Bool,invalidated:Bool) {
+            try Task.checkCancellation()
+            OPTDeviceFeedback.mark("full_density_trial_begin",[
+                "case":name,"cache":String(cache),"outputCCTF":String(params.sourceOutputCCTFEncoding)])
+            do {try admit(params,cache:cache)}
+            catch {
+                OPTDeviceFeedback.mark("full_density_admission_refused",["case":name,"error":error.localizedDescription])
+                throw error
+            }
+            if let expectedLease,session.lease() != expectedLease {
+                throw Failure.invalid("原尺寸缓存对照内存告警/代际失效")
+            }
+            var frame=try makeSourceFrame(source,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+            var phases=[String]()
+            let sampler=Build133RAWMemoryLadder.RSSSampler()
+            let start=ProcessInfo.processInfo.systemUptime
+            sampler.start()
+            do {
+                try OriginalSourcePhysicalImage.developInPlace(
+                    &frame,parameters:params,phaseMemoryObserver:{stage in
+                        phases.append(stage)
+                        OPTDeviceFeedback.mark("full_density_legacy_phase",["case":name,"phase":stage])
+                    },filmDensityReuse:cache ? session : nil,
+                    filmDensityReuseLease:expectedLease)
+            } catch {
+                _=sampler.finish()
+                throw error
+            }
+            let elapsed=ProcessInfo.processInfo.systemUptime-start
+            let samples=sampler.finish()
+            try Task.checkCancellation()
+            var hash=SHA256()
+            frame.rgb.withUnsafeBytes {hash.update(bufferPointer:$0)}
+            let digest=Array(hash.finalize())
+            let hit=phases.contains("film_density_cache_hit")
+            let stored=phases.contains("film_density_cache_stored")
+            let invalidated=phases.contains("film_density_cache_store_invalidated")
+            OPTDeviceFeedback.mark("full_density_trial_result",[
+                "case":name,"seconds":String(elapsed),"hit":String(hit),
+                "stored":String(stored),"invalidated":String(invalidated),
+                "outputBytes":String(frame.rgb.count*8),
+                "sampledPeakPhysicalFootprintBytes":samples.footprint.map{String($0)} ?? "not_measured",
+                "sampledPeakRSSBytes":samples.peak.map{String($0)} ?? "not_measured",
+                "sampledLowestHeadroomBytes":samples.lowest.map{String($0)} ?? "not_measured",
+                "sampleCount":String(samples.count)])
+            return (digest,hit,stored,invalidated)
+        }
+        // Both independent baselines run before any full density is retained.
+        // Early optional-cache admission avoids long baselines when even the
+        // cold candidate cannot fit. Recheck live admission at every trial.
+        try admit(selected,cache:true)
+        try admit(changed,cache:true)
+        let baseline=try trial("baseline_cold",selected,cache:false)
+        let baselineChanged=try trial("baseline_changed_CCTF",changed,cache:false)
+        let cold=try trial("cache_cold",selected,cache:true,expectedLease:initialLease)
+        guard !cold.hit,cold.stored,!cold.invalidated else {
+            throw Failure.invalid("原尺寸缓存未成功保留或被内存告警清除")
+        }
+        // Admission is conservative: no credit for already-resident
+        // cached CMY, or assumed future release. A refused hot trial is
+        // NOT a numerical PASS and never triggers a reduced image.
+        let hotLease=session.lease()
+        let hot=try trial("cache_hot_changed_CCTF",changed,cache:true,expectedLease:hotLease)
+        let coldEqual=cold.digest==baseline.digest
+        let hotEqual=hot.digest==baselineChanged.digest
+        let passed=coldEqual && hotEqual && hot.hit && !hot.invalidated
+        session.clear()
+        OPTDeviceFeedback.mark("full_density_compare_result",[
+            "passed":String(passed),"coldAllBytesSHA256Equal":String(coldEqual),
+            "hotAllBytesSHA256Equal":String(hotEqual),"hotHit":String(hot.hit),
+            "productionEnabled":"false","cacheCleared":"true"])
+        return passed
     }
 
     /// Build139: automatic speed-oriented preview ONLY. Full JPEG/TIFF16
