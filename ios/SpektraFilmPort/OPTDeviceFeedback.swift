@@ -79,14 +79,27 @@ enum OPTDeviceFeedback {
         active=Active(id:UUID().uuidString,operation:operation,started:ProcessInfo.processInfo.systemUptime)
         lock.unlock()
         defer {lock.lock();active=nil;lock.unlock()}
+        let sampler=Build133RAWMemoryLadder.RSSSampler()
+        sampler.start()
         mark("begin",["queueWaitSeconds":String(queueWait)])
+        func peakDetails()->[String:String] {
+            let result=sampler.finish()
+            return [
+                "sampledPeakRSSBytes":result.peak.map{String($0)} ?? "not_measured",
+                "sampledPeakPhysicalFootprintBytes":result.footprint.map{String($0)} ?? "not_measured",
+                "sampledLowestHeadroomBytes":result.lowest.map{String($0)} ?? "not_measured",
+                "sampleCount":String(result.count),
+                "sampleIntervalMilliseconds":"25"
+            ]
+        }
         do {
             let value=try body()
-            mark("completed")
+            mark("completed",peakDetails())
             return value
         } catch {
-            mark(error is CancellationError ? "cancelled" : "failed",
-                 ["error":String(error.localizedDescription.prefix(500))])
+            var details=peakDetails()
+            details["error"]=String(error.localizedDescription.prefix(500))
+            mark(error is CancellationError ? "cancelled" : "failed",details)
             throw error
         }
     }

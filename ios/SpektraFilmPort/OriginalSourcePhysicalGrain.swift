@@ -217,7 +217,8 @@ enum OriginalSourcePhysicalGrain {
         // must remain the authority for this allocation-only optimization.
         var probabilities=[Double](repeating:0,count:pixels)
         var rates=[Double](repeating:0,count:pixels)
-        var saturations=[Double](repeating:0,count:pixels)
+        // Saturation is reconstructed from the exact stored probability.
+        // No extra full-resolution Double saturation field is needed.
         // Build116: dye cloud carries ONE channel per source sublayer.
         // Reuse its scalar buffer for full-frame FIR/YVV output.
         var cloud=settings.dyeCloudBlurUM>0
@@ -281,7 +282,6 @@ enum OriginalSourcePhysicalGrain {
                     let probability=min(1.0-1e-6,max(1e-6,sourceD/densityMax[li]))
                     let saturation=1.0-probability*settings.uniformity[ch]*(1.0-1e-6)
                     probabilities[p]=probability
-                    saturations[p]=saturation
                     rates[p]=n/saturation
                 }
                 let counts:[Int64]
@@ -310,7 +310,8 @@ enum OriginalSourcePhysicalGrain {
                 let sigma=settings.dyeCloudBlurUM*sqrt(od)
                 if sigma>0 {
                     for p in 0..<pixels {
-                        cloud[p]=Double(counts[p])*od*saturations[p]
+                        let saturation=1.0-probabilities[p]*settings.uniformity[ch]*(1.0-1e-6)
+                        cloud[p]=Double(counts[p])*od*saturation
                     }
                     // The previous RGB filter wrote channel zero only.
                     // Preserve same full-frame reflect FIR/YVV in Float64,
@@ -321,7 +322,8 @@ enum OriginalSourcePhysicalGrain {
                     for p in 0..<pixels {out[p*3+ch]+=cloud[p]}
                 } else {
                     for p in 0..<pixels {
-                        out[p*3+ch]+=Double(counts[p])*od*saturations[p]
+                        let saturation=1.0-probabilities[p]*settings.uniformity[ch]*(1.0-1e-6)
+                        out[p*3+ch]+=Double(counts[p])*od*saturation
                     }
                 }
             }
@@ -330,7 +332,7 @@ enum OriginalSourcePhysicalGrain {
         stageObserver?("sourceGrainDyeClouds",out)
 
         // Build117: release the current 3-layer (or observed 9-layer) field,
-        // 3 Poisson/Binomial preparation fields (3 Double/px) and dye-cloud
+        // 2 Poisson/Binomial preparation fields (2 Double/px) and dye-cloud
         // RGB workspace are dead after this final SciPy/fast_stats draw.
         // Explicitly relinquish their storage BEFORE allocating Numba
         // microstructure and the final Gaussian workspaces. This does not
@@ -339,7 +341,6 @@ enum OriginalSourcePhysicalGrain {
         layerInputs.removeAll(keepingCapacity:false)
         probabilities.removeAll(keepingCapacity:false)
         rates.removeAll(keepingCapacity:false)
-        saturations.removeAll(keepingCapacity:false)
         cloud.removeAll(keepingCapacity:false)
         phaseMemoryObserver?("grain_particle_scratch_released")
 

@@ -3680,6 +3680,32 @@ struct ContentView: View {
                         message="性能反馈导出失败："+error.localizedDescription
                     }
                 },
+                onRunOptimizationFFT: {
+                    guard !model.busy else {return}
+                    diagnosticDismissPending=true
+                    model.busy=true
+                    model.status="正在对照原版与 Accelerate Double FFT"
+                    Task { @MainActor in
+                        defer {model.busy=false}
+                        let result=await Task.detached(priority:.userInitiated) {
+                            Result {
+                                try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"fft_device_compare") {
+                                    try OriginalSourceDiffusion.runDeviceComparison { stage,details in
+                                        OPTDeviceFeedback.mark(stage,details)
+                                    }
+                                }
+                            }
+                        }.value
+                        do {
+                            let passed=try result.get()
+                            model.status=passed ? "FFT 对照通过，分享性能报告" : "FFT 对照未通过，分享性能报告"
+                        } catch {
+                            model.status="FFT 对照失败："+error.localizedDescription
+                        }
+                        do {enqueueDiagnosticShare(try OPTDeviceFeedback.export())}
+                        catch {message=error.localizedDescription}
+                    }
+                },
                 onShareBuild100Readiness: {
                     guard !model.busy else { return }
                     diagnosticDismissPending=true

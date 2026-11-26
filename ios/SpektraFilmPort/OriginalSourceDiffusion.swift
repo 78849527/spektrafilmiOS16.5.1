@@ -437,6 +437,50 @@ enum OriginalSourceDiffusion {
     }
     #endif
 
+    /// Explicit, bounded device diagnostic only. No change to the
+    /// production FFT backend or renderer. Reference and candidate share
+    /// precisely the same input, source PSF, reflection and geometry.
+    static func runDeviceComparison(
+        observe:(String,[String:String])->Void
+    ) throws -> Bool {
+        let w=512,h=384,pixelUM=100.0
+        let input=(0..<(w*h*3)).map { Double(($0*37+11)%251)/251.0 }
+        var passed=true
+        for family in Family.allCases {
+            var cfg=Settings()
+            cfg.active=true
+            cfg.family=family
+            let start=ProcessInfo.processInfo.systemUptime
+            let reference=try apply(input,width:w,height:h,pixelUM:pixelUM,
+                                    settings:cfg,fftBackend:.reference,usePreparedPSFCache:false)
+            let referenceSeconds=ProcessInfo.processInfo.systemUptime-start
+            observe("fft_reference_ready",["family":family.rawValue,
+                "seconds":String(referenceSeconds),"width":String(w),"height":String(h)])
+            let candidateStart=ProcessInfo.processInfo.systemUptime
+            let candidate=try apply(input,width:w,height:h,pixelUM:pixelUM,
+                                    settings:cfg,fftBackend:.accelerateCandidate,usePreparedPSFCache:false)
+            let candidateSeconds=ProcessInfo.processInfo.systemUptime-candidateStart
+            guard candidate.count==reference.count else {
+                throw Failure.invalid("FFT diagnostic candidate size differs")
+            }
+            var maxAbsolute=0.0,maxScaled=0.0
+            for k in reference.indices {
+                let delta=abs(reference[k]-candidate[k])
+                guard delta.isFinite else {throw Failure.invalid("FFT diagnostic nonfinite")}
+                maxAbsolute=max(maxAbsolute,delta)
+                maxScaled=max(maxScaled,delta/max(1,abs(reference[k])))
+            }
+            let equal=maxScaled<=1e-10
+            passed = passed && equal
+            observe("fft_candidate_ready",["family":family.rawValue,
+                "referenceSeconds":String(referenceSeconds),"candidateSeconds":String(candidateSeconds),
+                "maxAbsolute":String(maxAbsolute),"maxScaled":String(maxScaled),
+                "tolerance":"1e-10","passed":String(equal)])
+        }
+        observe("fft_comparison_result",["passed":String(passed),"scope":"synthetic_512x384_four_families_not_full_RAW"])
+        return passed
+    }
+
     private static func reflect(_ pos:Int,dimension:Int) -> Int {
         precondition(dimension>0)
         // numpy.pad(mode="reflect") repeats its mirrored period; a

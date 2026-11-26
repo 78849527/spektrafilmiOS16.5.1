@@ -85,7 +85,7 @@ enum Build133RAWMemoryLadder {
         return nil
         #endif
     }
-    private final class RSSSampler {
+    final class RSSSampler {
         private let lock=NSLock()
         private var timer:DispatchSourceTimer?
         private var peak:UInt64?

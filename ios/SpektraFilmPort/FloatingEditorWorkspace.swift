@@ -25,6 +25,7 @@ struct FloatingEditorWorkspace: View {
     let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
     let onShareOptimizationFeedback: () -> Void
+    let onRunOptimizationFFT: () -> Void
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
@@ -1295,7 +1296,18 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
-                    Text("自动记录近期真实 RAW 预览、导出、缓存命中、各阶段时间、内存快照及错误；不含原图。闪退后重新打开 App 也可导出上次检查点。峰值请使用下方 RAW 内存专项诊断。")
+                    Text("自动记录近期真实 RAW 预览、导出、缓存状态、阶段耗时及 25ms 采样内存峰值；不含原图。闪退后可导出上次检查点，采样并非 Jetsam 高水位。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunOptimizationFFT()
+                    } label: {
+                        Label("FFT 原版 / Accelerate 对照",systemImage:"waveform.path")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy)
+                    Text("固定 512×384 Float64 测试图，记录两后端误差、耗时与采样内存；不改变正式冲印算法。结果并入性能反馈 JSON。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
