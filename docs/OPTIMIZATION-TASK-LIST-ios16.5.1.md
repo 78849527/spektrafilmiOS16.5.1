@@ -104,6 +104,10 @@
 - 45775750265：Linux PASS；macOS 止于历史 Build116 源码范围检查，明确拒绝三个新优化文件。未运行到这些模块的数值验证。只加入三个实际批准的文件路径，保留其余白名单，不降低任何数值容差。
 - 将实际 SciPy golden、Numba counts-only golden/后续 RNG、80 个动态 DIR Python 原版用例的独立 Swift 可执行验证显式纳入本轮 macOS CI，防止仅编译测试源码却未执行。新印相扫描候选合并后统一重跑。
 
+## 独立测试抽取修复
+
+- CI 45776146149 Linux PASS，macOS 第12步抽取生产 helper 单独编译时缺少 Foundation import，导致 pow 不在作用域。修复生成文件 import；生产算法和测试阈值不变。重新运行后才可判断数值一致性。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

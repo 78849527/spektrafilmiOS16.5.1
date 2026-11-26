@@ -312,7 +312,7 @@ jobs:
           assert source.count('// BEGIN OPT_SOURCE_SPECTRAL_SIMD') == 1
           assert source.count('// END OPT_SOURCE_SPECTRAL_SIMD') == 1
           helper=source.split('// BEGIN OPT_SOURCE_SPECTRAL_SIMD',1)[1].split('// END OPT_SOURCE_SPECTRAL_SIMD',1)[0]
-          Path('/tmp/OPTSourceSpectralTriplet.swift').write_text(helper)
+          Path('/tmp/OPTSourceSpectralTriplet.swift').write_text('import Foundation\n'+helper)
           assert 'SourceSpectralTriplet.printAccumulate(&raw' in source
           assert 'SourceSpectralTriplet.scanAccumulate(&xyz' in source
           PY
