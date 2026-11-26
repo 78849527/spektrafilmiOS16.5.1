@@ -114,6 +114,55 @@ enum OriginalSourcePhysicalGrain {
         var channelSublayersInto: (([Double], Int, inout [Double]) throws -> Void)? = nil
     }
 
+    // Independent deterministic operations only: no reduction, FMA,
+    // reciprocal, RNG or channel-order change. Keep scalar observer path.
+    static func multiplyMicrostructureSIMD(
+        _ density:inout [Double],_ clump:[Double]
+    ) throws {
+        guard density.count==clump.count else {
+            throw Failure.invalid("原版微结构 SIMD 尺寸不一致")
+        }
+        try density.withUnsafeMutableBufferPointer { dst in
+            try clump.withUnsafeBufferPointer { src in
+                var i=0
+                while i+4<=dst.count {
+                    if i & 4095 == 0 {try Task.checkCancellation()}
+                    let a=SIMD4<Double>(dst[i],dst[i+1],dst[i+2],dst[i+3])
+                    let b=SIMD4<Double>(src[i],src[i+1],src[i+2],src[i+3])
+                    let v=a*b
+                    dst[i]=v[0];dst[i+1]=v[1];dst[i+2]=v[2];dst[i+3]=v[3]
+                    i+=4
+                }
+                while i<dst.count {dst[i]*=src[i];i+=1}
+            }
+        }
+    }
+
+    static func subtractDensityMinSIMD(
+        _ density:inout [Double],_ minimum:[Double]
+    ) throws {
+        guard minimum.count==3,density.count%3==0 else {
+            throw Failure.invalid("原版 CMY 最小密度 SIMD 尺寸不一致")
+        }
+        let a=SIMD4<Double>(minimum[0],minimum[1],minimum[2],minimum[0])
+        let b=SIMD4<Double>(minimum[1],minimum[2],minimum[0],minimum[1])
+        let c=SIMD4<Double>(minimum[2],minimum[0],minimum[1],minimum[2])
+        try density.withUnsafeMutableBufferPointer { dst in
+            var i=0
+            while i+12<=dst.count {
+                if i & 4095 == 0 {try Task.checkCancellation()}
+                let x=SIMD4<Double>(dst[i],dst[i+1],dst[i+2],dst[i+3])-a
+                let y=SIMD4<Double>(dst[i+4],dst[i+5],dst[i+6],dst[i+7])-b
+                let z=SIMD4<Double>(dst[i+8],dst[i+9],dst[i+10],dst[i+11])-c
+                dst[i]=x[0];dst[i+1]=x[1];dst[i+2]=x[2];dst[i+3]=x[3]
+                dst[i+4]=y[0];dst[i+5]=y[1];dst[i+6]=y[2];dst[i+7]=y[3]
+                dst[i+8]=z[0];dst[i+9]=z[1];dst[i+10]=z[2];dst[i+11]=z[3]
+                i+=12
+            }
+            while i<dst.count {dst[i]-=minimum[i%3];i+=1}
+        }
+    }
+
     static func apply(
         _ densityCMY: [Double], width: Int, height: Int,
         pixelUM: Double, measured: MeasuredLayers,
@@ -439,16 +488,25 @@ enum OriginalSourcePhysicalGrain {
                     )
                 }
             }
-            for ix in out.indices {out[ix]*=clump[ix]}
+            if retainAllSublayers {
+                for ix in out.indices {out[ix]*=clump[ix]}
+            } else {
+                try multiplyMicrostructureSIMD(&out,clump)
+            }
         }
         phaseMemoryObserver?("grain_microstructure_ready")
         stageObserver?("sourceGrainMicrostructure",out)
 
-        for p in 0..<pixels {
-            for ch in 0..<3 {
-                out[p*3+ch]-=settings.densityMin[ch]
+        if retainAllSublayers {
+            for p in 0..<pixels {
+                for ch in 0..<3 {
+                    out[p*3+ch]-=settings.densityMin[ch]
+                }
             }
+        } else {
+            try subtractDensityMinSIMD(&out,settings.densityMin)
         }
+        phaseMemoryObserver?("grain_density_min_removed")
         if settings.grainBlur>0 {
             // Observers can retain the earlier CMY snapshots. Only the
             // unobserved, locally owned production result is mutated.

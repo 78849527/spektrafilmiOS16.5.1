@@ -89,6 +89,34 @@ enum SourcePhysicalGrainValidation {
             } catch OriginalSourceMicrostructure.Failure.invalid {}
         }
         print("PASS Build147-C prepared lognormal: \(preparedChecks) exact Float64 comparisons plus invalid/overflow samples")
+        // Exercise exact production SIMD helpers separately from the
+        // Python full-stage regression below. All remainder sizes, signed
+        // zero, subnormal, normal and negative values; no approximate compare.
+        let values:[Double]=[-0.0,0,Double.leastNonzeroMagnitude,
+            -Double.leastNonzeroMagnitude,Double.leastNormalMagnitude,
+            -1,0.03125,0.5,2.0,1e100,-1e100]
+        let factors:[Double]=[0,-0.0,0.5,1,1.25,2,Double.leastNormalMagnitude]
+        let minimum:[Double]=[-0.0,0.03125,0.125]
+        var simdChecks=0
+        for pixels in 0...17 {
+            let input=(0..<(pixels*3)).map{values[$0%values.count]}
+            let clump=input.indices.map{factors[$0%factors.count]}
+            var scalar=input
+            for i in scalar.indices {scalar[i]*=clump[i]}
+            var vector=input
+            try OriginalSourcePhysicalGrain.multiplyMicrostructureSIMD(&vector,clump)
+            guard vector.map(\.bitPattern)==scalar.map(\.bitPattern) else {
+                throw Failure.invalid("Build148-D microstructure SIMD bit mismatch")
+            }
+            simdChecks+=scalar.count
+            for i in scalar.indices {scalar[i]-=minimum[i%3]}
+            try OriginalSourcePhysicalGrain.subtractDensityMinSIMD(&vector,minimum)
+            guard vector.map(\.bitPattern)==scalar.map(\.bitPattern) else {
+                throw Failure.invalid("Build148-D minimum density SIMD bit mismatch")
+            }
+            simdChecks+=scalar.count
+        }
+        print("PASS Build148-D exact independent Float64 SIMD \(simdChecks) components")
         var checked=0
         var worst=0.0
         for sample in manifest.cases {

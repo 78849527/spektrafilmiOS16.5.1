@@ -252,6 +252,12 @@
 - Numba 小方差 inversion 提前固定 odds=p/(1-p)，保持乘法结合顺序及 k-1；不跳过 Knuth/direct trials，不用近似替代。串行复用采样增加每层 poisson_begin / poisson_done / binomial_done 的 phase marker，含耗时/footprint（现有报告环最多160事件，建议每次独立导出）。并行路径未增加此细分。实际 FastStats 瓶颈与收益仍需真机，非运行时间承诺。
 - Build148-A CI 当前 Linux 6/6，macOS 56项通过仍运行；暂不触发新的 workflow 以避免取消。下一次集中加入 MT19937 单文件历史白名单及 CI，不跳过任何数值测试。
 
+## Build148-D — 确定性颗粒 SIMD 第一批
+
+- 独立微结构 Float64 逐元素乘法与最终 CMY densityMin 扣除改用 SIMD4<Double>，无归约、无 FMA、无倒数近似，无额外全图数组，明确尾部标量路径。CMY 每12元素对应原四像素，单元素运算完全相同；observer 保留旧标量。单层路径、随机抽样、概率夹取、饱和与亚层累加均未改动。添加 density_min_removed 阶段标记。
+- 新增 0...17 像素尺寸及所有余数、正负零、次正规数、正负正常值的两个实际生产 helper 逐 bitPattern 对照（918 个分量）；原五组 Python 全图阶段与 observer 对照继续保留。未执行新增 CI，SIMD 不等于已获 A15 加速。若无收益需撤回，不改变算法及预算。
+- 148-A 45876274875 查询时 Linux 6/6，macOS 63项通过、实际 iPhoneOS 编译中。B/C/D 集中编译需将 OriginalSourceMT19937.swift 精确加入历史 scope，不允许关闭数值门槛。仍不发 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
