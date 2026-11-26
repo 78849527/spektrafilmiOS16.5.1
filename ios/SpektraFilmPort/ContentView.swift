@@ -1001,6 +1001,7 @@ final class PhotoEditorModel: ObservableObject {
     // Debounce scrolling wheels; never let a stale render replace new settings.
     private var renderGeneration = 0
     private var pendingRender: Task<Void, Never>?
+    private var rawPreviewTask: Task<Void, Never>?
     private var originalMetalPreviewVersion = 0
     // A stale simulation cannot release the busy state of a newer request.
     private var activeSimulationGeneration: Int?
@@ -1247,6 +1248,7 @@ final class PhotoEditorModel: ObservableObject {
 
     func queueSpectralPreview() {
         pendingRender?.cancel()
+        rawPreviewTask?.cancel()
         renderGeneration &+= 1
         let generation = renderGeneration
         guard hasPhoto else {
@@ -1284,6 +1286,8 @@ final class PhotoEditorModel: ObservableObject {
 
     private func invalidateSimulation() {
         pendingRender?.cancel()
+        rawPreviewTask?.cancel()
+        P1OriginalRawACESIngress.clearPreviewInputCache()
         renderGeneration &+= 1
         simulationAwaitingCurrentSettings=false
         // When replacing a photo while an old non-cancellable source task
@@ -2338,6 +2342,7 @@ final class PhotoEditorModel: ObservableObject {
     /// Keep the proven photo importer and CoreImage renderer unchanged.
     func applyMeasuredSimulation() {
         pendingRender?.cancel()
+        rawPreviewTask?.cancel()
         renderGeneration &+= 1
         simulationAwaitingCurrentSettings=hasPhoto
         if hasPhoto {
@@ -2518,6 +2523,7 @@ final class PhotoEditorModel: ObservableObject {
     }
 
     func refresh() throws {
+        rawPreviewTask?.cancel()
         guard let source else {
             status = lut == nil ? "请先导入照片。" : "LUT 已导入，请选择照片。"
             return
@@ -2561,9 +2567,10 @@ final class PhotoEditorModel: ObservableObject {
                     : "RAW 快速预览：ACES16 1280px → Float64") +
                     (selectedCrop != nil ? "（冲印前已裁切）" : "") +
                     " 光学计算中…"
-                Task.detached(priority:.userInitiated) {
+                rawPreviewTask = Task.detached(priority:.userInitiated) {
                     do {
-                        let rendered=try autoreleasepool { () throws -> (UIImage,Int,Int,Int,Int) in
+                        let rendered=try P1OriginalRawACESIngress.withExclusiveRAWWork {
+                          try autoreleasepool { () throws -> (UIImage,Int,Int,Int,Int) in
                             let frame:OriginalSourcePixelIO.Frame
                             let rawWidth:Int,rawHeight:Int
                             if fullSourcePreview {
@@ -2588,9 +2595,11 @@ final class PhotoEditorModel: ObservableObject {
                             )
                             return (UIImage(cgImage:image),frame.width,frame.height,
                                     rawWidth,rawHeight)
+                          }
                         }
+                        try Task.checkCancellation()
                         await MainActor.run {
-                            guard revision==self.originalMetalPreviewVersion else {return}
+                            guard !Task.isCancelled, revision==self.originalMetalPreviewVersion else {return}
                             self.processedPreview=rendered.0
                             if selectedCrop==nil {
                                 self.rawCropReferencePreview=rendered.0
@@ -2615,7 +2624,7 @@ final class PhotoEditorModel: ObservableObject {
                         }
                     } catch {
                         await MainActor.run {
-                            guard revision==self.originalMetalPreviewVersion else {return}
+                            guard !Task.isCancelled, revision==self.originalMetalPreviewVersion else {return}
                             self.processedPreview=nil
                             if let generation=activeRAWGeneration,
                                generation==self.activeSimulationGeneration {
@@ -3075,6 +3084,7 @@ final class PhotoEditorModel: ObservableObject {
         // source Float64 renderer. Discard only unowned CI intermediate
         // caches BEFORE the existing guarded headroom preflight.
         if rawOriginalSourceActive && sourcePhysicalDirectEnabled {
+            P1OriginalRawACESIngress.clearPreviewInputCache()
             PhotoProcessor.clearTransientCaches()
         }
         guard let src = source else {
@@ -3278,8 +3288,10 @@ final class PhotoEditorModel: ObservableObject {
                 }
                 try SafeExportResolution.validateBeforeRender(plan)
                 let optical=try sourcePhysicalParameters()
+                rawPreviewTask?.cancel()
                 let url=try await Task.detached(priority:.userInitiated) {
-                    try autoreleasepool { () throws -> URL in
+                    try P1OriginalRawACESIngress.withExclusiveRAWWork {
+                      try autoreleasepool { () throws -> URL in
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical,crop:crop
                         )
@@ -3302,6 +3314,7 @@ final class PhotoEditorModel: ObservableObject {
                                 cctfEncoded:optical.sourceOutputCCTFEncoding
                             )
                         )
+                      }
                     }
                 }.value
                 status=(crop != nil
@@ -3412,8 +3425,10 @@ final class PhotoEditorModel: ObservableObject {
                 }
                 try SafeExportResolution.validateBeforeRender(confirmedPlan)
                 let optical=try sourcePhysicalParameters()
+                rawPreviewTask?.cancel()
                 let url=try await Task.detached(priority:.userInitiated) {
-                    try autoreleasepool { () throws -> URL in
+                    try P1OriginalRawACESIngress.withExclusiveRAWWork {
+                      try autoreleasepool { () throws -> URL in
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical,crop:crop
                         )
@@ -3434,6 +3449,7 @@ final class PhotoEditorModel: ObservableObject {
                                 cctfEncoded:optical.sourceOutputCCTFEncoding
                             )
                         )
+                      }
                     }
                 }.value
                 status=(crop != nil

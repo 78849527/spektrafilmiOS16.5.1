@@ -22,6 +22,65 @@ enum Build139RAWPreviewDownsample {
         let rgb: [Double]
     }
 
+    // OPT-01: a single immutable pre-optical preview, never rendered RGB.
+    // Cache size is independent of the source/optical image limits.
+    struct CacheKey: Equatable {
+        let path: String
+        let device: UInt64
+        let inode: UInt64
+        let bytes: UInt64
+        let modified: Date
+        let crop: [Int]
+        let maxLongEdge: Int
+
+        static func make(url: URL, crop: [Int], maxLongEdge: Int) -> CacheKey? {
+            let file = url.standardizedFileURL
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+                  let device = attrs[.systemNumber] as? NSNumber,
+                  let inode = attrs[.systemFileNumber] as? NSNumber,
+                  let bytes = attrs[.size] as? NSNumber,
+                  let modified = attrs[.modificationDate] as? Date else { return nil }
+            return CacheKey(path: file.path, device: device.uint64Value,
+                            inode: inode.uint64Value, bytes: bytes.uint64Value,
+                            modified: modified, crop: crop, maxLongEdge: maxLongEdge)
+        }
+    }
+
+    struct CachedInput {
+        let key: CacheKey
+        let reduced: Frame
+        let sourceWidth: Int
+        let sourceHeight: Int
+    }
+
+    final class InputCache {
+        private let lock = NSLock()
+        private var entry: CachedInput?
+        private let maximumBytes = 40 * 1024 * 1024
+
+        func lookup(_ key: CacheKey) -> CachedInput? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard entry?.key == key else { return nil }
+            return entry
+        }
+
+        func store(_ value: CachedInput) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !Task.isCancelled,
+                  value.reduced.rgb.count <= maximumBytes / MemoryLayout<Double>.stride
+            else { return }
+            entry = value
+        }
+
+        func clear() {
+            lock.lock()
+            defer { lock.unlock() }
+            entry = nil
+        }
+    }
+
     private struct Tap {
         let index: Int
         let weight: Double

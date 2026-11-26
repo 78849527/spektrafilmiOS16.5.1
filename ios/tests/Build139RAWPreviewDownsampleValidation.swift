@@ -69,6 +69,33 @@ struct Build139RAWPreviewDownsampleValidation {
         } catch Build139RAWPreviewDownsample.Failure.invalid {
             // Must reject instead of decoding an embedded JPEG fallback.
         }
+        // OPT-01 exact cache identity, copy-on-write and invalidation.
+        let url=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:url) }
+        try original.write(to:url)
+        let key=Build139RAWPreviewDownsample.CacheKey.make(
+            url:url,crop:[],maxLongEdge:256
+        )!
+        let cache=Build139RAWPreviewDownsample.InputCache()
+        require(cache.lookup(key)==nil,"cold cache")
+        cache.store(.init(key:key,reduced:preview,sourceWidth:512,sourceHeight:384))
+        let hit=cache.lookup(key)!
+        require(hit.sourceWidth==512 && hit.sourceHeight==384,"cached original geometry")
+        require(hit.reduced.rgb.map { $0.bitPattern } == preview.rgb.map { $0.bitPattern },
+                "cached input is bitwise identical")
+        var copy=hit.reduced.rgb
+        copy[0] += 1
+        require(cache.lookup(key)!.reduced.rgb[0].bitPattern==preview.rgb[0].bitPattern,
+                "render mutation cannot change cached input")
+        let cropped=Build139RAWPreviewDownsample.CacheKey.make(url:url,crop:[512,384,0,0,256,256],maxLongEdge:256)!
+        let resized=Build139RAWPreviewDownsample.CacheKey.make(url:url,crop:[],maxLongEdge:512)!
+        require(cache.lookup(cropped)==nil && cache.lookup(resized)==nil,"geometry key invalidation")
+        try Data([0]).write(to:url)
+        let changed=Build139RAWPreviewDownsample.CacheKey.make(url:url,crop:[],maxLongEdge:256)!
+        require(cache.lookup(changed)==nil,"file change invalidates key")
+        cache.clear()
+        require(cache.lookup(key)==nil,"explicit eviction")
+        print("PASS OPT-01 immutable preview input cache, geometry/file identity and eviction")
         print("PASS Build139 RAW linear ACES16 area input: 512x384 -> 256x192, " +
               "Float32 quantization, bounded RGB, no source mutation or fallback")
         print("NOT CERTIFIED: low-resolution spatial optics/grain do not equal " +

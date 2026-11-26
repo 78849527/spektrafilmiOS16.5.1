@@ -14,6 +14,24 @@ enum P1OriginalRawACESIngress {
         }
     }
 
+    // OPT-02: only one editor RAW decode/develop/encode operation may own
+    // the large working buffers. Cancellation is checked on both sides of
+    // lock acquisition; LibRaw itself cannot be interrupted mid-native call.
+    private static let editorRAWLock = NSLock()
+    private static let previewInputCache = Build139RAWPreviewDownsample.InputCache()
+
+    static func withExclusiveRAWWork<T>(_ body: () throws -> T) throws -> T {
+        try Task.checkCancellation()
+        editorRAWLock.lock()
+        defer { editorRAWLock.unlock() }
+        try Task.checkCancellation()
+        return try body()
+    }
+
+    static func clearPreviewInputCache() {
+        previewInputCache.clear()
+    }
+
     struct Source {
         let width: Int
         let height: Int
@@ -26,6 +44,7 @@ enum P1OriginalRawACESIngress {
     static func open(
         _ url: URL, maximumAllowedPixels: Int = 0
     ) throws -> Source {
+        try Task.checkCancellation()
         guard try Build79RAWSignature.probeFile(url) != nil else {
             throw Failure.invalid("P1: 文件不是可验证的真实 RAW；不读内嵌 JPEG")
         }
@@ -35,6 +54,7 @@ enum P1OriginalRawACESIngress {
             url, bitsPerComponent: 16, sourceLinearACES: true,
             maximumAllowedPixels: maximumAllowedPixels
         )
+        try Task.checkCancellation()
         let w = result.width, h = result.height
         guard result.bitsPerComponent == 16,
               w > 0, h > 0, w <= 10_000, h <= 10_000,
@@ -92,6 +112,7 @@ enum P1OriginalRawACESIngress {
         // This is the current iOS FULL-OPTICAL memory ceiling, not a
         // Python/rawpy input limit. Reject from the LibRaw source header
         // BEFORE unpacking and allocating the source high-resolution RGB.
+        clearPreviewInputCache()
         let decoded = try open(
             rawURL,
             maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
@@ -140,17 +161,47 @@ enum P1OriginalRawACESIngress {
         var selected=opticalSettings
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
-        // Decode safety and original-RAW pixel ceiling are unchanged.
-        let decoded=try open(
-            rawURL,
-            maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+        // OPT-01: reuse only the original Build139 linear input; all
+        // optical settings are applied anew. Full preview/export never use it.
+        try Task.checkCancellation()
+        let cropKey = crop.map {
+            [$0.sourceWidth,$0.sourceHeight,$0.x,$0.y,$0.width,$0.height]
+        } ?? []
+        let key = Build139RAWPreviewDownsample.CacheKey.make(
+            url:rawURL,crop:cropKey,maxLongEdge:maxLongEdge
         )
-        let working=try selectedSource(decoded,crop:crop)
-        let reduced=try Build139RAWPreviewDownsample.frame(
-            packedRGB16:working.packedRGB16,
-            width:working.width,height:working.height,
-            maxLongEdge:maxLongEdge
-        )
+        let reduced: Build139RAWPreviewDownsample.Frame
+        let sourceWidth: Int, sourceHeight: Int
+        if let key, let cached = previewInputCache.lookup(key) {
+            reduced = cached.reduced
+            sourceWidth = cached.sourceWidth
+            sourceHeight = cached.sourceHeight
+        } else {
+            previewInputCache.clear()
+            // Decode safety and original-RAW pixel ceiling are unchanged.
+            let decoded=try open(
+                rawURL,
+                maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+            )
+            let working=try selectedSource(decoded,crop:crop)
+            reduced=try Build139RAWPreviewDownsample.frame(
+                packedRGB16:working.packedRGB16,
+                width:working.width,height:working.height,
+                maxLongEdge:maxLongEdge
+            )
+            sourceWidth=decoded.width
+            sourceHeight=decoded.height
+            try Task.checkCancellation()
+            if let key, key == Build139RAWPreviewDownsample.CacheKey.make(
+                url:rawURL,crop:cropKey,maxLongEdge:maxLongEdge
+            ) {
+                previewInputCache.store(.init(
+                    key:key,reduced:reduced,
+                    sourceWidth:decoded.width,sourceHeight:decoded.height
+                ))
+            }
+        }
+        try Task.checkCancellation()
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:reduced.width,height:reduced.height,parameters:selected
         )
@@ -161,7 +212,7 @@ enum P1OriginalRawACESIngress {
             &frame,parameters:selected
         )
         return PreviewWithGeometry(
-            frame:frame,sourceWidth:decoded.width,sourceHeight:decoded.height
+            frame:frame,sourceWidth:sourceWidth,sourceHeight:sourceHeight
         )
     }
 

@@ -365,6 +365,7 @@ enum OriginalSourcePhysicalImage {
         stageDoubleObserver: ((String, [Double]) -> Void)? = nil,
         phaseMemoryObserver: ((String) -> Void)? = nil
     ) throws {
+        try Task.checkCancellation()
         try parameters.validate()
         let w=frame.width,h=frame.height
         // The already-owned input is exactly one Float64 RGB frame.
@@ -408,6 +409,7 @@ enum OriginalSourcePhysicalImage {
             )
         }
 
+        try Task.checkCancellation()
         phaseMemoryObserver?("source_input_ready")
         let engine=try parameters.createEngine()
         let source=try engine.sourceSpatialFilmParameters()
@@ -471,6 +473,7 @@ enum OriginalSourcePhysicalImage {
                 throw Failure.invalid("原版源测光 RGB 倍率溢出")
             }
             for p in 0..<(w*h) {
+                if p & 4095 == 0 { try Task.checkCancellation() }
                 let k=p*3
                 let rgb=[
                     frame.rgb[k]*autoScale,
@@ -535,6 +538,7 @@ enum OriginalSourcePhysicalImage {
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
         for p in 0..<(w*h) {
+            if p & 4095 == 0 { try Task.checkCancellation() }
             let k=p*3
             let sample=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
             let initial=try (parameters.cameraOptics.active || parameters.filmHalation.active)
@@ -569,6 +573,7 @@ enum OriginalSourcePhysicalImage {
                 initialObserved?[k+c]=initialDensity[c]
             }
         }
+        try Task.checkCancellation()
         phaseMemoryObserver?("camera_photons_ready")
         stageDoubleObserver?("logRaw",frame.rgb)
         if let initialObserved {
@@ -602,6 +607,7 @@ enum OriginalSourcePhysicalImage {
         // Do not keep another full-frame 3-channel inhibitor buffer alive
         // while computing the real spectral paper/scan output.
         inhibitors.removeAll(keepingCapacity:false)
+        try Task.checkCancellation()
         phaseMemoryObserver?("spatial_DIR_ready")
         stageDoubleObserver?("diffused",diffused)
 
@@ -628,6 +634,7 @@ enum OriginalSourcePhysicalImage {
         // Each corrected pixel is completely consumed before its
         // historical camera log buffer is overwritten by final scan RGB.
         for p in 0..<(w*h) {
+            if p & 4095 == 0 { try Task.checkCancellation() }
             let k=p*3
             let corrected=(0..<3).map { c in
                 frame.rgb[k+c]-diffused[k+c]
@@ -685,6 +692,7 @@ enum OriginalSourcePhysicalImage {
         // The observer, when enabled, already received its original tap.
         // No arithmetic, filter boundary or RGB output is modified.
         diffused.removeAll(keepingCapacity:false)
+        try Task.checkCancellation()
         phaseMemoryObserver?("film_density_ready_DIR_released")
         if let correctedObserved {
             stageDoubleObserver?("correctedLog",correctedObserved)
@@ -712,11 +720,13 @@ enum OriginalSourcePhysicalImage {
                     stageObserver:stageDoubleObserver
                 )
             }
-            phaseMemoryObserver?("three_sublayer_grain_ready")
+            try Task.checkCancellation()
+        phaseMemoryObserver?("three_sublayer_grain_ready")
             stageDoubleObserver?("grainDensity",frame.rgb)
             // Original develop.py: apply_grain(DIR-developed film density)
             // THEN print_expose or direct reversal scan; never RGB overlay.
             for p in 0..<(w*h) {
+                if p & 4095 == 0 { try Task.checkCancellation() }
                 let k=p*3
                 let density=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
                 let printed:[Double]
@@ -756,6 +766,7 @@ enum OriginalSourcePhysicalImage {
             )
             stageDoubleObserver?("printDiffusion",frame.rgb)
             for p in 0..<(w*h) {
+                if p & 4095 == 0 { try Task.checkCancellation() }
                 let k=p*3
                 let output=try engine.sourceSpatialScanPrintedPhoton(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
@@ -797,6 +808,7 @@ enum OriginalSourcePhysicalImage {
             // -> scanner FIR/YVV/unsharp -> optional output CCTF.
             // This NEVER calls a 33³ CAM16 RGB LUT or hidden ACES fallback.
             for p in 0..<(w*h) {
+                if p & 4095 == 0 { try Task.checkCancellation() }
                 let k=p*3
                 let raw=try engine.sourceSpatialXYZToRawLinearRGB(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
@@ -814,6 +826,7 @@ enum OriginalSourcePhysicalImage {
             }
         } else if controlledScannerGlare {
             for p in 0..<(w*h) {
+                if p & 4095 == 0 { try Task.checkCancellation() }
                 let k=p*3
                 let linear=try engine.sourceSpatialXYZToLinearRGB(
                     [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]

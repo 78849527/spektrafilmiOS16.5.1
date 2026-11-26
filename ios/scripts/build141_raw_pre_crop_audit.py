@@ -42,6 +42,9 @@ assert quick.index("let working=try selectedSource") < quick.index(
     "Build139RAWPreviewDownsample.frame("
 ) < quick.index("OriginalSourcePhysicalImage.developInPlace(")
 assert "sourceWidth:decoded.width,sourceHeight:decoded.height" in quick
+assert "frame:frame,sourceWidth:sourceWidth,sourceHeight:sourceHeight" in quick
+assert "sourceWidth=decoded.width" in quick and "sourceHeight=decoded.height" in quick
+assert "sourceWidth = cached.sourceWidth" in quick and "sourceHeight = cached.sourceHeight" in quick
 
 # The modal's uncropped reference comes from the identical LibRaw optic
 # preview, never from Apple JPEG or already cropped working geometry.
