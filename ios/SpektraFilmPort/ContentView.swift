@@ -3706,6 +3706,32 @@ struct ContentView: View {
                         catch {message=error.localizedDescription}
                     }
                 },
+                onRunOptimizationParallel: {
+                    guard !model.busy else {return}
+                    diagnosticDismissPending=true
+                    model.busy=true
+                    model.status="正在对照 Float64 串行与多核原版光学"
+                    Task { @MainActor in
+                        defer {model.busy=false}
+                        let result=await Task.detached(priority:.userInitiated) {
+                            Result {
+                                try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"parallel_device_compare") {
+                                    try OriginalSourcePhysicalImage.runDeterministicDeviceComparison {stage,details in
+                                        OPTDeviceFeedback.mark(stage,details)
+                                    }
+                                }
+                            }
+                        }.value
+                        do {
+                            let passed=try result.get()
+                            model.status=passed ? "多核数值对照通过，分享性能报告" : "多核数值不一致，分享性能报告"
+                        } catch {
+                            model.status="多核对照失败："+error.localizedDescription
+                        }
+                        do {enqueueDiagnosticShare(try OPTDeviceFeedback.export())}
+                        catch {message=error.localizedDescription}
+                    }
+                },
                 onShareBuild100Readiness: {
                     guard !model.busy else { return }
                     diagnosticDismissPending=true

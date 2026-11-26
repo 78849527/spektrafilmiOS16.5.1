@@ -26,6 +26,7 @@ struct FloatingEditorWorkspace: View {
     let onRefresh: () -> Void
     let onShareOptimizationFeedback: () -> Void
     let onRunOptimizationFFT: () -> Void
+    let onRunOptimizationParallel: () -> Void
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
@@ -1308,6 +1309,17 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
                     Text("固定 512×384 Float64 测试图，记录两后端误差、耗时与采样内存；不改变正式冲印算法。结果并入性能反馈 JSON。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        statusReportPresented=false
+                        onRunOptimizationParallel()
+                    } label: {
+                        Label("Float64 串行 / 多核对照",systemImage:"cpu")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.busy)
+                    Text("固定线性 ACES 测试图，1/2/4 线程，分别检查无颗粒和受控九层颗粒+印相扩散；逐位比较、阶段耗时、25ms 内存采样。正式冲印仍串行，结果并入性能反馈 JSON。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {

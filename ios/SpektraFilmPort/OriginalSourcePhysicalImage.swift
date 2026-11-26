@@ -437,6 +437,85 @@ enum OriginalSourcePhysicalImage {
     /// Large-image production calls developInPlace, which takes unique
     /// ownership of an existing ImageIO Double buffer instead of retaining
     /// the source and also allocating separate logRaw + printed frames.
+    /// Device-only controlled comparison. Synthetic ACES Float64 input;
+    /// no real RAW is required, nor are editor preferences changed.
+    /// Untimed one-worker reference is retained for ALL timed runs, so
+    /// sampled memory includes its known extra frame equally. Random
+    /// stages use explicit original controlled seed and stay serial.
+    static func runDeterministicDeviceComparison(
+        emit:(String,[String:String])->Void
+    ) throws -> Bool {
+        var allPassed=true
+        for scenario in ["negative_no_grain","negative_seeded_grain_and_print_diffusion"] {
+            let grain=scenario != "negative_no_grain"
+            let width=grain ? 512 : 1024
+            let height=grain ? 384 : 768
+            var print=OriginalPrintOptics.Settings(enabled:true)
+            print.normalizePrintExposure=false
+            print.printExposureCompensation=false
+            let dir=SpatialDIRSettings(enabled:true,diffusionRadiusScale:1.0,
+                tailWeight:0.06,sourceConvolutionEnabled:true)
+            var params=Parameters(filmID:"kodak_portra_400",paperID:"kodak_portra_endura",
+                cameraEV:0,paperEV:0,dir:dir,print:print,morph:.init())
+            params.cameraInputColorSpace = .acesLinear
+            params.sourceGrain.active=grain
+            params.sourceGrain.numbaSeed=grain ? 8888 : nil
+            params.printDiffusion.active=grain
+            try validateMemoryBudget(width:width,height:height,parameters:params)
+            let input=(0..<(width*height*3)).map {i in
+                Double(Float(UInt16((i*137+31)%65536))/Float(65535))
+            }
+            emit("parallel_reference_begin",["scenario":scenario,"width":String(width),"height":String(height),
+                "grain":String(grain),"printDiffusion":String(grain),"input":"fixed_linear_ACES16_promoted_to_Double"])
+            var reference=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+            try developInPlace(&reference,parameters:params)
+            for workers in [1,2,4] {
+                try Task.checkCancellation()
+                params.deterministicPixelWorkers=workers
+                emit("parallel_trial_begin",["scenario":scenario,"workers":String(workers)])
+                var actual=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+                let sampler=Build133RAWMemoryLadder.RSSSampler()
+                var stages=[String:String]()
+                let start=ProcessInfo.processInfo.systemUptime
+                sampler.start()
+                do {
+                    try developInPlace(&actual,parameters:params,phaseMemoryObserver:{stage in
+                        stages["seconds_"+stage]=String(ProcessInfo.processInfo.systemUptime-start)
+                    })
+                } catch {
+                    _=sampler.finish()
+                    throw error
+                }
+                let elapsed=ProcessInfo.processInfo.systemUptime-start
+                let samples=sampler.finish()
+                var different=0
+                var maxError=0.0
+                for i in actual.rgb.indices {
+                    if i & 4095 == 0 {try Task.checkCancellation()}
+                    if actual.rgb[i].bitPattern != reference.rgb[i].bitPattern {different+=1}
+                    maxError=max(maxError,abs(actual.rgb[i]-reference.rgb[i]))
+                }
+                let passed=different==0
+                allPassed=allPassed && passed
+                stages["scenario"]=scenario
+                stages["workers"]=String(workers)
+                stages["seconds"]=String(elapsed)
+                stages["bitMismatches"]=String(different)
+                stages["maxAbsoluteError"]=String(maxError)
+                stages["passed"]=String(passed)
+                stages["sampledPeakPhysicalFootprintBytes"]=samples.footprint.map{String($0)} ?? "not_measured"
+                stages["sampledPeakRSSBytes"]=samples.peak.map{String($0)} ?? "not_measured"
+                stages["sampledLowestHeadroomBytes"]=samples.lowest.map{String($0)} ?? "not_measured"
+                stages["sampleCount"]=String(samples.count)
+                stages["retainedReferenceBytes"]=String(reference.rgb.count*MemoryLayout<Double>.stride)
+                emit("parallel_trial_result",stages)
+            }
+        }
+        emit("parallel_comparison_result",["passed":String(allPassed),
+            "scope":"fixed_synthetic_controlled_source_not_full_RAW_or_Python_certification"])
+        return allPassed
+    }
+
     static func develop(
         _ input: OriginalSourcePixelIO.Frame,
         parameters: Parameters,
@@ -754,27 +833,11 @@ enum OriginalSourcePhysicalImage {
                 }
             }
         }
-        // One pure corrected H-D / print / scan calculation for both paths.
-        func correctedPixel(_ corrected:[Double],paperObserver:(([Double],[Double])->Void)?)
-            throws -> (density:[Double],rgb:[Double]) {
-            let density:[Double]
-            if let dynamicDIR {
-                density=try dynamicDIR.develop(corrected,corrected:dirOn)
-            } else {
-                density=try dirOn
-                    ? engine.sourceSpatialDevelopCorrectedLog(corrected)
-                    : engine.sourceSpatialDevelopInitialLog(corrected)
-            }
-            // PrintingStage source chronology: film CMY -> optical
-            // paper raw -> source full-frame diffuser -> log10 -> paper
-            // H-D -> original scanner. Never diffuse scanned RGB.
+        // Same original PrintingStage / scanner math for either film-density
+        // path; only independent pixels can execute in different workers.
+        func printPixel(_ density:[Double],paperObserver:(([Double],[Double])->Void)?) throws -> [Double] {
             let rgb:[Double]
-            if controlledFilmGrain {
-                // Delay print/scan until ALL 9 measured emulsion sublayers
-                // have consumed source SciPy counts + source dye clouds.
-                // This is pre-print optical-density CMY, not display RGB.
-                rgb=density
-            } else if activePrintDiffusion {
+            if activePrintDiffusion {
                 rgb=try engine.sourceSpatialPrintPhoton(
                     filmDensity:density,paperEV:parameters.paperEV
                 )
@@ -798,6 +861,20 @@ enum OriginalSourcePhysicalImage {
                         paperStageObserver:paperObserver
                       )
             }
+            return rgb
+        }
+        func correctedPixel(_ corrected:[Double],paperObserver:(([Double],[Double])->Void)?)
+            throws -> (density:[Double],rgb:[Double]) {
+            let density:[Double]
+            if let dynamicDIR {
+                density=try dynamicDIR.develop(corrected,corrected:dirOn)
+            } else {
+                density=try dirOn
+                    ? engine.sourceSpatialDevelopCorrectedLog(corrected)
+                    : engine.sourceSpatialDevelopInitialLog(corrected)
+            }
+            // Grain must finish ALL nine layers before any print photons.
+            let rgb=try controlledFilmGrain ? density : printPixel(density,paperObserver:paperObserver)
             return (density,rgb)
         }
         if parallelPixels {
@@ -865,36 +942,23 @@ enum OriginalSourcePhysicalImage {
             try Task.checkCancellation()
         phaseMemoryObserver?("three_sublayer_grain_ready")
             stageDoubleObserver?("grainDensity",frame.rgb)
-            // Original develop.py: apply_grain(DIR-developed film density)
-            // THEN print_expose or direct reversal scan; never RGB overlay.
-            for p in 0..<(w*h) {
-                if p & 4095 == 0 { try Task.checkCancellation() }
-                let k=p*3
-                let density=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
-                let printed:[Double]
-                if activePrintDiffusion {
-                    printed=try engine.sourceSpatialPrintPhoton(
-                        filmDensity:density,paperEV:parameters.paperEV
-                    )
-                } else if controlledScannerGlare ||
-                          parameters.sourceOutputGamut != nil {
-                    printed=try engine.sourceSpatialScanXYZ(
-                        filmDensity:density,paperEV:parameters.paperEV,
-                        paperStageObserver:recordPaper(k)
-                    )
-                } else {
-                    printed=try (parameters.scannerOptics.active ||
-                           !parameters.sourceOutputCCTFEncoding)
-                        ? engine.sourceSpatialScanLinear(
-                            filmDensity:density,paperEV:parameters.paperEV,
-                            paperStageObserver:recordPaper(k)
-                          )
-                        : engine.sourceSpatialScan(
-                            filmDensity:density,paperEV:parameters.paperEV,
-                            paperStageObserver:recordPaper(k)
-                          )
+            // Grain RNG and full-frame filters have finished. Only the
+            // deterministic density-to-paper/scanner mapping is parallel.
+            if parallelPixels {
+                phaseMemoryObserver?("parallel_grain_print_begin")
+                var noAux=[Double]()
+                try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,
+                    workers:parameters.deterministicPixelWorkers) { _,density in
+                        (try printPixel(density,paperObserver:nil),nil)
+                    }
+            } else {
+                for p in 0..<(w*h) {
+                    if p & 4095 == 0 {try Task.checkCancellation()}
+                    let k=p*3
+                    let density=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+                    let printed=try printPixel(density,paperObserver:recordPaper(k))
+                    for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
                 }
-                for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
             }
         }
         if controlledFilmGrain || activePrintDiffusion {
@@ -911,18 +975,33 @@ enum OriginalSourcePhysicalImage {
             )
             stageDoubleObserver?("printDiffusion",frame.rgb)
             phaseMemoryObserver?("paper_diffusion_ready")
-            for p in 0..<(w*h) {
-                if p & 4095 == 0 { try Task.checkCancellation() }
-                let k=p*3
-                let output=try engine.sourceSpatialScanPrintedPhoton(
-                    [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
+            func printedPhotonPixel(_ photons:[Double],paperObserver:(([Double],[Double])->Void)?) throws -> [Double] {
+                try engine.sourceSpatialScanPrintedPhoton(
+                    photons,
                     sourceLinearOutput:parameters.scannerOptics.active ||
                         !parameters.sourceOutputCCTFEncoding,
                     sourceXYZOutput:controlledScannerGlare ||
                         parameters.sourceOutputGamut != nil,
-                    paperStageObserver:recordPaper(k)
+                    paperStageObserver:paperObserver
                 )
-                for c in 0..<3 { frame.rgb[k+c]=output[c] }
+            }
+            if parallelPixels {
+                phaseMemoryObserver?("parallel_paper_scan_begin")
+                var noAux=[Double]()
+                try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,
+                    workers:parameters.deterministicPixelWorkers) { _,photons in
+                        (try printedPhotonPixel(photons,paperObserver:nil),nil)
+                    }
+            } else {
+                for p in 0..<(w*h) {
+                    if p & 4095 == 0 {try Task.checkCancellation()}
+                    let k=p*3
+                    let output=try printedPhotonPixel(
+                        [frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]],
+                        paperObserver:recordPaper(k)
+                    )
+                    for c in 0..<3 {frame.rgb[k+c]=output[c]}
+                }
             }
         }
         if activePrintDiffusion {phaseMemoryObserver?("paper_scan_pixels_ready")}

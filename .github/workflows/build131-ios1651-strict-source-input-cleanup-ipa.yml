@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build144: compile-only deterministic parallel pixel candidate; no production switch.
+# Build144: compile-only deterministic parallel candidate, post-grain/paper scan and on-device 1/2/4-worker comparison.
 name: Build144 optimization regression and explicitly requested device IPA
 
 on:
