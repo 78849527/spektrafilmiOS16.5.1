@@ -195,7 +195,9 @@ jobs:
     # Apple Silicon preferred; Intel remains an explicit manual option.
     # Only host changes. The compiled iPhoneOS arm64 target, Xcode, original
     # optical sources, versions, RNG and parity tests remain unchanged.
-    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
+    # A single explicit push marker can retry a cancelled hosted arm64 runner
+    # on Intel without changing future default or iPhoneOS target architecture.
+    runs-on: ${{ inputs.macos_runner || (github.event_name == 'push' && contains(github.event.head_commit.message, '[runner:intel]') && 'macos-15-intel' || 'macos-15') }}
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision

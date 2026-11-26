@@ -128,6 +128,11 @@
 - 选择 1.8.110 Build144 唯一集中设备包，保留 Build143 对照。Apple Silicon、Python 3.11、Numba 0.61.2、deployment 16.5、原分支不变。发布只允许所有回归及真实 Xcode 编译成功，精确 SHA 绑定且未签名。
 - 仍需实机证据：固定相同 RAW、胶片、相纸、颗粒及参数，测冷/热完整预览与原尺寸 JPEG/TIFF16，导出单份 JSON；如可执行再做 FFT 专项和 8/10/13MP 内存阶梯。13MP 生产上限、70/80% 动态准入及 phaseModel 仅遥测保留，不能凭理论节省解除。整图/随机状态缓存暂不启用（高内存/依赖失效风险）；非 RAW 任务全局调度、所有模块尺寸边界重审、全面 UI 拆分和历史删除均不是已完成项。不得把真机未验收项或编译通过当作原版整图认证。
 
+## Build144 运行器重试
+
+- 45784394788 attempt 1 和 2：Linux 通过，macOS 任务在无步骤记录、无可读取日志的情况下取消；未发现实际 Swift 编译或数值失败，具体取消原因无法确认。
+- 第三次仅通过显式 [runner:intel] push marker 使用既有 macos-15-intel，默认仍为 macos-15 Apple Silicon。保留 Build144、iPhoneOS arm64、原版 Float64、Python 3.11/Numba 0.61.2、所有数值和发布门槛。一次性 [device-ipa:144] 触发相同版本新 SHA 的完整验证发布；无生产源码修改。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
