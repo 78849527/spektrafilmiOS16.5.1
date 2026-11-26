@@ -2569,7 +2569,7 @@ final class PhotoEditorModel: ObservableObject {
                     " 光学计算中…"
                 rawPreviewTask = Task.detached(priority:.userInitiated) {
                     do {
-                        let rendered=try P1OriginalRawACESIngress.withExclusiveRAWWork {
+                        let rendered=try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:fullSourcePreview ? "full_preview" : "quick_preview") {
                           try autoreleasepool { () throws -> (UIImage,Int,Int,Int,Int) in
                             let frame:OriginalSourcePixelIO.Frame
                             let rawWidth:Int,rawHeight:Int
@@ -3291,7 +3291,7 @@ final class PhotoEditorModel: ObservableObject {
                 let optical=try sourcePhysicalParameters()
                 rawPreviewTask?.cancel()
                 let url=try await Task.detached(priority:.userInitiated) {
-                    try P1OriginalRawACESIngress.withExclusiveRAWWork {
+                    try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"jpeg_export") {
                       try autoreleasepool { () throws -> URL in
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical,crop:crop
@@ -3428,7 +3428,7 @@ final class PhotoEditorModel: ObservableObject {
                 let optical=try sourcePhysicalParameters()
                 rawPreviewTask?.cancel()
                 let url=try await Task.detached(priority:.userInitiated) {
-                    try P1OriginalRawACESIngress.withExclusiveRAWWork {
+                    try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"tiff16_export") {
                       try autoreleasepool { () throws -> URL in
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical,crop:crop
@@ -3669,6 +3669,17 @@ struct ContentView: View {
                     proposeExport(saveToPhotos: true, resolution: resolution)
                 },
                 onRefresh: { refresh() },
+                onShareOptimizationFeedback: {
+                    guard !model.busy else {return}
+                    diagnosticDismissPending=true
+                    do {
+                        let url=try OPTDeviceFeedback.export()
+                        model.status="性能反馈已保存，可直接分享 JSON"
+                        enqueueDiagnosticShare(url)
+                    } catch {
+                        message="性能反馈导出失败："+error.localizedDescription
+                    }
+                },
                 onShareBuild100Readiness: {
                     guard !model.busy else { return }
                     diagnosticDismissPending=true

@@ -24,6 +24,7 @@ struct FloatingEditorWorkspace: View {
     let onExportTIFF16: (ExportResolutionMode) -> Void
     let onSaveToPhotos: (ExportResolutionMode) -> Void
     let onRefresh: () -> Void
+    let onShareOptimizationFeedback: () -> Void
     let onShareBuild100Readiness: () -> Void
     let onRunBuild101DeviceParity: () -> Void
     let onRunBuild103Metrics: () -> Void
@@ -1286,6 +1287,17 @@ struct FloatingEditorWorkspace: View {
                         Text("当前胶片/相纸 LUT 待更新或失败：预览／导出尚未就绪。")
                             .font(.caption)
                     }
+                    Button {
+                        statusReportPresented=false
+                        onShareOptimizationFeedback()
+                    } label: {
+                        Label("导出性能反馈 JSON",systemImage:"square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.busy)
+                    Text("自动记录近期真实 RAW 预览、导出、缓存命中、各阶段时间、内存快照及错误；不含原图。闪退后重新打开 App 也可导出上次检查点。峰值请使用下方 RAW 内存专项诊断。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                     Button {
                         statusReportPresented = false
                         onShareBuild100Readiness()

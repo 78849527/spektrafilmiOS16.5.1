@@ -25,12 +25,14 @@ enum P1OriginalRawACESIngress {
     private static let previewInputCache = Build139RAWPreviewDownsample.InputCache()
     private static let fullInputCache = Build139RAWPreviewDownsample.FullInputCache<Source>()
 
-    static func withExclusiveRAWWork<T>(_ body: () throws -> T) throws -> T {
+    static func withExclusiveRAWWork<T>(operation:String="raw_editor",_ body: () throws -> T) throws -> T {
         try Task.checkCancellation()
+        let queued=ProcessInfo.processInfo.systemUptime
         editorRAWLock.lock()
         defer { editorRAWLock.unlock() }
         try Task.checkCancellation()
-        return try body()
+        return try OPTDeviceFeedback.measure(operation,
+            queueWait:ProcessInfo.processInfo.systemUptime-queued,body)
     }
 
     static func clearPreviewInputCache() {
@@ -129,9 +131,12 @@ enum P1OriginalRawACESIngress {
                 throw Failure.invalid("RAW 缓存几何超出当前光学输入范围；不缩图")
             }
             try Task.checkCancellation()
+            OPTDeviceFeedback.mark("full_cache_hit",["width":String(cached.width),"height":String(cached.height)])
             return (cached,key,generation)
         }
+        OPTDeviceFeedback.mark("full_cache_miss_decode_begin")
         let source=try open(url,maximumAllowedPixels:maximumAllowedPixels)
+        OPTDeviceFeedback.mark("decode_done",["width":String(source.width),"height":String(source.height)])
         let verifiedKey=try fullSourceKey(url)
         // A changed readable source is not a trustworthy decode cache.
         // Reject actual identity change rather than display stale bytes.
@@ -154,8 +159,10 @@ enum P1OriginalRawACESIngress {
         #else
         let headroom=ProcessInfo.processInfo.physicalMemory/3
         #endif
-        fullInputCache.store(source,key:key,generation:generation,
-            canRetain:headroom>0 && UInt64(source.packedRGB16.count)<=headroom/5)
+        let eligible=headroom>0 && UInt64(source.packedRGB16.count)<=headroom/5
+        fullInputCache.store(source,key:key,generation:generation,canRetain:eligible)
+        OPTDeviceFeedback.mark("full_cache_retention_policy",["eligible":String(eligible),
+            "packedBytes":String(source.packedRGB16.count)])
     }
 
     struct PreviewWithGeometry {
@@ -227,15 +234,20 @@ enum P1OriginalRawACESIngress {
         // Build141: geometry and memory are based on selected RAW pixels,
         // NOT the final JPEG/TIFF size; this is before original-wide Double.
         let working=try selectedSource(decoded,crop:crop)
+        OPTDeviceFeedback.mark("full_optical_admission",["width":String(working.width),
+            "height":String(working.height),"film":selected.filmID,"paper":selected.paperID])
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:working.width,height:working.height,parameters:selected
         )
         var frame = try makeSourceFrame(
             working, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
         )
+        OPTDeviceFeedback.mark("float64_input_ready")
         try OriginalSourcePhysicalImage.developInPlace(
-            &frame, parameters: selected
+            &frame, parameters: selected,
+            phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}
         )
+        OPTDeviceFeedback.mark("optics_done")
         // Full preview may keep the original packed input; JPEG/TIFF
         // export consumes it and does not refill the cache. Always rerun
         // all optical stages, including the original random streams.
@@ -289,17 +301,20 @@ enum P1OriginalRawACESIngress {
         let reduced: Build139RAWPreviewDownsample.Frame
         let sourceWidth: Int, sourceHeight: Int
         if let key, let cached = previewInputCache.lookup(key) {
+            OPTDeviceFeedback.mark("preview_cache_hit")
             reduced = cached.reduced
             sourceWidth = cached.sourceWidth
             sourceHeight = cached.sourceHeight
         } else {
             let cacheGeneration=previewInputCache.clear()
+            OPTDeviceFeedback.mark("preview_cache_miss_decode_begin")
             // Native LibRaw 45MP/10k and live pre-unpack budget still apply.
             // The small optical preview has its own post-reduction gate.
             let decoded=try open(
                 rawURL,
                 maximumAllowedPixels:0
             )
+            OPTDeviceFeedback.mark("decode_done",["width":String(decoded.width),"height":String(decoded.height)])
             let working=try selectedSource(decoded,crop:crop)
             reduced=try Build139RAWPreviewDownsample.frame(
                 packedRGB16:working.packedRGB16,
@@ -319,6 +334,8 @@ enum P1OriginalRawACESIngress {
             }
         }
         try Task.checkCancellation()
+        OPTDeviceFeedback.mark("preview_optical_admission",["width":String(reduced.width),
+            "height":String(reduced.height),"film":selected.filmID,"paper":selected.paperID])
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:reduced.width,height:reduced.height,parameters:selected
         )
@@ -326,8 +343,9 @@ enum P1OriginalRawACESIngress {
             width:reduced.width,height:reduced.height,rgb:reduced.rgb
         )
         try OriginalSourcePhysicalImage.developInPlace(
-            &frame,parameters:selected
+            &frame,parameters:selected,phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}
         )
+        OPTDeviceFeedback.mark("optics_done")
         return PreviewWithGeometry(
             frame:frame,sourceWidth:sourceWidth,sourceHeight:sourceHeight
         )

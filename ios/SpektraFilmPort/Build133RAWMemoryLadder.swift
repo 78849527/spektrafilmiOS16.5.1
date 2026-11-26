@@ -40,7 +40,7 @@ enum Build133RAWMemoryLadder {
         let phases: [Sample]
         let limitations: [String]
     }
-    private static func resident() -> UInt64? {
+    static func resident() -> UInt64? {
         #if os(iOS)
         var info=mach_task_basic_info()
         var count=mach_msg_type_number_t(
@@ -57,7 +57,7 @@ enum Build133RAWMemoryLadder {
         return nil
         #endif
     }
-    private static func footprint() -> UInt64? {
+    static func footprint() -> UInt64? {
         #if os(iOS)
         var info=task_vm_info_data_t()
         var count=mach_msg_type_number_t(
@@ -78,7 +78,7 @@ enum Build133RAWMemoryLadder {
         return nil
         #endif
     }
-    private static func available() -> UInt64? {
+    static func available() -> UInt64? {
         #if os(iOS)
         return UInt64(os_proc_available_memory())
         #else

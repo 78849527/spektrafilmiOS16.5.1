@@ -246,6 +246,26 @@ jobs:
             -o /tmp/Build141RAWPreCropValidation
           /tmp/Build141RAWPreCropValidation
           python3 ios/scripts/build141_raw_pre_crop_audit.py
+      - name: OPT feedback production event and local share source gate
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse ios/SpektraFilmPort/OPTDeviceFeedback.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('ios/SpektraFilmPort')
+          ingress=(root/'P1OriginalRawACESIngress.swift').read_text()
+          editor=(root/'ContentView.swift').read_text()
+          ui=(root/'FloatingEditorWorkspace.swift').read_text()
+          feedback=(root/'OPTDeviceFeedback.swift').read_text()
+          assert 'OPTDeviceFeedback.measure(operation,' in ingress
+          assert 'full_cache_hit' in ingress and 'preview_cache_hit' in ingress
+          assert ingress.count('phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}')==2
+          assert editor.count('P1OriginalRawACESIngress.withExclusiveRAWWork(operation:')==3
+          assert 'try OPTDeviceFeedback.export()' in editor
+          assert '导出性能反馈 JSON' in ui
+          assert 'options:.atomic' in feedback and 'events.count>160' in feedback
+          print('PASS OPT actual editor event journal and one-tap local JSON sharing source contract')
+          PY
       - name: OPT-11 parse extracted system sheet adapters
         run: |
           swiftc -frontend -parse ios/SpektraFilmPort/EditorSystemSheets.swift
@@ -363,6 +383,7 @@ jobs:
                 'ios/SpektraFilmPort/SafeExportResolution.swift',
                 'ios/SpektraFilmPort/ContentView.swift',
                 'ios/SpektraFilmPort/EditorSystemSheets.swift',
+                'ios/SpektraFilmPort/OPTDeviceFeedback.swift',
               'ios/SpektraFilmPort/NextLevelCamera.swift',
                 'ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift',
                 'ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift',
