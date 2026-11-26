@@ -44,8 +44,41 @@ struct SourceDiffusionNumericValidation {
                 }
             }
             let output=try OriginalSourceDiffusion.apply(
+                input,width:w,height:h,pixelUM:100,settings:cfg,
+                usePreparedPSFCache:false
+            )
+            OriginalSourceDiffusion.clearPreparedPSFCache()
+            let first=try OriginalSourceDiffusion.preparedPSF(
+                width:w,height:h,pixelUM:100,settings:cfg
+            )
+            let reused=try OriginalSourceDiffusion.preparedPSF(
+                width:w,height:h,pixelUM:100,settings:cfg
+            )
+            precondition(first.radius==kernel.radius && reused.radius==kernel.radius)
+            precondition(first.data.map { $0.bitPattern }==kernel.data.map { $0.bitPattern })
+            precondition(reused.data.map { $0.bitPattern }==kernel.data.map { $0.bitPattern })
+            let warm=try OriginalSourceDiffusion.apply(
                 input,width:w,height:h,pixelUM:100,settings:cfg
             )
+            precondition(warm.map { $0.bitPattern }==output.map { $0.bitPattern },
+                         "OPT-07 cached PSF changes optical output")
+            var changed=cfg
+            changed.haloWarmth += 0.125
+            let changedExpected=try OriginalSourceDiffusion.psf(
+                width:w,height:h,pixelUM:100,settings:changed
+            )
+            let changedActual=try OriginalSourceDiffusion.preparedPSF(
+                width:w,height:h,pixelUM:100,settings:changed
+            )
+            precondition(changedActual.data.map { $0.bitPattern }==changedExpected.data.map { $0.bitPattern })
+            let geometryExpected=try OriginalSourceDiffusion.psf(
+                width:w+2,height:h,pixelUM:83,settings:changed
+            )
+            let geometryActual=try OriginalSourceDiffusion.preparedPSF(
+                width:w+2,height:h,pixelUM:83,settings:changed
+            )
+            precondition(geometryActual.radius==geometryExpected.radius)
+            precondition(geometryActual.data.map { $0.bitPattern }==geometryExpected.data.map { $0.bitPattern })
             #if canImport(Accelerate)
             let candidate=try OriginalSourceDiffusion.apply(
                 input,width:w,height:h,pixelUM:100,settings:cfg,

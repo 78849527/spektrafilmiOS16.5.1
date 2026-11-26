@@ -231,6 +231,74 @@ enum OriginalSourceDiffusion {
         }
         return (r,grid)
     }
+    // OPT-07: deterministic PSF preparation cache only. No optical image,
+    // RNG state or developed density survives a render. All numeric settings
+    // use IEEE-754 bit patterns, not approximate equality.
+    struct PSFKey: Equatable {
+        let family: Family
+        let active: Bool
+        let width: Int
+        let height: Int
+        let values: [UInt64]
+
+        init(width:Int,height:Int,pixelUM:Double,settings:Settings) {
+            self.family=settings.family
+            self.active=settings.active
+            self.width=width
+            self.height=height
+            self.values=[
+                pixelUM,settings.strength,settings.spatialScale,settings.haloWarmth,
+                settings.coreIntensity,settings.coreSize,settings.haloIntensity,
+                settings.haloSize,settings.bloomIntensity,settings.bloomSize
+            ].map { $0.bitPattern }
+        }
+    }
+
+    private final class PSFCache {
+        typealias Kernel = (radius:Int,data:[Double])
+        private let lock=NSLock()
+        private var entry:(key:PSFKey,kernel:Kernel)?
+        private var generation:UInt64=0
+        private let maximumBytes=1024*1024
+
+        func lookup(_ key:PSFKey) -> (kernel:Kernel?,generation:UInt64) {
+            lock.lock()
+            defer {lock.unlock()}
+            return (entry?.key==key ? entry?.kernel : nil,generation)
+        }
+
+        func store(_ key:PSFKey,kernel:Kernel,generation expected:UInt64) {
+            lock.lock()
+            defer {lock.unlock()}
+            guard expected==generation,!Task.isCancelled,
+                  kernel.data.count<=maximumBytes/MemoryLayout<Double>.stride else {return}
+            entry=(key,kernel)
+        }
+
+        func clear() {
+            lock.lock()
+            defer {lock.unlock()}
+            generation &+= 1
+            entry=nil
+        }
+    }
+
+    private static let psfCache=PSFCache()
+    static func clearPreparedPSFCache() { psfCache.clear() }
+
+    static func preparedPSF(width:Int,height:Int,pixelUM:Double,
+                            settings:Settings) throws -> (radius:Int,data:[Double]) {
+        try Task.checkCancellation()
+        try settings.validate()
+        let key=PSFKey(width:width,height:height,pixelUM:pixelUM,settings:settings)
+        let cached=psfCache.lookup(key)
+        if let kernel=cached.kernel {return kernel}
+        let kernel=try psf(width:width,height:height,pixelUM:pixelUM,settings:settings)
+        try Task.checkCancellation()
+        psfCache.store(key,kernel:kernel,generation:cached.generation)
+        return kernel
+    }
+
     private static func pow2(_ n:Int) throws -> Int {
         guard n>0,n<=32768 else {
             throw Failure.invalid("原版扩散 FFT 尺寸超出安全上限，禁止降低精度")
@@ -380,7 +448,8 @@ enum OriginalSourceDiffusion {
     }
     static func apply(_ rgb:[Double],width:Int,height:Int,
                       pixelUM:Double,settings:Settings,
-                      fftBackend:FFTBackend = .reference) throws -> [Double] {
+                      fftBackend:FFTBackend = .reference,
+                      usePreparedPSFCache:Bool = true) throws -> [Double] {
         try settings.validate()
         guard width>0,height>0,width<=Int.max/height/3,
               rgb.count==width*height*3,
@@ -441,8 +510,9 @@ enum OriginalSourceDiffusion {
             #endif
             fft2(&real,&imag,width:fftW,height:fftH,inverse:inverse)
         }
-        let kernel=try psf(width:width,height:height,
-                           pixelUM:pixelUM,settings:settings)
+        let kernel=try (usePreparedPSFCache
+            ? preparedPSF(width:width,height:height,pixelUM:pixelUM,settings:settings)
+            : psf(width:width,height:height,pixelUM:pixelUM,settings:settings))
         var output=[Double](repeating:0,count:rgb.count)
         // Reuse the SAME four double-precision FFT planes for all three
         // channels. Every value is zeroed before refilling the next RGB

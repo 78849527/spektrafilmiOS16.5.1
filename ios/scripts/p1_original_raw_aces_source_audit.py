@@ -36,7 +36,12 @@ assert "JPEG" in ingress
 assert "sourceCCTFEncoded = false" in ingress
 assert "ACES2065-1" in ingress
 
-assert "maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels" in ingress
+assert "maximumAllowedPixels: crop == nil ? OriginalSourcePhysicalImage.maximumPixels : 0" in ingress
+full=ingress.split("static func developSourceCandidate(",1)[1].split("/// Build139:",1)[0]
+assert full.index("let working=try selectedSource") < full.index("try OriginalSourcePhysicalImage.validateMemoryBudget(") < full.index("var frame = try makeSourceFrame(")
+quick=ingress.split("static func developPreviewWithGeometry(",1)[1]
+assert "maximumAllowedPixels:0" in quick
+assert "width:reduced.width,height:reduced.height,parameters:selected" in quick
 assert "maximumAllowedPixels" in bridge
 assert "BEFORE libraw_unpack" in bridge
 print("PASS P1 source/LibRaw parameter contract; real RAW parity and device ingress NOT CERTIFIED")

@@ -84,15 +84,15 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-name: Build142 1.8.108 factory reset preserving RAW Float64 and crop IPA
+name: Build142 source baseline optimization regression (compile only by default)
 
 on:
   push:
     branches:
       - 'work/build129-raw-float32-srgb-icc-admission-ios1651'
     paths:
-      # Batch only: source-file commits must NOT start another Xcode build.
-      # Re-run explicitly via workflow_dispatch after multi-module changes.
+      # One consolidated validation after the optimization batch.
+      # No IPA is packaged on push; explicit manual publication only.
       - '.github/workflows/build131-ios1651-strict-source-input-cleanup-ipa.yml'
   workflow_dispatch:
     inputs:
@@ -100,11 +100,16 @@ on:
         description: "macOS build host (App target remains iPhoneOS arm64)"
         required: false
         type: choice
-        default: macos-15-intel
+        default: macos-15
         options:
-          - macos-15-intel
           - macos-15
+          - macos-15-intel
           - macos-latest
+      publish_ipa:
+        description: "Package/publish legacy versioned candidate only when explicitly requested"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -129,23 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "RUNNER_OS=$RUNNER_OS RUNNER_NAME=$RUNNER_NAME SHA=$GITHUB_SHA"
-          python3 ios/scripts/build115_unseeded_parallel_source_audit.py
-          python3 ios/scripts/build116_grain_memory_matrix_audit.py
-          python3 ios/scripts/build117_dynamic_memory_audit.py
-          python3 ios/scripts/build118_separate_large_memory_audit.py
-          python3 ios/scripts/build119_committed_memory_audit.py
-          python3 ios/scripts/build120_process_ui_restructure_audit.py
-          python3 ios/scripts/build121_switch_explanation_audit.py
-          python3 ios/scripts/build122_compact_native_camera_audit.py
-          python3 ios/scripts/build123_native_raw_capture_safety_audit.py
-          python3 ios/scripts/build124_native_dng_editor_ingress_audit.py
-          python3 ios/scripts/build125_raw_8bit_transport_audit.py
-          python3 ios/scripts/build126_recipe_system_audit.py
-          python3 ios/scripts/build127_film_carousel_camera_raw_default_audit.py
-          python3 ios/scripts/build128_raw_float32_original_tiff16_audit.py
-          python3 ios/scripts/build129_float_srgb_compatibility_audit.py
-          python3 ios/scripts/build129_precise_mode_gate_audit.py
-          python3 ios/scripts/build131_original_input_fidelity_audit.py
+          python3 ios/scripts/run_common_source_audits.py
           python3 ios/scripts/p1_original_raw_aces_source_audit.py
           python3 ios/scripts/p1_hanatos_aces_source_audit.py
           python3 ios/scripts/p1_direct_raw_production_audit.py
@@ -202,10 +191,10 @@ jobs:
   group-compile-once:
     needs: runner-preflight
     # Owner decision: any macOS host architecture is allowed.
-    # Push defaults to the previously verified Intel host; dispatch still permits ARM64.
+    # Apple Silicon preferred; Intel remains an explicit manual option.
     # Only host changes. The compiled iPhoneOS arm64 target, Xcode, original
     # optical sources, versions, RNG and parity tests remain unchanged.
-    runs-on: ${{ inputs.macos_runner || 'macos-15-intel' }}
+    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
     timeout-minutes: 55
     steps:
       - name: Checkout exact bulk source revision
@@ -256,6 +245,9 @@ jobs:
             -o /tmp/Build141RAWPreCropValidation
           /tmp/Build141RAWPreCropValidation
           python3 ios/scripts/build141_raw_pre_crop_audit.py
+      - name: OPT-11 parse extracted system sheet adapters
+        run: |
+          swiftc -frontend -parse ios/SpektraFilmPort/EditorSystemSheets.swift
       - name: Build142 100-field source default reset and RAW fail-closed UI audit
         run: |
           set -euo pipefail
@@ -350,6 +342,7 @@ jobs:
                 'ios/SpektraFilmPort/FloatingEditorWorkspace.swift',
                 'ios/SpektraFilmPort/SafeExportResolution.swift',
                 'ios/SpektraFilmPort/ContentView.swift',
+                'ios/SpektraFilmPort/EditorSystemSheets.swift',
               'ios/SpektraFilmPort/NextLevelCamera.swift',
                 'ios/SpektraFilmPort/OriginalSourcePhysicalImage.swift',
                 'ios/SpektraFilmPort/SourceSpatialDIRConvolution.swift',
@@ -413,23 +406,7 @@ jobs:
       - name: Build115 source parallel original-grain production contract and Swift syntax
         run: |
           set -euo pipefail
-          python ios/scripts/build115_unseeded_parallel_source_audit.py
-          python ios/scripts/build116_grain_memory_matrix_audit.py
-          python ios/scripts/build117_dynamic_memory_audit.py
-          python ios/scripts/build118_separate_large_memory_audit.py
-          python ios/scripts/build119_committed_memory_audit.py
-          python ios/scripts/build120_process_ui_restructure_audit.py
-          python ios/scripts/build121_switch_explanation_audit.py
-          python ios/scripts/build122_compact_native_camera_audit.py
-          python ios/scripts/build123_native_raw_capture_safety_audit.py
-          python ios/scripts/build124_native_dng_editor_ingress_audit.py
-          python ios/scripts/build125_raw_8bit_transport_audit.py
-          python ios/scripts/build126_recipe_system_audit.py
-          python ios/scripts/build127_film_carousel_camera_raw_default_audit.py
-          python ios/scripts/build128_raw_float32_original_tiff16_audit.py
-          python ios/scripts/build129_float_srgb_compatibility_audit.py
-          python ios/scripts/build129_precise_mode_gate_audit.py
-          python ios/scripts/build131_original_input_fidelity_audit.py
+          python ios/scripts/run_common_source_audits.py
           python ios/scripts/validate_nextlevel_camera_integration.py
           swiftc -frontend -parse \
             ios/SpektraFilmPort/OriginalSourceNumbaParallelWorkers.swift \
@@ -627,6 +604,10 @@ jobs:
             'numpy==1.26.4' 'scipy==1.15.3' 'colour-science==0.4.6' \
             'matplotlib==3.10.7' 'numba==0.61.2' 'opt_einsum==3.4.0' \
             'scikit-image==0.25.2'
+      - name: OPT-06/07 independent pinned Python diffusion and cached/Accelerate parity
+        run: |
+          set -euo pipefail
+          python ios/scripts/validate_source_diffusion.py
       - name: P1 original RAW Float32 bitstream and full-size pixel compare selftests
         run: |
           set -euo pipefail
@@ -1089,6 +1070,7 @@ jobs:
           echo 'Build110 native ARM64 iPhoneOS Release PASS; bundled source optical reference tapes; physical iOS16.5.1 validation NOT run.'
 
       - name: Package this exact Build108 unsigned iPhoneOS app as actual IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true
         run: |
           set -euo pipefail
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
@@ -1104,6 +1086,7 @@ jobs:
           shasum -a 256 "$IPA" | tee "$IPA.sha256"
           echo "Build110 real unsigned IPA size=$(stat -f %z "$IPA") bytes"
       - name: Verify final IPA version, arch and SAME committed source SHA
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -1143,6 +1126,7 @@ jobs:
           PY
           cat ios/build/release/verification-build142.json
       - name: Upload Build111 input color-profile plus old four-mode experimental unsigned IPA and source tapes
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true
         uses: actions/upload-artifact@v4
         with:
           name: Build142-1.8.108-arm64-factory-reset-unsigned-unverified
@@ -1158,7 +1142,7 @@ jobs:
             /tmp/build92-native-ui-static.json
           if-no-files-found: error
       - name: Publish ONLY experimental unsigned Build131 IPA after successful true iPhoneOS compile
-        if: success()
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
