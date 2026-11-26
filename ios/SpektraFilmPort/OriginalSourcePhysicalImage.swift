@@ -554,10 +554,15 @@ enum OriginalSourcePhysicalImage {
             ? [Double](repeating:0,count:size) : []
         // Compute initial H-D and donor/receiver inhibitors from either the
         // original unchanged legacy source or optional source-RAW pipeline.
+        // OPT-05: reuse one RGB scratch value. Array value semantics
+        // preserve any callee-owned copies; numeric evaluation is unchanged.
+        var sample=[Double](repeating:0,count:3)
         for p in 0..<(w*h) {
             if p & 4095 == 0 { try Task.checkCancellation() }
             let k=p*3
-            let sample=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+            sample[0]=frame.rgb[k]
+            sample[1]=frame.rgb[k+1]
+            sample[2]=frame.rgb[k+2]
             let initial=try (parameters.cameraOptics.active || parameters.filmHalation.active)
                 ? engine.sourceSpatialInputFromCameraRaw(
                     sample,filmingReferenceScale:parameters.cameraFilmingReferenceScale
@@ -653,12 +658,13 @@ enum OriginalSourcePhysicalImage {
         }
         // Each corrected pixel is completely consumed before its
         // historical camera log buffer is overwritten by final scan RGB.
+        var corrected=[Double](repeating:0,count:3)
         for p in 0..<(w*h) {
             if p & 4095 == 0 { try Task.checkCancellation() }
             let k=p*3
-            let corrected=(0..<3).map { c in
+            for c in 0..<3 {
                 // Keep subtraction by +0.0, including signed-zero semantics.
-                frame.rgb[k+c]-(dirOn ? diffused[k+c] : 0.0)
+                corrected[c]=frame.rgb[k+c]-(dirOn ? diffused[k+c] : 0.0)
             }
             let density:[Double]
             if let dynamicDIR {

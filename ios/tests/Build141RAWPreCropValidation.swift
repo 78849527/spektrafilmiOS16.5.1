@@ -93,6 +93,14 @@ struct Build141RAWPreCropValidation {
             )
             preconditionFailure("tiny unsupported 64px crop accepted")
         } catch Build141RAWPreCrop.Failure.invalid {}
+        // Geometry-only: a 24MP decoded source may select a smaller
+        // work rectangle without allocating a 24MP Double frame.
+        let large=try Build141RAWPreCrop.selection(
+            sourceWidth:6000,sourceHeight:4000,
+            normalizedX:0.25,normalizedY:0.25,
+            normalizedWidth:0.5,normalizedHeight:0.5
+        )
+        require(large.width==3000 && large.height==2000,"24MP source, 6MP crop geometry")
         print("PASS Build141: Build81 nearest-even crop geometry, packed UInt16 bit identity, original full-frame identity, orientation mismatch and small-area rejection")
         print("NOT CERTIFIED: 12MP real iPhone render, spatial edge equivalence with full-after-optics crop or measured Jetsam")
     }

@@ -46,6 +46,17 @@ struct SourceDiffusionNumericValidation {
             let output=try OriginalSourceDiffusion.apply(
                 input,width:w,height:h,pixelUM:100,settings:cfg
             )
+            #if canImport(Accelerate)
+            let candidate=try OriginalSourceDiffusion.apply(
+                input,width:w,height:h,pixelUM:100,settings:cfg,
+                fftBackend:.accelerateCandidate
+            )
+            precondition(candidate.count==output.count)
+            for k in output.indices {
+                precondition(abs(candidate[k]-output[k]) <= 1e-10*max(1,abs(output[k])),
+                    "OPT-06 candidate differs from reference at pixel \(k)")
+            }
+            #endif
             print("METADATA,\(caseIndex),\(w),\(h),\(kernel.radius)")
             for (k,v) in output.enumerated() {
                 print("RESULT,\(caseIndex),\(k),\(String(format:"%.17g",v))")

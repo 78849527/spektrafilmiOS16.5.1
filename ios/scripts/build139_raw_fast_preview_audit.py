@@ -26,10 +26,11 @@ assert 'makeSourceFrame(' in full
 assert 'Build139RAWPreviewDownsample' not in full
 assert 'selected.cameraInputColorSpace = .acesLinear' in quick
 assert 'selected.cameraInputColorSpace = .acesLinear' in full
-assert 'maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels' in quick
+assert 'maximumAllowedPixels:0' in quick
+assert 'width:reduced.width,height:reduced.height,parameters:selected' in quick
 assert 'Float(v)/Float(65535.0)' in reducer
 assert 'CGImage' not in reducer and 'CIImage' not in reducer
-assert 'width <= 13_000_000 / height' in reducer
+assert 'width <= 45_000_000 / height' in reducer
 assert 'maxLongEdge >= 256, maxLongEdge <= 2048' in reducer
 assert 'let xt=taps(source:width,target:outW)' in reducer
 assert 'let yt=taps(source:height,target:outH)' in reducer

@@ -30,11 +30,11 @@ enum Build141RAWPreCrop {
         func validate() throws {
             guard sourceWidth>0,sourceHeight>0,
                   sourceWidth<=8192,sourceHeight<=8192,
-                  sourceWidth<=13_000_000/sourceHeight,
+                  sourceWidth<=45_000_000/sourceHeight,
                   x>=0,y>=0,width>=64,height>=64,
                   x<=sourceWidth-width,
                   y<=sourceHeight-height,
-                  width<=13_000_000/height else {
+                  width<=45_000_000/height else {
                 throw Failure.invalid(
                     "RAW 冲印前裁切越界或小于 64×64；原片未改变"
                 )
@@ -49,7 +49,7 @@ enum Build141RAWPreCrop {
     ) throws -> Selection {
         guard sourceWidth>0,sourceHeight>0,
               sourceWidth<=8192,sourceHeight<=8192,
-              sourceWidth<=13_000_000/sourceHeight,
+              sourceWidth<=45_000_000/sourceHeight,
               [normalizedX,normalizedY,normalizedWidth,normalizedHeight]
                 .allSatisfy({$0.isFinite}),
               normalizedX>=0,normalizedY>=0,

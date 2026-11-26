@@ -110,8 +110,11 @@ enum Build139RAWPreviewDownsample {
         height: Int,
         maxLongEdge: Int = 1280
     ) throws -> Frame {
-        guard width > 0, height > 0, width <= 8192, height <= 8192,
-              width <= 13_000_000 / height,
+        // OPT-04: input is packed decoder geometry, not the optical grid.
+        // Match native LibRaw's retained decode boundary; preview output
+        // remains bounded independently by maxLongEdge.
+        guard width > 0, height > 0, width <= 10_000, height <= 10_000,
+              width <= 45_000_000 / height,
               maxLongEdge >= 256, maxLongEdge <= 2048,
               packedRGB16.count == width*height*3*2 else {
             throw Failure.invalid(

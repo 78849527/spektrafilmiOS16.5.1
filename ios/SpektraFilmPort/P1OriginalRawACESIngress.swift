@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import os
+#endif
 
 /// P1 candidate input for original rawpy 'as_shot' RAW path.
 /// This is a genuine sensor LibRaw 16-bit linear ACES2065-1 output, not
@@ -82,6 +85,21 @@ enum P1OriginalRawACESIngress {
         _ decoded:Source,crop:Build141RAWPreCrop.Selection?
     ) throws -> Source {
         guard let crop else {return decoded}
+        try crop.validate()
+        guard crop.sourceWidth==decoded.width,crop.sourceHeight==decoded.height else {
+            throw Failure.invalid("RAW 裁切源几何已变化")
+        }
+        #if os(iOS)
+        // The native decode is already committed. Admit only the new
+        // packed crop allocation before copying; do not credit future frees.
+        if !crop.isWholeSource {
+            let bytes=UInt64(crop.width)*UInt64(crop.height)*6
+            let headroom=UInt64(os_proc_available_memory())
+            guard headroom>0,bytes<=(headroom/10)*8 else {
+                throw Failure.invalid("RAW 裁切 ACES16 缓冲内存不足；不缩图")
+            }
+        }
+        #endif
         let bytes=try Build141RAWPreCrop.cropPackedRGB16(
             decoded.packedRGB16,
             sourceWidth:decoded.width,sourceHeight:decoded.height,
@@ -109,13 +127,14 @@ enum P1OriginalRawACESIngress {
         // ensure its samples can NEVER enter a display-sRGB transfer function.
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
-        // This is the current iOS FULL-OPTICAL memory ceiling, not a
-        // Python/rawpy input limit. Reject from the LibRaw source header
-        // BEFORE unpacking and allocating the source high-resolution RGB.
+        // Uncropped full optics retain the current work-grid ceiling.
+        // A confirmed crop instead admits the native decoder geometry
+        // independently; the cropped work grid still passes the full gate.
         clearPreviewInputCache()
+        if let crop { try crop.validate() }
         let decoded = try open(
             rawURL,
-            maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
+            maximumAllowedPixels: crop == nil ? OriginalSourcePhysicalImage.maximumPixels : 0
         )
         // Build141: geometry and memory are based on selected RAW pixels,
         // NOT the final JPEG/TIFF size; this is before original-wide Double.
@@ -178,10 +197,11 @@ enum P1OriginalRawACESIngress {
             sourceHeight = cached.sourceHeight
         } else {
             previewInputCache.clear()
-            // Decode safety and original-RAW pixel ceiling are unchanged.
+            // Native LibRaw 45MP/10k and live pre-unpack budget still apply.
+            // The small optical preview has its own post-reduction gate.
             let decoded=try open(
                 rawURL,
-                maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels
+                maximumAllowedPixels:0
             )
             let working=try selectedSource(decoded,crop:crop)
             reduced=try Build139RAWPreviewDownsample.frame(

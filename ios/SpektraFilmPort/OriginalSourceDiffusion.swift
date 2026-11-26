@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Accelerate)
+import Accelerate
+#endif
 #if os(iOS)
 import os
 #endif
@@ -308,6 +311,64 @@ enum OriginalSourceDiffusion {
             }
         }
     }
+    /// OPT-06: explicit diagnostic-only candidate. Production calls
+    /// continue using the existing radix-2 Float64 implementation.
+    enum FFTBackend {
+        case reference
+        case accelerateCandidate
+    }
+
+    #if canImport(Accelerate)
+    private final class AccelerateFFT {
+        private let setup:FFTSetupD
+        private let width:Int
+        private let height:Int
+        init(width:Int,height:Int) throws {
+            self.width=width
+            self.height=height
+            let log2n=max(width.trailingZeroBitCount,height.trailingZeroBitCount)
+            guard let value=vDSP_create_fftsetupD(vDSP_Length(log2n),FFTRadix(kFFTRadix2)) else {
+                throw Failure.invalid("Double Accelerate FFT setup allocation failed")
+            }
+            setup=value
+        }
+        deinit { vDSP_destroy_fftsetupD(setup) }
+
+        func transform(_ real:inout [Double],_ imag:inout [Double],inverse:Bool) throws {
+            let w=width,h=height
+            let direction=FFTDirection(inverse ? FFT_INVERSE : FFT_FORWARD)
+            try real.withUnsafeMutableBufferPointer { rp in
+                try imag.withUnsafeMutableBufferPointer { ip in
+                    guard let r=rp.baseAddress,let i=ip.baseAddress else {
+                        throw Failure.invalid("Double FFT empty plane")
+                    }
+                    for y in 0..<h {
+                        if y & 31 == 0 { try Task.checkCancellation() }
+                        var split=DSPDoubleSplitComplex(realp:r.advanced(by:y*w),imagp:i.advanced(by:y*w))
+                        if w>1 {
+                            vDSP_fft_zipD(setup,&split,1,vDSP_Length(w.trailingZeroBitCount),direction)
+                        }
+                    }
+                    for x in 0..<w {
+                        if x & 31 == 0 { try Task.checkCancellation() }
+                        var split=DSPDoubleSplitComplex(realp:r.advanced(by:x),imagp:i.advanced(by:x))
+                        if h>1 {
+                            vDSP_fft_zipD(setup,&split,vDSP_Stride(w),vDSP_Length(h.trailingZeroBitCount),direction)
+                        }
+                    }
+                    if inverse {
+                        let scale=1.0/Double(w*h)
+                        for k in 0..<(w*h) {
+                            r[k]*=scale
+                            i[k]*=scale
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #endif
+
     private static func reflect(_ pos:Int,dimension:Int) -> Int {
         precondition(dimension>0)
         // numpy.pad(mode="reflect") repeats its mirrored period; a
@@ -318,7 +379,8 @@ enum OriginalSourceDiffusion {
         return residue<dimension ? residue : period-residue
     }
     static func apply(_ rgb:[Double],width:Int,height:Int,
-                      pixelUM:Double,settings:Settings) throws -> [Double] {
+                      pixelUM:Double,settings:Settings,
+                      fftBackend:FFTBackend = .reference) throws -> [Double] {
         try settings.validate()
         guard width>0,height>0,width<=Int.max/height/3,
               rgb.count==width*height*3,
@@ -358,6 +420,26 @@ enum OriginalSourceDiffusion {
                 "当前可分配约 \(available/1_000_000) MB；需要 20% 余量，" +
                 "不缩短 PSF、不转 Float32、不自动缩图"
             )
+        }
+        // The candidate shares the identical PSF/reflect/grid/convolution
+        // and blending code; it is never selected implicitly or on failure.
+        #if canImport(Accelerate)
+        let candidate = fftBackend == .accelerateCandidate
+            ? try AccelerateFFT(width:fftW,height:fftH) : nil
+        #else
+        guard fftBackend == .reference else {
+            throw Failure.invalid("Accelerate Double FFT unavailable")
+        }
+        #endif
+        func transform(_ real:inout [Double],_ imag:inout [Double],inverse:Bool) throws {
+            try Task.checkCancellation()
+            #if canImport(Accelerate)
+            if let candidate {
+                try candidate.transform(&real,&imag,inverse:inverse)
+                return
+            }
+            #endif
+            fft2(&real,&imag,width:fftW,height:fftH,inverse:inverse)
         }
         let kernel=try psf(width:width,height:height,
                            pixelUM:pixelUM,settings:settings)
@@ -403,14 +485,14 @@ enum OriginalSourceDiffusion {
                     br[y*fftW+x]=kernel.data[(y*ks+x)*3+c]
                 }
             }
-            fft2(&ar,&ai,width:fftW,height:fftH,inverse:false)
-            fft2(&br,&bi,width:fftW,height:fftH,inverse:false)
+            try transform(&ar,&ai,inverse:false)
+            try transform(&br,&bi,inverse:false)
             for i in 0..<grid {
                 let rr=ar[i]*br[i]-ai[i]*bi[i]
                 let ii=ar[i]*bi[i]+ai[i]*br[i]
                 ar[i]=rr; ai[i]=ii
             }
-            fft2(&ar,&ai,width:fftW,height:fftH,inverse:true)
+            try transform(&ar,&ai,inverse:true)
             for y in 0..<height {
                 for x in 0..<width {
                     let k=(y*width+x)*3+c
