@@ -233,6 +233,12 @@
 - 集中 v1.8.113/147，显式 [runner:intel] [device-ipa:147]，保留 Apple Silicon 默认，真实 iPhoneOS arm64、Python 3.11/Numba 0.61.2、完整历史 CI；仅通过全部测试、真实编译和 SHA/版本核验才发布未签名 IPA。本次是候选发布请求，不表示已经编译或发布成功。
 - 真机建议：先同一 RAW 冷热快速预览无颗粒；固定胶片密度缓存对照（9组无颗粒、8组受控颗粒）；真实 RAW 无颗粒原尺寸缓存对照；同 RAW 九层颗粒精细/JPEG，记录实际内存与耗时。原尺寸缓存拒绝必须记录，不视为数值通过。未认证候选不自动转正。
 
+## Build148-A — Build147 真机证据与受限缓存转正
+
+- 三份用户提交 Build147 JSON 均为 3c3bfb508978cf91fad0b72ba60ef9ff3c90ee77 / iOS16.5.1，按 runID/date/stage 去重。完整 17 项固定 1024×768 对照全部 bitMismatches=0；受控九层 3.9396→2.5392 秒、改种子 3.9383→2.5375 秒、改粒子 3.8494→2.5307 秒，FastStats 82.4674→81.0440 秒。首次诊断不完整；完整一次 242.50 秒。未测 unseeded 并行转正。真实 3024×4032 无颗粒完整字节 SHA256 冷/热均匹配，37.4301→16.2475 秒，冷建 43.8570 秒，峰值 1024.23→731.71 MB。实际快速预览命中 1.59–1.66 秒；颗粒 JPEG 65.01 秒，峰值 1416.06 MB，跨版同 RAW/温度未统一，不声明颗粒优化成功。
+- 仅在原有 reduced RAW cache eligibility 中显式允许已验证的 seeded serial grain；原 RNG 每次重新执行，不缓存颗粒输出、不改变种子，不开放 unseeded。full 只开放未裁切、无颗粒、原有支持的 Hanatos 负片参数，使用独立会话和同一完整输入哈希键；24 B/px 额外动态 admission，不降低原预算。全局失效、切换 quick grid、异常、取消和导出完成释放，只有成功 full preview 在密度+packed 总量满足 live retention margin 时可保留。无已存 entry 的 export 不建缓存。缓存可选拒绝不改变算法。
+- 本次提交仅 compile-only；真实编辑、全尺寸 preview→export、memory warning 与跨参数失效仍需真机验证，不称为完全认证。原尺寸颗粒缓存与非受控随机流保持关闭。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

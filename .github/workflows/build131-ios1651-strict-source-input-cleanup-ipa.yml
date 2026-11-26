@@ -91,6 +91,8 @@
 # Combined Build147-C: borrow dead particle rates for scalar blur scratch;
 # seeded serial lognormal prepared coefficients checked against scalar bits.
 # OPT-15 isolated original-size real RAW density cache comparison; compile-only.
+# Build148-A: promote narrowly validated preview seeded and full no-grain
+# cache scopes; compile-only. All host regressions remain mandatory.
 name: Build147 optimization regression and explicitly requested device IPA
 
 on:
@@ -272,11 +274,20 @@ jobs:
           full=ingress.split('static func developSourceCandidate(',1)[1].split('static func runFullDensityReuseComparison(',1)[0]
           assert 'filmDensityReuse:reuseAllowed ? previewDensityCache : nil' in reduced
           assert 'filmDensityReuseLease:reuseAllowed ? densityLease : nil' in reduced
-          assert 'filmDensityReuse:' not in full
+          assert 'filmDensityReuse:reuseAllowed ? fullDensityCache : nil' in full
+          assert 'filmDensityReuseLease:reuseAllowed ? densityLease : nil' in full
+          assert 'crop==nil && !selected.sourceGrain.active' in full
+          assert 'additionalBytesPerPixel:envelope.additionalBytesPerPixel+24' in full
+          assert 'defer {if !keepDensity {fullDensityCache.clear()}}' in full
+          assert 'keepDensity=retainDecodedSource && reuseAllowed' in full
+          assert 'fullDensityCache.hasEntry(expectedGeneration:densityLease)' in full
+          assert 'fullDensityCache.clear()' in reduced
           assert 'additionalBytesPerPixel:envelope.additionalBytesPerPixel+24' in reduced
           assert 'previewDensityCache.clear()' in ingress
           assert 'preview_density_cache_policy' in reduced
-          assert 'allowSeededGrainDensityReuse:' not in reduced
+          assert 'let allowSeededPreview=true' in reduced
+          assert 'canReuseFilmDensity(selected,allowSeededGrain:allowSeededPreview)' in reduced
+          assert 'allowSeededGrainDensityReuse:allowSeededPreview' in reduced
           assert 'allowSeededGrainDensityReuse:' not in full
           physical=(root/'OriginalSourcePhysicalImage.swift').read_text()
           assert 'allowSeededGrainDensityReuse:Bool = false' in physical

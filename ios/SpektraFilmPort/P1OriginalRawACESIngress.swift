@@ -26,8 +26,9 @@ enum P1OriginalRawACESIngress {
     // lock acquisition; LibRaw itself cannot be interrupted mid-native call.
     private static let editorRAWLock = NSLock()
     private static let previewInputCache = Build139RAWPreviewDownsample.InputCache()
-    // At most one admitted reduced-grid Float64 density, never full RAW.
+    // Distinct exact pre-grain caches; switching grids invalidates the other.
     private static let previewDensityCache = OriginalSourcePhysicalImage.FilmDensityReuse()
+    private static let fullDensityCache = OriginalSourcePhysicalImage.FilmDensityReuse()
     private static let fullInputCache = Build139RAWPreviewDownsample.FullInputCache<Source>()
 
     static func withExclusiveRAWWork<T>(operation:String="raw_editor",_ body: () throws -> T) throws -> T {
@@ -48,6 +49,7 @@ enum P1OriginalRawACESIngress {
     static func clearAllInputCaches(reason:String="source_invalidation") {
         clearPreviewInputCache()
         fullInputCache.clear(reason:reason)
+        fullDensityCache.clear()
     }
 
     struct Source {
@@ -255,6 +257,11 @@ enum P1OriginalRawACESIngress {
         // A confirmed crop instead admits the native decoder geometry
         // independently; the cropped work grid still passes the full gate.
         clearPreviewInputCache()
+        let densityLease=fullDensityCache.lease()
+        var keepDensity=false
+        // Export may consume an existing full preview density, but never
+        // retain a new export cache. Errors/cancellation release the entry.
+        defer {if !keepDensity {fullDensityCache.clear()}}
         if let crop { try crop.validate() }
         let acquisition=try openFullEditorSource(
             rawURL,
@@ -267,6 +274,42 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_optical_admission",["width":String(working.width),
             "height":String(working.height),"film":selected.filmID,"paper":selected.paperID])
         recordOpticalOptions(selected,cropped:crop != nil)
+        // Build148-A: only the real-device verified no-grain, uncropped
+        // full-grid scope. The optional cache never changes optical settings.
+        let densityBytes=UInt64(working.width)*UInt64(working.height)*24
+        let retainedBytes=densityBytes+UInt64(decoded.packedRGB16.count)
+        var reuseAllowed=false
+        var reuseReason="unsupported_parameters"
+        if crop==nil && !selected.sourceGrain.active &&
+            OriginalSourcePhysicalImage.canReuseFilmDensity(selected) {
+            if acquisition.key==nil {
+                reuseReason="identity_unavailable"
+            } else if fullDensityCache.lease() != densityLease {
+                reuseReason="lease_invalidated"
+            } else if !retainDecodedSource &&
+                !fullDensityCache.hasEntry(expectedGeneration:densityLease) {
+                reuseReason="export_without_preview_entry"
+            } else if !canRetainPreviewDensity(bytes:retainedBytes) {
+                reuseReason="retention_headroom"
+            } else {
+                let envelope=OriginalSourcePhysicalImage.memoryEnvelope(
+                    width:working.width,height:working.height,parameters:selected)
+                do {
+                    try OriginalSourcePhysicalImage.validateMemoryBudget(
+                        width:working.width,height:working.height,
+                        additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                        cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+                    reuseAllowed=true
+                    reuseReason="admitted"
+                } catch {
+                    reuseReason="cache_memory_admission"
+                }
+            }
+        }
+        if !reuseAllowed {fullDensityCache.clear(expectedGeneration:densityLease)}
+        OPTDeviceFeedback.mark("full_density_cache_policy",[
+            "eligible":String(reuseAllowed),"reason":reuseReason,
+            "densityBytes":String(densityBytes),"retainPreview":String(retainDecodedSource)])
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:working.width,height:working.height,parameters:selected
         )
@@ -276,12 +319,18 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("float64_input_ready")
         try OriginalSourcePhysicalImage.developInPlace(
             &frame, parameters: selected,
-            phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}
+            phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},
+            filmDensityReuse:reuseAllowed ? fullDensityCache : nil,
+            filmDensityReuseLease:reuseAllowed ? densityLease : nil
         )
+        try Task.checkCancellation()
         OPTDeviceFeedback.mark("optics_done")
-        // Full preview may keep the original packed input; JPEG/TIFF
-        // export consumes it and does not refill the cache. Always rerun
-        // all optical stages, including the original random streams.
+        // Retain only a successful preview, subject to combined live margin.
+        // Export, errors and cancelled operations release the density.
+        keepDensity=retainDecodedSource && reuseAllowed &&
+            canRetainPreviewDensity(bytes:retainedBytes)
+        OPTDeviceFeedback.mark("full_density_retention_policy",["retained":String(keepDensity)])
+        // The independent packed ACES16 cache keeps its original policy.
         if retainDecodedSource {
             retainFullEditorSource(decoded,key:acquisition.key,
                                    generation:acquisition.generation)
@@ -444,6 +493,8 @@ enum P1OriginalRawACESIngress {
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
         // Full preview/export never use either reduced-grid cache.
+        // Drop the other grid's density before any preview allocation.
+        fullDensityCache.clear()
         // Capture before decode so a pressure/source notification during
         // decoding cannot be undone by a late optical cache transaction.
         var densityLease=previewDensityCache.lease()
@@ -504,7 +555,10 @@ enum P1OriginalRawACESIngress {
         )
         var reuseAllowed=false
         var reuseReason="unsupported_parameters"
-        if OriginalSourcePhysicalImage.canReuseFilmDensity(selected) {
+        // Build147 device matrix: explicitly controlled serial grain
+        // re-runs after the deterministic boundary. Never admit unseeded RNG.
+        let allowSeededPreview=true
+        if OriginalSourcePhysicalImage.canReuseFilmDensity(selected,allowSeededGrain:allowSeededPreview) {
             if !validIdentity {
                 reuseReason="identity_unavailable"
             } else if previewDensityCache.lease() != densityLease {
@@ -541,7 +595,8 @@ enum P1OriginalRawACESIngress {
         try OriginalSourcePhysicalImage.developInPlace(
             &frame,parameters:selected,phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},
             filmDensityReuse:reuseAllowed ? previewDensityCache : nil,
-            filmDensityReuseLease:reuseAllowed ? densityLease : nil
+            filmDensityReuseLease:reuseAllowed ? densityLease : nil,
+            allowSeededGrainDensityReuse:allowSeededPreview
         )
         if reuseAllowed && !canRetainPreviewDensity(bytes:densityBytes) {
             previewDensityCache.clear()

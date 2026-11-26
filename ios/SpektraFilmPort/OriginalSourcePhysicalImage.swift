@@ -276,6 +276,10 @@ enum OriginalSourcePhysicalImage {
             lock.lock();defer{lock.unlock()}
             return generation
         }
+        func hasEntry(expectedGeneration:UInt64)->Bool {
+            lock.lock();defer{lock.unlock()}
+            return generation==expectedGeneration && entry != nil
+        }
         @discardableResult
         func clear(expectedGeneration:UInt64?=nil)->UInt64 {
             lock.lock();defer{lock.unlock()}
