@@ -109,6 +109,9 @@ enum OriginalSourcePhysicalGrain {
         /// a caller-owned scratch array; no per-pixel heap allocation.
         /// Legacy test fixtures can still supply just `sublayers`.
         var sublayersInto: (([Double], inout [Double]) throws -> Void)? = nil
+        /// Write only indices sl*3+channel for the current production pass.
+        /// All-channel observers retain the existing nine-value contract.
+        var channelSublayersInto: (([Double], Int, inout [Double]) throws -> Void)? = nil
     }
 
     static func apply(
@@ -238,20 +241,31 @@ enum OriginalSourcePhysicalGrain {
                 : nil
         for ch in 0..<3 {
             if !retainAllSublayers {
-                // Recompute the pure measured inversion once per channel.
-                // Keep 3 Float64 layers per pixel, not 9. No random draw
-                // occurs here; RNG consumption is unchanged.
+                // Invert only this channel's three measured layers when
+                // the production profile provides its exact channel writer.
+                // Keep 3 Float64 layers per pixel, not 9. RNG unchanged.
                 for p in 0..<pixels {
                     let k=p*3
                     for c in 0..<3 {inputCMY[c]=densityCMY[k+c]}
-                    if let sublayersInto=measured.sublayersInto {
-                        try sublayersInto(inputCMY,&layerScratch)
+                    if p & 4095 == 0 {try Task.checkCancellation()}
+                    if let channelWriter=measured.channelSublayersInto {
+                        try channelWriter(inputCMY,ch,&layerScratch)
+                        guard layerScratch.count==9,
+                              layerScratch[ch].isFinite,
+                              layerScratch[3+ch].isFinite,
+                              layerScratch[6+ch].isFinite else {
+                            throw Failure.invalid("原版胶片当前通道三亚层密度无效")
+                        }
                     } else {
-                        layerScratch=try measured.sublayers(inputCMY)
-                    }
-                    guard layerScratch.count==9,
-                          layerScratch.allSatisfy({$0.isFinite}) else {
-                        throw Failure.invalid("原版胶片三亚层密度未完整计算")
+                        if let sublayersInto=measured.sublayersInto {
+                            try sublayersInto(inputCMY,&layerScratch)
+                        } else {
+                            layerScratch=try measured.sublayers(inputCMY)
+                        }
+                        guard layerScratch.count==9,
+                              layerScratch.allSatisfy({$0.isFinite}) else {
+                            throw Failure.invalid("原版胶片三亚层密度未完整计算")
+                        }
                     }
                     for sl in 0..<3 {
                         layerInputs[p*3+sl]=layerScratch[sl*3+ch]

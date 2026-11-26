@@ -149,6 +149,26 @@ enum SourcePhysicalGrainValidation {
             guard repeated==actual,actual != density else {
                 throw Failure.invalid("Controlled seeded source grain not deterministic")
             }
+            // Exercise the actual no-observer production channel branch
+            // independently of the existing all-nine Python stage oracle.
+            var channelMeasured=measured
+            var calls=[0,0,0]
+            channelMeasured.channelSublayersInto={ rgb,ch,output in
+                calls[ch]+=1
+                let total=maxima[ch]+maxima[3+ch]+maxima[6+ch]
+                for sl in 0..<3 {
+                    output[sl*3+ch]=rgb[ch]*maxima[sl*3+ch]/total
+                }
+            }
+            let channelOnly=try OriginalSourcePhysicalGrain.apply(
+                density,width:w,height:h,pixelUM:sample.pixelUM,
+                measured:channelMeasured,settings:settings
+            )
+            guard calls==[w*h,w*h,w*h],
+                  channelOnly.map(\.bitPattern)==repeated.map(\.bitPattern) else {
+                throw Failure.invalid("OPT channel-only measured inversion changed seeded grain bits or invocation count")
+            }
+            print("PASS OPT channel-only grain \(sample.name): \(calls), bitwise identical final density")
             settings.numbaSeed=nil
             if settings.useFastStats {
                 var missingCountsSeed=settings

@@ -166,7 +166,7 @@ struct OriginalHanatosResponse {
                pow(2.0, Double(exponent - 25))
     }
 
-    func raw(linearRGB: [Double]) -> [Double] {
+    func raw(linearRGB: [Double],scalarInterpolation:Bool=false) -> [Double] {
         guard linearRGB.count == 3 else { return [] }
         // Original _rgb_to_tc_b: selected source linear RGB -> XYZ
         // with the selected stock's reference illuminant and CAT16.
@@ -184,11 +184,11 @@ struct OriginalHanatosResponse {
         let y = xyz[1] / den
         let tx = min(1.0, max(0.0, (1.0 - x) * (1.0 - x)))
         let ty = min(1.0, max(0.0, y / max(1.0 - x, 1e-10)))
-        let lut = interpolateMitchell(x: tx, y: ty)
+        let lut = interpolateMitchell(x: tx, y: ty,scalarReference:scalarInterpolation)
         return lut.map { $0 * brightness }
     }
 
-    private func interpolateMitchell(x: Double, y: Double) -> [Double] {
+    private func interpolateMitchell(x: Double, y: Double,scalarReference:Bool) -> [Double] {
         let upper = Double(n - 1)
         let xx = min(upper, max(0.0, x * upper))
         let yy = min(upper, max(0.0, y * upper))
@@ -201,6 +201,7 @@ struct OriginalHanatosResponse {
         let wy = (0..<4).map { Self.mitchell(fracY + 1.0 - Double($0)) }
 
         var result = [0.0, 0.0, 0.0]
+        var lanes=SIMD3<Double>(repeating:0.0)
         var total = 0.0
         for i in 0..<4 {
             let ix = Self.reflected(baseX - 1 + i, n)
@@ -209,8 +210,19 @@ struct OriginalHanatosResponse {
                 let weight = wx[i] * wy[j]
                 total += weight
                 let offset = (ix * n + iy) * 3
-                for c in 0..<3 { result[c] += weight * rawLUT[offset + c] }
+                if scalarReference {
+                    for c in 0..<3 { result[c] += weight * rawLUT[offset + c] }
+                } else {
+                    let values=SIMD3<Double>(rawLUT[offset],rawLUT[offset+1],rawLUT[offset+2])
+                    let products=weight * values
+                    lanes=lanes + products
+                }
             }
+        }
+        if !scalarReference {
+            // Preserve the scalar division rather than multiply by a reciprocal.
+            if total != 0 {lanes=lanes / total}
+            return [lanes[0],lanes[1],lanes[2]]
         }
         if total != 0 {
             for c in 0..<3 { result[c] /= total }

@@ -1090,6 +1090,16 @@ jobs:
             ios/SpektraFilmPort/Build103VerificationEvidence.swift \
             /tmp/build103-metrics/main.swift
           /tmp/build103-metrics/test
+      - name: OPT Hanatos exact Mitchell SIMD measured LUT regression
+        run: |
+          set -euo pipefail
+          swiftc -O -parse-as-library \
+            ios/SpektraFilmPort/GeneratedHanatosData.swift \
+            ios/SpektraFilmPort/GeneratedHanatosPreciseData.swift \
+            ios/SpektraFilmPort/OriginalHanatosResponse.swift \
+            ios/tests/OPTHanatosMitchellValidation.swift \
+            -o /tmp/OPTHanatosMitchellValidation
+          /tmp/OPTHanatosMitchellValidation
       - name: Build pinned LibRaw 0.22 Fuji compressed X-Trans as real iPhoneOS arm64 static library
         run: |
           bash ios/scripts/build94_compile_libraw_ios.sh

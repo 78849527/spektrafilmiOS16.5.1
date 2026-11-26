@@ -1677,13 +1677,16 @@ struct SpectralPhysics {
         }
         let layers=(0..<(256*9)).map { profile.layerAt($0) }
         func writeSourceSublayers(
-            _ density:[Double],_ result:inout [Double]
+            _ density:[Double],_ result:inout [Double],
+            channel:Int?=nil
         ) throws {
             guard density.count==3,result.count==9,
-                  density.allSatisfy({$0.isFinite}) else {
+                  density.allSatisfy({$0.isFinite}),
+                  channel.map({(0..<3).contains($0)}) ?? true else {
                 throw PhysicsError.invalid("原版三亚层 CMY 输入错误")
             }
-            for ch in 0..<3 {
+            let channels=channel.map {$0..<($0+1)} ?? (0..<3)
+            for ch in channels {
                 let desired=density[ch]*sign
                 let axis=axes[ch]
                 let first:Int
@@ -1724,6 +1727,9 @@ struct SpectralPhysics {
             },
             sublayersInto:{ density,output in
                 try writeSourceSublayers(density,&output)
+            },
+            channelSublayersInto:{ density,channel,output in
+                try writeSourceSublayers(density,&output,channel:channel)
             }
         )
     }
