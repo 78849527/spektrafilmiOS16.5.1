@@ -253,7 +253,8 @@ enum OriginalSourcePhysicalImage {
         )
     }
 
-    /// Explicit local diagnostic session; not global or used by production.
+    /// Single-entry session, used by diagnostics and admitted reduced RAW
+    /// preview only. Full-resolution preview/export remain uncached.
     /// Only the no-grain, no-camera-preoptics, negative Hanatos subset is
     /// eligible. SHA256 covers actual Float64 frame bytes, including crop
     /// and reducer output, rather than a path or mutable RAW identity.
@@ -271,15 +272,27 @@ enum OriginalSourcePhysicalImage {
         private let lock=NSLock()
         private var entry:(Key,[Double])?
         private var generation:UInt64=0
-        func clear() {
+        func lease()->UInt64 {
             lock.lock();defer{lock.unlock()}
+            return generation
+        }
+        @discardableResult
+        func clear(expectedGeneration:UInt64?=nil)->UInt64 {
+            lock.lock();defer{lock.unlock()}
+            if let expectedGeneration,expectedGeneration != generation {
+                return expectedGeneration
+            }
             generation &+= 1
             entry=nil
+            return generation
         }
         // A single transaction per render. Invalidations or another
         // transaction prevent an older render from repopulating the cache.
-        func begin(_ key:Key)->(generation:UInt64,density:[Double]?) {
+        func begin(_ key:Key,expectedGeneration:UInt64?=nil)->(generation:UInt64,density:[Double]?) {
             lock.lock();defer{lock.unlock()}
+            if let expectedGeneration,expectedGeneration != generation {
+                return (expectedGeneration,nil)
+            }
             generation &+= 1
             if let entry,entry.0==key {return (generation,entry.1)}
             entry=nil
@@ -293,20 +306,23 @@ enum OriginalSourcePhysicalImage {
         }
     }
 
+    static func canReuseFilmDensity(_ p:Parameters)->Bool {
+        !SpectralPhysics.isPositiveFilm(p.filmID) &&
+        !p.sourceGrain.active &&
+        !p.cameraOptics.active && !p.filmHalation.active &&
+        !p.sourceColorReference.enabled && p.sourceDIR==nil &&
+        p.cameraRawMethod == .hanatos2025 &&
+        !p.cameraBandpass.active && !p.hanatosSourceRecompute &&
+        p.sourceInputGamutAlgorithm == .xy &&
+        p.deterministicPixelWorkers==1
+    }
+
     private static func filmDensityReuseKey(
         frame:OriginalSourcePixelIO.Frame,parameters:Parameters
     ) throws -> FilmDensityReuse.Key {
         // Reject unsupported dependencies rather than claiming that a
         // downstream setting cannot affect a source filming calibration.
-        guard !SpectralPhysics.isPositiveFilm(parameters.filmID),
-              !parameters.sourceGrain.active,
-              !parameters.cameraOptics.active,!parameters.filmHalation.active,
-              !parameters.sourceColorReference.enabled,
-              parameters.sourceDIR==nil,
-              parameters.cameraRawMethod == .hanatos2025,
-              !parameters.cameraBandpass.active,!parameters.hanatosSourceRecompute,
-              parameters.sourceInputGamutAlgorithm == .xy,
-              parameters.deterministicPixelWorkers==1 else {
+        guard canReuseFilmDensity(parameters) else {
             throw Failure.invalid("胶片密度复用候选仅支持无颗粒、无相机前级及参考校准的负片 Hanatos 串行测试")
         }
         let space:Int
@@ -733,7 +749,8 @@ enum OriginalSourcePhysicalImage {
         parameters: Parameters,
         stageDoubleObserver: ((String, [Double]) -> Void)? = nil,
         phaseMemoryObserver: ((String) -> Void)? = nil,
-        filmDensityReuse:FilmDensityReuse? = nil
+        filmDensityReuse:FilmDensityReuse? = nil,
+        filmDensityReuseLease:UInt64? = nil
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -821,7 +838,9 @@ enum OriginalSourcePhysicalImage {
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         phaseMemoryObserver?("optical_parameters_ready")
         let size=w*h*3
-        let reuseTransaction=reuseKey.flatMap { key in filmDensityReuse?.begin(key) }
+        let reuseTransaction=reuseKey.flatMap { key in
+            filmDensityReuse?.begin(key,expectedGeneration:filmDensityReuseLease)
+        }
         var pendingDensity:[Double]?
         var paperLogObserved:[Double]? = capturePaperStages
             ? [Double](repeating:0,count:size) : nil

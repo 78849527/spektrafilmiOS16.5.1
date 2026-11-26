@@ -279,6 +279,20 @@ enum SourcePhysicalImageParity {
                       invalidated.rgb.map({$0.bitPattern})==actual.rgb.map({$0.bitPattern}) else {
                     throw Failure.invalid("OPT film density stale store mismatch "+fixture.name)
                 }
+                // Clear BEFORE the optical renderer starts, e.g. during
+                // an input decode. The old lease must not refill the cache.
+                let staleLease=session.lease()
+                session.clear()
+                var stale=frame
+                var stalePhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&stale,parameters:params,
+                    phaseMemoryObserver:{stalePhases.append($0)},filmDensityReuse:session,
+                    filmDensityReuseLease:staleLease)
+                guard stalePhases.contains("film_density_cache_store_invalidated"),
+                      !stalePhases.contains("film_density_cache_stored"),
+                      stale.rgb.map({$0.bitPattern})==actual.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("OPT film density pre-render stale lease mismatch "+fixture.name)
+                }
                 var rebuilt=frame
                 var rebuiltPhases=[String]()
                 try OriginalSourcePhysicalImage.developInPlace(&rebuilt,parameters:params,

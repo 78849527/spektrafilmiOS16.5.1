@@ -23,6 +23,8 @@ enum P1OriginalRawACESIngress {
     // lock acquisition; LibRaw itself cannot be interrupted mid-native call.
     private static let editorRAWLock = NSLock()
     private static let previewInputCache = Build139RAWPreviewDownsample.InputCache()
+    // At most one admitted reduced-grid Float64 density, never full RAW.
+    private static let previewDensityCache = OriginalSourcePhysicalImage.FilmDensityReuse()
     private static let fullInputCache = Build139RAWPreviewDownsample.FullInputCache<Source>()
 
     static func withExclusiveRAWWork<T>(operation:String="raw_editor",_ body: () throws -> T) throws -> T {
@@ -37,10 +39,11 @@ enum P1OriginalRawACESIngress {
 
     static func clearPreviewInputCache() {
         previewInputCache.clear()
+        previewDensityCache.clear()
     }
 
     static func clearAllInputCaches(reason:String="source_invalidation") {
-        previewInputCache.clear()
+        clearPreviewInputCache()
         fullInputCache.clear(reason:reason)
     }
 
@@ -312,9 +315,10 @@ enum P1OriginalRawACESIngress {
         var selected=opticalSettings
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
-        // OPT-01: reuse only the original Build139 linear input; all
-        // optical settings are applied anew. Full preview/export never use it.
-        // Do not stack an unused full-size cache with a quick preview.
+        // Full preview/export never use either reduced-grid cache.
+        // Capture before decode so a pressure/source notification during
+        // decoding cannot be undone by a late optical cache transaction.
+        var densityLease=previewDensityCache.lease()
         fullInputCache.clear(reason:"switch_to_quick_preview")
         try Task.checkCancellation()
         let cropKey = crop.map {
@@ -332,6 +336,7 @@ enum P1OriginalRawACESIngress {
             sourceHeight = cached.sourceHeight
         } else {
             let cacheGeneration=previewInputCache.clear()
+            densityLease=previewDensityCache.clear(expectedGeneration:densityLease)
             OPTDeviceFeedback.mark("preview_cache_miss_decode_begin")
             // Native LibRaw 45MP/10k and live pre-unpack budget still apply.
             // The small optical preview has its own post-reduction gate.
@@ -362,6 +367,43 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("preview_optical_admission",["width":String(reduced.width),
             "height":String(reduced.height),"film":selected.filmID,"paper":selected.paperID])
         recordOpticalOptions(selected,cropped:crop != nil)
+        // A cache is optional memory, never an optical mode change.
+        // Charge its full 24 B/px on top of the existing production plan.
+        // The preview input is still retained, so no COW credit here.
+        let densityBytes=UInt64(reduced.rgb.count)*UInt64(MemoryLayout<Double>.stride)
+        let validIdentity=key != nil && key==Build139RAWPreviewDownsample.CacheKey.make(
+            url:rawURL,crop:cropKey,maxLongEdge:maxLongEdge
+        )
+        var reuseAllowed=false
+        var reuseReason="unsupported_parameters"
+        if OriginalSourcePhysicalImage.canReuseFilmDensity(selected) {
+            if !validIdentity {
+                reuseReason="identity_unavailable"
+            } else if previewDensityCache.lease() != densityLease {
+                reuseReason="lease_invalidated"
+            } else if !canRetainPreviewDensity(bytes:densityBytes) {
+                reuseReason="retention_headroom"
+            } else {
+                let envelope=OriginalSourcePhysicalImage.memoryEnvelope(
+                    width:reduced.width,height:reduced.height,parameters:selected)
+                do {
+                    try OriginalSourcePhysicalImage.validateMemoryBudget(
+                        width:reduced.width,height:reduced.height,
+                        additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                        cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+                    reuseAllowed=true
+                    reuseReason="admitted"
+                } catch {
+                    // Only optional caching is declined; the original
+                    // renderer must still pass its independent full gate.
+                    reuseReason="cache_memory_admission"
+                }
+            }
+        }
+        if !reuseAllowed {previewDensityCache.clear(expectedGeneration:densityLease)}
+        OPTDeviceFeedback.mark("preview_density_cache_policy",[
+            "eligible":String(reuseAllowed),"reason":reuseReason,
+            "densityBytes":String(densityBytes)])
         try OriginalSourcePhysicalImage.validateMemoryBudget(
             width:reduced.width,height:reduced.height,parameters:selected
         )
@@ -369,12 +411,29 @@ enum P1OriginalRawACESIngress {
             width:reduced.width,height:reduced.height,rgb:reduced.rgb
         )
         try OriginalSourcePhysicalImage.developInPlace(
-            &frame,parameters:selected,phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}
+            &frame,parameters:selected,phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},
+            filmDensityReuse:reuseAllowed ? previewDensityCache : nil,
+            filmDensityReuseLease:reuseAllowed ? densityLease : nil
         )
+        if reuseAllowed && !canRetainPreviewDensity(bytes:densityBytes) {
+            previewDensityCache.clear()
+            OPTDeviceFeedback.mark("preview_density_cache_evicted",["reason":"post_render_headroom"])
+        }
         OPTDeviceFeedback.mark("optics_done")
         return PreviewWithGeometry(
             frame:frame,sourceWidth:sourceWidth,sourceHeight:sourceHeight
         )
+    }
+
+    private static func canRetainPreviewDensity(bytes:UInt64)->Bool {
+        #if os(iOS)
+        let headroom=UInt64(os_proc_available_memory())
+        #else
+        let headroom=ProcessInfo.processInfo.physicalMemory/3
+        #endif
+        // Retention heuristic only, never a render limit. No fixed
+        // memory ceiling and no precision/geometry substitution.
+        return headroom>0 && bytes<=headroom/5
     }
 
     /// Match original rawpy: np.float32(uint16) / np.float32(65535).

@@ -84,7 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
-# Build146: consolidated exact optical performance and scoped film density reuse device candidate; full CI before publication.
+# Build146 follow-up: admitted reduced RAW preview density cache; compile-only.
 name: Build146 optimization regression and explicitly requested device IPA
 
 on:
@@ -262,6 +262,14 @@ jobs:
           assert 'OPTDeviceFeedback.measure(operation,' in ingress
           assert 'full_cache_hit' in ingress and 'preview_cache_hit' in ingress
           assert ingress.count('phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}')==2
+          reduced=ingress.split('static func developPreviewWithGeometry(',1)[1]
+          full=ingress.split('static func developSourceCandidate(',1)[1].split('static func developPreviewCandidate(',1)[0]
+          assert 'filmDensityReuse:reuseAllowed ? previewDensityCache : nil' in reduced
+          assert 'filmDensityReuseLease:reuseAllowed ? densityLease : nil' in reduced
+          assert 'filmDensityReuse:' not in full
+          assert 'additionalBytesPerPixel:envelope.additionalBytesPerPixel+24' in reduced
+          assert 'previewDensityCache.clear()' in ingress
+          assert 'preview_density_cache_policy' in reduced
           # Three existing preview/export routes plus three mutually exclusive
           # device diagnostic routes. Require each explicitly; no count-only waiver.
           assert editor.count('P1OriginalRawACESIngress.withExclusiveRAWWork(operation:')==6
