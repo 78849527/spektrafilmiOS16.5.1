@@ -577,6 +577,37 @@ enum SourcePhysicalImageParity {
                         "Controlled source 3x3 grain was not integrated at the film density/print boundary"
                     )
                 }
+                // The same actual Python-reference fixture must match
+                // a cold pre-grain cache and a hot render with fresh RNG.
+                let grainSession=OriginalSourcePhysicalImage.FilmDensityReuse()
+                var grainCold=frame
+                var grainColdPhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&grainCold,parameters:enabled,
+                    phaseMemoryObserver:{grainColdPhases.append($0)},filmDensityReuse:grainSession,
+                    allowSeededGrainDensityReuse:true)
+                guard grainColdPhases.contains("film_density_cache_stored"),
+                      grainColdPhases.contains("three_sublayer_grain_ready"),
+                      grainCold.rgb.map({$0.bitPattern})==developed.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("OPT pre-grain cold cache changed seeded output")
+                }
+                var grainChanged=enabled
+                grainChanged.sourceGrain.numbaSeed=9999
+                grainChanged.sourceGrain.particleScale[0]*=1.125
+                let grainReference=try OriginalSourcePhysicalImage.develop(frame,parameters:grainChanged)
+                var grainHot=frame
+                var grainHotPhases=[String]()
+                try OriginalSourcePhysicalImage.developInPlace(&grainHot,parameters:grainChanged,
+                    phaseMemoryObserver:{grainHotPhases.append($0)},filmDensityReuse:grainSession,
+                    allowSeededGrainDensityReuse:true)
+                guard grainHotPhases.contains("film_density_cache_hit"),
+                      !grainHotPhases.contains("camera_photons_ready"),
+                      grainHotPhases.contains("grain_particle_clouds_ready"),
+                      grainHotPhases.contains("three_sublayer_grain_ready"),
+                      grainHot.rgb.map({$0.bitPattern})==grainReference.rgb.map({$0.bitPattern}),
+                      !OriginalSourcePhysicalImage.canReuseFilmDensity(enabled) else {
+                    throw Failure.invalid("OPT pre-grain cache did not preserve fresh seeded RNG")
+                }
+                grainSession.clear()
                 // Independent Python is now RUN on the same entire
                 // original image, including original SciPy counts,
                 // one-worker Numba microstructure and optical paper RGB.

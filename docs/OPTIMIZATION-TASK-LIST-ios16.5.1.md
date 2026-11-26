@@ -192,6 +192,13 @@
 - 正式 12MP full preview/JPEG/TIFF16 不使用密度缓存；颗粒之前缓存仍待单独随机状态对照。默认生产串行、原版 FFT、Float64、几何与内存限制不变。
 - 本提交 compile-only，后续完整 gate 和真实 RAW preview 冷热测试才确认接入。不得根据固定小图推断全尺寸性能。
 
+## Build147 第二批：颗粒前确定性 CMY 复用诊断
+
+- 147-A / 8bf8a38 / 45853337916 Linux 6/6、macOS 69 pass + 4 packaging skips。生产 reduced preview 接入编译完成，未做真实编辑 A/B。
+- 147-B 仅新增明确 opt-in allowSeededGrainDensityReuse（默认 false）；缓存仍在任何 SciPy/Numba 抽样之前，原有 24 B/px 保守预算和代际保护不变。颗粒开关、种子、粒子参数为下游；densityMin 位模式保守纳入键。无种子多线程不准入；P1 生产调用仍拒绝所有 active grain，full 仍不使用缓存。
+- 原版 3×3 颗粒、fast_stats、单层和 microstructure 路径都重新调用原生产函数，不缓存输出、不重用 RNG 状态、不改变 seed/层序/滤波。扩展现有真机对照为8个固定 ACES 颗粒场景，测试开关、seed变化、粒子尺度、fast_stats、单层、densityMin失效、再命中；明确用 3000nm 诊断参数触发实际 Numba 抽样，不改默认30nm。核对独立完整渲染每一位、seed变化输出、实际颗粒阶段、内存及温度。历史 Python fixture 也增加 cold/hot 对照。
+- 仅提交 compile-only；待 CI 和设备报告后决定是否接入受控颗粒快速预览。全尺寸与无种子颗粒尚未验证，不能承诺 22 秒节省。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

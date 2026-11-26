@@ -306,9 +306,17 @@ enum OriginalSourcePhysicalImage {
         }
     }
 
-    static func canReuseFilmDensity(_ p:Parameters)->Bool {
-        !SpectralPhysics.isPositiveFilm(p.filmID) &&
-        !p.sourceGrain.active &&
+    static func canReuseFilmDensity(_ p:Parameters,allowSeededGrain:Bool=false)->Bool {
+        // Grain remains AFTER the cache boundary. Until independent
+        // device evidence exists, only the diagnostic may opt in to
+        // explicitly seeded serial grain. Never cache grain output.
+        let grainEligible = !p.sourceGrain.active ||
+            (allowSeededGrain && !p.sourceGrain.useUnseededParallel &&
+             p.sourceGrain.numbaSeed != nil &&
+             (!p.sourceGrain.useFastStats ||
+              p.sourceGrain.fastStatsSeed == p.sourceGrain.numbaSeed))
+        return !SpectralPhysics.isPositiveFilm(p.filmID) &&
+        grainEligible &&
         !p.cameraOptics.active && !p.filmHalation.active &&
         !p.sourceColorReference.enabled && p.sourceDIR==nil &&
         p.cameraRawMethod == .hanatos2025 &&
@@ -318,12 +326,13 @@ enum OriginalSourcePhysicalImage {
     }
 
     private static func filmDensityReuseKey(
-        frame:OriginalSourcePixelIO.Frame,parameters:Parameters
+        frame:OriginalSourcePixelIO.Frame,parameters:Parameters,
+        allowSeededGrain:Bool=false
     ) throws -> FilmDensityReuse.Key {
         // Reject unsupported dependencies rather than claiming that a
         // downstream setting cannot affect a source filming calibration.
-        guard canReuseFilmDensity(parameters) else {
-            throw Failure.invalid("胶片密度复用候选仅支持无颗粒、无相机前级及参考校准的负片 Hanatos 串行测试")
+        guard canReuseFilmDensity(parameters,allowSeededGrain:allowSeededGrain) else {
+            throw Failure.invalid("胶片密度复用候选仅支持无相机前级及参考校准的负片 Hanatos 串行；颗粒需单独显式受控种子诊断")
         }
         let space:Int
         switch parameters.cameraInputColorSpace {
@@ -723,6 +732,108 @@ enum OriginalSourcePhysicalImage {
         } catch Failure.invalid(let reason) where reason.contains("胶片密度复用候选仅支持") {
             emit("density_reuse_unsupported",["rejected":"true","error":reason])
         }
+        // Separate controlled grain comparison: restart from a no-grain
+        // CMY cache, re-run actual RNG on EVERY render, including changes
+        // to random seed and grain particle scale. Density minimum is
+        // conservatively part of the key; a change must miss.
+        session.clear()
+        var seeded=parameters()
+        seeded.sourceGrain.active=true
+        seeded.sourceGrain.numbaSeed=8888
+        // Deliberately exercise actual Numba lognormal at this grid.
+        // This is a controlled diagnostic override, not production tuning.
+        seeded.sourceGrain.microstructureNM=3000
+        var seedChanged=seeded
+        seedChanged.sourceGrain.numbaSeed=9999
+        var particleChanged=seedChanged
+        particleChanged.sourceGrain.particleScale[0]=1.8
+        var fastStats=seedChanged
+        fastStats.sourceGrain.useFastStats=true
+        fastStats.sourceGrain.fastStatsSeed=9999
+        var singleLayer=seedChanged
+        singleLayer.sourceGrain.sublayersActive=false
+        var minChanged=seeded
+        minChanged.sourceGrain.densityMin[0]+=0.01
+        let grainTrials:[(String,Parameters,Bool)]=[
+            ("grain_off_cold",parameters(),false),
+            ("grain_on_seeded_hit",seeded,true),
+            ("grain_seed_changed_hit",seedChanged,true),
+            ("grain_particle_changed_hit",particleChanged,true),
+            ("grain_fast_stats_hit",fastStats,true),
+            ("grain_single_layer_hit",singleLayer,true),
+            ("grain_min_density_miss",minChanged,false),
+            ("grain_min_density_repeat_hit",minChanged,true)
+        ]
+        var originalSeedOutputSHA:[UInt8]?
+        for (name,params,expectedHit) in grainTrials {
+            try Task.checkCancellation()
+            let thermalBefore=ProcessInfo.processInfo.thermalState.rawValue
+            emit("density_grain_trial_begin",["case":name])
+            var baseline=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+            let referenceStart=ProcessInfo.processInfo.systemUptime
+            try developInPlace(&baseline,parameters:params)
+            let referenceSeconds=ProcessInfo.processInfo.systemUptime-referenceStart
+            var actual=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+            let sampler=Build133RAWMemoryLadder.RSSSampler()
+            var phases=[String]()
+            let start=ProcessInfo.processInfo.systemUptime
+            sampler.start()
+            do {
+                try developInPlace(&actual,parameters:params,
+                    phaseMemoryObserver:{phases.append($0)},filmDensityReuse:session,
+                    allowSeededGrainDensityReuse:true)
+            } catch {
+                _=sampler.finish();session.clear();throw error
+            }
+            let elapsed=ProcessInfo.processInfo.systemUptime-start
+            let samples=sampler.finish()
+            var mismatch=0
+            var maxError=0.0
+            for i in baseline.rgb.indices {
+                if i & 4095 == 0 {try Task.checkCancellation()}
+                if baseline.rgb[i].bitPattern != actual.rgb[i].bitPattern {mismatch+=1}
+                maxError=max(maxError,abs(baseline.rgb[i]-actual.rgb[i]))
+            }
+            let hit=phases.contains("film_density_cache_hit")
+            let stored=phases.contains("film_density_cache_stored")
+            let upstreamRan=phases.contains("camera_photons_ready")
+            let grainRan=phases.contains("three_sublayer_grain_ready")
+            let particleRan=phases.contains("grain_particle_clouds_ready")
+            var hasher=SHA256()
+            actual.rgb.withUnsafeBytes {hasher.update(bufferPointer:$0)}
+            let digest=Array(hasher.finalize())
+            if name=="grain_on_seeded_hit" {originalSeedOutputSHA=digest}
+            let seedChangedOutput = name != "grain_seed_changed_hit" ||
+                (originalSeedOutputSHA != nil && originalSeedOutputSHA != digest)
+            let pass=mismatch==0 && hit==expectedHit && upstreamRan != expectedHit &&
+                (expectedHit || stored) && grainRan==params.sourceGrain.active &&
+                (!(params.sourceGrain.active && params.sourceGrain.sublayersActive) || particleRan) &&
+                seedChangedOutput
+            passedAll=passedAll && pass
+            emit("density_grain_trial_result",[
+                "case":name,"expectedHit":String(expectedHit),"hit":String(hit),
+                "upstreamRan":String(upstreamRan),"grainRan":String(grainRan),
+                "particleRan":String(particleRan),"seedChangedOutput":String(seedChangedOutput),
+                "bitMismatches":String(mismatch),"maxAbsoluteError":String(maxError),
+                "passed":String(pass),"referenceSeconds":String(referenceSeconds),
+                "candidateSeconds":String(elapsed),"thermalBefore":String(thermalBefore),
+                "thermalAfter":String(ProcessInfo.processInfo.thermalState.rawValue),
+                "sampledPeakPhysicalFootprintBytes":samples.footprint.map{String($0)} ?? "not_measured",
+                "sampledPeakRSSBytes":samples.peak.map{String($0)} ?? "not_measured",
+                "sampledLowestHeadroomBytes":samples.lowest.map{String($0)} ?? "not_measured",
+                "sampleCount":String(samples.count)])
+        }
+        // Even explicitly opting into diagnostics cannot admit unseeded
+        // parallel grain until its original random-state semantics are audited.
+        var unseeded=seeded
+        unseeded.sourceGrain.numbaSeed=nil
+        unseeded.sourceGrain.useUnseededParallel=true
+        let rejected = !canReuseFilmDensity(unseeded,allowSeededGrain:true)
+        let productionStillRejects = !canReuseFilmDensity(seeded)
+        passedAll=passedAll && rejected && productionStillRejects
+        emit("density_grain_policy",["unseededRejected":String(rejected),
+            "productionSeededRejected":String(productionStillRejects),
+            "scope":"fixed_synthetic_seeded_grain_only"])
         emit("density_reuse_comparison_result",["passed":String(passedAll)])
         return passedAll
     }
@@ -750,7 +861,8 @@ enum OriginalSourcePhysicalImage {
         stageDoubleObserver: ((String, [Double]) -> Void)? = nil,
         phaseMemoryObserver: ((String) -> Void)? = nil,
         filmDensityReuse:FilmDensityReuse? = nil,
-        filmDensityReuseLease:UInt64? = nil
+        filmDensityReuseLease:UInt64? = nil,
+        allowSeededGrainDensityReuse:Bool = false
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -763,7 +875,8 @@ enum OriginalSourcePhysicalImage {
         }
         let reuseKey:FilmDensityReuse.Key?
         if let filmDensityReuse {
-            do {reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters)}
+            do {reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters,
+                allowSeededGrain:allowSeededGrainDensityReuse)}
             catch {filmDensityReuse.clear();throw error}
         } else {reuseKey=nil}
         let committedInputBytes=UInt64(frame.rgb.count) *
