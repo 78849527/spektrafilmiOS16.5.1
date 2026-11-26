@@ -199,6 +199,13 @@
 - 原版 3×3 颗粒、fast_stats、单层和 microstructure 路径都重新调用原生产函数，不缓存输出、不重用 RNG 状态、不改变 seed/层序/滤波。扩展现有真机对照为8个固定 ACES 颗粒场景，测试开关、seed变化、粒子尺度、fast_stats、单层、densityMin失效、再命中；明确用 3000nm 诊断参数触发实际 Numba 抽样，不改默认30nm。核对独立完整渲染每一位、seed变化输出、实际颗粒阶段、内存及温度。历史 Python fixture 也增加 cold/hot 对照。
 - 仅提交 compile-only；待 CI 和设备报告后决定是否接入受控颗粒快速预览。全尺寸与无种子颗粒尚未验证，不能承诺 22 秒节省。
 
+## Build147-C 第一阶段：九层颗粒全幅模糊缓冲审计
+
+- 原版固定 grain.py 的 add_micro_structure 与 apply_grain_to_density_layers 保留 lognormal → 全幅 Gaussian → 乘法、减 density_min → 最终 Gaussian 顺序、阈值、Float64 及通道/亚层 RNG。现有生产 3 亚层输入、复用概率/rates、Int64 counts、单通道 cloud 与释放动作均保留。
+- 无 stage observer 时微结构 clump 与最终 out 是本函数局部拥有的数组，改用 Build114 已有全幅 diffuseInPlaceMemoryBounded；有 observer 时保留分配式参考，以免快照 COW 或影响独立原版 stage 对照。单层颗粒、随机采样、空间滤波边界、运算顺序不改。分配式滤波需要 2 个单通道 scratch + 1 个 RGB result，原位需要 3 个单通道 scratch；每次调用理论净少 16 B/px（12,192,768 像素约 195 MB），两处不累加，实际分配/COW、峰值及速度待 A15 实测。既有 224/56 B/px 动态 ledger 不减。
+- 加强真实 Python 五组四阶段源测试：无 observer 生产输出与有 observer 分配式参考逐位相同；保留通道 writer 调用数及原 Python 容差。增加无尾部 FIR/YVV 和 micro sigma 的独立滤波对照；不修改门槛。待 CI；未发布 IPA，未修改 Build146 版本号。
+- OPT-13 部分完成，后续检查计数/微结构实际生命周期与生产上游 COW；OPT-14 热循环、OPT-15 原尺寸确定性缓存仍待实施，未宣称全面认证。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

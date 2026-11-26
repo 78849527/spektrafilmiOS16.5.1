@@ -146,9 +146,13 @@ enum SourcePhysicalGrainValidation {
                 density,width:w,height:h,pixelUM:sample.pixelUM,
                 measured:measured,settings:settings
             )
-            guard repeated==actual,actual != density else {
-                throw Failure.invalid("Controlled seeded source grain not deterministic")
+            // Observed path retains the allocating Gaussian reference;
+            // unobserved production uses the exact in-place implementation.
+            guard repeated.map(\.bitPattern)==actual.map(\.bitPattern),
+                  actual != density else {
+                throw Failure.invalid("Build147-C observed reference vs unobserved production grain bit mismatch")
             }
+            print("PASS Build147-C observed/production grain \(sample.name): exact Float64 bits")
             // Exercise the actual no-observer production channel branch
             // independently of the existing all-nine Python stage oracle.
             var channelMeasured=measured

@@ -333,7 +333,7 @@ enum OriginalSourcePhysicalGrain {
 
         // Build117: release the current 3-layer (or observed 9-layer) field,
         // 2 Poisson/Binomial preparation fields (2 Double/px) and dye-cloud
-        // RGB workspace are dead after this final SciPy/fast_stats draw.
+        // scalar dye-cloud workspace are dead after this final SciPy/fast_stats draw.
         // Explicitly relinquish their storage BEFORE allocating Numba
         // microstructure and the final Gaussian workspaces. This does not
         // change RNG order, Float64 arithmetic or any observed stage data;
@@ -377,10 +377,20 @@ enum OriginalSourcePhysicalGrain {
                 }
             }
             if microBlur>0.4 {
-                clump=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-                    clump,width:width,height:height,
-                    coreSigma:microBlur,tailSigma:0,tailWeight:0
-                )
+                // Build147-C: the production clump is locally owned and
+                // consumed once. Avoid a separate RGB result frame.
+                // Keep the allocating reference for observed stage parity.
+                if retainAllSublayers {
+                    clump=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
+                        clump,width:width,height:height,
+                        coreSigma:microBlur,tailSigma:0,tailWeight:0
+                    )
+                } else {
+                    try SourceSpatialDIRConvolution.diffuseInPlaceMemoryBounded(
+                        &clump,width:width,height:height,
+                        coreSigma:microBlur,tailSigma:0,tailWeight:0
+                    )
+                }
             }
             for ix in out.indices {out[ix]*=clump[ix]}
         }
@@ -393,10 +403,19 @@ enum OriginalSourcePhysicalGrain {
             }
         }
         if settings.grainBlur>0 {
-            out=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
-                out,width:width,height:height,
-                coreSigma:settings.grainBlur,tailSigma:0,tailWeight:0
-            )
+            // Observers can retain the earlier CMY snapshots. Only the
+            // unobserved, locally owned production result is mutated.
+            if retainAllSublayers {
+                out=try SourceSpatialDIRConvolution.diffuseMemoryBounded(
+                    out,width:width,height:height,
+                    coreSigma:settings.grainBlur,tailSigma:0,tailWeight:0
+                )
+            } else {
+                try SourceSpatialDIRConvolution.diffuseInPlaceMemoryBounded(
+                    &out,width:width,height:height,
+                    coreSigma:settings.grainBlur,tailSigma:0,tailWeight:0
+                )
+            }
         }
         guard out.allSatisfy({$0.isFinite}) else {
             throw Failure.invalid("原版颗粒输出出现 NaN/Inf，拒绝静默降级")

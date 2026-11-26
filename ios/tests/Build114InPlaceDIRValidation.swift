@@ -20,6 +20,9 @@ struct Build114InPlaceDIRValidation {
             .init(width:15,height:11,core:1.5,tail:7.5,weight:0.28,rgb:false),
             .init(width:41,height:23,core:3.0,tail:18,weight:0.4,rgb:true),
             .init(width:73,height:41,core:0.01,tail:40,weight:0.8,rgb:false),
+            .init(width:9,height:7,core:0.65,tail:0,weight:0,rgb:false),
+            .init(width:12,height:10,core:3.2,tail:0,weight:0,rgb:false),
+            .init(width:8,height:6,core:0.2/0.35,tail:0,weight:0,rgb:false),
             .init(width:127,height:91,core:7,tail:27,weight:0.0,rgb:false),
             .init(width:200,height:149,core:12,tail:100,weight:0.67,rgb:true),
         ]
