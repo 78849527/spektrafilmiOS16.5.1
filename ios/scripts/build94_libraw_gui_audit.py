@@ -14,6 +14,8 @@ ROOT=Path(__file__).resolve().parents[2]
 P=ROOT/"ios"
 ui=(P/"SpektraFilmPort/FloatingEditorWorkspace.swift").read_text()
 main=(P/"SpektraFilmPort/ContentView.swift").read_text()
+sheets_path=P/"SpektraFilmPort/EditorSystemSheets.swift"
+sheets=sheets_path.read_text() if sheets_path.is_file() else main
 camera=(P/"SpektraFilmPort/NextLevelCamera.swift").read_text()
 spec=(P/"project.yml").read_text()
 stages=(P/"SpektraFilmPort/Build92DeviceSourceStageDiagnostic.swift").read_text()
@@ -72,7 +74,9 @@ raw_code="\n".join(line for line in raw.splitlines()
 checks.update({
     "xt5_raf_signature":"FUJIFILMCCD-RAW " in signature and "case dng,raf,cr3,nef,cr2,arw" in signature,
     "raw_preserved_with_sha":"SHA256()" in storage and "copied.hash==source.hash" in storage,
-    "raw_picker_all_files":"forOpeningContentTypes: [.item]" in main,
+    "raw_picker_all_files":"forOpeningContentTypes: [.item]" in sheets and
+        "FilesDocumentPicker(onPick:" in main and
+        "allowsMultipleSelection = false" in sheets,
     "raw_requires_explicit_mode_choice":'rawNeedsChoice=true' in main and 'isPresented: $model.rawNeedsChoice' in main,
     "raw_apple_compat_preview":"Build93AppleRAWImport.open(url)" in main and "PhotoProcessor.preview(" in main,
     "raw_decoder_not_embedded_jpeg":"CIRAWFilter(imageURL: url)" in raw_code and "CIImage(contentsOf:" not in raw_code and "CIImage(data:" not in raw_code,

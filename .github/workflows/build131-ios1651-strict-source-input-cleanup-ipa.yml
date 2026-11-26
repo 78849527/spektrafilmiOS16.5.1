@@ -84,6 +84,7 @@
 # Build102: fix real iPhone Build101 first failure caused by skipped colour-science
 # Float64 sRGB-to-sRGB matrix in the legacy scanner diagnostic expectation.
 # Production optical pipeline/tolerances remain exactly unchanged.
+# Retry 2: historical picker audits now inspect extracted system sheets.
 name: Build142 source baseline optimization regression (compile only by default)
 
 on:
