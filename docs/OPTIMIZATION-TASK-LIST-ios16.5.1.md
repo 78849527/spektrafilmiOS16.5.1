@@ -265,6 +265,12 @@
 - 新增4几何×16开关=64账本用例及2非法尺寸检查；继续旧 ledger/256组合/原版颗粒/MT/Numba门槛。设备反馈仍是最终依据。Build148-D 前一轮本地 SIMD 声称未见可核查日志，以实际 CI 为准。
 - 上一轮 148-A 仍在 iPhoneOS compile，暂不抢占；本批代码独立提交，随后合并 workflow 触发 B/C/D/E。尚不发IPA。
 
+## Build148 集中真机候选
+
+- v1.8.114/148，A～E 同一源码 SHA，历史白名单仅新增 OriginalSourceMT19937.swift，保留全部独立原版门槛。新增实际两路径生命周期记录静态检查，不改变数值容差、动态内存准入、13MP 几何或原版随机顺序。
+- 原 45876274875 查询仍为 Linux 6/6、macOS 63通过、iPhoneOS compile；为不取消已有测试，同分支 concurrency cancel-in-progress=false，新 run 等待原 run 退出。明确 [runner:intel] [device-ipa:148]，Apple Silicon 默认不变，只有完整 CI、真实 arm64 iPhoneOS 编译及当前 SHA/版本核验成功后才发布未签名 IPA。没有提前认定测试通过。
+- 真机验证同一 RAW：无颗粒快速/精细冷热、修改相纸曝光、精细预览→JPEG 导出；受控九层颗粒快速冷热、全尺寸颗粒精细与 JPEG；FastStats 单独记录九层 Poisson/Binomial 分段和 lifetime model；原尺寸带颗粒缓存保持禁用。完整报告按 runID 核对，避免环形日志覆盖。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
