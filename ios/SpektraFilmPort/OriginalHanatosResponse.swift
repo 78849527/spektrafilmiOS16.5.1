@@ -223,18 +223,27 @@ struct OriginalHanatosResponse {
             wx[i]=Self.mitchell(fracX+1.0-Double(i))
             wy[i]=Self.mitchell(fracY+1.0-Double(i))
         }
+        // Four reflected Y offsets are shared by every X tap. Keep
+        // exactly the original i-major/j-minor 16 additions and weights.
+        // The validated immutable n*n*3 LUT guarantees pointer bounds.
+        let ys=SIMD4<Int>(Self.reflected(baseY-1,n)*3,
+                         Self.reflected(baseY,n)*3,
+                         Self.reflected(baseY+1,n)*3,
+                         Self.reflected(baseY+2,n)*3)
         var lanes=SIMD3<Double>(repeating:0.0)
         var total=0.0
-        for i in 0..<4 {
-            let ix=Self.reflected(baseX-1+i,n)
-            for j in 0..<4 {
-                let iy=Self.reflected(baseY-1+j,n)
-                let weight=wx[i]*wy[j]
-                total += weight
-                let offset=(ix*n+iy)*3
-                let values=SIMD3<Double>(rawLUT[offset],rawLUT[offset+1],rawLUT[offset+2])
-                let products=weight*values
-                lanes=lanes+products
+        rawLUT.withUnsafeBufferPointer { lut in
+            let base=lut.baseAddress!
+            for i in 0..<4 {
+                let row=Self.reflected(baseX-1+i,n)*n*3
+                for j in 0..<4 {
+                    let weight=wx[i]*wy[j]
+                    total += weight
+                    let offset=row+ys[j]
+                    let values=SIMD3<Double>(base[offset],base[offset+1],base[offset+2])
+                    let products=weight*values
+                    lanes=lanes+products
+                }
             }
         }
         if total != 0 {lanes=lanes/total}

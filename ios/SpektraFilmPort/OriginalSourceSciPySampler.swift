@@ -242,9 +242,15 @@ struct OriginalSourceSciPySampler {
               p.isFinite, p >= 0, p <= 1 else {
             throw Failure.invalid("原版 SciPy Binomial：n 或 p 无效")
         }
-        // NumPy RandomState LEGACY wrapper intentionally delegates to
-        // inversion even for n==0 and p==0/1. Do not short-circuit and
-        // thereby alter the random stream.
+        // Legacy inversion for n==0 or p==0/1 has qn==1 and consumes
+        // exactly ONE uniform before accepting x==0. Preserve that draw
+        // (including the complementary p==1 case), skip only invariant
+        // log/exp/sqrt work. Never skip stochastic interior probabilities.
+        if n==0 || p==0 || p==1 {
+            _=uniform()
+            return p==1 ? n : 0
+        }
+        // All other cases retain the original legacy wrapper.
         if p <= 0.5 {
             if p * Double(n) <= 30 {
                 return try binomialInversion(n, p)

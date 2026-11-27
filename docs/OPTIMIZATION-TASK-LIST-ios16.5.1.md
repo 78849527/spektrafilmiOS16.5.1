@@ -289,6 +289,16 @@
 - 合并 A–F，不逐项发布。原分支、Python3.11、Numba0.61.2、全部独立数值门槛、iPhoneOS arm64 deployment16.5；明确 Intel runner 一次性发布标记。相纸及原尺寸受控颗粒缓存仅隔离对照，不改变生产范围。纸缓存 lease 在渲染开始获取，拒绝内存告警后回填。长任务生命周期改动需实际 iPhone 验收，前后台通知不等于确证锁屏。
 - 实机重点：同 RAW 快速/完整颗粒、FastStats 对照、固定图胶片+相纸缓存对照、开启受控颗粒后的原尺寸 RAW 缓存对照；后者四次完整冲印，有余量才执行，失败不缩图不降级。测试结束后检查屏幕自动锁定恢复与单份 schema2 JSON。当前新增测试尚待 CI。
 
+## Build150 A–D 集中候选
+
+- Build149 a305fb8 / CI 45927648876：Linux 6/6、macOS73/73。用户两份报告 schema2 512 unique events、11 runs，10完成1动态预算拒绝；22/22 Float64 缓存对照 bitMismatch=0。FastStats 3.678→2.237s，较 Build148 80s 异常大幅改善，仍不改变默认 SciPy。用户明确长任务没有锁屏，防锁屏实际确认；任务结束自动恢复没有直接证据。原尺寸 3024×4032 三次完成，冷 cache stored，热 cache 预检 2341MB >2221MB（2776MB headroom），未完成全尺寸 SHA；实测峰值1421MB。跨版温度及 EV 不统一，不将小幅变化归因于代码。
+- OPT22：仅快速预览无颗粒、无印相扩散且已通过既有 film density eligibility 时启用第二层精确相纸缓存，联合额外48 B/px admission 与 headroom/5 retention。代际在解码前取得，切换 RAW/尺寸、警告、取消/失败与 full mode 清理。真实输入 SHA 和实际印相签名不变。原尺寸纸缓存、颗粒纸缓存仍禁用。
+- OPT20/24：原尺寸热缓存诊断必须实际命中，独立拥有且 shape/lease 正确的 CMY 快照才抵扣已包含的24 B/px，进入 renderer 前再次真实输入 SHA 匹配并验证 distinct storage；保留完整192 B/px model、动态80% gate、其它准入不变，不信用未来释放。未转正生产全尺寸颗粒缓存。新增复现2776MB headroom 与更低 headroom 仍拒绝的预算测试。
+- OPT24：Hanatos 16 tap i/j 顺序、reflect、Mitchell pow、total、除法不变；共享4个已计算Y偏移及只读 validated LUT pointer，避免每tap重复反射/数组索引。保留原标量对照与全部真实 stock/三色域/524 RGB cases。收益待A15。
+- SciPy legacy Binomial n==0/p==0/1：旧 inversion qn=1，恰好消耗一次53-bit uniform后立即接受，省去不变 log/exp/sqrt，不跳过随机数；四 seed、边界 n、下一MT字对照与所有 Python golden 保留。未宣称普通颗粒整体提速。
+- OPT25：A15 Metal 不采用 Float32 替代 Double；无已经验证的全套软件 Float64 GPU 性能/逐位证据，保留 CPU 原版精确路径。后续可研究，但本次不接入未认证 GPU、并行或 FFT 后端。已支持显式 FastStats 开关及现有全尺寸颗粒对照，可单独测全尺寸 FastStats；不改变用户默认。
+- 候选未执行 CI；集中版本 v1.8.116/150 后统一验证并仅在 exact-SHA 全部 gates 成功后发 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

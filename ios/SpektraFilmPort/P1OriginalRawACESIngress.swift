@@ -28,6 +28,7 @@ enum P1OriginalRawACESIngress {
     private static let previewInputCache = Build139RAWPreviewDownsample.InputCache()
     // Distinct exact pre-grain caches; switching grids invalidates the other.
     private static let previewDensityCache = OriginalSourcePhysicalImage.FilmDensityReuse()
+    private static let previewPaperDensityCache = OriginalSourcePhysicalImage.FilmDensityReuse()
     private static let fullDensityCache = OriginalSourcePhysicalImage.FilmDensityReuse()
     private static let fullInputCache = Build139RAWPreviewDownsample.FullInputCache<Source>()
 
@@ -44,6 +45,7 @@ enum P1OriginalRawACESIngress {
     static func clearPreviewInputCache() {
         previewInputCache.clear()
         previewDensityCache.clear()
+        previewPaperDensityCache.clear()
     }
 
     static func clearAllInputCaches(reason:String="source_invalidation") {
@@ -418,22 +420,36 @@ enum P1OriginalRawACESIngress {
         // is changed. This compares linear versus encoded scan output.
         changed.sourceOutputCCTFEncoding.toggle()
 
-        func admit(_ params:OriginalSourcePhysicalImage.Parameters,cache:Bool) throws {
+        func admit(_ params:OriginalSourcePhysicalImage.Parameters,cache:Bool,
+                   existingLease:UInt64?=nil) throws {
+            // An owned cache snapshot is already charged by OS headroom.
+            // This credit is diagnostic-only; the renderer independently
+            // matches the actual input SHA and pins a distinct buffer.
+            let existing=existingLease.flatMap{session.existingDensity(expectedGeneration:$0)}
+            if existingLease != nil {
+                guard let existing,UInt64(existing.count)*8==bytes else {
+                    throw Failure.invalid("原尺寸热缓存预检缺少有效已分配密度")
+                }
+            }
+            let committed=existing.map{UInt64($0.count)*8} ?? 0
+            defer {withExtendedLifetime(existing) {}}
             if cache {
                 let envelope=OriginalSourcePhysicalImage.memoryEnvelope(width:w,height:h,parameters:params)
                 try OriginalSourcePhysicalImage.validateMemoryBudget(
                     width:w,height:h,additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                    alreadyCommittedInputBytes:committed,
                     cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
             } else {
                 try OriginalSourcePhysicalImage.validateMemoryBudget(width:w,height:h,parameters:params)
             }
         }
         func trial(_ name:String,_ params:OriginalSourcePhysicalImage.Parameters,
-                   cache:Bool,expectedLease:UInt64?=nil) throws -> (digest:[UInt8],hit:Bool,stored:Bool,invalidated:Bool) {
+                   cache:Bool,expectedLease:UInt64?=nil,requireHit:Bool=false) throws -> (digest:[UInt8],hit:Bool,stored:Bool,invalidated:Bool) {
             try Task.checkCancellation()
             OPTDeviceFeedback.mark("full_density_trial_begin",[
-                "case":name,"cache":String(cache),"outputCCTF":String(params.sourceOutputCCTFEncoding)])
-            do {try admit(params,cache:cache)}
+                "case":name,"cache":String(cache),"outputCCTF":String(params.sourceOutputCCTFEncoding),
+                "requiredHotHit":String(requireHit),"ownedCacheCreditBytes":String(requireHit ? bytes : 0)])
+            do {try admit(params,cache:cache,existingLease:requireHit ? expectedLease : nil)}
             catch {
                 OPTDeviceFeedback.mark("full_density_admission_refused",["case":name,"error":error.localizedDescription])
                 throw error
@@ -453,7 +469,8 @@ enum P1OriginalRawACESIngress {
                         OPTDeviceFeedback.mark("full_density_legacy_phase",["case":name,"phase":stage])
                     },filmDensityReuse:cache ? session : nil,
                     filmDensityReuseLease:expectedLease,
-                    allowSeededGrainDensityReuse:allowSeededDiagnostic)
+                    allowSeededGrainDensityReuse:allowSeededDiagnostic,
+                    requireExistingFilmDensity:requireHit)
             } catch {
                 _=sampler.finish()
                 throw error
@@ -492,11 +509,11 @@ enum P1OriginalRawACESIngress {
         guard !cold.hit,cold.stored,!cold.invalidated else {
             throw Failure.invalid("原尺寸缓存未成功保留或被内存告警清除")
         }
-        // Admission is conservative: no credit for already-resident
-        // cached CMY, or assumed future release. A refused hot trial is
-        // NOT a numerical PASS and never triggers a reduced image.
+        // Credit only the actual matching owned CMY allocation, never
+        // assumed scratch release. Live 80% headroom and full peak stay.
         let hotLease=session.lease()
-        let hot=try trial("cache_hot_changed_CCTF",changed,cache:true,expectedLease:hotLease)
+        let hot=try trial("cache_hot_changed_CCTF",changed,cache:true,
+                          expectedLease:hotLease,requireHit:true)
         let coldEqual=cold.digest==baseline.digest
         let hotEqual=hot.digest==baselineChanged.digest
         let passed=coldEqual && hotEqual && hot.hit && !hot.invalidated
@@ -544,6 +561,14 @@ enum P1OriginalRawACESIngress {
         // Capture before decode so a pressure/source notification during
         // decoding cannot be undone by a late optical cache transaction.
         var densityLease=previewDensityCache.lease()
+        var paperLease=previewPaperDensityCache.lease()
+        var completedPreview=false
+        defer {
+            if !completedPreview {
+                previewDensityCache.clear()
+                previewPaperDensityCache.clear()
+            }
+        }
         fullInputCache.clear(reason:"switch_to_quick_preview")
         try Task.checkCancellation()
         let cropKey = crop.map {
@@ -562,6 +587,7 @@ enum P1OriginalRawACESIngress {
         } else {
             let cacheGeneration=previewInputCache.clear()
             densityLease=previewDensityCache.clear(expectedGeneration:densityLease)
+            paperLease=previewPaperDensityCache.clear(expectedGeneration:paperLease)
             OPTDeviceFeedback.mark("preview_cache_miss_decode_begin")
             // Native LibRaw 45MP/10k and live pre-unpack budget still apply.
             // The small optical preview has its own post-reduction gate.
@@ -629,6 +655,33 @@ enum P1OriginalRawACESIngress {
             }
         }
         if !reuseAllowed {previewDensityCache.clear(expectedGeneration:densityLease)}
+        // Build149 5/5 exact paper cases on A15. Admit reduced-grid
+        // no-grain/no-print-diffusion only, charge a SECOND 24 B/px.
+        // Full resolution and stochastic paper caching stay disabled.
+        var paperAllowed=false
+        var paperReason="unsupported_parameters"
+        if reuseAllowed && !selected.sourceGrain.active && !selected.printDiffusion.active {
+            if previewPaperDensityCache.lease() != paperLease {
+                paperReason="lease_invalidated"
+            } else if !canRetainPreviewDensity(bytes:densityBytes*2) {
+                paperReason="combined_retention_headroom"
+            } else {
+                let envelope=OriginalSourcePhysicalImage.memoryEnvelope(
+                    width:reduced.width,height:reduced.height,parameters:selected)
+                do {
+                    try OriginalSourcePhysicalImage.validateMemoryBudget(
+                        width:reduced.width,height:reduced.height,
+                        additionalBytesPerPixel:envelope.additionalBytesPerPixel+48,
+                        cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+                    paperAllowed=true
+                    paperReason="admitted"
+                } catch {paperReason="combined_cache_memory_admission"}
+            }
+        }
+        if !paperAllowed {previewPaperDensityCache.clear(expectedGeneration:paperLease)}
+        OPTDeviceFeedback.mark("preview_paper_density_cache_policy",[
+            "eligible":String(paperAllowed),"reason":paperReason,
+            "densityBytes":String(densityBytes),"combinedBytes":String(densityBytes*2)])
         OPTDeviceFeedback.mark("preview_density_cache_policy",[
             "eligible":String(reuseAllowed),"reason":reuseReason,
             "densityBytes":String(densityBytes)])
@@ -644,12 +697,20 @@ enum P1OriginalRawACESIngress {
             &frame,parameters:selected,phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},
             filmDensityReuse:reuseAllowed ? previewDensityCache : nil,
             filmDensityReuseLease:reuseAllowed ? densityLease : nil,
-            allowSeededGrainDensityReuse:allowSeededPreview
+            allowSeededGrainDensityReuse:allowSeededPreview,
+            paperDensityReuse:paperAllowed ? previewPaperDensityCache : nil,
+            paperDensityReuseLease:paperAllowed ? paperLease : nil
         )
+        if paperAllowed && !canRetainPreviewDensity(bytes:densityBytes*2) {
+            previewPaperDensityCache.clear()
+            OPTDeviceFeedback.mark("preview_paper_density_cache_evicted",["reason":"combined_post_render_headroom"])
+        }
         if reuseAllowed && !canRetainPreviewDensity(bytes:densityBytes) {
             previewDensityCache.clear()
             OPTDeviceFeedback.mark("preview_density_cache_evicted",["reason":"post_render_headroom"])
         }
+        try Task.checkCancellation()
+        completedPreview=true
         OPTDeviceFeedback.mark("optics_done")
         return PreviewWithGeometry(
             frame:frame,sourceWidth:sourceWidth,sourceHeight:sourceHeight

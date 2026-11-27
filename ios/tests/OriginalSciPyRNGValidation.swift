@@ -53,6 +53,31 @@ struct OriginalSciPyRNGValidation {
             }
         }
         print("PASS Build148-C MT19937 400000 words and independent copy across twists")
+        // Frozen legacy degenerate inversion: qn==1, one 53-bit draw,
+        // then immediate x==0 acceptance (or n-x on the complement).
+        for seed:UInt32 in [0,1,8888,UInt32.max] {
+            var reference=OriginalSourceMT19937(seed:seed)
+            var actual=OriginalSourceSciPySampler(seed:seed)
+            for n:Int64 in [0,1,25,1000,Int64.max/100-1] {
+                for p:Double in [0,1] {
+                    _=reference.randomSample()
+                    let value=try actual.binomial(n,probability:p)
+                    precondition(value==(p==1 ? n : 0))
+                    var probe=reference
+                    var candidate=actual
+                    precondition(probe.nextUInt32()==candidate.nextUInt32())
+                }
+            }
+            for p in [0.000001,0.3,0.5,0.9,0.999999] {
+                _=reference.randomSample()
+                let value=try actual.binomial(0,probability:p)
+                precondition(value==0)
+                var probe=reference
+                var candidate=actual
+                precondition(probe.nextUInt32()==candidate.nextUInt32())
+            }
+        }
+        print("PASS Build150 exact degenerate legacy Binomial and 53-bit draw stream")
         let cases = GeneratedOriginalSciPyRNGReference.cases
         precondition(cases.count >= 5)
         var count: Int = 0

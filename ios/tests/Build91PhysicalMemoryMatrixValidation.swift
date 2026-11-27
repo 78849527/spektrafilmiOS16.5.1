@@ -181,6 +181,27 @@ enum Build91PhysicalMemoryMatrixValidation {
             )
             throw Failure.invalid("Extended FIR/YVV geometry boundary lost")
         } catch Build91PhysicalMemory.Failure.invalid {}
+        // Actual Build149 hot diagnostic: 192 B/px includes the 24 B/px
+        // cache, while OS headroom already excludes the owned allocation.
+        // Do not shrink full peak, only deduct the verified committed bytes.
+        let hotPlan=try Build91PhysicalMemory.plan(
+            width:3024,height:4032,baseBytesPerPixel:104,additionalBytesPerPixel:88,
+            physicalMemory:4_000_000_000,processAvailable:2_776_000_000)
+        let owned=UInt64(3024*4032)*24
+        precondition(hotPlan.estimatedPeakBytes==UInt64(3024*4032)*192)
+        var rejected=false
+        do {try Build91PhysicalMemory.validate(hotPlan)}
+        catch Build91PhysicalMemory.Failure.invalid {rejected=true}
+        precondition(rejected)
+        try Build91PhysicalMemory.validate(hotPlan,alreadyCommittedInputBytes:owned)
+        let tightHot=try Build91PhysicalMemory.plan(
+            width:3024,height:4032,baseBytesPerPixel:104,additionalBytesPerPixel:88,
+            physicalMemory:4_000_000_000,processAvailable:2_000_000_000)
+        rejected=false
+        do {try Build91PhysicalMemory.validate(tightHot,alreadyCommittedInputBytes:owned)}
+        catch Build91PhysicalMemory.Failure.invalid {rejected=true}
+        precondition(rejected)
+        print("PASS Build150 committed-cache accounting reproduces Build149 refusal; 80% live gate unchanged")
         print("PASS OPT-04: 16/24/32MP dry-run budget; low-headroom refusal; production ceiling unchanged")
         print("PASS BUILD91 SOURCE MEMORY PREFLIGHT: 1,2,4,7.2,12,13MP " +
               "six exact UInt64 peak estimates; dynamic 80% process" +

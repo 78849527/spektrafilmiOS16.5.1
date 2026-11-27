@@ -280,6 +280,12 @@ enum OriginalSourcePhysicalImage {
             lock.lock();defer{lock.unlock()}
             return generation==expectedGeneration && entry != nil
         }
+        // Only the isolated full RAW diagnostic may credit this allocation.
+        // Return a strong snapshot, not a guessed byte count or future release.
+        func existingDensity(expectedGeneration:UInt64)->[Double]? {
+            lock.lock();defer{lock.unlock()}
+            return generation==expectedGeneration ? entry?.1 : nil
+        }
         @discardableResult
         func clear(expectedGeneration:UInt64?=nil)->UInt64 {
             lock.lock();defer{lock.unlock()}
@@ -918,7 +924,9 @@ enum OriginalSourcePhysicalImage {
         filmDensityReuse:FilmDensityReuse? = nil,
         filmDensityReuseLease:UInt64? = nil,
         allowSeededGrainDensityReuse:Bool = false,
-        paperDensityReuse:FilmDensityReuse? = nil
+        paperDensityReuse:FilmDensityReuse? = nil,
+        paperDensityReuseLease:UInt64? = nil,
+        requireExistingFilmDensity:Bool = false
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -929,7 +937,7 @@ enum OriginalSourcePhysicalImage {
               frame.rgb.count==w*h*3 else {
             throw Failure.invalid("Build119 已分配 RGB Double 输入尺寸不合法")
         }
-        let paperLease=paperDensityReuse?.lease()
+        let paperLease=paperDensityReuseLease ?? paperDensityReuse?.lease()
         let reuseKey:FilmDensityReuse.Key?
         if let filmDensityReuse {
             do {reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters,
@@ -938,6 +946,32 @@ enum OriginalSourcePhysicalImage {
         } else {reuseKey=nil}
         let committedInputBytes=UInt64(frame.rgb.count) *
             UInt64(MemoryLayout<Double>.stride)
+        // On the explicitly required hot diagnostic only, pin the exact
+        // matching CMY array before sampling available memory. Its 24 B/px
+        // is already included in the additive cache envelope. Never credit
+        // a miss, stale lease, estimated release, or a production preview.
+        var pinnedTransaction:(generation:UInt64,density:[Double]?)?
+        var committedCacheBytes:UInt64=0
+        if requireExistingFilmDensity {
+            guard let filmDensityReuse,let reuseKey,let filmDensityReuseLease,
+                  paperDensityReuse==nil,stageDoubleObserver==nil else {
+                throw Failure.invalid("原尺寸热缓存诊断缺少精确缓存租约")
+            }
+            let transaction=filmDensityReuse.begin(reuseKey,expectedGeneration:filmDensityReuseLease)
+            guard let density=transaction.density,density.count==frame.rgb.count,
+                  filmDensityReuse.hasEntry(expectedGeneration:transaction.generation) else {
+                throw Failure.invalid("原尺寸热缓存诊断未命中或代际失效")
+            }
+            // The full diagnostic always creates a separate decoded RGB
+            // frame. Verify distinct storage rather than counting an alias.
+            let separate=density.withUnsafeBufferPointer { cache in
+                frame.rgb.withUnsafeBufferPointer { input in cache.baseAddress != input.baseAddress }
+            }
+            guard separate else {throw Failure.invalid("原尺寸热缓存与输入缓冲别名")}
+            pinnedTransaction=transaction
+            committedCacheBytes=UInt64(density.count)*UInt64(MemoryLayout<Double>.stride)
+            phaseMemoryObserver?("full_density_committed_cache_verified")
+        }
         let activePrintDiffusion=parameters.printDiffusion.active &&
             parameters.printDiffusion.strength>0 &&
             parameters.printDiffusion.spatialScale>0
@@ -965,7 +999,7 @@ enum OriginalSourcePhysicalImage {
             let envelope=memoryEnvelope(width:w,height:h,parameters:parameters)
             try validateMemoryBudget(width:w,height:h,
                 additionalBytesPerPixel:envelope.additionalBytesPerPixel+24+(paperDensityReuse == nil ? 0 : 24),
-                alreadyCommittedInputBytes:committedInputBytes,
+                alreadyCommittedInputBytes:committedInputBytes+committedCacheBytes,
                 cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
         } else {
             try validateMemoryBudget(
@@ -1015,9 +1049,10 @@ enum OriginalSourcePhysicalImage {
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         phaseMemoryObserver?("optical_parameters_ready")
         let size=w*h*3
-        let reuseTransaction=reuseKey.flatMap { key in
+        let reuseTransaction=pinnedTransaction ?? reuseKey.flatMap { key in
             filmDensityReuse?.begin(key,expectedGeneration:filmDensityReuseLease)
         }
+        pinnedTransaction=nil
         var pendingDensity:[Double]?
         var paperKey:FilmDensityReuse.Key?
         var paperTransaction:(generation:UInt64,density:[Double]?)?
@@ -1581,6 +1616,10 @@ enum OriginalSourcePhysicalImage {
             let stored=paperDensityReuse?.store(paperKey,pendingPaperDensity,
                 generation:paperTransaction.generation) ?? false
             phaseMemoryObserver?(stored ? "paper_density_cache_stored" : "paper_density_cache_store_invalidated")
+        }
+        if requireExistingFilmDensity,let reuseTransaction,let filmDensityReuse,
+           !filmDensityReuse.hasEntry(expectedGeneration:reuseTransaction.generation) {
+            throw Failure.invalid("原尺寸热缓存诊断期间缓存代际失效")
         }
         if let reuseKey,let pendingDensity,let reuseTransaction {
             try Task.checkCancellation()
