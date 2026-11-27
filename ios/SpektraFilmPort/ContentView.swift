@@ -3189,7 +3189,7 @@ final class PhotoEditorModel: ObservableObject {
             rawOriginalSourceActive && sourcePixelIOEnabled &&
             sourcePhysicalDirectEnabled
             ? try sourcePhysicalParameters() : nil
-        let rawOpticalPeakBPP:UInt64?=rawPhysicalSettings.map { settings in
+        let rawOpticalPeakBPP:UInt64?=try rawPhysicalSettings.map { settings in
             let footprint=OriginalSourcePhysicalImage.memoryEnvelope(
                 width:opticalWidth,height:opticalHeight,
                 parameters:settings
@@ -3202,8 +3202,17 @@ final class PhotoEditorModel: ObservableObject {
                  UInt64(inputCrop!.sourceHeight) * 6 +
                  UInt64(opticalWidth*opticalHeight)-1) /
                  UInt64(opticalWidth*opticalHeight)
-            return OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel +
-                footprint.additionalBytesPerPixel + decoderOverhead
+            let opticalPlan=try Build91PhysicalMemory.plan(
+                width:opticalWidth,height:opticalHeight,
+                baseBytesPerPixel:OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel,
+                additionalBytesPerPixel:footprint.additionalBytesPerPixel,
+                physicalMemory:ProcessInfo.processInfo.physicalMemory,
+                camera:footprint.cameraDiffusion,paper:footprint.paperDiffusion,
+                compactSequentialFFT:footprint.compactSequentialFFT)
+            let pixels=UInt64(opticalWidth)*UInt64(opticalHeight)
+            // Round UP to the next whole byte per pixel, never understate
+            // the original FFT workspace or sequential phase maximum.
+            return (opticalPlan.estimatedPeakBytes+pixels-1)/pixels + decoderOverhead
         }
         let plan = try SafeExportResolution.capture(
             width: opticalWidth, height: opticalHeight,

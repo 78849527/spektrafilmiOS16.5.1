@@ -119,6 +119,7 @@ def main():
         "20 forward/inverse geometry cases"
     )
     assert expected_marker in proc.stderr.splitlines(), proc.stderr
+    assert "PASS Build154 compact full-grid FFT 64 bitwise cases" in proc.stderr.splitlines(), proc.stderr
     print(proc.stderr, end="")
     parsed={}
     for line in proc.stdout.splitlines():

@@ -124,6 +124,16 @@ struct Build140RAWMemoryAdmissionValidation {
             demand(noMicroExtra==(grain && !scanner && !glare && !lens &&
                 !halation && !print && !gamut && !parallel ? 56 : extra),
                 "only simple serial no-microstructure may receive reduction")
+            let sequential=Build106SourceMemoryLedger.productionAdditional(
+                scannerFinish:scanner,scannerGlare:glare,grain:grain,
+                grainSublayers:true,cameraActive:lens,cameraLens:lens,
+                filmHalation:halation,paperDiffusion:print,stageObserver:false,
+                paperStageObserver:false,outputGamut:gamut,parallelGrain:parallel,
+                serialMicrostructureActive:false,sequentialOptics:true)
+            let expected:UInt64 = gamut || parallel ? noMicroExtra :
+                ([grain ? UInt64(56) : 0,scanner ? 40 : 0,glare ? 32 : 0,
+                  lens ? 40 : 0,halation ? 64 : 0,print ? 40 : 0].max() ?? 0)
+            demand(sequential==expected,"Build154 phase-local maximum or legacy fallback")
             demand(extra<=ordinary,"optimized ledger must not exceed old budget")
             if extra<ordinary {
                 demand(grain && !scanner && !glare && !lens &&

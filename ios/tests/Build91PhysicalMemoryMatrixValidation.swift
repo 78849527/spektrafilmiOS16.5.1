@@ -113,6 +113,24 @@ enum Build91PhysicalMemoryMatrixValidation {
             physicalMemory:physical,processAvailable:available,
             camera:(opt,pixels),paper:(opt,pixels)
         )
+        let compact=try Build91PhysicalMemory.plan(
+            width:1000,height:1000,baseBytesPerPixel:104,additionalBytesPerPixel:64,
+            physicalMemory:physical,processAvailable:available,
+            camera:(opt,pixels),paper:(opt,pixels),compactSequentialFFT:true)
+        let compactBytes=OriginalSourceDiffusion.compactScratchBytes(
+            fftWidth:fft.fftWidth,fftHeight:fft.fftHeight,kernelSize:2*fft.radius+1)
+        precondition(compactBytes<fft.actualScratchBytes)
+        precondition(compact.additionalFFTBytes==compactBytes+fft.psfBytes)
+        precondition(compact.estimatedPeakBytes==max(168_000_000,64_000_000+compactBytes+fft.psfBytes))
+        try Build91PhysicalMemory.validate(compact)
+        let compactTight=try Build91PhysicalMemory.plan(
+            width:1000,height:1000,baseBytesPerPixel:104,additionalBytesPerPixel:64,
+            physicalMemory:physical,processAvailable:100_000_000,
+            camera:(opt,pixels),paper:(opt,pixels),compactSequentialFFT:true)
+        var compactRejected=false
+        do {try Build91PhysicalMemory.validate(compactTight)}
+        catch Build91PhysicalMemory.Failure.invalid {compactRejected=true}
+        precondition(compactRejected)
         let oneFFT=fft.actualScratchBytes+fft.psfBytes
         guard doublePlan.additionalFFTBytes==oneFFT else {
             throw Failure.invalid(

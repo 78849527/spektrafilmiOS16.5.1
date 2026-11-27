@@ -551,6 +551,116 @@ enum OriginalSourceDiffusion {
         let residue=(pos%period+period)%period
         return residue<dimension ? residue : period-residue
     }
+    /// Bytes of the compact full-grid convolution, excluding the caller's
+    /// RGB frame and PSF. Two image grids, two nonzero kernel row spectra,
+    /// one zero-row transform, plus conservative row/column scratch.
+    static func compactScratchBytes(fftWidth:Int,fftHeight:Int,kernelSize:Int)->UInt64 {
+        UInt64(fftWidth)*UInt64(fftHeight)*16 +
+        UInt64(fftWidth)*UInt64(kernelSize)*16 +
+        UInt64(fftWidth)*48+UInt64(fftHeight)*32
+    }
+
+    /// Same full-grid linear convolution. Kernel forward transform is
+    /// row FFT followed by column FFT, exactly as fft2. Store only the
+    /// nonzero spatial kernel rows after the row FFT; compute the FFT of
+    /// an all-zero row explicitly to preserve any signed-zero words.
+    /// Each kernel column is consumed immediately after its column FFT.
+    /// The image's forward/inverse FFT, reflect, crop and blend are unchanged.
+    /// No tiles, reduced radius, real-FFT approximation or reordered sum.
+    static func applyCompactInPlace(
+        _ rgb:inout [Double],width:Int,height:Int,pixelUM:Double,
+        settings:Settings,usePreparedPSFCache:Bool=true
+    ) throws {
+        try settings.validate()
+        guard width>0,height>0,width<=Int.max/height/3,
+              rgb.count==width*height*3,rgb.allSatisfy({$0.isFinite}) else {
+            throw Failure.invalid("紧凑原版扩散需要完整有限的 Double RGB 光子帧")
+        }
+        if !settings.active || settings.strength<=0 || settings.spatialScale<=0 {return}
+        let fraction=scatterFraction(settings)
+        if fraction<=0 {return}
+        let r=try radius(width:width,height:height,pixelUM:pixelUM,settings:settings)
+        let ks=2*r+1,paddedW=width+2*r,paddedH=height+2*r
+        let fftW=try pow2(paddedW+ks-1),fftH=try pow2(paddedH+ks-1)
+        let grid=fftW*fftH
+        // Include one entire potential COW RGB allocation, even if the
+        // production frame is uniquely owned. No future-release credit.
+        let required=compactScratchBytes(fftWidth:fftW,fftHeight:fftH,kernelSize:ks) +
+            UInt64(ks)*UInt64(ks)*24+UInt64(rgb.count)*8
+        let available:UInt64
+        #if os(iOS)
+        available=UInt64(os_proc_available_memory())
+        #else
+        available=ProcessInfo.processInfo.physicalMemory/3
+        #endif
+        guard available>0,required<=(available/10)*8 else {
+            throw Failure.invalid("原版紧凑 Double FFT 尚需 \(required/1_000_000) MB，当前可分配 \(available/1_000_000) MB；不缩图、不缩 PSF")
+        }
+        let kernel=try (usePreparedPSFCache
+            ? preparedPSF(width:width,height:height,pixelUM:pixelUM,settings:settings)
+            : psf(width:width,height:height,pixelUM:pixelUM,settings:settings))
+        var ar=[Double](repeating:0,count:grid),ai=[Double](repeating:0,count:grid)
+        var kr=[Double](repeating:0,count:ks*fftW),ki=[Double](repeating:0,count:ks*fftW)
+        var rr=[Double](repeating:0,count:fftW),ri=[Double](repeating:0,count:fftW)
+        var zr=[Double](repeating:0,count:fftW),zi=[Double](repeating:0,count:fftW)
+        fft1(&zr,&zi,inverse:false)
+        var cr=[Double](repeating:0,count:fftH),ci=[Double](repeating:0,count:fftH)
+        func zero(_ x:inout [Double]) {
+            let bytes=x.count*MemoryLayout<Double>.stride
+            x.withUnsafeMutableBufferPointer {if let ptr=$0.baseAddress {_=memset(ptr,0,bytes)}}
+        }
+        for c in 0..<3 {
+            try Task.checkCancellation()
+            if c>0 {zero(&ar);zero(&ai)}
+            for y in 0..<paddedH {
+                if y & 31 == 0 {try Task.checkCancellation()}
+                let sy=reflect(y-r,dimension:height)
+                for x in 0..<paddedW {
+                    let sx=reflect(x-r,dimension:width)
+                    ar[y*fftW+x]=rgb[(sy*width+sx)*3+c]
+                }
+            }
+            fft2(&ar,&ai,width:fftW,height:fftH,inverse:false)
+            for y in 0..<ks {
+                if y & 31 == 0 {try Task.checkCancellation()}
+                zero(&rr);zero(&ri)
+                for x in 0..<ks {rr[x]=kernel.data[(y*ks+x)*3+c]}
+                fft1(&rr,&ri,inverse:false)
+                let origin=y*fftW
+                for x in 0..<fftW {kr[origin+x]=rr[x];ki[origin+x]=ri[x]}
+            }
+            for x in 0..<fftW {
+                if x & 31 == 0 {try Task.checkCancellation()}
+                for y in 0..<fftH {
+                    if y<ks {cr[y]=kr[y*fftW+x];ci[y]=ki[y*fftW+x]}
+                    else {cr[y]=zr[x];ci[y]=zi[x]}
+                }
+                fft1(&cr,&ci,inverse:false)
+                for y in 0..<fftH {
+                    let i=y*fftW+x
+                    let real=ar[i]*cr[y]-ai[i]*ci[y]
+                    let imag=ar[i]*ci[y]+ai[i]*cr[y]
+                    ar[i]=real;ai[i]=imag
+                }
+            }
+            try Task.checkCancellation()
+            fft2(&ar,&ai,width:fftW,height:fftH,inverse:true)
+            // All source pixels of this channel have been consumed by
+            // the FFT. Other channels have not been modified.
+            for y in 0..<height {
+                if y & 31 == 0 {try Task.checkCancellation()}
+                for x in 0..<width {
+                    let k=(y*width+x)*3+c
+                    let blurred=ar[(y+2*r)*fftW+(x+2*r)]
+                    rgb[k]=(1-fraction)*rgb[k]+fraction*blurred
+                }
+            }
+        }
+        guard rgb.allSatisfy({$0.isFinite}) else {
+            throw Failure.invalid("原版紧凑 FFT 输出包含 Inf/NaN")
+        }
+    }
+
     static func apply(_ rgb:[Double],width:Int,height:Int,
                       pixelUM:Double,settings:Settings,
                       fftBackend:FFTBackend = .reference,

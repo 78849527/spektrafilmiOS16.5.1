@@ -132,7 +132,8 @@ enum OriginalSourcePhysicalImage {
         physicalMemory:UInt64?=nil,
         processAvailableMemory:UInt64?=nil,
         cameraDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
-        paperDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil
+        paperDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
+        compactSequentialFFT:Bool=false
     ) throws {
         guard width>0,height>0,width<=8192,height<=8192,
               width<=maximumPixels/height else {
@@ -160,7 +161,8 @@ enum OriginalSourcePhysicalImage {
             baseBytesPerPixel:estimatedPeakBytesPerPixel,
             additionalBytesPerPixel:additionalBytesPerPixel,
             physicalMemory:physical,processAvailable:headroom,
-            camera:cameraDiffusion,paper:paperDiffusion
+            camera:cameraDiffusion,paper:paperDiffusion,
+            compactSequentialFFT:compactSequentialFFT
         )
         try Build91PhysicalMemory.validate(
             plan,alreadyCommittedInputBytes:alreadyCommittedInputBytes
@@ -172,6 +174,7 @@ enum OriginalSourcePhysicalImage {
     /// geometry. A peak is stage-local: camera/paper FFT work SEQUENTIALLY.
     struct MemoryEnvelope {
         let additionalBytesPerPixel: UInt64
+        let compactSequentialFFT:Bool
         let phaseModel: Build106SourceMemoryLedger.PhaseModel
         let cameraDiffusion: (settings:OriginalSourceDiffusion.Settings,
                               pixelUM:Double)?
@@ -203,6 +206,9 @@ enum OriginalSourcePhysicalImage {
         let microStd=parameters.sourceGrain.microstructureNM*0.001/grainPixelUM
         let serialMicrostructureActive = !grainPixelUM.isFinite || grainPixelUM<=0 ||
             !microStd.isFinite || microStd>0.05
+        let sequentialOptics = !stageObserver && !parameters.sourceGrain.useUnseededParallel &&
+            (!parameters.sourceGrain.active || parameters.sourceGrain.sublayersActive) &&
+            parameters.sourceOutputGamut == nil && parameters.deterministicPixelWorkers==1
         let extra=Build106SourceMemoryLedger.productionAdditional(
             scannerFinish:parameters.scannerOptics.active,
             scannerGlare:parameters.scannerGlare.active &&
@@ -218,7 +224,8 @@ enum OriginalSourcePhysicalImage {
                 !SpectralPhysics.isPositiveFilm(parameters.filmID),
             outputGamut:parameters.sourceOutputGamut != nil,
             parallelGrain:parameters.sourceGrain.useUnseededParallel,
-            serialMicrostructureActive:serialMicrostructureActive
+            serialMicrostructureActive:serialMicrostructureActive,
+            sequentialOptics:sequentialOptics
         )
         let phases=Build106SourceMemoryLedger.phaseModel(
             base:estimatedPeakBytesPerPixel,admittedAdditional:extra,
@@ -233,7 +240,7 @@ enum OriginalSourcePhysicalImage {
             parallelGrain:parameters.sourceGrain.useUnseededParallel
         )
         return MemoryEnvelope(
-            additionalBytesPerPixel:extra,phaseModel:phases,
+            additionalBytesPerPixel:extra,compactSequentialFFT:sequentialOptics,phaseModel:phases,
             cameraDiffusion:camera,paperDiffusion:paper
         )
     }
@@ -254,7 +261,8 @@ enum OriginalSourcePhysicalImage {
             additionalBytesPerPixel:envelope.additionalBytesPerPixel,
             alreadyCommittedInputBytes:alreadyCommittedInputBytes,
             cameraDiffusion:envelope.cameraDiffusion,
-            paperDiffusion:envelope.paperDiffusion
+            paperDiffusion:envelope.paperDiffusion,
+            compactSequentialFFT:envelope.compactSequentialFFT
         )
     }
 
@@ -1001,6 +1009,23 @@ enum OriginalSourcePhysicalImage {
         let controlledScannerGlare=parameters.scannerGlare.active &&
             parameters.scannerGlare.percent>0
         let controlledFilmGrain=parameters.sourceGrain.active
+        let compactOptics=filmDensityReuse==nil && memoryEnvelope(
+            width:w,height:h,parameters:parameters,
+            stageObserver:stageDoubleObserver != nil).compactSequentialFFT
+        // Recheck actual headroom immediately before a stage allocates
+        // large buffers. Include potential COW and conservative per-stage
+        // reserve; source RGB is already resident. No hidden downgrade.
+        func admitPhase(_ name:String,_ extraBPP:UInt64)throws {
+            guard compactOptics else{return}
+            #if os(iOS)
+            let live=UInt64(os_proc_available_memory())
+            let need=UInt64(w)*UInt64(h)*extraBPP
+            guard live>0,need<=(live/10)*8 else {
+                throw Failure.invalid("原版光学阶段 \(name) 内存不足：尚需 \(need/1_000_000) MB，可分配 \(live/1_000_000) MB；不降级")
+            }
+            #endif
+            phaseMemoryObserver?("phase_admitted_\(name)")
+        }
         let capturePaperStages=stageDoubleObserver != nil &&
             !SpectralPhysics.isPositiveFilm(parameters.filmID)
         // Build140: exactly the same feature/FFT envelope as RAW
@@ -1227,13 +1252,19 @@ enum OriginalSourcePhysicalImage {
                 diffusion.spatialScale > 0 {
                 let pixelUM=parameters.cameraOptics.filmFormatMM *
                     1000.0 / Double(max(w,h))
-                frame.rgb=try OriginalSourceDiffusion.apply(
-                    frame.rgb,width:w,height:h,pixelUM:pixelUM,
-                    settings:diffusion
-                )
+                phaseMemoryObserver?("camera_diffusion_begin")
+                if compactOptics {
+                    try OriginalSourceDiffusion.applyCompactInPlace(
+                        &frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:diffusion)
+                } else {
+                    frame.rgb=try OriginalSourceDiffusion.apply(
+                        frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:diffusion)
+                }
+                phaseMemoryObserver?("camera_diffusion_ready")
                 stageDoubleObserver?("cameraDiffusion",frame.rgb)
             }
             if parameters.cameraOptics.needsWholeImageBlur {
+                try admitPhase("camera_lens",80)
                 frame.rgb=try OriginalSourceCameraOptics.applyLensBlur(
                     frame.rgb,width:w,height:h,
                     settings:parameters.cameraOptics
@@ -1241,11 +1272,13 @@ enum OriginalSourcePhysicalImage {
             }
             stageDoubleObserver?("cameraLensBlur",frame.rgb)
             if parameters.filmHalation.active {
+                try admitPhase("film_halation",120)
                 try OriginalSourceFilmHalation.applyInPlace(
                     &frame.rgb,width:w,height:h,
                     settings:parameters.filmHalation
                 )
                 stageDoubleObserver?("filmScatterHalation",frame.rgb)
+                phaseMemoryObserver?("film_halation_ready")
             }
         }
         if cameraPreActive {phaseMemoryObserver?("camera_pre_optics_ready")}
@@ -1258,6 +1291,7 @@ enum OriginalSourcePhysicalImage {
         // OPT-08: defer allocation until camera optics have released
         // their scratch. DIR-off production needs no zero-filled full frame.
         // Diagnostics still receive the original complete zero-valued taps.
+        if dirOn {try admitPhase("DIR",80)}
         var inhibitors = (dirOn || stageDoubleObserver != nil)
             ? [Double](repeating:0,count:size) : []
         // Compute initial H-D and donor/receiver inhibitors from either the
@@ -1417,6 +1451,7 @@ enum OriginalSourcePhysicalImage {
         if reuseKey != nil {pendingDensity=frame.rgb}
         } // cold film development; hot path bypasses only upstream deterministic work
         if controlledFilmGrain {
+            try admitPhase("grain",128)
             let pixelUM=parameters.dir.referencePixelSizeUM ??
                 (parameters.cameraOptics.filmFormatMM * 1000.0 / Double(max(w,h)))
             if parameters.sourceGrain.sublayersActive {
@@ -1506,10 +1541,14 @@ enum OriginalSourcePhysicalImage {
                 Double(max(w,h))
             // Raw paper photons are already multiplied by the enlarger EV.
             // The original source applies the PSF here, before paper CDF.
-            frame.rgb=try OriginalSourceDiffusion.apply(
-                frame.rgb,width:w,height:h,pixelUM:pixelUM,
-                settings:parameters.printDiffusion
-            )
+            phaseMemoryObserver?("paper_diffusion_begin")
+            if compactOptics {
+                try OriginalSourceDiffusion.applyCompactInPlace(
+                    &frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:parameters.printDiffusion)
+            } else {
+                frame.rgb=try OriginalSourceDiffusion.apply(
+                    frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:parameters.printDiffusion)
+            }
             stageDoubleObserver?("printDiffusion",frame.rgb)
             phaseMemoryObserver?("paper_diffusion_ready")
             func printedPhotonPixel(_ photons:[Double],paperObserver:(([Double],[Double])->Void)?) throws -> [Double] {
@@ -1555,6 +1594,7 @@ enum OriginalSourcePhysicalImage {
             // -> per-pixel XYZ→linear sRGB→ACES gamut compression
             // -> optional scanner lens blur/unsharp -> sRGB CCTF.
             // One explicit seeded Numba worker, NOT unseeded prange parity.
+            try admitPhase("scanner_glare",80)
             frame.rgb=try OriginalSourceScannerGlare.addToXYZ(
                 frame.rgb,
                 illuminantXYZ:engine.sourceSpatialScannerIlluminantXYZ(),
@@ -1605,6 +1645,7 @@ enum OriginalSourcePhysicalImage {
         if parameters.scannerOptics.active {
             // Source ScanningStage applies lens FIR/YVV and Unsharp only
             // AFTER the true XYZ→gamut RGB conversion.
+            try admitPhase("scanner_lens",80)
             try OriginalSourceScannerOptics.applyInPlace(
                 &frame.rgb,width:w,height:h,
                 settings:parameters.scannerOptics,

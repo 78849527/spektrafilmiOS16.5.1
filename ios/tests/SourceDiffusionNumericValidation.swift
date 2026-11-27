@@ -30,6 +30,32 @@ struct SourceDiffusionNumericValidation {
                   coreSize:1,haloIntensity:1,haloSize:1,
                   bloomIntensity:1,bloomSize:1),
         ]
+        var compactCases=0
+        for cfg in settings {
+            for (w,h) in [(1,1),(1,9),(9,1),(2,3),(11,9),(16,13),(29,21),(64,33)] {
+                for pixelUM in [100.0,17.0] {
+                    let input=(0..<(w*h*3)).map { k -> Double in
+                        if k%11==0 {return -0.0}
+                        if k%13==0 {return 0.0}
+                        return Double((k*37+11)%251)/127.0-0.4
+                    }
+                    let legacy=try OriginalSourceDiffusion.apply(
+                        input,width:w,height:h,pixelUM:pixelUM,settings:cfg,
+                        usePreparedPSFCache:false)
+                    var compact=input
+                    try OriginalSourceDiffusion.applyCompactInPlace(
+                        &compact,width:w,height:h,pixelUM:pixelUM,settings:cfg,
+                        usePreparedPSFCache:false)
+                    precondition(compact.map{$0.bitPattern}==legacy.map{$0.bitPattern},
+                                 "Build154 compact full-grid FFT differs")
+                    precondition(input.count==compact.count)
+                    compactCases+=1
+                }
+            }
+        }
+        precondition(compactCases==64)
+        FileHandle.standardError.write(Data(
+            "PASS Build154 compact full-grid FFT 64 bitwise cases\n".utf8))
         let dimensions=[(11,9),(16,13),(29,21),(24,19)]
         for caseIndex in settings.indices {
             let (w,h)=dimensions[caseIndex]
@@ -49,10 +75,10 @@ struct SourceDiffusionNumericValidation {
                     fatalError("Source PSF channel norm \(sum)")
                 }
             }
-            let output=try OriginalSourceDiffusion.apply(
-                input,width:w,height:h,pixelUM:100,settings:cfg,
-                usePreparedPSFCache:false
-            )
+            var output=input
+            try OriginalSourceDiffusion.applyCompactInPlace(
+                &output,width:w,height:h,pixelUM:100,settings:cfg,
+                usePreparedPSFCache:false)
             OriginalSourceDiffusion.clearPreparedPSFCache()
             let first=try OriginalSourceDiffusion.preparedPSF(
                 width:w,height:h,pixelUM:100,settings:cfg

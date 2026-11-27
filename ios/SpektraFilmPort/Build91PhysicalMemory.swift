@@ -94,7 +94,8 @@ enum Build91PhysicalMemory {
         processAvailable:UInt64?=nil,
         camera:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
         paper:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
-        diagnosticExtendedGeometry:Bool=false
+        diagnosticExtendedGeometry:Bool=false,
+        compactSequentialFFT:Bool=false
     ) throws->Plan {
         // Extended dry-run only: use the actual existing FIR/YVV backend
         // geometry envelope. All production callers retain the 13MP gate
@@ -128,11 +129,21 @@ enum Build91PhysicalMemory {
         // pooled Double FFT arrays and PSF remain unchanged. Total
         // source+FFT memory is admitted by the live 80% headroom
         // check in validate(), never by an arbitrary scratch ceiling.
-        let additionalFFT=max(
-            cameraFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0,
-            paperFFT.map{$0.actualScratchBytes+$0.psfBytes} ?? 0
-        )
-        let estimated=basePeak+additionalFFT
+        func fftBytes(_ f:FFT)->UInt64 {
+            let scratch=compactSequentialFFT
+                ? OriginalSourceDiffusion.compactScratchBytes(
+                    fftWidth:f.fftWidth,fftHeight:f.fftHeight,kernelSize:2*f.radius+1)
+                : f.actualScratchBytes
+            return scratch+f.psfBytes
+        }
+        let additionalFFT=max(cameraFFT.map(fftBytes) ?? 0,paperFFT.map(fftBytes) ?? 0)
+        // The compact stage owns one RGB frame (+ potential COW RGB),
+        // packed RAW (6 B/px), and at least 10 B/px reserve. The other
+        // stages' conservative payloads do not coexist with FFT scratch.
+        // Legacy/observed/cache paths keep the additive historical bound.
+        let fftStage=pixels*64+additionalFFT
+        let estimated=compactSequentialFFT && additionalFFT>0
+            ? max(basePeak,fftStage) : basePeak+additionalFFT
         // Build117: the device-reported process headroom is authoritative.
         // No invented 1500 MB ceiling. If unavailable, retain the safer
         // physical-memory-third fallback rather than permit unbounded use.

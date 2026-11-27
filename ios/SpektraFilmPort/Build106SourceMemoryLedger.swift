@@ -56,7 +56,8 @@ enum Build106SourceMemoryLedger {
         grainSublayers:Bool,cameraActive:Bool,cameraLens:Bool,
         filmHalation:Bool,paperDiffusion:Bool,stageObserver:Bool,
         paperStageObserver:Bool,outputGamut:Bool,parallelGrain:Bool,
-        serialMicrostructureActive:Bool=true
+        serialMicrostructureActive:Bool=true,
+        sequentialOptics:Bool=false
     ) -> UInt64 {
         let conservative=additional(
             scannerFinish:scannerFinish,scannerGlare:scannerGlare,
@@ -64,6 +65,22 @@ enum Build106SourceMemoryLedger {
             paperDiffusion:paperDiffusion,stageObserver:stageObserver,
             paperStageObserver:paperStageObserver,parallelGrain:parallelGrain
         )
+        // Build154: no retained taps, no unseeded workers, no single-layer
+        // grain or special output gamut. Stage-local storage audited:
+        // halation = original+core+tail+2 scalar work planes (88 B/px),
+        // plus packed RAW and conservative allocator/COW reserve;
+        // scanner glare = XYZ + one scalar field and scalar scratch;
+        // lens/unsharp = source+filtered RGB+2 scalar work planes.
+        // Keep 104 B/px baseline and at least 64 additional for halation,
+        // 40 for lens/print, 32 for glare, prior 56/64 grain margin.
+        // No future-release credit: actual phase entry checks below.
+        if sequentialOptics && !stageObserver && !paperStageObserver &&
+           !parallelGrain && !outputGamut && (!grain || grainSublayers) {
+            let grainPeak:UInt64=grain ? (serialMicrostructureActive ? 64 : 56) : 0
+            return [grainPeak,scannerFinish ? 40 : 0,scannerGlare ? 32 : 0,
+                    cameraLens ? 40 : 0,filmHalation ? 64 : 0,
+                    paperDiffusion ? 40 : 0].max() ?? 0
+        }
         guard grain && grainSublayers && !scannerFinish && !scannerGlare &&
               !cameraActive && !cameraLens && !filmHalation &&
               !paperDiffusion && !stageObserver && !paperStageObserver &&
