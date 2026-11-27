@@ -929,6 +929,7 @@ enum OriginalSourcePhysicalImage {
               frame.rgb.count==w*h*3 else {
             throw Failure.invalid("Build119 已分配 RGB Double 输入尺寸不合法")
         }
+        let paperLease=paperDensityReuse?.lease()
         let reuseKey:FilmDensityReuse.Key?
         if let filmDensityReuse {
             do {reuseKey=try filmDensityReuseKey(frame:frame,parameters:parameters,
@@ -1388,7 +1389,7 @@ enum OriginalSourcePhysicalImage {
                 width:w,height:h,filmID:parameters.filmID+"|"+parameters.paperID,
                 colorSpace:0,filmBits:preparedPaper.signature(),flags:[],referencePixelSize:nil)
             paperKey=key
-            let transaction=paperDensityReuse.begin(key)
+            let transaction=paperDensityReuse.begin(key,expectedGeneration:paperLease)
             paperTransaction=transaction
             if let cached=transaction.density {
                 guard cached.count==size else {throw Failure.invalid("相纸密度缓存尺寸不一致")}
@@ -1569,6 +1570,11 @@ enum OriginalSourcePhysicalImage {
         stageDoubleObserver?("printed",frame.rgb)
         guard frame.rgb.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("逐像素源光学计算产生非有限扫描 RGB")
+        }
+        if let paperTransaction,let paperDensityReuse,
+           paperTransaction.density != nil &&
+           !paperDensityReuse.hasEntry(expectedGeneration:paperTransaction.generation) {
+            throw Failure.invalid("相纸密度缓存对照代际已失效")
         }
         if let paperKey,let pendingPaperDensity,let paperTransaction {
             try Task.checkCancellation()

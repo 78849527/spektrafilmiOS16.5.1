@@ -81,6 +81,9 @@ struct OPTSpectralSIMDValidation {
                             return log10(max(0,total)+1e-10)
                         }
                         let actual=OPTSourceOpticalTriplets.paperLog(raw,reference:reference,preflash:flash,printEV:ev)
+                        let once=OPTSourceOpticalTriplets.paperLogPrepared(raw,
+                            divisor:max(reference,1e-10),preflash:flash,exposure:pow(2.0,ev))
+                        precondition(SourceSpectralTriplet.channels(once).map{$0.bitPattern}==old.map{$0.bitPattern})
                         precondition(SourceSpectralTriplet.channels(actual).map{$0.bitPattern}==old.map{$0.bitPattern})
                         opticalCases+=1
                     }

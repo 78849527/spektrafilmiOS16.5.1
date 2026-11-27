@@ -1343,7 +1343,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("使用当前未裁切真实 RAW、受支持的无颗粒负片设置。四次独立冲印，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝，正式缓存仍关闭。")
+                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。四次独立冲印，每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸颗粒缓存仍关闭。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
