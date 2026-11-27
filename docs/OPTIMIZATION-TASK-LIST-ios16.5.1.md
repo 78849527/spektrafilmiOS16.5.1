@@ -317,6 +317,13 @@
 - Serial unobserved grain stores only two remaining sublayers, prepares first directly into existing probability/rate planes. Same expression, order, RNG consumption and Gaussian; observer and parallel paths unchanged. Theoretical additional 97.54MB saved at 12.19MP; particle payload 88B/px instead of96; microstructure may still peak96. Production 168/192 B/px conservative gates unchanged. Existing observed Python golden and production bitwise comparisons required.
 - Stage-specific two worker print/scan synthetic advantage (not all-chain parallel) warrants full RAW fifth independent SHA trial under same grain/CCTF settings, no cache; report thermal/memory. No new default workers until actual device data. Full fixed seed FastStats cache still diagnostic until separate actual full SHA, report explicitly records mode. Original borrowed Float64 FFT faster than Accelerate in last20, retain default. Final full optics/continuous export acceptance still pending.
 
+## Build153 集中优化（Build152 实测后）
+- 实际 last21 JSON: schema2/Build152/108893be85c6, iOS16.5.1 (20F75), 1237 events, 21 run IDs = 16 completed renders/diagnostics + 5 standalone preflight records. SciPy cold 60.839s/1212.388MB、热 36.452s/1204.884MB；FastStats 55.256s/1225.134MB（不是1215MB；1215.091MB为其JPEG）。三次原尺寸JPEG 62.966/72.505/108.992s；第三次后台16.717→70.304s，不用于正常速度比较。头两次70%预检实际回收2808018112→3174004608、2802496512→3168499456 bytes，均冷导出。无最终失败。两路线原尺寸诊断 cold/hot全Float64 SHA256一致，双核印相 SHA一致但整链 65.701 vs61.141s /69.696 vs60.283s（热状态2、次序差异仍在）；不启用生产多核。
+- OPT22/23：正式原尺寸未裁切负片固定种子串行 FastStats 复用胶片 pre-grain density，原有 seed equality、actual input SHA、参数和代际、动态预算、重新执行所有颗粒，仍禁止单层、无种子多线程和不支持的相机前级。收紧保留代际为渲染原租约+1，不把任意当前代际当作此次成功。
+- OPT20：serial no-observer Poisson 逐个消耗 rates，原位存 Int64 bitPattern；全部 Poisson 完成后才进行 Binomial，原位存 Int64 bits；精确解码后用原公式写 dye cloud，再借用概率平面做 Gaussian，或直接按原公式累加。无额外 count plane，无 Float32/Int32截断，无 NaN payload 数值计算。冻结 allocating/observer、并行参考路径不变。逻辑 particle 80 B/px（Build152 88）、scratch32（40），12.19MP再少97.54MB；微结构或最终模糊可能是别的峰值。两路线 Python golden、连续 RNG uniform/normal、极端 signed/NaN 位、整图观察/生产 bitwise 均保留/新增。尚无A15实测新收益。
+- OPT03/导出：只信用 Build152 已实测且结构证明的8 B/px减量（不信用 Build153 尚未真机实测的再8 B/px）；简单串行三亚层无微结构及无额外光学开关，168→160 B/px；微结构、观察器、无种子并行及复杂全光学保留原保守预算。12,192,768 pixels ×160=1,950,842,880 bytes；在实际 2808018112/2802496512 headroom 的70%内可准入，仍需锁内实际复检、解码和原版80% gate，缓存条件不满足时实际回收并重检；2.5GB仍拒绝。256 mask tests plus no-micro matrix, fixed geometry, old failure and real-headroom regression. 未宣称所有JPEG都命中缓存；确认后实测。
+- OPT28：全光学组合/RAW rawpy/ICC完整原版整图仍未认证。没有降低组合内存上限或默默关闭任何光学项。Build153 集中 CI后需要真机检查两个正式颗粒缓存、热JPEG、实际80B粒子峰值和全光学组合准入。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

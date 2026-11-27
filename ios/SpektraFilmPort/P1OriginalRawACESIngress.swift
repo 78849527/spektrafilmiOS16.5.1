@@ -237,6 +237,8 @@ enum P1OriginalRawACESIngress {
             microstructure:p.sourceGrain.microstructureNM*0.001/pixelUM>0.05,
             microBlur:p.sourceGrain.microstructureUM/pixelUM>0.4,
             finalBlur:p.sourceGrain.grainBlur>0) else{return}
+        let admission=OriginalSourcePhysicalImage.memoryEnvelope(width:width,height:height,parameters:p)
+        let measuredReduction=admission.additionalBytesPerPixel==56
         OPTDeviceFeedback.mark("grain_lifetime_model",[
             "scope":"logical_serial_3x3_payload_not_measured_RSS",
             "pixels":String(pixels),"pixelUM":String(pixelUM),
@@ -250,9 +252,10 @@ enum P1OriginalRawACESIngress {
             "finalBlurPhaseBytes":life.finalBlurPhaseBytes.map{String($0)} ?? "inactive",
             "logicalPeakBytes":String(life.logicalPeakBytes),
             "optionalDensityCacheBudgetBytes":String(cacheAdmitted ? pixels*24 : 0),
-            "admissionChanged":"true",
+            "admissionChanged":String(measuredReduction),
+            "admittedAdditionalBytesPerPixel":String(admission.additionalBytesPerPixel),
             "countPlaneStorage":"reused_rate_Int64_bits",
-            "admissionBasis":"Build152_measured_8B_reduction_only"])
+            "admissionBasis":measuredReduction ? "Build152_measured_8B_reduction_only" : "unchanged_conservative"])
     }
 
     struct PreviewWithGeometry {

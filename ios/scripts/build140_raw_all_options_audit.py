@@ -40,6 +40,11 @@ assert "width:reduced.width,height:reduced.height,parameters:selected" in raw
 
 assert "let extra=Build106SourceMemoryLedger.productionAdditional(" in physical
 assert "return parallelGrain ? 72 : 64" in ledger
+assert "if !parallelGrain && !serialMicrostructureActive {return 56}" in ledger
+assert "serialMicrostructureActive:serialMicrostructureActive" in physical
+assert "microStd>0.05" in physical
+assert "candidate.estimatedPeakBytes==sourcePixels*160" in test
+assert "noMicroExtra==" in test
 assert "if grain && parallelGrain" in ledger
 assert "let allowed=processAvailable.map{($0/10)*8} ?? physicalMemory/3" in memory
 assert "remainingPeak<=($0/10)*8" in memory
