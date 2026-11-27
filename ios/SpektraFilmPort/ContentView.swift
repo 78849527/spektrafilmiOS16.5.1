@@ -26,6 +26,8 @@ final class PhotoEditorModel: ObservableObject {
     /// User can explicitly opt into full source-resolution optical preview.
     /// This state never affects export, which ALWAYS develops original RAW.
     @Published private(set) var rawFullResolutionPreview = false
+    @Published private(set) var rawQuickPreviewLongEdge = Build139RAWPreviewDownsample.preferredQuickPreviewLongEdge(
+        UserDefaults.standard.integer(forKey:"rawQuickPreviewLongEdge"))
     /// Build141: non-destructive selection in native LibRaw ACES16 pixel
     /// coordinates, captured from an UNCROPPED source optical preview.
     @Published private(set) var rawCropSelection:Build141RAWPreCrop.Selection?
@@ -1243,6 +1245,16 @@ final class PhotoEditorModel: ObservableObject {
         }
         guard rawFullResolutionPreview != fullResolution else {return}
         rawFullResolutionPreview=fullResolution
+        queueSpectralPreview()
+    }
+
+    func selectRAWQuickPreviewLongEdge(_ edge:Int) {
+        guard rawOriginalSourceActive,sourcePhysicalDirectEnabled,capturedRAWURL != nil,
+              !busy,!rawFullResolutionPreview,
+              Build139RAWPreviewDownsample.quickPreviewLongEdges.contains(edge),
+              edge != rawQuickPreviewLongEdge else{return}
+        rawQuickPreviewLongEdge=edge
+        UserDefaults.standard.set(edge,forKey:"rawQuickPreviewLongEdge")
         queueSpectralPreview()
     }
 
@@ -2561,10 +2573,11 @@ final class PhotoEditorModel: ObservableObject {
                 let physical=try sourcePhysicalParameters()
                 let activeRAWGeneration=activeSimulationGeneration
                 let fullSourcePreview=rawFullResolutionPreview
+                let previewLongEdge=rawQuickPreviewLongEdge
                 let selectedCrop=rawCropSelection
                 status=(fullSourcePreview
                     ? "RAW 完整精细预览：原始 ACES16 → Float64"
-                    : "RAW 快速预览：ACES16 1280px → Float64") +
+                    : "RAW 快速预览：ACES16 \(previewLongEdge)px → Float64") +
                     (selectedCrop != nil ? "（冲印前已裁切）" : "") +
                     " 光学计算中…"
                 rawPreviewTask = Task.detached(priority:.userInitiated) {
@@ -2583,7 +2596,7 @@ final class PhotoEditorModel: ObservableObject {
                             } else {
                                 let preview=try P1OriginalRawACESIngress.developPreviewWithGeometry(
                                     rawURL,opticalSettings:physical,
-                                    maxLongEdge:1280,crop:selectedCrop
+                                    maxLongEdge:previewLongEdge,crop:selectedCrop
                                 )
                                 frame=preview.frame
                                 rawWidth=preview.sourceWidth
@@ -3737,15 +3750,27 @@ struct ContentView: View {
                 },
                 onRunOptimizationFFT: {
                     guard !model.busy else {return}
+                    let rawComparison:(URL,OriginalSourcePhysicalImage.Parameters)?
+                    if model.rawOriginalSourceActive,let rawURL=model.capturedRAWURL {
+                        guard model.rawCropSelection==nil else {
+                            model.status="原尺寸导出 FFT 对照需要未裁切 RAW"
+                            return
+                        }
+                        do {rawComparison=(rawURL,try model.rawMemoryDiagnosticParameters())}
+                        catch {model.status=error.localizedDescription;return}
+                    } else {rawComparison=nil}
                     diagnosticDismissPending=true
                     model.busy=true
-                    model.status="正在对照原版与 Accelerate Double FFT"
+                    model.status=rawComparison != nil ? "正在对照原尺寸串行与双核完整精细 JPEG 导出" : "正在对照原版与 Accelerate Double FFT"
                     Task { @MainActor in
                         defer {model.busy=false}
                         let result=await Task.detached(priority:.userInitiated) {
                             Result {
                                 try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"fft_device_compare") {
-                                    try OriginalSourceDiffusion.runDeviceComparison { stage,details in
+                                    if let (rawURL,parameters)=rawComparison {
+                                        return try P1OriginalRawACESIngress.runFullExportFFTComparison(rawURL,opticalSettings:parameters)
+                                    }
+                                    return try OriginalSourceDiffusion.runDeviceComparison { stage,details in
                                         OPTDeviceFeedback.mark(stage,details)
                                     }
                                 }

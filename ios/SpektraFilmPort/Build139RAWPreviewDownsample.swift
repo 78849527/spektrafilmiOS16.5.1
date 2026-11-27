@@ -8,6 +8,12 @@ import Foundation
 /// Spatial optics/grain on the smaller grid are an intentionally approximate
 /// preview; no claim of pixel parity with full-resolution optical development.
 enum Build139RAWPreviewDownsample {
+    // Display-only preference; original RAW export never reads this value.
+    static let quickPreviewLongEdges=[768,960,1280]
+    static let defaultQuickPreviewLongEdge=960
+    static func preferredQuickPreviewLongEdge(_ stored:Int)->Int {
+        quickPreviewLongEdges.contains(stored) ? stored : defaultQuickPreviewLongEdge
+    }
     enum Failure: LocalizedError {
         case invalid(String)
         var errorDescription: String? {

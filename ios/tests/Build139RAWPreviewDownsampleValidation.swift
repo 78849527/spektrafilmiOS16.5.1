@@ -35,6 +35,11 @@ struct Build139RAWPreviewDownsampleValidation {
     }
 
     static func main() throws {
+        require(Build139RAWPreviewDownsample.quickPreviewLongEdges==[768,960,1280],"display-only choices")
+        require(Build139RAWPreviewDownsample.preferredQuickPreviewLongEdge(0)==960,"default display-only 960px")
+        require(Build139RAWPreviewDownsample.preferredQuickPreviewLongEdge(768)==768,"user-selected 768px")
+        require(Build139RAWPreviewDownsample.preferredQuickPreviewLongEdge(1280)==1280,"retain higher display choice")
+        require(Build139RAWPreviewDownsample.preferredQuickPreviewLongEdge(4032)==960,"reject unsupported preview choice")
         let original=rawBytes(width:512,height:384)
         let sourceHash=original.prefix(48)
         let preview=try Build139RAWPreviewDownsample.frame(

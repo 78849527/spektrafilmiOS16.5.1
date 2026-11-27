@@ -759,6 +759,133 @@ enum P1OriginalRawACESIngress {
         return passed
     }
 
+    /// Build158: independent original-size serial and two-worker JPEG
+    /// exports. No preview or density cache. Only a SHA survives each trial.
+    static func runFullExportFFTComparison(
+        _ rawURL:URL,opticalSettings:OriginalSourcePhysicalImage.Parameters
+    ) throws -> Bool {
+        var selected=opticalSettings
+        selected.cameraInputColorSpace = .acesLinear
+        try selected.validate()
+        let camera=selected.cameraOptics.diffusion
+        let paper=selected.printDiffusion
+        let cameraActive=(selected.cameraOptics.active || selected.filmHalation.active) &&
+            camera.active && camera.strength>0 && camera.spatialScale>0
+        let paperActive=paper.active && paper.strength>0 && paper.spatialScale>0
+        guard cameraActive || paperActive else {
+            throw Failure.invalid("原尺寸 FFT 对照至少开启摄影柔化或印相柔化")
+        }
+        guard !selected.sourceGrain.active ||
+              (!selected.sourceGrain.useUnseededParallel &&
+               selected.sourceGrain.numbaSeed != nil &&
+               (!selected.sourceGrain.useFastStats || selected.sourceGrain.fastStatsSeed==selected.sourceGrain.numbaSeed)) else {
+            throw Failure.invalid("原尺寸 FFT 对照需要受控种子颗粒")
+        }
+        guard let identity=try fullSourceKey(rawURL) else {
+            throw Failure.invalid("原尺寸导出 FFT 无法确认 RAW 文件身份")
+        }
+        clearAllInputCaches(reason:"full_export_fft_diagnostic")
+        defer {clearAllInputCaches(reason:"full_export_fft_diagnostic_finished")}
+        func exportTrial(_ name:String,workers:Int,reuseRows:Bool) throws -> [UInt8] {
+            try Task.checkCancellation()
+            let sampler=Build133RAWMemoryLadder.RSSSampler()
+            let start=ProcessInfo.processInfo.systemUptime
+            let thermalBefore=ProcessInfo.processInfo.thermalState.rawValue
+            OPTDeviceFeedback.mark("full_export_fft_trial_begin",["case":name,
+                "workers":String(workers),"reuseIdenticalRows":String(reuseRows)])
+            sampler.start()
+            let digest:[UInt8]
+            var hashSeconds=0.0
+            do {
+                digest=try autoreleasepool { () throws -> [UInt8] in
+                    var stages=[String:Double]()
+                    // Packed sensor input is scoped to development; not kept
+                    // across JPEG packaging or the next independent trial.
+                    func develop() throws -> OriginalSourcePixelIO.Frame {
+                        guard try fullSourceKey(rawURL)==identity else {
+                            throw Failure.invalid("原尺寸 FFT 对照 RAW 身份已变化")
+                        }
+                        let source=try open(rawURL,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+                        guard try fullSourceKey(rawURL)==identity else {
+                            throw Failure.invalid("原尺寸 FFT 对照 RAW 解码期间身份改变")
+                        }
+                        let envelope=OriginalSourcePhysicalImage.memoryEnvelope(
+                            width:source.width,height:source.height,parameters:selected)
+                        guard envelope.compactSequentialFFT else {
+                            throw Failure.invalid("原尺寸 FFT 对照需要紧凑 Float64 光学设置")
+                        }
+                        try OriginalSourcePhysicalImage.validateMemoryBudget(
+                            width:source.width,height:source.height,parameters:selected)
+                        var frame=try makeSourceFrame(source,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+                        let begin=ProcessInfo.processInfo.systemUptime
+                        try OriginalSourcePhysicalImage.developInPlace(&frame,parameters:selected,
+                            phaseMemoryObserver:{phase in
+                                stages[phase]=ProcessInfo.processInfo.systemUptime-begin
+                                OPTDeviceFeedback.mark("full_export_fft_phase",["case":name,"phase":phase])
+                            },diffusionFFTWorkers:workers,reuseIdenticalDiffusionKernelRows:reuseRows)
+                        return frame
+                    }
+                    var frame=try develop()
+                    if selected.sourceGrain.active && selected.sourceGrain.sublayersActive &&
+                       stages["three_sublayer_grain_ready"]==nil {
+                        throw Failure.invalid("原尺寸导出 FFT 对照未执行三亚层颗粒")
+                    }
+                    if cameraActive && stages["camera_diffusion_ready"]==nil {
+                        throw Failure.invalid("原尺寸导出 FFT 对照未执行摄影柔化")
+                    }
+                    if paperActive && stages["paper_diffusion_ready"]==nil {
+                        throw Failure.invalid("原尺寸导出 FFT 对照未执行印相柔化")
+                    }
+                    let hashStart=ProcessInfo.processInfo.systemUptime
+                    var hash=SHA256()
+                    frame.rgb.withUnsafeBytes {hash.update(bufferPointer:$0)}
+                    let words=Array(hash.finalize())
+                    hashSeconds=ProcessInfo.processInfo.systemUptime-hashStart
+                    try Task.checkCancellation()
+                    let jpegStart=ProcessInfo.processInfo.systemUptime
+                    let url=try Build90NativeOutputWriter.write(
+                        width:frame.width,height:frame.height,rgb:frame.rgb,
+                        options:.init(format:.jpeg,bitDepth:8,outputSpace:"sRGB",
+                                      cctfEncoded:selected.sourceOutputCCTFEncoding))
+                    defer {try? FileManager.default.removeItem(at:url)}
+                    let attributes=try FileManager.default.attributesOfItem(atPath:url.path)
+                    let size=(attributes[.size] as? NSNumber)?.uint64Value ?? 0
+                    guard size>0 else {throw Failure.invalid("原尺寸 FFT JPEG 写出空文件")}
+                    OPTDeviceFeedback.mark("full_export_fft_jpeg_ready",["case":name,
+                        "width":String(frame.width),"height":String(frame.height),
+                        "outputBytes":String(size),"float64Bytes":String(frame.rgb.count*8),
+                        "jpegSeconds":String(ProcessInfo.processInfo.systemUptime-jpegStart),
+                        "cameraFFTSeconds":String((stages["camera_diffusion_ready"] ?? 0)-(stages["camera_diffusion_begin"] ?? 0)),
+                        "paperFFTSeconds":String((stages["paper_diffusion_ready"] ?? 0)-(stages["paper_diffusion_begin"] ?? 0))])
+                    frame.rgb.removeAll(keepingCapacity:false)
+                    return words
+                }
+            } catch {
+                _=sampler.finish()
+                throw error
+            }
+            let samples=sampler.finish()
+            let elapsed=ProcessInfo.processInfo.systemUptime-start
+            OPTDeviceFeedback.mark("full_export_fft_trial_result",[
+                "case":name,"seconds":String(elapsed),"shaSeconds":String(hashSeconds),
+                "secondsExcludingSHA":String(elapsed-hashSeconds),
+                "thermalBefore":String(thermalBefore),"thermalAfter":String(ProcessInfo.processInfo.thermalState.rawValue),
+                "workers":String(workers),"rowReuse":String(reuseRows),
+                "sampledPeakPhysicalFootprintBytes":samples.footprint.map{String($0)} ?? "not_measured",
+                "sampledPeakRSSBytes":samples.peak.map{String($0)} ?? "not_measured",
+                "sampledLowestHeadroomBytes":samples.lowest.map{String($0)} ?? "not_measured",
+                "sampleCount":String(samples.count)])
+            return digest
+        }
+        let reference=try exportTrial("serial_reference",workers:1,reuseRows:false)
+        let candidate=try exportTrial("two_worker_candidate",workers:2,reuseRows:true)
+        let equal=reference==candidate
+        OPTDeviceFeedback.mark("full_export_fft_compare_result",["passed":String(equal),
+            "allFloat64BytesSHA256Equal":String(equal),"productionEnabled":"false",
+            "scope":"actual_uncropped_RAW_full_resolution_two_independent_JPEG_exports"])
+        return equal
+    }
+
     /// Build139: automatic speed-oriented preview ONLY. Full JPEG/TIFF16
     /// export always uses developSourceCandidate() unchanged. It first
     /// decodes the real full sensor RAW as ACES16, averages those LINEAR

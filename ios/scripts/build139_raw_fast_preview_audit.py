@@ -44,7 +44,11 @@ assert 'let fullSourcePreview=rawFullResolutionPreview' in refresh
 assert 'if fullSourcePreview {' in refresh
 assert 'P1OriginalRawACESIngress.developSourceCandidate(' in refresh
 assert 'P1OriginalRawACESIngress.developPreviewWithGeometry(' in refresh
-assert 'maxLongEdge:1280' in refresh
+assert 'let previewLongEdge=rawQuickPreviewLongEdge' in refresh
+assert 'maxLongEdge:previewLongEdge' in refresh
+assert 'quickPreviewLongEdges=[768,960,1280]' in reducer
+assert 'defaultQuickPreviewLongEdge=960' in reducer
+assert 'model.selectRAWQuickPreviewLongEdge(edge)' in ui
 assert 'self.processedPreview=rendered.0' in refresh
 assert 'rawFullResolutionPreview=false' in app
 assert 'func selectRAWPreview(fullResolution:Bool)' in app
@@ -58,6 +62,8 @@ for name,section in [("JPEG",jpeg),("TIFF16",tiff)]:
     assert 'P1OriginalRawACESIngress.developSourceCandidate(' in section,name
     assert 'P1OriginalRawACESIngress.developPreviewWithGeometry(' not in section,name
     assert 'Build136RAWOutputResize.resample(' in section,name
+    assert 'rawQuickPreviewLongEdge' not in section,name
+    assert 'previewLongEdge' not in section,name
 
 assert 'model.selectRAWPreview(fullResolution:false)' in ui
 assert 'model.selectRAWPreview(fullResolution:true)' in ui

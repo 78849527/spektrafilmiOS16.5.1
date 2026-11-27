@@ -381,6 +381,13 @@
 - OPT31/33 diagnostic DC097E5B: four-family512×384 fixed synthetic grid, all exact two-worker+identical-row candidate outputs bitwiseEqual=true; glimmerglass 0.220467→0.162047s (~26.5%, 2 reused channels); black_pro_mist 0.238238→0.179792s (~24.5%, 0); pro_mist 0.522958→0.392890s (~24.9%, 0); cinebloom1.224036→0.904389s (~26.1%, 0). Accelerate tolerances pass separately, no production promotion. Four-family comparison passed=true; total19.97s/205.359MB, thermal2. No 8192×8192 actual RAW two-worker parity or peak evidence; no general cross-render paper spectrum reuse.
 - Next consolidated gate: OPT33 actual RAW full-grid two-worker FFT candidate with same Double SHA/reference and phase timing/peak, independent per-worker and row-reuse flags, retain single-worker reference. OPT31 exact kernel frequency work without retained full complex grid; actual full geometry and keys; OPT34 FFT lifetime/packed RAW/cache overlap and retained-preview peak, unchanged dynamic70/80% checks; OPT32 scoped production hot hit validated, full independent one-shot SHA remains pending. Fast-preview direct original export is still cold, optimize actual full-grid pipeline rather than promoting reduced-grid cache as source. Full Python rawpy/ICC/whole-image scientific certification remains unverified. No fresh device request before next consolidated candidate.
 
+## Build158 主线调整（用户 2026-11-27 明确）
+
+- 首要验收改为用户真实流程：RAW 精细冲印＋快速预览调整→原尺寸全光学 Float64 JPEG 导出。记录真实导出总耗时、阶段耗时、采样峰值内存、完整尺寸及数值一致性。完整精细预览仅保留可选功能，取消作为主要性能验收目标；不要求先运行原尺寸预览来获得热缓存。快速预览画质仅按手机显示的主观可用性判断，不设固定耗时或逐像素原尺寸验收目标。
+- 快速预览长边可选768/960/1280，默认960（用户未指定具体档，保留1280可回切，768供手机视觉选择）。记住显示偏好；原片、工艺参数、导出尺寸和精度不变。已有 Build139 线性 ACES16 面积缩样、独立缓存尺寸键不变。新增偏好及无导出绑定的回归。此改动不是导出加速证明。
+- OPT31/33: Build157 A15 四家族 512×384 双核+相同核行复用逐位通过。Build158 将现有 FFT 按钮升级为当前未裁切真实 RAW 的两次独立完整原尺寸 JPEG 导出对照：串行参考 vs 双核+核行复用候选，逐位 SHA256 全 Float64 扫描 RGB，实际原版 JPEG writer、完整尺寸、阶段耗时/采样峰值，临时输出清理。仅保留 SHA，不保留第二整图、不用预览或密度缓存。无 RAW 仍保留小图诊断。host 64 组增加单独双核/单独核行复用逐位回归。正式 FFT 保持串行，真实 A15 全图数值与性能通过才推广；不可提前声称提速。受控颗粒、不降精度、不缩导出网格，70/80%动态门槛不变。Build157 one-shot 独立 SHA 仍待补证，但降低其优先级（非用户日常主路径）。
+- 首次全光学快速预览后原尺寸真实导出基线138.553s、1818.630MB（thermal2），下一步先验证两核完整原尺寸导出、再生产化，继续阶段光谱/颗粒与实际导出内存优化。90秒/1600MB仅阶段探索目标，未确认可达性。完整原版 Python/ICC 整图认证仍未完成。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

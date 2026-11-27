@@ -57,6 +57,16 @@ struct SourceDiffusionNumericValidation {
                         usePreparedPSFCache:false)
                     precondition(prepared.map{$0.bitPattern}==legacy.map{$0.bitPattern},
                                  "Build155 prepared blocked full-grid FFT differs")
+                    var rowOnly=input
+                    try OriginalSourceDiffusion.applyCompactInPlace(
+                        &rowOnly,width:w,height:h,pixelUM:pixelUM,settings:cfg,
+                        usePreparedPSFCache:false,reuseIdenticalKernelRows:true)
+                    precondition(rowOnly.map{$0.bitPattern}==legacy.map{$0.bitPattern},"exact kernel row reuse alone differs")
+                    var parallelOnly=input
+                    try OriginalSourceDiffusion.applyCompactInPlace(
+                        &parallelOnly,width:w,height:h,pixelUM:pixelUM,settings:cfg,
+                        usePreparedPSFCache:false,fftWorkers:2)
+                    precondition(parallelOnly.map{$0.bitPattern}==legacy.map{$0.bitPattern},"two-worker FFT alone differs")
                     var parallel=input
                     try OriginalSourceDiffusion.applyCompactInPlace(
                         &parallel,width:w,height:h,pixelUM:pixelUM,settings:cfg,

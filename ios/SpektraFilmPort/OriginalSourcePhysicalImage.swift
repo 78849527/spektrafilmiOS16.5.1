@@ -1004,7 +1004,9 @@ enum OriginalSourcePhysicalImage {
         paperDensityReuse:FilmDensityReuse? = nil,
         paperDensityReuseLease:UInt64? = nil,
         requireExistingFilmDensity:Bool = false,
-        consumeExistingFilmDensity:Bool = false
+        consumeExistingFilmDensity:Bool = false,
+        diffusionFFTWorkers:Int=1,
+        reuseIdenticalDiffusionKernelRows:Bool=false
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -1076,6 +1078,13 @@ enum OriginalSourcePhysicalImage {
         let compactCache=parameters.enableFullOpticalDensityCache &&
             filmDensityReuse != nil && !consumeExistingFilmDensity && paperDensityReuse==nil && envelope.compactSequentialFFT
         let compactOptics=(filmDensityReuse==nil || compactCache || consumeExistingFilmDensity) && envelope.compactSequentialFFT
+        if diffusionFFTWorkers != 1 || reuseIdenticalDiffusionKernelRows {
+            guard diffusionFFTWorkers==1 || diffusionFFTWorkers==2,
+                  compactOptics,filmDensityReuse==nil,paperDensityReuse==nil,
+                  stageDoubleObserver==nil else {
+                throw Failure.invalid("原尺寸 FFT 候选要求独立紧凑 Float64 光学路径")
+            }
+        }
         // Recheck actual headroom immediately before a stage allocates
         // large buffers. Include potential COW and conservative per-stage
         // reserve; source RGB is already resident. No hidden downgrade.
@@ -1325,7 +1334,8 @@ enum OriginalSourcePhysicalImage {
                 phaseMemoryObserver?("camera_diffusion_begin")
                 if compactOptics {
                     try OriginalSourceDiffusion.applyCompactInPlace(
-                        &frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:diffusion)
+                        &frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:diffusion,
+                        fftWorkers:diffusionFFTWorkers,reuseIdenticalKernelRows:reuseIdenticalDiffusionKernelRows)
                 } else {
                     frame.rgb=try OriginalSourceDiffusion.apply(
                         frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:diffusion)
@@ -1614,7 +1624,8 @@ enum OriginalSourcePhysicalImage {
             phaseMemoryObserver?("paper_diffusion_begin")
             if compactOptics {
                 try OriginalSourceDiffusion.applyCompactInPlace(
-                    &frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:parameters.printDiffusion)
+                    &frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:parameters.printDiffusion,
+                    fftWorkers:diffusionFFTWorkers,reuseIdenticalKernelRows:reuseIdenticalDiffusionKernelRows)
             } else {
                 frame.rgb=try OriginalSourceDiffusion.apply(
                     frame.rgb,width:w,height:h,pixelUM:pixelUM,settings:parameters.printDiffusion)

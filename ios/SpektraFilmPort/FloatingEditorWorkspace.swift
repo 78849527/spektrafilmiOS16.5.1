@@ -1306,11 +1306,11 @@ struct FloatingEditorWorkspace: View {
                         statusReportPresented=false
                         onRunOptimizationFFT()
                     } label: {
-                        Label("FFT 原版 / 紧凑 / 优化 / Accelerate 对照",systemImage:"waveform.path")
+                        Label("FFT 原版 / 双核 · 原尺寸导出对照",systemImage:"waveform.path")
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("固定 512×384 Float64 测试图，含双核 FFT 与相同通道核行频谱复用候选，记录误差、耗时与采样内存；不改变正式冲印算法。结果并入性能反馈 JSON。")
+                    Text("已选未裁切 RAW 时，独立执行两次原尺寸完整 Float64 冲印及 JPEG 写出（单核参考／双核与相同核行复用候选），核对完整 RGB SHA256、实际导出耗时和采样内存；不需要完整精细预览。不改变正式冲印算法。无 RAW 时执行四家族 512×384 对照。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
@@ -2289,7 +2289,25 @@ struct FloatingEditorWorkspace: View {
                     .buttonStyle(.plain)
                     .disabled(model.busy)
                 }
-                Text("默认快速预览按低像素运行同一 Float64 光学算法；空间效果与完整图可能不同。导出始终重新以 RAW 原尺寸精细冲印。")
+                if !model.rawFullResolutionPreview {
+                    HStack(spacing:6) {
+                        Text("预览长边").font(.caption2).foregroundColor(.secondary)
+                        ForEach(Build139RAWPreviewDownsample.quickPreviewLongEdges,id:\.self) { edge in
+                            Button {
+                                model.selectRAWQuickPreviewLongEdge(edge)
+                            } label: {
+                                Text("\(edge)px")
+                                    .font(.system(size:11,weight:.semibold))
+                                    .frame(maxWidth:.infinity,minHeight:26)
+                                    .foregroundColor(model.rawQuickPreviewLongEdge==edge ? .accentColor : .primary)
+                                    .background(model.rawQuickPreviewLongEdge==edge ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.06),in:RoundedRectangle(cornerRadius:6))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.busy)
+                        }
+                    }
+                }
+                Text("快速预览长边仅影响手机显示，空间效果与完整图可能不同。导出始终重新以 RAW 原尺寸精细冲印。")
                     .font(.caption2).foregroundColor(.secondary)
             }
             if !model.originalPixelInputAvailable && model.hasPhoto {
