@@ -396,8 +396,8 @@ enum OriginalSourcePhysicalImage {
                 d.haloIntensity,d.haloSize,d.bloomIntensity,d.bloomSize]
             let halationValues=[h.scatterAmount,h.scatterSpatialScale,h.halationAmount,
                 h.halationSpatialScale,h.filmFormatMM,h.bounceDecay] +
-                h.scatterCoreUM+h.scatterTailUM+h.scatterTailWeight+
-                h.halationStrength+h.halationFirstSigmaUM
+                h.scatterCoreUM + h.scatterTailUM + h.scatterTailWeight +
+                h.halationStrength + h.halationFirstSigmaUM
             bits += (cameraValues+halationValues).map{$0.bitPattern}
             bits.append(UInt64(OriginalSourceCameraOptics.Metering.allCases.firstIndex(of:c.metering)!))
             bits.append(UInt64(OriginalSourceDiffusion.Family.allCases.firstIndex(of:d.family)!))

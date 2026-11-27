@@ -342,6 +342,11 @@
 - OPT32: export retry releases packed ACES16 first and reruns same unchanged gate; evicts density only if still refused. No new 70% export credit, no guarantee full optical hot export admission. 
 - OPT31/33/34 not promoted: full-size frequency cache and FFT multicore/SIMD require separate independent numerical and measured peak evidence; no unbounded retained spectrum or automatic precision switch. Build155 prepared FFT remains. User needs full optical cold/hot actual RAW SHA and memory evidence before additional optimization.
  
+## Build156 CI 编译修复
+
+- 45968614903 / 61b2770f7c6d：Linux 成功；macOS Apple Silicon 正式 iPhoneOS arm64 编译第64步失败，OriginalSourcePhysicalImage.swift:399:68 `+` is not a postfix unary operator；IPA 打包、SHA 核验及发布均未执行。历史 real-iPhone scientific certificate 检查仍报告 NOT CERTIFIED（缺真实 NumPy/整图证据），不提升认证状态。
+- 仅修正 pre-grain cache key 中 halation Float64 数组拼接运算符的空白，原数组及拼接顺序不变。保留原 Build156 / v1.8.122、固定分支、全部数值测试和动态准入、Python 3.11/Numba 0.61.2；Apple Silicon 默认不变。使用明确 [device-ipa:156] 标记重新完整构建；新 SHA 未通过 CI 前不提供 IPA、不宣称 OPT30/32 真机认证。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。
