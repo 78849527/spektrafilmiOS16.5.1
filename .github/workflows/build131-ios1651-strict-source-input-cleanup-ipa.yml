@@ -130,7 +130,8 @@ permissions:
 # GitHub retains at most one pending run for this same branch.
 concurrency:
   group: build131-ios1651-${{ github.ref }}
-  cancel-in-progress: false
+  # Explicit host-retry push supersedes a stalled hosted-runner attempt only.
+  cancel-in-progress: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[runner:intel]') }}
 
 jobs:
   # A separate public-repository Ubuntu runner tests whether runner
