@@ -95,7 +95,8 @@ enum Build91PhysicalMemory {
         camera:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
         paper:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
         diagnosticExtendedGeometry:Bool=false,
-        compactSequentialFFT:Bool=false
+        compactSequentialFFT:Bool=false,
+        retainedFFTBytesPerPixel:UInt64=0
     ) throws->Plan {
         // Extended dry-run only: use the actual existing FIR/YVV backend
         // geometry envelope. All production callers retain the 13MP gate
@@ -111,6 +112,7 @@ enum Build91PhysicalMemory {
         guard baseBytesPerPixel>0,
               baseBytesPerPixel<=4096,
               additionalBytesPerPixel<=4096,
+              retainedFFTBytesPerPixel<=additionalBytesPerPixel,
               physicalMemory>0 else {
             throw Failure.invalid("原版物理内存预算参数不合法")
         }
@@ -140,8 +142,11 @@ enum Build91PhysicalMemory {
         // The compact stage owns one RGB frame (+ potential COW RGB),
         // packed RAW (6 B/px), and at least 10 B/px reserve. The other
         // stages' conservative payloads do not coexist with FFT scratch.
-        // Legacy/observed/cache paths keep the additive historical bound.
-        let fftStage=pixels*64+additionalFFT
+        // The full RAW cache route additionally reserves its retained
+        // CMY for the FFT phase, even when camera FFT precedes cache creation.
+        // No credit until a distinct matching owned buffer is pinned.
+        // Legacy/observed paths keep the additive historical bound.
+        let fftStage=pixels*(64+retainedFFTBytesPerPixel)+additionalFFT
         let estimated=compactSequentialFFT && additionalFFT>0
             ? max(basePeak,fftStage) : basePeak+additionalFFT
         // Build117: the device-reported process headroom is authoritative.

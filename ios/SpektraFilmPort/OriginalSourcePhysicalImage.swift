@@ -133,7 +133,8 @@ enum OriginalSourcePhysicalImage {
         processAvailableMemory:UInt64?=nil,
         cameraDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
         paperDiffusion:(settings:OriginalSourceDiffusion.Settings,pixelUM:Double)?=nil,
-        compactSequentialFFT:Bool=false
+        compactSequentialFFT:Bool=false,
+        retainedFFTBytesPerPixel:UInt64=0
     ) throws {
         guard width>0,height>0,width<=8192,height<=8192,
               width<=maximumPixels/height else {
@@ -162,7 +163,8 @@ enum OriginalSourcePhysicalImage {
             additionalBytesPerPixel:additionalBytesPerPixel,
             physicalMemory:physical,processAvailable:headroom,
             camera:cameraDiffusion,paper:paperDiffusion,
-            compactSequentialFFT:compactSequentialFFT
+            compactSequentialFFT:compactSequentialFFT,
+            retainedFFTBytesPerPixel:retainedFFTBytesPerPixel
         )
         try Build91PhysicalMemory.validate(
             plan,alreadyCommittedInputBytes:alreadyCommittedInputBytes
@@ -341,6 +343,10 @@ enum OriginalSourcePhysicalImage {
         // Grain remains AFTER the cache boundary. Until independent
         // device evidence exists, only the diagnostic may opt in to
         // explicitly seeded serial grain. Never cache grain output.
+        let opticalEligible = (!p.cameraOptics.active && !p.filmHalation.active) ||
+            (p.enableFullOpticalDensityCache &&
+             (!p.sourceGrain.active || p.sourceGrain.sublayersActive) &&
+             !p.sourceGrain.useUnseededParallel && p.sourceOutputGamut==nil)
         let grainEligible = !p.sourceGrain.active ||
             (allowSeededGrain && !p.sourceGrain.useUnseededParallel &&
              p.sourceGrain.numbaSeed != nil &&
@@ -348,7 +354,7 @@ enum OriginalSourcePhysicalImage {
               p.sourceGrain.fastStatsSeed == p.sourceGrain.numbaSeed))
         return !SpectralPhysics.isPositiveFilm(p.filmID) &&
         grainEligible &&
-        !p.cameraOptics.active && !p.filmHalation.active &&
+        opticalEligible &&
         !p.sourceColorReference.enabled && p.sourceDIR==nil &&
         p.cameraRawMethod == .hanatos2025 &&
         !p.cameraBandpass.active && !p.hanatosSourceRecompute &&
@@ -365,6 +371,7 @@ enum OriginalSourcePhysicalImage {
         guard canReuseFilmDensity(parameters,allowSeededGrain:allowSeededGrain) else {
             throw Failure.invalid("胶片密度复用候选仅支持无相机前级及参考校准的负片 Hanatos 串行；颗粒需单独显式受控种子诊断")
         }
+        try parameters.validate()
         let space:Int
         switch parameters.cameraInputColorSpace {
         case .sRGB:space=0
@@ -374,14 +381,32 @@ enum OriginalSourcePhysicalImage {
         var hasher=SHA256()
         frame.rgb.withUnsafeBytes {hasher.update(bufferPointer:$0)}
         let digest=Array(hasher.finalize())
-        let bits=([parameters.cameraEV,parameters.cameraFilmingReferenceScale,
+        var bits=([parameters.cameraEV,parameters.cameraFilmingReferenceScale,
                    parameters.dir.diffusionRadiusScale,parameters.dir.tailWeight]
                   + parameters.sourceGrain.densityMin).map{$0.bitPattern}
+        var flags=[parameters.dir.enabled,parameters.dir.sourceConvolutionEnabled,
+                   parameters.sourceCouplersActive,parameters.sourceSpatialDiffusionEnabled]
+        // All upstream camera optics and routed stock halation parameters
+        // are keyed, including inactive settings (conservative misses).
+        // No paper/scanner/particle RNG parameters enter this pre-grain key.
+        if parameters.enableFullOpticalDensityCache {
+            let c=parameters.cameraOptics,h=parameters.filmHalation,d=c.diffusion
+            let cameraValues=[c.boostEV,c.boostRange,c.protectEV,c.lensBlurUM,c.filmFormatMM,
+                d.strength,d.spatialScale,d.haloWarmth,d.coreIntensity,d.coreSize,
+                d.haloIntensity,d.haloSize,d.bloomIntensity,d.bloomSize]
+            let halationValues=[h.scatterAmount,h.scatterSpatialScale,h.halationAmount,
+                h.halationSpatialScale,h.filmFormatMM,h.bounceDecay] +
+                h.scatterCoreUM+h.scatterTailUM+h.scatterTailWeight+
+                h.halationStrength+h.halationFirstSigmaUM
+            bits += (cameraValues+halationValues).map{$0.bitPattern}
+            bits.append(UInt64(OriginalSourceCameraOptics.Metering.allCases.firstIndex(of:c.metering)!))
+            bits.append(UInt64(OriginalSourceDiffusion.Family.allCases.firstIndex(of:d.family)!))
+            bits.append(UInt64(h.bounceCount))
+            flags += [true,c.active,d.active,h.active,h.renormalize]
+        }
         return .init(inputSHA256:digest,width:frame.width,height:frame.height,
             filmID:parameters.filmID,colorSpace:space,filmBits:bits,
-            flags:[parameters.dir.enabled,parameters.dir.sourceConvolutionEnabled,
-                   parameters.sourceCouplersActive,parameters.sourceSpatialDiffusionEnabled],
-            referencePixelSize:parameters.dir.referencePixelSizeUM?.bitPattern)
+            flags:flags,referencePixelSize:parameters.dir.referencePixelSizeUM?.bitPattern)
     }
 
     struct Parameters {
@@ -427,6 +452,9 @@ enum OriginalSourcePhysicalImage {
         var sourceGrain: OriginalSourcePhysicalGrain.Settings = .init()
         var cameraOptics: OriginalSourceCameraOptics.Settings = .init()
         var filmHalation: OriginalSourceFilmHalation.Settings = .init()
+        // Full RAW candidate only. Reduced preview and legacy diagnostics
+        // keep their existing eligibility unless explicitly opted in.
+        var enableFullOpticalDensityCache:Bool=false
         // Upstream SettingsParams.rgb_to_raw_method plus camera UV/IR
         // spectral bandpass; all stages remain per-pixel Double.
         var cameraRawMethod: SpectralPhysics.CameraRawMethod = .hanatos2025
@@ -1011,9 +1039,12 @@ enum OriginalSourcePhysicalImage {
         let controlledScannerGlare=parameters.scannerGlare.active &&
             parameters.scannerGlare.percent>0
         let controlledFilmGrain=parameters.sourceGrain.active
-        let compactOptics=filmDensityReuse==nil && memoryEnvelope(
+        let envelope=memoryEnvelope(
             width:w,height:h,parameters:parameters,
-            stageObserver:stageDoubleObserver != nil).compactSequentialFFT
+            stageObserver:stageDoubleObserver != nil)
+        let compactCache=parameters.enableFullOpticalDensityCache &&
+            filmDensityReuse != nil && paperDensityReuse==nil && envelope.compactSequentialFFT
+        let compactOptics=(filmDensityReuse==nil || compactCache) && envelope.compactSequentialFFT
         // Recheck actual headroom immediately before a stage allocates
         // large buffers. Include potential COW and conservative per-stage
         // reserve; source RGB is already resident. No hidden downgrade.
@@ -1046,11 +1077,13 @@ enum OriginalSourcePhysicalImage {
             }
             // Charge a retained Double CMY frame in addition to the
             // current envelope. No credit for possible COW release.
-            let envelope=memoryEnvelope(width:w,height:h,parameters:parameters)
             try validateMemoryBudget(width:w,height:h,
                 additionalBytesPerPixel:envelope.additionalBytesPerPixel+24+(paperDensityReuse == nil ? 0 : 24),
                 alreadyCommittedInputBytes:committedInputBytes+committedCacheBytes,
-                cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+                cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion,
+                compactSequentialFFT:compactCache,
+                retainedFFTBytesPerPixel:compactCache ? 24 : 0)
+            if compactCache {phaseMemoryObserver?("full_optical_cache_budget_admitted")}
         } else {
             try validateMemoryBudget(
                 width:w,height:h,parameters:parameters,
@@ -1172,6 +1205,7 @@ enum OriginalSourcePhysicalImage {
             guard cached.count==size else {throw Failure.invalid("胶片密度复用尺寸不一致")}
             frame.rgb=cached
             phaseMemoryObserver?("film_density_cache_hit")
+            if compactCache {phaseMemoryObserver?("full_optical_upstream_reused")}
         } else {
         if reuseKey != nil {phaseMemoryObserver?("film_density_cache_miss")}
         var initialObserved:[Double]?=stageDoubleObserver == nil

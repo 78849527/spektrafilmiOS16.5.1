@@ -47,6 +47,13 @@ assert "compactSequentialFFT:envelope.compactSequentialFFT" in physical
 assert "compactSequentialFFT:footprint.compactSequentialFFT" in app
 assert "max(basePeak,fftStage)" in memory
 assert "applyCompactInPlace(" in physical
+assert "enableFullOpticalDensityCache:Bool=false" in physical
+assert "retainedFFTBytesPerPixel:compactCache ? 24 : 0" in physical
+assert "retainedFFTBytesPerPixel:envelope.compactSequentialFFT ? 24 : 0" in raw
+assert "full_optical_upstream_reused" in physical
+assert "64+retainedFFTBytesPerPixel" in memory
+assert "clearPackedFullInputCache" in raw and "clearPackedFullInputCache" in app
+assert "verifyFullOpticalDensityCache()" in read("ios/tests/SourcePhysicalImageParity.swift")
 diffusion=read("ios/SpektraFilmPort/OriginalSourceDiffusion.swift")
 assert "private struct ExactFFTPlan" in diffusion
 assert "private static let fftColumnBlock=16" in diffusion

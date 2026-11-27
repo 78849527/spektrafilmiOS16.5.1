@@ -134,6 +134,20 @@ enum Build91PhysicalMemoryMatrixValidation {
         precondition(compact.additionalFFTBytes==compactBytes+fft.psfBytes)
         precondition(compact.estimatedPeakBytes==max(168_000_000,64_000_000+compactBytes+fft.psfBytes))
         try Build91PhysicalMemory.validate(compact)
+        let cached=try Build91PhysicalMemory.plan(
+            width:1000,height:1000,baseBytesPerPixel:104,additionalBytesPerPixel:88,
+            physicalMemory:physical,processAvailable:available,
+            camera:(opt,pixels),paper:(opt,pixels),compactSequentialFFT:true,
+            retainedFFTBytesPerPixel:24)
+        precondition(cached.estimatedPeakBytes==max(192_000_000,88_000_000+compactBytes+fft.psfBytes))
+        precondition(cached.estimatedPeakBytes==compact.estimatedPeakBytes+24_000_000)
+        try Build91PhysicalMemory.validate(cached,alreadyCommittedInputBytes:48_000_000)
+        let full=try Build91PhysicalMemory.plan(
+            width:3024,height:4032,baseBytesPerPixel:104,additionalBytesPerPixel:88,
+            physicalMemory:4_000_000_000,processAvailable:2_500_000_000,
+            camera:(opt,35000/4032.0),paper:(opt,35000/4032.0),
+            compactSequentialFFT:true,retainedFFTBytesPerPixel:24)
+        precondition(full.estimatedPeakBytes>=UInt64(3024*4032)*192)
         let compactTight=try Build91PhysicalMemory.plan(
             width:1000,height:1000,baseBytesPerPixel:104,additionalBytesPerPixel:64,
             physicalMemory:physical,processAvailable:100_000_000,

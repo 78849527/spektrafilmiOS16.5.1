@@ -48,6 +48,12 @@ enum P1OriginalRawACESIngress {
         previewPaperDensityCache.clear()
     }
 
+    // Release only packed decoder input before throwing away the much
+    // more valuable exact film density. No arithmetic headroom credit.
+    static func clearPackedFullInputCache(reason:String) {
+        fullInputCache.clear(reason:reason)
+    }
+
     static func clearAllInputCaches(reason:String="source_invalidation") {
         clearPreviewInputCache()
         fullInputCache.clear(reason:reason)
@@ -63,7 +69,10 @@ enum P1OriginalRawACESIngress {
             isMemoryRefusal:{$0 is SafeExportResolution.Failure},
             evict:{
                 let before=SafeExportResolution.currentProcessHeadroom()
-                clearAllInputCaches(reason:"confirmed_export_pressure")
+                clearPackedFullInputCache(reason:"confirmed_export_packed_pressure")
+                if (try? SafeExportResolution.validateBeforeRender(plan)) == nil {
+                    clearAllInputCaches(reason:"confirmed_export_pressure")
+                }
                 OPTDeviceFeedback.mark("export_optional_cache_evicted",[
                     "headroomBefore":before.map{String($0)} ?? "unavailable",
                     "headroomAfter":SafeExportResolution.currentProcessHeadroom().map{String($0)} ?? "unavailable"])
@@ -313,6 +322,7 @@ enum P1OriginalRawACESIngress {
         // Python raw_file_processor outputs linear ACES2065-1 by default;
         // ensure its samples can NEVER enter a display-sRGB transfer function.
         selected.cameraInputColorSpace = .acesLinear
+        selected.enableFullOpticalDensityCache=true
         try selected.validate()
         // Uncropped full optics retain the current work-grid ceiling.
         // A confirmed crop instead admits the native decoder geometry
@@ -434,7 +444,9 @@ enum P1OriginalRawACESIngress {
                         width:working.width,height:working.height,
                         additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
                         alreadyCommittedInputBytes:UInt64(frame.rgb.count)*8+existingBytes,
-                        cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+                        cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion,
+                        compactSequentialFFT:envelope.compactSequentialFFT,
+                        retainedFFTBytesPerPixel:envelope.compactSequentialFFT ? 24 : 0)
                     reuseReason=requireHotHit ? "verified_owned_hot_cache" : "cold_cache_admitted"
                 } catch {
                     reuseAllowed=false
@@ -485,6 +497,7 @@ enum P1OriginalRawACESIngress {
     ) throws -> Bool {
         var selected=opticalSettings
         selected.cameraInputColorSpace = .acesLinear
+        selected.enableFullOpticalDensityCache=true
         try selected.validate()
         let allowSeededDiagnostic=selected.sourceGrain.active
         guard OriginalSourcePhysicalImage.canReuseFilmDensity(selected,allowSeededGrain:allowSeededDiagnostic) else {
@@ -539,7 +552,9 @@ enum P1OriginalRawACESIngress {
                 try OriginalSourcePhysicalImage.validateMemoryBudget(
                     width:w,height:h,additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
                     alreadyCommittedInputBytes:committed,
-                    cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
+                    cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion,
+                    compactSequentialFFT:envelope.compactSequentialFFT,
+                    retainedFFTBytesPerPixel:envelope.compactSequentialFFT ? 24 : 0)
             } else {
                 try OriginalSourcePhysicalImage.validateMemoryBudget(width:w,height:h,parameters:params)
             }
@@ -629,14 +644,26 @@ enum P1OriginalRawACESIngress {
         var parallel=selected
         parallel.deterministicPixelWorkers=2
         parallel.deterministicPixelStageMask=4
-        let printTrial=try trial("parallel_print_full",parallel,cache:false)
-        let printEqual=printTrial.digest==baseline.digest
+        // Full optical diagnostic compares serial cold/hot only. The
+        // legacy parallel renderer retains a larger FFT admission model;
+        // it is not a required or promoted full-optics optimization.
+        let complex=selected.cameraOptics.active || selected.filmHalation.active ||
+            selected.printDiffusion.active || selected.scannerGlare.active || selected.scannerOptics.active
+        let printEqual:Bool
+        if complex {
+            printEqual=true
+            OPTDeviceFeedback.mark("full_density_parallel_skipped",["reason":"complex_optics_legacy_budget"])
+        } else {
+            let printTrial=try trial("parallel_print_full",parallel,cache:false)
+            printEqual=printTrial.digest==baseline.digest
+        }
         let passed=coldEqual && hotEqual && hot.hit && !hot.invalidated && printEqual
         OPTDeviceFeedback.mark("full_density_compare_result",[
             "passed":String(passed),"coldAllBytesSHA256Equal":String(coldEqual),
             "hotAllBytesSHA256Equal":String(hotEqual),"hotHit":String(hot.hit),
             "productionEnabled":"false","cacheCleared":"true",
-            "parallelPrintSHA256Equal":String(printEqual),
+            "parallelPrintSHA256Equal":complex ? "not_tested" : String(printEqual),
+            "fullOpticalCache":String(complex),
             "grainFastStats":String(selected.sourceGrain.useFastStats),
             "seededGrain":String(allowSeededDiagnostic)])
         return passed

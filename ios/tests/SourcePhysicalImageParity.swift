@@ -133,6 +133,91 @@ enum SourcePhysicalImageParity {
         return metrics
     }
 
+    // Independent host regression: cold/no-cache vs cache cold and
+    // changed downstream hot, including actual seeded grain and both FFT
+    // stages. Full-sized A15 residency and time still require device tests.
+    private static func verifyFullOpticalDensityCache() throws {
+        let w=32,h=25
+        let input=(0..<(w*h*3)).map {Double(($0*137+31)%65536)/65535.0}
+        var optics=OriginalPrintOptics.Settings(enabled:true)
+        optics.normalizePrintExposure=false;optics.printExposureCompensation=false
+        var dir=SpatialDIRSettings(enabled:true)
+        dir.sourceConvolutionEnabled=true
+        var cfg=OriginalSourcePhysicalImage.Parameters(filmID:"kodak_portra_400",
+            paperID:"kodak_portra_endura",cameraEV:0,paperEV:0,dir:dir,print:optics,morph:.init())
+        cfg.cameraInputColorSpace = .acesLinear
+        cfg.enableFullOpticalDensityCache=true
+        cfg.cameraOptics.metering = .average
+        cfg.cameraOptics.diffusion.active=true
+        cfg.cameraOptics.lensBlurUM=5
+        cfg.cameraOptics.boostEV=0.1
+        cfg.filmHalation.active=true
+        cfg.printDiffusion.active=true
+        cfg.sourceGrain.active=true
+        cfg.sourceGrain.sublayersActive=true
+        cfg.sourceGrain.numbaSeed=8888
+        cfg.scannerGlare.active=true
+        cfg.scannerGlareSeed=8888
+        cfg.scannerOptics.lensBlurSigma=0.5
+        let frame=OriginalSourcePixelIO.Frame(width:w,height:h,rgb:input)
+        func key(_ p:OriginalSourcePhysicalImage.Parameters)throws -> OriginalSourcePhysicalImage.FilmDensityReuse.Key {
+            try OriginalSourcePhysicalImage.filmDensityReuseKey(frame:frame,parameters:p,
+                allowSeededGrain:true)
+        }
+        let baseKey=try key(cfg)
+        var changes:[(inout OriginalSourcePhysicalImage.Parameters)->Void]=[
+            {$0.cameraOptics.metering = .median},
+            {$0.cameraOptics.boostEV+=0.1},{$0.cameraOptics.boostRange+=0.1},
+            {$0.cameraOptics.protectEV+=1},{$0.cameraOptics.lensBlurUM+=1},
+            {$0.cameraOptics.filmFormatMM+=1},{$0.cameraOptics.diffusion.active.toggle()},
+            {$0.cameraOptics.diffusion.family = .cinebloom},
+            {$0.cameraOptics.diffusion.strength+=0.1},{$0.cameraOptics.diffusion.spatialScale+=0.1},
+            {$0.cameraOptics.diffusion.haloWarmth+=0.1},
+            {$0.cameraOptics.diffusion.coreIntensity+=0.1},{$0.cameraOptics.diffusion.coreSize+=0.1},
+            {$0.cameraOptics.diffusion.haloIntensity+=0.1},{$0.cameraOptics.diffusion.haloSize+=0.1},
+            {$0.cameraOptics.diffusion.bloomIntensity+=0.1},{$0.cameraOptics.diffusion.bloomSize+=0.1},
+            {$0.filmHalation.active.toggle()},{$0.filmHalation.scatterAmount-=0.1},
+            {$0.filmHalation.scatterSpatialScale+=0.1},{$0.filmHalation.halationAmount+=0.1},
+            {$0.filmHalation.halationSpatialScale+=0.1},{$0.filmHalation.filmFormatMM+=1},
+            {$0.filmHalation.scatterCoreUM[0]+=0.1},{$0.filmHalation.scatterTailUM[0]+=0.1},
+            {$0.filmHalation.scatterTailWeight[0]-=0.1},{$0.filmHalation.halationStrength[0]+=0.1},
+            {$0.filmHalation.halationFirstSigmaUM[0]+=1},{$0.filmHalation.bounceCount+=1},
+            {$0.filmHalation.bounceDecay+=0.1},{$0.filmHalation.renormalize.toggle()}
+        ]
+        for change in changes {
+            var other=cfg;change(&other)
+            let otherKey=try key(other)
+            precondition(otherKey != baseKey,"Build156 upstream change must miss")
+        }
+        let count=changes.count
+        changes.removeAll()
+        var downstream=cfg
+        downstream.sourceOutputCCTFEncoding=false
+        downstream.printDiffusion.strength+=0.1
+        downstream.scannerOptics.lensBlurSigma+=0.1
+        let downstreamKey=try key(downstream)
+        precondition(downstreamKey==baseKey)
+        let session=OriginalSourcePhysicalImage.FilmDensityReuse()
+        defer {session.clear()}
+        for (params,hot) in [(cfg,false),(downstream,true)] {
+            var expected=frame,actual=frame
+            try OriginalSourcePhysicalImage.developInPlace(&expected,parameters:params)
+            var phases=[String]()
+            let lease=session.lease()
+            // Diagnostic shared input is not the independently owned hot
+            // production snapshot, so no committed cache credit claimed.
+            try OriginalSourcePhysicalImage.developInPlace(&actual,parameters:params,
+                phaseMemoryObserver:{phases.append($0)},filmDensityReuse:session,
+                filmDensityReuseLease:lease,allowSeededGrainDensityReuse:true)
+            precondition(expected.rgb.map{$0.bitPattern}==actual.rgb.map{$0.bitPattern})
+            precondition(phases.contains("film_density_cache_hit")==hot)
+            precondition(phases.contains("camera_diffusion_ready") != hot)
+            precondition(phases.contains("paper_diffusion_ready"))
+            precondition(phases.contains("three_sublayer_grain_ready"))
+        }
+        print("PASS Build156 full optical cache cold/hot bitwise, \(count) upstream key mutations")
+    }
+
     static func evaluate(
         fixtures: URL,
         onBuild103StageMetric: ((Build103VerificationEvidence.StageMetric) -> Void)? = nil
@@ -143,6 +228,7 @@ enum SourcePhysicalImageParity {
         try SpectralPhysics.verifySpectralSIMD()
         try SpectralPhysics.verifyPreparedMeasuredHD()
         try SpectralPhysics.verifyPreparedCameraMultiplier()
+        try verifyFullOpticalDensityCache()
         let doc=try Data(
             contentsOf:fixtures.appendingPathComponent("manifest.json")
         )

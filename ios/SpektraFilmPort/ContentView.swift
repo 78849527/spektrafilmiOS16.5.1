@@ -3091,8 +3091,14 @@ final class PhotoEditorModel: ObservableObject {
                 isMemoryRefusal:{ $0 is SafeExportResolution.Failure || $0 is Build91PhysicalMemory.Failure },
                 evict:{
                     let before=SafeExportResolution.currentProcessHeadroom()
-                    P1OriginalRawACESIngress.clearAllInputCaches(reason:"export_preflight_pressure")
+                    P1OriginalRawACESIngress.clearPackedFullInputCache(reason:"export_preflight_packed_pressure")
                     PhotoProcessor.clearTransientCaches()
+                    // Retry the unchanged plan once with packed bytes gone.
+                    // If that still fails, release the density too. No
+                    // confirmed-size change, headroom credit or relaxed gate.
+                    if (try? self.prepareExportOnce(resolution:resolution,tiff16:tiff16)) == nil {
+                        P1OriginalRawACESIngress.clearAllInputCaches(reason:"export_preflight_pressure")
+                    }
                     OPTDeviceFeedback.recordStandalone(operation:operation,stage:"optional_cache_evicted",
                         details:["headroomBefore":before.map{String($0)} ?? "unavailable",
                                  "headroomAfter":SafeExportResolution.currentProcessHeadroom().map{String($0)} ?? "unavailable"])
