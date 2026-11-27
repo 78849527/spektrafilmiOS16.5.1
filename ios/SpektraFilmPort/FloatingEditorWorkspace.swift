@@ -1310,7 +1310,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("固定 512×384 Float64 测试图，记录两后端误差、耗时与采样内存；不改变正式冲印算法。结果并入性能反馈 JSON。")
+                    Text("固定 512×384 Float64 测试图，含双核 FFT 与相同通道核行频谱复用候选，记录误差、耗时与采样内存；不改变正式冲印算法。结果并入性能反馈 JSON。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
@@ -1343,7 +1343,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。五次独立冲印（含原尺寸双核印相扫描候选），每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸未裁切固定种子 SciPy／FastStats 三亚层缓存已接入；此按钮仍独立对照，不复用编辑器缓存。")
+                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。基础模式五次、全光学四次独立冲印（含一次性密度缓存导出对照；基础模式另含双核印相扫描候选），每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸未裁切固定种子 SciPy／FastStats 三亚层缓存已接入；此按钮仍独立对照，不复用编辑器缓存。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {

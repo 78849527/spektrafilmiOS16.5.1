@@ -223,6 +223,22 @@ struct SafeExportResolutionValidation {
         } catch SafeExportResolution.Failure.invalid {}
         precondition(evictions==2)
         print("PASS Build152 actual cache eviction retry, unchanged 70% admission and fixed RAW geometry")
+        let actualHeadroom:UInt64=2_809_771_264
+        let resident:UInt64=UInt64(3024*4032)*24
+        let hot=try SafeExportResolution.plan(width:3024,height:4032,
+            physicalMemory:4_000_000_000,processAvailableMemory:actualHeadroom,
+            mode:.original,estimatedBytesPerPixel:178,fullSourceProcessing:true,
+            committedSourceBytes:resident)
+        precondition(hot.estimatedPeakBytes==2_170_312_704 && !hot.dimensions.reduced)
+        try SafeExportResolution.validateForHeadroom(hot,processAvailableMemory:actualHeadroom,
+            verifiedCommittedSourceBytes:resident)
+        for (live,credit) in [(actualHeadroom,UInt64(0)),(actualHeadroom,resident-8),(UInt64(2_000_000_000),resident)] {
+            do {
+                try SafeExportResolution.validateForHeadroom(hot,processAvailableMemory:live,verifiedCommittedSourceBytes:credit)
+                fatalError("Must reject stale, incomplete or insufficient exact export cache admission")
+            } catch SafeExportResolution.Failure.invalid {}
+        }
+        print("PASS one-shot exact CMY export 70% admission, stale/low headroom refusal")
         for mp in ExportResolutionMode.presetWanPixels {
             let fixed=try SafeExportResolution.plan(
                 width:4032,height:3024,physicalMemory:8_000_000_000,

@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 #if canImport(Accelerate)
 import Accelerate
 #endif
@@ -531,18 +532,35 @@ enum OriginalSourceDiffusion {
     // independently, then scatter a row at a time. No extra whole grid.
     // This is memory-access blocking ONLY: no independent optical tiles.
     private static let fftColumnBlock=16
+    // Candidate only: disjoint transforms share immutable plans and existing
+    // buffers; no extra full grid, no changed butterfly or complex multiply.
+    private static func transformSpans(_ r:UnsafeMutablePointer<Double>,_ i:UnsafeMutablePointer<Double>,
+        count:Int,step:Int,plan:ExactFFTPlan,workers:Int) {
+        if workers==2 && count>1 {
+            DispatchQueue.concurrentPerform(iterations:2) {worker in
+                let first=count*worker/2,last=count*(worker+1)/2
+                for k in first..<last {
+                    plan.transform(r.advanced(by:k*step),i.advanced(by:k*step))
+                }
+            }
+        } else {
+            for k in 0..<count {plan.transform(r.advanced(by:k*step),i.advanced(by:k*step))}
+        }
+    }
+
     private static func fft2Prepared(_ real:inout [Double],_ imag:inout [Double],
         width:Int,height:Int,row:ExactFFTPlan,column:ExactFFTPlan,
-        blockReal:inout [Double],blockImag:inout [Double]) throws {
+        blockReal:inout [Double],blockImag:inout [Double],workers:Int=1) throws {
         let block=min(fftColumnBlock,width)
         precondition(row.n==width && column.n==height &&
                      blockReal.count==block*height && blockImag.count==block*height)
         try real.withUnsafeMutableBufferPointer { rp in
             try imag.withUnsafeMutableBufferPointer { ip in
                 let r=rp.baseAddress!,i=ip.baseAddress!
-                for y in 0..<height {
-                    if y & 31 == 0 {try Task.checkCancellation()}
-                    row.transform(r.advanced(by:y*width),i.advanced(by:y*width))
+                for y in stride(from:0,to:height,by:32) {
+                    try Task.checkCancellation()
+                    transformSpans(r.advanced(by:y*width),i.advanced(by:y*width),
+                        count:min(32,height-y),step:width,plan:row,workers:workers)
                 }
                 try blockReal.withUnsafeMutableBufferPointer { br in
                     try blockImag.withUnsafeMutableBufferPointer { bi in
@@ -556,9 +574,7 @@ enum OriginalSourceDiffusion {
                                     cr[c*height+y]=r[origin+c];ci[c*height+y]=i[origin+c]
                                 }
                             }
-                            for c in 0..<count {
-                                column.transform(cr.advanced(by:c*height),ci.advanced(by:c*height))
-                            }
+                            transformSpans(cr,ci,count:count,step:height,plan:column,workers:workers)
                             for y in 0..<height {
                                 let origin=y*width+x
                                 for c in 0..<count {
@@ -685,6 +701,19 @@ enum OriginalSourceDiffusion {
             observe("fft_prepared_ready",["family":family.rawValue,
                 "seconds":String(preparedSeconds),"compactSeconds":String(compactSeconds),
                 "bitwiseEqual":String(preparedEqual),"scope":"fixed_full_grid_not_12MP"])
+            var parallel=input
+            var reusedChannels=[Int]()
+            let parallelStart=ProcessInfo.processInfo.systemUptime
+            try applyCompactInPlace(&parallel,width:w,height:h,pixelUM:pixelUM,
+                settings:cfg,usePreparedPSFCache:false,fftWorkers:2,
+                reuseIdenticalKernelRows:true,rowReuseObserver:{reusedChannels.append($0)})
+            let parallelSeconds=ProcessInfo.processInfo.systemUptime-parallelStart
+            let parallelEqual=zip(parallel,reference).allSatisfy{$0.0.bitPattern==$0.1.bitPattern}
+            passed=passed && parallelEqual
+            observe("fft_two_worker_candidate_ready",["family":family.rawValue,
+                "seconds":String(parallelSeconds),"preparedSeconds":String(preparedSeconds),
+                "bitwiseEqual":String(parallelEqual),"kernelRowsReusedChannels":String(reusedChannels.count),
+                "scope":"fixed_full_grid_not_12MP","productionEnabled":"false"])
             let candidateStart=ProcessInfo.processInfo.systemUptime
             let candidate=try apply(input,width:w,height:h,pixelUM:pixelUM,
                                     settings:cfg,fftBackend:.accelerateCandidate,usePreparedPSFCache:false)
@@ -743,9 +772,13 @@ enum OriginalSourceDiffusion {
     static func applyCompactInPlace(
         _ rgb:inout [Double],width:Int,height:Int,pixelUM:Double,
         settings:Settings,usePreparedPSFCache:Bool=true,
-        usePreparedFFT:Bool=true
+        usePreparedFFT:Bool=true,fftWorkers:Int=1,
+        reuseIdenticalKernelRows:Bool=false,rowReuseObserver:((Int)->Void)?=nil
     ) throws {
         try settings.validate()
+        guard (fftWorkers==1 || fftWorkers==2),usePreparedFFT || fftWorkers==1 else {
+            throw Failure.invalid("FFT candidate worker configuration invalid")
+        }
         guard width>0,height>0,width<=Int.max/height/3,
               rgb.count==width*height*3,rgb.allSatisfy({$0.isFinite}) else {
             throw Failure.invalid("紧凑原版扩散需要完整有限的 Double RGB 光子帧")
@@ -804,16 +837,31 @@ enum OriginalSourceDiffusion {
             }
             if let forwardRow,let forwardColumn {
                 try fft2Prepared(&ar,&ai,width:fftW,height:fftH,row:forwardRow,column:forwardColumn,
-                                 blockReal:&blockReal,blockImag:&blockImag)
+                                 blockReal:&blockReal,blockImag:&blockImag,workers:fftWorkers)
             } else {fft2(&ar,&ai,width:fftW,height:fftH,inverse:false)}
-            for y in 0..<ks {
-                if y & 31 == 0 {try Task.checkCancellation()}
-                zero(&rr);zero(&ri)
-                for x in 0..<ks {rr[x]=kernel.data[(y*ks+x)*3+c]}
-                if let forwardRow {forwardRow.transform(&rr,&ri)}
-                else {fft1(&rr,&ri,inverse:false)}
-                let origin=y*fftW
-                for x in 0..<fftW {kr[origin+x]=rr[x];ki[origin+x]=ri[x]}
+            // The row spectra remain untouched during column transforms.
+            // Reuse only when EVERY actual source kernel Double word matches
+            // the previous channel, including signed zero; no full-grid retention.
+            var identicalRows=reuseIdenticalKernelRows && c>0
+            if identicalRows {
+                for k in 0..<(ks*ks) {
+                    if k & 4095 == 0 {try Task.checkCancellation()}
+                    if kernel.data[k*3+c].bitPattern != kernel.data[k*3+c-1].bitPattern {
+                        identicalRows=false;break
+                    }
+                }
+            }
+            if identicalRows {rowReuseObserver?(c)}
+            else {
+                for y in 0..<ks {
+                    if y & 31 == 0 {try Task.checkCancellation()}
+                    zero(&rr);zero(&ri)
+                    for x in 0..<ks {rr[x]=kernel.data[(y*ks+x)*3+c]}
+                    if let forwardRow {forwardRow.transform(&rr,&ri)}
+                    else {fft1(&rr,&ri,inverse:false)}
+                    let origin=y*fftW
+                    for x in 0..<fftW {kr[origin+x]=rr[x];ki[origin+x]=ri[x]}
+                }
             }
             if let forwardColumn {
                 // Reuse exactly the same column work block as the image
@@ -836,9 +884,7 @@ enum OriginalSourceDiffusion {
                                             else {c[k]=zr[x+j];d[k]=zi[x+j]}
                                         }
                                     }
-                                    for j in 0..<count {
-                                        forwardColumn.transform(c.advanced(by:j*fftH),d.advanced(by:j*fftH))
-                                    }
+                                    transformSpans(c,d,count:count,step:fftH,plan:forwardColumn,workers:fftWorkers)
                                     for y in 0..<fftH {
                                         let offset=y*fftW+x
                                         for j in 0..<count {
@@ -872,7 +918,7 @@ enum OriginalSourceDiffusion {
             try Task.checkCancellation()
             if let inverseRow,let inverseColumn {
                 try fft2Prepared(&ar,&ai,width:fftW,height:fftH,row:inverseRow,column:inverseColumn,
-                                 blockReal:&blockReal,blockImag:&blockImag)
+                                 blockReal:&blockReal,blockImag:&blockImag,workers:fftWorkers)
             } else {fft2(&ar,&ai,width:fftW,height:fftH,inverse:true)}
             // All source pixels of this channel have been consumed by
             // the FFT. Other channels have not been modified.

@@ -215,7 +215,21 @@ enum SourcePhysicalImageParity {
             precondition(phases.contains("paper_diffusion_ready"))
             precondition(phases.contains("three_sublayer_grain_ready"))
         }
-        print("PASS Build156 full optical cache cold/hot bitwise, \(count) upstream key mutations")
+        var expected=frame
+        try OriginalSourcePhysicalImage.developInPlace(&expected,parameters:downstream)
+        var consumed=OriginalSourcePixelIO.Frame(width:w,height:h,rgb:input.map{$0})
+        let lease=session.lease()
+        precondition(session.takeMatchingDensity(baseKey,expectedGeneration:lease &+ 1)==nil)
+        var consumePhases=[String]()
+        try OriginalSourcePhysicalImage.developInPlace(&consumed,parameters:downstream,
+            phaseMemoryObserver:{consumePhases.append($0)},filmDensityReuse:session,
+            filmDensityReuseLease:lease,allowSeededGrainDensityReuse:true,
+            consumeExistingFilmDensity:true)
+        precondition(consumed.rgb.map{$0.bitPattern}==expected.rgb.map{$0.bitPattern})
+        precondition(consumePhases.contains("export_density_cache_consumed"))
+        precondition(!session.hasEntry(expectedGeneration:session.lease()))
+        precondition(!consumePhases.contains("camera_diffusion_ready") && consumePhases.contains("three_sublayer_grain_ready") && consumePhases.contains("paper_diffusion_ready"))
+        print("PASS Build156 full optical cache cold/hot bitwise, \(count) upstream key mutations; one-shot consumed export bitwise")
     }
 
     static func evaluate(

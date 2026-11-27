@@ -63,7 +63,17 @@ enum P1OriginalRawACESIngress {
     // Only called within the serialized export render, AFTER a possibly
     // cancelled preview has released its working arrays. Preserve the exact
     // confirmed dimensions, captured allowance, and fresh 70% gate.
-    static func validateConfirmedExportPlan(_ plan:SafeExportResolution.Plan) throws {
+    static func validateConfirmedExportPlan(_ plan:SafeExportResolution.Plan,
+        rawURL:URL,opticalSettings:OriginalSourcePhysicalImage.Parameters,
+        crop:Build141RAWPreCrop.Selection?) throws {
+        if plan.committedSourceBytes>0 {
+            let verified=try verifiedExportDensityBytes(rawURL,opticalSettings:opticalSettings,
+                width:plan.sourceWidth,height:plan.sourceHeight,crop:crop)
+            try SafeExportResolution.validateBeforeRender(plan,verifiedCommittedSourceBytes:verified)
+            OPTDeviceFeedback.mark("export_hot_plan_admitted",["verifiedCommittedSourceBytes":String(verified),
+                "estimatedPeakBytes":String(plan.estimatedPeakBytes)])
+            return
+        }
         try SafeExportResolution.retryAfterCacheEviction(
             attempt:{try SafeExportResolution.validateBeforeRender(plan)},
             isMemoryRefusal:{$0 is SafeExportResolution.Failure},
@@ -150,6 +160,59 @@ enum P1OriginalRawACESIngress {
         } catch {
             return nil
         }
+    }
+
+    // Hash actual verified packed RAW samples with the exact normalization
+    // used by makeSourceFrame, without a second full Double allocation.
+    static func verifiedExportDensityBytes(_ rawURL:URL,
+        opticalSettings:OriginalSourcePhysicalImage.Parameters,width:Int,height:Int,
+        crop:Build141RAWPreCrop.Selection?) throws -> UInt64 {
+        guard crop==nil,SafeExportResolution.currentProcessHeadroom() != nil,
+              let identity=try fullSourceKey(rawURL),
+              let packed=fullInputCache.matchingValue(identity),
+              packed.width==width,packed.height==height,width>0,height>0,
+              packed.packedRGB16.count==width*height*6 else{return 0}
+        var p=opticalSettings
+        p.cameraInputColorSpace = .acesLinear
+        p.enableFullOpticalDensityCache=true
+        let seeded=p.sourceGrain.active && p.sourceGrain.sublayersActive
+        guard OriginalSourcePhysicalImage.canReuseFilmDensity(p,allowSeededGrain:seeded) else{return 0}
+        let lease=fullDensityCache.lease()
+        let normalizedHash=try normalizedRGBSHA256(packed)
+        let key=try OriginalSourcePhysicalImage.filmDensityReuseKey(
+            inputSHA256:normalizedHash,width:width,height:height,parameters:p,
+            allowSeededGrain:seeded)
+        guard let density=fullDensityCache.matchingDensity(key,expectedGeneration:lease),
+              density.count==width*height*3,
+              try fullSourceKey(rawURL)==identity,
+              fullDensityCache.hasEntry(expectedGeneration:lease) else{return 0}
+        return UInt64(density.count)*8
+    }
+
+    private static func normalizedRGBSHA256(_ source:Source) throws -> [UInt8] {
+        guard source.width>0,source.height>0,source.width<=Int.max/source.height/6,
+              source.packedRGB16.count==source.width*source.height*6 else {
+            throw Failure.invalid("RAW packed hash geometry mismatch")
+        }
+        var hash=SHA256()
+        var chunk=[Double](repeating:0,count:4096)
+        try source.packedRGB16.withUnsafeBytes {buffer in
+            let bytes=buffer.bindMemory(to:UInt8.self)
+            let count=source.width*source.height*3
+            for start in stride(from:0,to:count,by:chunk.count) {
+                try Task.checkCancellation()
+                let n=min(chunk.count,count-start)
+                for j in 0..<n {
+                    let i=(start+j)*2
+                    let sample=UInt16(bytes[i]) | (UInt16(bytes[i+1]) << 8)
+                    chunk[j]=Double(Float(sample)/Float(65535.0))
+                }
+                chunk.withUnsafeBytes {raw in
+                    hash.update(bufferPointer:UnsafeRawBufferPointer(start:raw.baseAddress,count:n*8))
+                }
+            }
+        }
+        return Array(hash.finalize())
     }
 
     private static func openFullEditorSource(
@@ -316,7 +379,8 @@ enum P1OriginalRawACESIngress {
     static func developSourceCandidate(
         _ rawURL: URL, opticalSettings: OriginalSourcePhysicalImage.Parameters,
         crop:Build141RAWPreCrop.Selection? = nil,
-        retainDecodedSource:Bool = false
+        retainDecodedSource:Bool = false,
+        consumeConfirmedDensity:Bool = false
     ) throws -> OriginalSourcePixelIO.Frame {
         var selected = opticalSettings
         // Python raw_file_processor outputs linear ACES2065-1 by default;
@@ -377,6 +441,24 @@ enum P1OriginalRawACESIngress {
         // and excludes the unseeded workers. Never cache grain output.
         let allowSeededFull=selected.sourceGrain.active &&
             selected.sourceGrain.sublayersActive
+        if consumeConfirmedDensity {
+            guard crop==nil,!retainDecodedSource,acquisition.key != nil else {
+                throw Failure.invalid("原尺寸导出缓存已失效；请重新确认导出")
+            }
+            try OriginalSourcePhysicalImage.validateMemoryBudget(width:working.width,height:working.height,parameters:selected)
+            var frame=try makeSourceFrame(working,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+            OPTDeviceFeedback.mark("float64_input_ready")
+            OPTDeviceFeedback.mark("full_density_cache_policy",["eligible":"true","reason":"confirmed_one_shot_export",
+                "retainPreview":"false","requiredHotHit":"true"])
+            recordSerialGrainLifetime(selected,width:working.width,height:working.height,cacheAdmitted:false)
+            try OriginalSourcePhysicalImage.developInPlace(&frame,parameters:selected,
+                phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},filmDensityReuse:fullDensityCache,
+                filmDensityReuseLease:densityLease,allowSeededGrainDensityReuse:allowSeededFull,
+                consumeExistingFilmDensity:true)
+            try Task.checkCancellation()
+            OPTDeviceFeedback.mark("optics_done")
+            return frame
+        }
         let densityBytes=UInt64(working.width)*UInt64(working.height)*24
         let retainedBytes=densityBytes+UInt64(decoded.packedRGB16.count)
         let eligible=crop==nil &&
@@ -560,7 +642,7 @@ enum P1OriginalRawACESIngress {
             }
         }
         func trial(_ name:String,_ params:OriginalSourcePhysicalImage.Parameters,
-                   cache:Bool,expectedLease:UInt64?=nil,requireHit:Bool=false) throws -> (digest:[UInt8],hit:Bool,stored:Bool,invalidated:Bool) {
+                   cache:Bool,expectedLease:UInt64?=nil,requireHit:Bool=false,consume:Bool=false) throws -> (digest:[UInt8],hit:Bool,stored:Bool,invalidated:Bool) {
             try Task.checkCancellation()
             OPTDeviceFeedback.mark("full_density_trial_begin",[
                 "case":name,"cache":String(cache),"outputCCTF":String(params.sourceOutputCCTFEncoding),
@@ -574,6 +656,13 @@ enum P1OriginalRawACESIngress {
                 throw Failure.invalid("原尺寸缓存对照内存告警/代际失效")
             }
             var frame=try makeSourceFrame(source,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+            if name=="baseline_cold" {
+                var fullHash=SHA256()
+                frame.rgb.withUnsafeBytes {fullHash.update(bufferPointer:$0)}
+                let streamEqual=try normalizedRGBSHA256(source)==Array(fullHash.finalize())
+                OPTDeviceFeedback.mark("export_stream_hash_parity",["equal":String(streamEqual)])
+                guard streamEqual else {throw Failure.invalid("RAW streaming input SHA mismatch")}
+            }
             var phases=[String]()
             let sampler=Build133RAWMemoryLadder.RSSSampler()
             let start=ProcessInfo.processInfo.systemUptime
@@ -587,7 +676,8 @@ enum P1OriginalRawACESIngress {
                     },filmDensityReuse:cache ? session : nil,
                     filmDensityReuseLease:expectedLease,
                     allowSeededGrainDensityReuse:allowSeededDiagnostic,
-                    requireExistingFilmDensity:requireHit)
+                    requireExistingFilmDensity:requireHit && !consume,
+                    consumeExistingFilmDensity:consume)
             } catch {
                 _=sampler.finish()
                 throw error
@@ -601,12 +691,12 @@ enum P1OriginalRawACESIngress {
             let hit=phases.contains("film_density_cache_hit")
             let stored=phases.contains("film_density_cache_stored")
             let invalidated=phases.contains("film_density_cache_store_invalidated") ||
-                (cache && !session.hasEntry(expectedGeneration:session.lease()))
+                (cache && (consume ? (!phases.contains("export_density_cache_consumed") || session.hasEntry(expectedGeneration:session.lease())) : !session.hasEntry(expectedGeneration:session.lease())))
             if allowSeededDiagnostic && !phases.contains("three_sublayer_grain_ready") {
                 throw Failure.invalid("原尺寸颗粒缓存对照未执行实际颗粒")
             }
             OPTDeviceFeedback.mark("full_density_trial_result",[
-                "case":name,"seconds":String(elapsed),"hit":String(hit),
+                "case":name,"seconds":String(elapsed),"hit":String(hit),"consumed":String(consume),
                 "thermalBefore":String(thermalBefore),
                 "thermalAfter":String(ProcessInfo.processInfo.thermalState.rawValue),
                 "workers":String(params.deterministicPixelWorkers),
@@ -634,7 +724,7 @@ enum P1OriginalRawACESIngress {
         // assumed scratch release. Live 80% headroom and full peak stay.
         let hotLease=session.lease()
         let hot=try trial("cache_hot_changed_CCTF",changed,cache:true,
-                          expectedLease:hotLease,requireHit:true)
+                          expectedLease:hotLease,requireHit:true,consume:true)
         let coldEqual=cold.digest==baseline.digest
         let hotEqual=hot.digest==baselineChanged.digest
         session.clear()
@@ -660,7 +750,7 @@ enum P1OriginalRawACESIngress {
         let passed=coldEqual && hotEqual && hot.hit && !hot.invalidated && printEqual
         OPTDeviceFeedback.mark("full_density_compare_result",[
             "passed":String(passed),"coldAllBytesSHA256Equal":String(coldEqual),
-            "hotAllBytesSHA256Equal":String(hotEqual),"hotHit":String(hot.hit),
+            "hotAllBytesSHA256Equal":String(hotEqual),"hotHit":String(hot.hit),"oneShotConsumed":"true",
             "productionEnabled":"false","cacheCleared":"true",
             "parallelPrintSHA256Equal":complex ? "not_tested" : String(printEqual),
             "fullOpticalCache":String(complex),

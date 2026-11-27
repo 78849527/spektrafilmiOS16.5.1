@@ -65,6 +65,8 @@ enum SafeExportResolution {
         let allocationAllowanceBytes: UInt64
         let estimatedPeakBytes: UInt64
         let fullSourceProcessing: Bool
+        // Resident verified source density transferred once, never a future release.
+        let committedSourceBytes: UInt64
 
         var summary: String {
             let estimatedMB = estimatedPeakBytes / 1_000_000
@@ -81,6 +83,7 @@ enum SafeExportResolution {
             设备安全预算：约 \(budgetMB) MB；本档计划上限 \(allowanceMB) MB（估算上限，非预占内存）
             当前 App 可分配余量：\(headroom)
             \(fullSourceProcessing ? "RAW 光学冲印仍在原尺寸完成，导出缩图不节省冲印内存。" : "")
+            \(committedSourceBytes>0 ? "精确胶片密度缓存已验证；导出一次性消费，预计新增分配 \((estimatedPeakBytes-committedSourceBytes)/1_000_000) MB。" : "")
             JPEG 质量 98%。估算不是内存保证；失败不自动降档。
             """
         }
@@ -111,7 +114,8 @@ enum SafeExportResolution {
         mode: ExportResolutionMode,
         estimatedBytesPerPixel: UInt64 =
             SafeExportResolution.estimatedBytesPerPixel,
-        fullSourceProcessing: Bool = false
+        fullSourceProcessing: Bool = false,
+        committedSourceBytes: UInt64 = 0
     ) throws -> Plan {
         guard width > 0, height > 0, width <= 50_000,
               height <= 50_000, physicalMemory > 0,
@@ -120,6 +124,11 @@ enum SafeExportResolution {
             throw Failure.invalid("输出分辨率：原图尺寸或设备内存数据无效")
         }
         let sourcePixels = UInt64(width) * UInt64(height)
+        guard committedSourceBytes==0 || (fullSourceProcessing &&
+            mode.permitsRAWFullOpticalExport && committedSourceBytes==sourcePixels*24 &&
+            estimatedBytesPerPixel>=24) else {
+            throw Failure.invalid("导出缓存必须是完整原尺寸 Float64 CMY")
+        }
         if case .megapixels(let count) = mode {
             guard ExportResolutionMode.presetWanPixels.contains(count) else {
                 throw Failure.invalid("像素档位必须是 720/800/900/1000/1200 万")
@@ -201,7 +210,8 @@ enum SafeExportResolution {
                     sourcePixels * 24 + dimensions.pixels * 48
                   )
                 : dimensions.pixels * estimatedBytesPerPixel,
-            fullSourceProcessing: fullSourceProcessing
+            fullSourceProcessing: fullSourceProcessing,
+            committedSourceBytes: committedSourceBytes
         )
     }
 
@@ -210,14 +220,16 @@ enum SafeExportResolution {
         width: Int, height: Int, mode: ExportResolutionMode,
         estimatedBytesPerPixel: UInt64 =
             SafeExportResolution.estimatedBytesPerPixel,
-        fullSourceProcessing: Bool = false
+        fullSourceProcessing: Bool = false,
+        committedSourceBytes: UInt64 = 0
     ) throws -> Plan {
         try plan(
             width:width, height:height,
             physicalMemory:ProcessInfo.processInfo.physicalMemory,
             processAvailableMemory:currentProcessHeadroom(),
             mode:mode,estimatedBytesPerPixel:estimatedBytesPerPixel,
-            fullSourceProcessing:fullSourceProcessing
+            fullSourceProcessing:fullSourceProcessing,
+            committedSourceBytes:committedSourceBytes
         )
     }
 
@@ -226,9 +238,16 @@ enum SafeExportResolution {
     /// reservation and never changes selected dimensions or image algorithms.
     /// Pure helper permits deterministic small-memory tests.
     static func validateForHeadroom(
-        _ plan: Plan, processAvailableMemory current: UInt64?
+        _ plan: Plan, processAvailableMemory current: UInt64?,
+        verifiedCommittedSourceBytes:UInt64=0
     ) throws {
-        guard plan.estimatedPeakBytes <= plan.allocationAllowanceBytes else {
+        guard plan.committedSourceBytes==verifiedCommittedSourceBytes,
+              verifiedCommittedSourceBytes<=plan.estimatedPeakBytes,
+              verifiedCommittedSourceBytes==0 || current != nil else {
+            throw Failure.invalid("导出缓存身份或实际可分配内存已失效；请重新确认导出")
+        }
+        let remainingPeak=plan.estimatedPeakBytes-verifiedCommittedSourceBytes
+        guard remainingPeak <= plan.allocationAllowanceBytes else {
             throw Failure.invalid(
                 "导出预检：已选 \(plan.dimensions.width)×\(plan.dimensions.height) " +
                 "预计使用 \(plan.estimatedPeakBytes / 1_000_000) MB，" +
@@ -246,7 +265,7 @@ enum SafeExportResolution {
             case .megapixels: fraction = originalBudgetPercent
             }
             guard current > 0,
-                  plan.estimatedPeakBytes <= (current / 100) * fraction else {
+                  remainingPeak <= (current / 100) * fraction else {
                 throw Failure.invalid(
                     "导出预检：当前可分配内存仅 " +
                     "\(current / 1_000_000) MB，" +
@@ -273,9 +292,10 @@ enum SafeExportResolution {
     }
 
     /// Repeat the live check when the confirmed render actually starts.
-    static func validateBeforeRender(_ plan: Plan) throws {
+    static func validateBeforeRender(_ plan: Plan,verifiedCommittedSourceBytes:UInt64=0) throws {
         try validateForHeadroom(
-            plan, processAvailableMemory: currentProcessHeadroom()
+            plan, processAvailableMemory: currentProcessHeadroom(),
+            verifiedCommittedSourceBytes:verifiedCommittedSourceBytes
         )
     }
 

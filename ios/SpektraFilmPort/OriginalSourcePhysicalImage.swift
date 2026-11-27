@@ -309,6 +309,13 @@ enum OriginalSourcePhysicalImage {
             guard generation==expectedGeneration,let entry,entry.0==key else{return nil}
             return entry.1
         }
+        func takeMatchingDensity(_ key:Key,expectedGeneration:UInt64)->[Double]? {
+            lock.lock();defer{lock.unlock()}
+            guard generation==expectedGeneration,let entry,entry.0==key else{return nil}
+            generation &+= 1
+            self.entry=nil
+            return entry.1
+        }
         @discardableResult
         func clear(expectedGeneration:UInt64?=nil)->UInt64 {
             lock.lock();defer{lock.unlock()}
@@ -366,6 +373,18 @@ enum OriginalSourcePhysicalImage {
         frame:OriginalSourcePixelIO.Frame,parameters:Parameters,
         allowSeededGrain:Bool=false
     ) throws -> FilmDensityReuse.Key {
+        var hasher=SHA256()
+        frame.rgb.withUnsafeBytes {hasher.update(bufferPointer:$0)}
+        return try filmDensityReuseKey(inputSHA256:Array(hasher.finalize()),
+            width:frame.width,height:frame.height,parameters:parameters,
+            allowSeededGrain:allowSeededGrain)
+    }
+
+    static func filmDensityReuseKey(inputSHA256:[UInt8],width:Int,height:Int,
+        parameters:Parameters,allowSeededGrain:Bool=false) throws -> FilmDensityReuse.Key {
+        guard inputSHA256.count==32,width>0,height>0 else {
+            throw Failure.invalid("胶片密度缓存输入摘要无效")
+        }
         // Reject unsupported dependencies rather than claiming that a
         // downstream setting cannot affect a source filming calibration.
         guard canReuseFilmDensity(parameters,allowSeededGrain:allowSeededGrain) else {
@@ -378,9 +397,6 @@ enum OriginalSourcePhysicalImage {
         case .proPhotoLinear:space=1
         case .acesLinear:space=2
         }
-        var hasher=SHA256()
-        frame.rgb.withUnsafeBytes {hasher.update(bufferPointer:$0)}
-        let digest=Array(hasher.finalize())
         var bits=([parameters.cameraEV,parameters.cameraFilmingReferenceScale,
                    parameters.dir.diffusionRadiusScale,parameters.dir.tailWeight]
                   + parameters.sourceGrain.densityMin).map{$0.bitPattern}
@@ -404,7 +420,7 @@ enum OriginalSourcePhysicalImage {
             bits.append(UInt64(h.bounceCount))
             flags += [true,c.active,d.active,h.active,h.renormalize]
         }
-        return .init(inputSHA256:digest,width:frame.width,height:frame.height,
+        return .init(inputSHA256:inputSHA256,width:width,height:height,
             filmID:parameters.filmID,colorSpace:space,filmBits:bits,
             flags:flags,referencePixelSize:parameters.dir.referencePixelSizeUM?.bitPattern)
     }
@@ -987,7 +1003,8 @@ enum OriginalSourcePhysicalImage {
         allowSeededGrainDensityReuse:Bool = false,
         paperDensityReuse:FilmDensityReuse? = nil,
         paperDensityReuseLease:UInt64? = nil,
-        requireExistingFilmDensity:Bool = false
+        requireExistingFilmDensity:Bool = false,
+        consumeExistingFilmDensity:Bool = false
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -1005,6 +1022,20 @@ enum OriginalSourcePhysicalImage {
                 allowSeededGrain:allowSeededGrainDensityReuse)}
             catch {filmDensityReuse.clear();throw error}
         } else {reuseKey=nil}
+        // A confirmed export transfers ownership instead of retaining a second CMY.
+        if consumeExistingFilmDensity {
+            guard !requireExistingFilmDensity,stageDoubleObserver==nil,paperDensityReuse==nil,
+                  let filmDensityReuse,let reuseKey,let filmDensityReuseLease,
+                  let density=filmDensityReuse.takeMatchingDensity(reuseKey,expectedGeneration:filmDensityReuseLease),
+                  density.count==frame.rgb.count,
+                  density.withUnsafeBufferPointer({cache in
+                      frame.rgb.withUnsafeBufferPointer {input in cache.baseAddress != input.baseAddress}
+                  }) else {
+                throw Failure.invalid("原尺寸导出精确密度缓存已失效；请重新确认导出")
+            }
+            frame.rgb=density
+            phaseMemoryObserver?("export_density_cache_consumed")
+        }
         let committedInputBytes=UInt64(frame.rgb.count) *
             UInt64(MemoryLayout<Double>.stride)
         // On an explicitly required full-grid hot hit, pin the exact
@@ -1043,8 +1074,8 @@ enum OriginalSourcePhysicalImage {
             width:w,height:h,parameters:parameters,
             stageObserver:stageDoubleObserver != nil)
         let compactCache=parameters.enableFullOpticalDensityCache &&
-            filmDensityReuse != nil && paperDensityReuse==nil && envelope.compactSequentialFFT
-        let compactOptics=(filmDensityReuse==nil || compactCache) && envelope.compactSequentialFFT
+            filmDensityReuse != nil && !consumeExistingFilmDensity && paperDensityReuse==nil && envelope.compactSequentialFFT
+        let compactOptics=(filmDensityReuse==nil || compactCache || consumeExistingFilmDensity) && envelope.compactSequentialFFT
         // Recheck actual headroom immediately before a stage allocates
         // large buffers. Include potential COW and conservative per-stage
         // reserve; source RGB is already resident. No hidden downgrade.
@@ -1071,7 +1102,7 @@ enum OriginalSourcePhysicalImage {
                 throw Failure.invalid("相纸密度缓存候选仅支持无颗粒无印相扩散串行对照")
             }
         }
-        if filmDensityReuse != nil {
+        if filmDensityReuse != nil && !consumeExistingFilmDensity {
             guard stageDoubleObserver==nil else {
                 throw Failure.invalid("胶片密度复用候选不允许伪造已跳过的阶段观察数据")
             }
@@ -1135,9 +1166,9 @@ enum OriginalSourcePhysicalImage {
         let dirOn=dynamicDIR?.settings.active ?? parameters.sourceCouplersActive
         phaseMemoryObserver?("optical_parameters_ready")
         let size=w*h*3
-        let reuseTransaction=pinnedTransaction ?? reuseKey.flatMap { key in
+        let reuseTransaction=consumeExistingFilmDensity ? nil : (pinnedTransaction ?? reuseKey.flatMap { key in
             filmDensityReuse?.begin(key,expectedGeneration:filmDensityReuseLease)
-        }
+        })
         pinnedTransaction=nil
         var pendingDensity:[Double]?
         var paperKey:FilmDensityReuse.Key?
@@ -1201,7 +1232,10 @@ enum OriginalSourcePhysicalImage {
             }
             return rgb
         }
-        if let cached=reuseTransaction?.density {
+        if consumeExistingFilmDensity {
+            phaseMemoryObserver?("film_density_cache_hit")
+            phaseMemoryObserver?("full_optical_upstream_reused")
+        } else if let cached=reuseTransaction?.density {
             guard cached.count==size else {throw Failure.invalid("胶片密度复用尺寸不一致")}
             frame.rgb=cached
             phaseMemoryObserver?("film_density_cache_hit")

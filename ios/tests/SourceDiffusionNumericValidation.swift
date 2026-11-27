@@ -57,6 +57,12 @@ struct SourceDiffusionNumericValidation {
                         usePreparedPSFCache:false)
                     precondition(prepared.map{$0.bitPattern}==legacy.map{$0.bitPattern},
                                  "Build155 prepared blocked full-grid FFT differs")
+                    var parallel=input
+                    try OriginalSourceDiffusion.applyCompactInPlace(
+                        &parallel,width:w,height:h,pixelUM:pixelUM,settings:cfg,
+                        usePreparedPSFCache:false,fftWorkers:2,reuseIdenticalKernelRows:true)
+                    precondition(parallel.map{$0.bitPattern}==legacy.map{$0.bitPattern},
+                                 "Build157 two-worker and exact kernel row reuse differs")
                     precondition(input.count==compact.count)
                     compactCases+=1
                 }
@@ -67,6 +73,7 @@ struct SourceDiffusionNumericValidation {
             "PASS Build154 compact full-grid FFT 64 bitwise cases\n".utf8))
         FileHandle.standardError.write(Data(
             "PASS Build155 prepared blocked full-grid FFT 64 bitwise cases\n".utf8))
+        FileHandle.standardError.write(Data("PASS Build157 two-worker and exact kernel row reuse 64 bitwise cases\n".utf8))
         let dimensions=[(11,9),(16,13),(29,21),(24,19)]
         for caseIndex in settings.indices {
             let (w,h)=dimensions[caseIndex]

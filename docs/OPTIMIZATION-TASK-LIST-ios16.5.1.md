@@ -358,6 +358,12 @@
 - OPT32 export bridge still not achieved in full optical case: preflight evicted optional caches, headroom2809771264→3175774208B, export estimate2170312704B, allowance2222583160B. Packed-only eviction insufficient under unchanged 70% gate; export B8565FA2 actual full_cache_miss_decode_begin reason export_preflight_pressure, full_density_cache_policy eligible=false identity_lease_or_retention, no upstream hit; JPEG121.45s/1815.500MB vs Build155 132.89s/1823MB (different EV/thermal, descriptive only). No resize. Camera FFT20.75s, paper FFT24.20s. No final export rejection in this report.
 - Next batch: OPT32 exact cache-aware export admission using matched owned CMY only after input SHA/key/lease validation; preserve unchanged dynamic70/80% checks, no future-free credit, no weakened plan; independent key-miss and low-headroom regression. OPT34 reduce cache/FFT working overlap via audited actual ownership and lifetime (not merely budget lowering); OPT31 evaluate exact paper spectrum reuse with real full-grid memory and SHA; OPT33 independent Float64 FFT worker comparison before promotion. No new build until actual implementation + consolidated gates. Fix stale full optical diagnostic UI says five trials (complex uses four). Document UI precise mode grain switch sourcePhysicalGrainEnabled, not legacy grainEnabled. Recommend configure via quick preview before full test. Full source NumPy/RAW/ICC whole-image certification remains pending.
 
+## Build157 集中候选
+
+- OPT32/34: 未裁切受支持设置；真实 RAW 文件 SHA、实际 ACES16→Float32→Double 输入的有界流式 SHA、全部上游参数、尺寸及缓存租约均匹配才确认已驻留 CMY 24 B/px。总峰值估计不减；70% 比较实际尚需分配，确认时锁内重新验证，渲染以真实 Double 输入 SHA 再验证并一次性消费密度，释放重复输入；不保留导出缓存、不跳过颗粒/相纸/扫描、不降低80%动态准入。实际 headroom 2809771264 B、peak 2170312704 B、resident 292626432 B 回归；失效/余量不足拒绝。四轮全光学独立实际 RAW SHA 诊断的热试验改为一次性消费，另核验流式 SHA。完整预览的保留密度峰值尚未降低。
+- OPT31/33: 诊断候选在相邻通道每个原始 PSF Double 位完全相同时复用已存在的核行频谱；不保留跨运行全频谱。双核使用现有互不重叠行/列工作区及不可变计划，不改变蝶形/乘法顺序，不增加大网格。64 个原网格/反射逐位回归和四家族512×384真机对照，生产默认仍单核、禁用核行复用。未声称12MP速度收益或跨次印相频谱复用完成。
+- 修正全光学四轮诊断界面文案。统一 Build157 v1.8.123 回归与一次IPA；完整原版 Python/ICC 整图科学认证仍待证。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

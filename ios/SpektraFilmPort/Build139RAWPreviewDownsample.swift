@@ -109,6 +109,12 @@ enum Build139RAWPreviewDownsample {
             return generation
         }
 
+        func matchingValue(_ key:FullSourceKey) -> Value? {
+            lock.lock();defer {lock.unlock()}
+            guard let entry,entry.key==key else{return nil}
+            return entry.value
+        }
+
         func take(_ key:FullSourceKey?,generation expected:UInt64) -> Value? {
             takeWithDisposition(key,generation:expected).value
         }

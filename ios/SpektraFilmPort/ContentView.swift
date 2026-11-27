@@ -3220,6 +3220,11 @@ final class PhotoEditorModel: ObservableObject {
             // the original FFT workspace or sequential phase maximum.
             return (opticalPlan.estimatedPeakBytes+pixels-1)/pixels + decoderOverhead
         }
+        var verifiedDensityBytes:UInt64=0
+        if let rawPhysicalSettings,let rawURL=capturedRAWURL,resolution.permitsRAWFullOpticalExport {
+            verifiedDensityBytes=try P1OriginalRawACESIngress.verifiedExportDensityBytes(rawURL,
+                opticalSettings:rawPhysicalSettings,width:opticalWidth,height:opticalHeight,crop:inputCrop)
+        }
         let plan = try SafeExportResolution.capture(
             width: opticalWidth, height: opticalHeight,
             mode: resolution,
@@ -3249,7 +3254,8 @@ final class PhotoEditorModel: ObservableObject {
                    ? Build96TIFF16Writer.estimatedBytesPerPixel
                    : SafeExportResolution.estimatedBytesPerPixel)),
             fullSourceProcessing:rawOriginalSourceActive &&
-                sourcePixelIOEnabled && sourcePhysicalDirectEnabled
+                sourcePixelIOEnabled && sourcePhysicalDirectEnabled,
+            committedSourceBytes:verifiedDensityBytes
         )
         if let rawPhysicalSettings {
             // RAW develops its selected original-RAW crop, even if final
@@ -3289,7 +3295,7 @@ final class PhotoEditorModel: ObservableObject {
         }
         // Include original JPEG in the same early admission; the source
         // photo may be larger than a stable iPhone process can render.
-        try SafeExportResolution.validateBeforeRender(plan)
+        try SafeExportResolution.validateBeforeRender(plan,verifiedCommittedSourceBytes:verifiedDensityBytes)
         return plan
     }
 
@@ -3339,9 +3345,10 @@ final class PhotoEditorModel: ObservableObject {
                 let url=try await Task.detached(priority:.userInitiated) {
                     try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"jpeg_export") {
                       try autoreleasepool { () throws -> URL in
-                        try P1OriginalRawACESIngress.validateConfirmedExportPlan(plan)
+                        try P1OriginalRawACESIngress.validateConfirmedExportPlan(plan,rawURL:rawURL,opticalSettings:optical,crop:crop)
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
-                            rawURL,opticalSettings:optical,crop:crop
+                            rawURL,opticalSettings:optical,crop:crop,
+                            consumeConfirmedDensity:plan.committedSourceBytes>0
                         )
                         // Full source RAW optics are finished before
                         // user-requested output-only Double downsampling.
@@ -3476,9 +3483,10 @@ final class PhotoEditorModel: ObservableObject {
                 let url=try await Task.detached(priority:.userInitiated) {
                     try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"tiff16_export") {
                       try autoreleasepool { () throws -> URL in
-                        try P1OriginalRawACESIngress.validateConfirmedExportPlan(confirmedPlan)
+                        try P1OriginalRawACESIngress.validateConfirmedExportPlan(confirmedPlan,rawURL:rawURL,opticalSettings:optical,crop:crop)
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
-                            rawURL,opticalSettings:optical,crop:crop
+                            rawURL,opticalSettings:optical,crop:crop,
+                            consumeConfirmedDensity:confirmedPlan.committedSourceBytes>0
                         )
                         let output=try Build136RAWOutputResize.resample(
                             width:result.width,height:result.height,rgb:result.rgb,
