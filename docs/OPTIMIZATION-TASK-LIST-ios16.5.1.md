@@ -364,6 +364,10 @@
 - OPT31/33: 诊断候选在相邻通道每个原始 PSF Double 位完全相同时复用已存在的核行频谱；不保留跨运行全频谱。双核使用现有互不重叠行/列工作区及不可变计划，不改变蝶形/乘法顺序，不增加大网格。64 个原网格/反射逐位回归和四家族512×384真机对照，生产默认仍单核、禁用核行复用。未声称12MP速度收益或跨次印相频谱复用完成。
 - 修正全光学四轮诊断界面文案。统一 Build157 v1.8.123 回归与一次IPA；完整原版 Python/ICC 整图科学认证仍待证。
 
+## Build157 CI 首轮修复
+
+- 45994303883 / 99ddfd0800d5: Linux 第3步 build141_raw_pre_crop_audit.py:32 assertion failure; macOS skipped. 新 one-shot 分支的 frame 文本匹配与原有单路径顺序检查冲突。修正审计为两个独立路径，均须 crop/geometry→实际内存准入→Double frame→光学；明确 one-shot 禁止 crop。另修复 active workflow exact version floor/ceiling 157/123（之前 floor 与 ceiling 矛盾）。保留全部既有测试；不宣称数值或编译通过。原 Build157 同版本重跑集中门槛。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

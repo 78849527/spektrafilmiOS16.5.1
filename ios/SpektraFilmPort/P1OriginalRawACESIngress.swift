@@ -446,7 +446,7 @@ enum P1OriginalRawACESIngress {
                 throw Failure.invalid("原尺寸导出缓存已失效；请重新确认导出")
             }
             try OriginalSourcePhysicalImage.validateMemoryBudget(width:working.width,height:working.height,parameters:selected)
-            var frame=try makeSourceFrame(working,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
+            var frame = try makeSourceFrame(working,maximumAllowedPixels:OriginalSourcePhysicalImage.maximumPixels)
             OPTDeviceFeedback.mark("float64_input_ready")
             OPTDeviceFeedback.mark("full_density_cache_policy",["eligible":"true","reason":"confirmed_one_shot_export",
                 "retainPreview":"false","requiredHotHit":"true"])

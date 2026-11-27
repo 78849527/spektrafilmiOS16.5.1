@@ -175,9 +175,9 @@ jobs:
           from build_ci_version_floor import minimum_build, minimum_minor
           project=Path('ios/project.yml').read_text()
           assert minimum_build(project,157)
-          assert minimum_minor(project,122)
-          assert not minimum_build(project,157)
-          assert not minimum_minor(project,123)
+          assert minimum_minor(project,123)
+          assert not minimum_build(project,158)
+          assert not minimum_minor(project,124)
           print('PASS current 1.8.123/157, exact processing defaults and all RAW source/crop contracts')
           PY
           git diff --exit-code

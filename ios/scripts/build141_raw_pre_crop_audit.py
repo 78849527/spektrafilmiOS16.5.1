@@ -29,11 +29,19 @@ source=ingress.split("static func developSourceCandidate(",1)[1].split(
     "/// Build139:",1
 )[0]
 assert "let working=try selectedSource(decoded,crop:crop)" in source
-assert source.index("let working=try selectedSource") < source.index(
-    "try OriginalSourcePhysicalImage.validateMemoryBudget("
-) < source.index("var frame = try makeSourceFrame(") < source.index(
-    "OriginalSourcePhysicalImage.developInPlace("
+# Check BOTH routes independently: the hot one-shot export cannot be
+# used for a crop, and both branches must admit the selected geometry
+# before allocating the Double frame or entering the optical renderer.
+hot, ordinary = source.split("if consumeConfirmedDensity {",1)[1].split(
+    "let densityBytes=UInt64(working.width)",1
 )
+assert source.index("let working=try selectedSource") < source.index("if consumeConfirmedDensity {")
+assert "guard crop==nil,!retainDecodedSource,acquisition.key != nil" in hot
+for route in (hot,ordinary):
+    assert route.index("try OriginalSourcePhysicalImage.validateMemoryBudget(") < route.index(
+        "var frame = try makeSourceFrame("
+    ) < route.index("OriginalSourcePhysicalImage.developInPlace(")
+assert "consumeExistingFilmDensity:true" in hot
 assert "width:working.width,height:working.height,parameters:selected" in source
 quick=ingress.split("static func developPreviewWithGeometry(",1)[1].split(
     "/// Match original rawpy:",1
