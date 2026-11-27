@@ -1517,7 +1517,7 @@ enum OriginalSourcePhysicalImage {
                     paperStageObserver:paperObserver
                 )
             }
-            if parallelPixels {
+            if parallelPrint {
                 phaseMemoryObserver?("parallel_paper_scan_begin")
                 var noAux=[Double]()
                 try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,

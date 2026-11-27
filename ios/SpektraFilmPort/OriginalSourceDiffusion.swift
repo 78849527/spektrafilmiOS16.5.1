@@ -346,7 +346,7 @@ enum OriginalSourceDiffusion {
     private static func fft1(_ real:inout [Double],_ imag:inout [Double],
                              inverse:Bool) {
         let n=real.count
-        precondition(n==imag.count && n>=2 && n.nonzeroBitCount==1)
+        precondition(n==imag.count && n>=1 && n.nonzeroBitCount==1)
         real.withUnsafeMutableBufferPointer { rp in
             imag.withUnsafeMutableBufferPointer { ip in
                 let real=rp.baseAddress!,imag=ip.baseAddress!
@@ -390,7 +390,7 @@ enum OriginalSourceDiffusion {
     // Test the exact 1D production butterfly against its frozen pre-151
     // operation sequence, in both directions with signed and mixed inputs.
     static func verifyExactButterfly() {
-        for n in [2,4,8,32,128,512,2048,8192,32768] {
+        for n in [1,2,4,8,32,128,512,2048,8192,32768] {
             for inverse in [false,true] {
                 var r=(0..<n).map{Double(($0*37+13)%997)/313.0-1.0}
                 var i=(0..<n).map{Double(($0*19+17)%499)/251.0-1.0}
