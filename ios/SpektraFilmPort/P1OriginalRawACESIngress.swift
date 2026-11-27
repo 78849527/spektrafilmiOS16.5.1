@@ -385,8 +385,9 @@ enum P1OriginalRawACESIngress {
         var selected=opticalSettings
         selected.cameraInputColorSpace = .acesLinear
         try selected.validate()
-        guard OriginalSourcePhysicalImage.canReuseFilmDensity(selected) else {
-            throw Failure.invalid("原尺寸缓存对照需要受支持的无颗粒负片 Hanatos 设置；不自动修改参数")
+        let allowSeededDiagnostic=selected.sourceGrain.active
+        guard OriginalSourcePhysicalImage.canReuseFilmDensity(selected,allowSeededGrain:allowSeededDiagnostic) else {
+            throw Failure.invalid("原尺寸缓存对照需要受支持的负片 Hanatos 串行设置；颗粒必须使用受控种子")
         }
         clearAllInputCaches(reason:"full_density_diagnostic")
         let session=OriginalSourcePhysicalImage.FilmDensityReuse()
@@ -409,7 +410,9 @@ enum P1OriginalRawACESIngress {
         let bytes=UInt64(w)*UInt64(h)*24
         OPTDeviceFeedback.mark("full_density_compare_begin",[
             "width":String(w),"height":String(h),"cacheBytes":String(bytes),
-            "scope":"actual_uncropped_RAW_no_grain_SHA256_all_Float64_bytes"])
+            "scope":allowSeededDiagnostic
+                ? "actual_uncropped_RAW_seeded_grain_SHA256_all_Float64_bytes"
+                : "actual_uncropped_RAW_no_grain_SHA256_all_Float64_bytes"])
         var changed=selected
         // Downstream only, and explicitly reported. No saved user setting
         // is changed. This compares linear versus encoded scan output.
@@ -449,7 +452,8 @@ enum P1OriginalRawACESIngress {
                         phases.append(stage)
                         OPTDeviceFeedback.mark("full_density_legacy_phase",["case":name,"phase":stage])
                     },filmDensityReuse:cache ? session : nil,
-                    filmDensityReuseLease:expectedLease)
+                    filmDensityReuseLease:expectedLease,
+                    allowSeededGrainDensityReuse:allowSeededDiagnostic)
             } catch {
                 _=sampler.finish()
                 throw error
@@ -462,7 +466,11 @@ enum P1OriginalRawACESIngress {
             let digest=Array(hash.finalize())
             let hit=phases.contains("film_density_cache_hit")
             let stored=phases.contains("film_density_cache_stored")
-            let invalidated=phases.contains("film_density_cache_store_invalidated")
+            let invalidated=phases.contains("film_density_cache_store_invalidated") ||
+                (cache && !session.hasEntry(expectedGeneration:session.lease()))
+            if allowSeededDiagnostic && !phases.contains("three_sublayer_grain_ready") {
+                throw Failure.invalid("原尺寸颗粒缓存对照未执行实际颗粒")
+            }
             OPTDeviceFeedback.mark("full_density_trial_result",[
                 "case":name,"seconds":String(elapsed),"hit":String(hit),
                 "stored":String(stored),"invalidated":String(invalidated),
@@ -496,7 +504,8 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_density_compare_result",[
             "passed":String(passed),"coldAllBytesSHA256Equal":String(coldEqual),
             "hotAllBytesSHA256Equal":String(hotEqual),"hotHit":String(hot.hit),
-            "productionEnabled":"false","cacheCleared":"true"])
+            "productionEnabled":"false","cacheCleared":"true",
+            "seededGrain":String(allowSeededDiagnostic)])
         return passed
     }
 

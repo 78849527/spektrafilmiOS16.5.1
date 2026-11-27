@@ -725,6 +725,57 @@ enum OriginalSourcePhysicalImage {
                 "sampleCount":String(samples.count)])
         }
         trials.removeAll(keepingCapacity:false)
+        // Isolated paper-density candidate: no production cache until
+        // actual device evidence. Compare old observed scalar path as well.
+        session.clear()
+        let paperSession=FilmDensityReuse()
+        defer {paperSession.clear()}
+        #if canImport(UIKit)
+        let paperWarning=NotificationCenter.default.addObserver(
+            forName:UIApplication.didReceiveMemoryWarningNotification,
+            object:nil,queue:nil) { _ in paperSession.clear() }
+        defer {NotificationCenter.default.removeObserver(paperWarning)}
+        #endif
+        var paperScan=parameters()
+        paperScan.sourceOutputCCTFEncoding=false
+        var paperMorph=parameters(paperEV:0.5)
+        paperMorph = Parameters(filmID:paperMorph.filmID,paperID:paperMorph.paperID,
+            cameraEV:paperMorph.cameraEV,paperEV:paperMorph.paperEV,dir:paperMorph.dir,
+            print:paperMorph.print,morph:.init(gamma:1.1))
+        paperMorph.cameraInputColorSpace = .acesLinear
+        let paperTrials:[(String,Parameters,Bool)]=[
+            ("paper_cold",parameters(),false),
+            ("paper_hot_CCTF",paperScan,true),
+            ("paper_miss_EV",parameters(paperEV:0.5),false),
+            ("paper_miss_morph",paperMorph,false),
+            ("paper_hot_repeat",paperMorph,true)
+        ]
+        for (name,params,expectedHit) in paperTrials {
+            try Task.checkCancellation()
+            var baseline=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+            // Force the original observed scalar paper path; discard taps.
+            let baseStart=ProcessInfo.processInfo.systemUptime
+            try developInPlace(&baseline,parameters:params,stageDoubleObserver:{_,_ in})
+            let baseSeconds=ProcessInfo.processInfo.systemUptime-baseStart
+            var actual=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
+            var phases=[String]()
+            let start=ProcessInfo.processInfo.systemUptime
+            try developInPlace(&actual,parameters:params,
+                phaseMemoryObserver:{phases.append($0)},filmDensityReuse:session,
+                paperDensityReuse:paperSession)
+            let seconds=ProcessInfo.processInfo.systemUptime-start
+            let mismatch=zip(baseline.rgb,actual.rgb).reduce(0){$0+($1.0.bitPattern==$1.1.bitPattern ? 0 : 1)}
+            let hit=phases.contains("paper_density_cache_hit")
+            let pass=mismatch==0 && hit==expectedHit &&
+                (hit || phases.contains("paper_density_cache_stored"))
+            passedAll=passedAll && pass
+            emit("paper_density_trial_result",["case":name,"passed":String(pass),
+                "hit":String(hit),"expectedHit":String(expectedHit),
+                "bitMismatches":String(mismatch),"referenceSeconds":String(baseSeconds),
+                "candidateSeconds":String(seconds),"referenceScope":"observed_scalar_reference_not_controlled_timing"])
+        }
+        paperSession.clear()
+        session.clear()
         // Explicit unsupported settings must not fall back or pretend hit.
         var unsupported=parameters()
         unsupported.sourceGrain.active=true
@@ -866,7 +917,8 @@ enum OriginalSourcePhysicalImage {
         phaseMemoryObserver: ((String) -> Void)? = nil,
         filmDensityReuse:FilmDensityReuse? = nil,
         filmDensityReuseLease:UInt64? = nil,
-        allowSeededGrainDensityReuse:Bool = false
+        allowSeededGrainDensityReuse:Bool = false,
+        paperDensityReuse:FilmDensityReuse? = nil
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -896,6 +948,13 @@ enum OriginalSourcePhysicalImage {
         // Build140: exactly the same feature/FFT envelope as RAW
         // predecode and export admission, with ONLY the existing input
         // Float64 frame counted as already committed.
+        if paperDensityReuse != nil {
+            guard filmDensityReuse != nil,!controlledFilmGrain,!activePrintDiffusion,
+                  !parameters.sourceColorReference.enabled,stageDoubleObserver==nil,
+                  parameters.deterministicPixelWorkers==1 else {
+                throw Failure.invalid("相纸密度缓存候选仅支持无颗粒无印相扩散串行对照")
+            }
+        }
         if filmDensityReuse != nil {
             guard stageDoubleObserver==nil else {
                 throw Failure.invalid("胶片密度复用候选不允许伪造已跳过的阶段观察数据")
@@ -904,7 +963,7 @@ enum OriginalSourcePhysicalImage {
             // current envelope. No credit for possible COW release.
             let envelope=memoryEnvelope(width:w,height:h,parameters:parameters)
             try validateMemoryBudget(width:w,height:h,
-                additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                additionalBytesPerPixel:envelope.additionalBytesPerPixel+24+(paperDensityReuse == nil ? 0 : 24),
                 alreadyCommittedInputBytes:committedInputBytes,
                 cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
         } else {
@@ -959,6 +1018,18 @@ enum OriginalSourcePhysicalImage {
             filmDensityReuse?.begin(key,expectedGeneration:filmDensityReuseLease)
         }
         var pendingDensity:[Double]?
+        var paperKey:FilmDensityReuse.Key?
+        var paperTransaction:(generation:UInt64,density:[Double]?)?
+        var pendingPaperDensity:[Double]?
+        // Preserve the allocating observer reference and the diffusion path.
+        let preparedPaper=stageDoubleObserver==nil && !activePrintDiffusion &&
+            !parameters.sourceColorReference.enabled
+            ? engine.prepareSourcePaper(paperEV:parameters.paperEV) : nil
+        let scanXYZ=controlledScannerGlare || parameters.sourceOutputGamut != nil
+        let scanLinear=parameters.scannerOptics.active || !parameters.sourceOutputCCTFEncoding
+        if paperDensityReuse != nil && preparedPaper==nil {
+            throw Failure.invalid("相纸密度缓存候选缺少精确印相计划")
+        }
         var paperLogObserved:[Double]? = capturePaperStages
             ? [Double](repeating:0,count:size) : nil
         var paperDensityObserved:[Double]? = capturePaperStages
@@ -983,6 +1054,9 @@ enum OriginalSourcePhysicalImage {
                 rgb=try engine.sourceSpatialPrintPhoton(
                     filmDensity:density,paperEV:parameters.paperEV
                 )
+            } else if let preparedPaper {
+                rgb=try engine.scanSourcePaperDensity(
+                    preparedPaper.density(density),linear:scanLinear,xyz:scanXYZ)
             } else if controlledScannerGlare ||
                         parameters.sourceOutputGamut != nil {
                 // Store actual developed PAPER XYZ in the reusable Double
@@ -1304,7 +1378,44 @@ enum OriginalSourcePhysicalImage {
         phaseMemoryObserver?("three_sublayer_grain_ready")
             stageDoubleObserver?("grainDensity",frame.rgb)
         }
-        if controlledFilmGrain || reuseKey != nil {
+        if let paperDensityReuse,let preparedPaper {
+            // Hash every actual pre-print Float64 byte, plus the effective
+            // ordered print weights, fitted curve and exposure coefficients.
+            // Downstream scanner changes cannot alter the cached density.
+            var hash=SHA256()
+            frame.rgb.withUnsafeBytes {hash.update(bufferPointer:$0)}
+            let key=FilmDensityReuse.Key(inputSHA256:Array(hash.finalize()),
+                width:w,height:h,filmID:parameters.filmID+"|"+parameters.paperID,
+                colorSpace:0,filmBits:preparedPaper.signature(),flags:[],referencePixelSize:nil)
+            paperKey=key
+            let transaction=paperDensityReuse.begin(key)
+            paperTransaction=transaction
+            if let cached=transaction.density {
+                guard cached.count==size else {throw Failure.invalid("相纸密度缓存尺寸不一致")}
+                frame.rgb=cached
+                phaseMemoryObserver?("paper_density_cache_hit")
+            } else {
+                phaseMemoryObserver?("paper_density_cache_miss")
+                var cmy=[Double](repeating:0,count:3)
+                for p in 0..<(w*h) {
+                    if p & 4095 == 0 {try Task.checkCancellation()}
+                    let k=p*3
+                    for c in 0..<3 {cmy[c]=frame.rgb[k+c]}
+                    let developed=try preparedPaper.density(cmy)
+                    for c in 0..<3 {frame.rgb[k+c]=developed[c]}
+                }
+                pendingPaperDensity=frame.rgb
+                phaseMemoryObserver?("paper_density_ready")
+            }
+            var cmy=[Double](repeating:0,count:3)
+            for p in 0..<(w*h) {
+                if p & 4095 == 0 {try Task.checkCancellation()}
+                let k=p*3
+                for c in 0..<3 {cmy[c]=frame.rgb[k+c]}
+                let scanned=try engine.scanSourcePaperDensity(cmy,linear:scanLinear,xyz:scanXYZ)
+                for c in 0..<3 {frame.rgb[k+c]=scanned[c]}
+            }
+        } else if controlledFilmGrain || reuseKey != nil {
             // Grain RNG and full-frame filters have finished. Only the
             // deterministic density-to-paper/scanner mapping is parallel.
             if parallelPixels {
@@ -1315,10 +1426,11 @@ enum OriginalSourcePhysicalImage {
                         (try printPixel(density,paperObserver:nil),nil)
                     }
             } else {
+                var density=[Double](repeating:0,count:3)
                 for p in 0..<(w*h) {
                     if p & 4095 == 0 {try Task.checkCancellation()}
                     let k=p*3
-                    let density=[frame.rgb[k],frame.rgb[k+1],frame.rgb[k+2]]
+                    for c in 0..<3 {density[c]=frame.rgb[k+c]}
                     let printed=try printPixel(density,paperObserver:recordPaper(k))
                     for ch in 0..<3 {frame.rgb[k+ch]=printed[ch]}
                 }
@@ -1457,6 +1569,12 @@ enum OriginalSourcePhysicalImage {
         stageDoubleObserver?("printed",frame.rgb)
         guard frame.rgb.allSatisfy({ $0.isFinite }) else {
             throw Failure.invalid("逐像素源光学计算产生非有限扫描 RGB")
+        }
+        if let paperKey,let pendingPaperDensity,let paperTransaction {
+            try Task.checkCancellation()
+            let stored=paperDensityReuse?.store(paperKey,pendingPaperDensity,
+                generation:paperTransaction.generation) ?? false
+            phaseMemoryObserver?(stored ? "paper_density_cache_stored" : "paper_density_cache_store_invalidated")
         }
         if let reuseKey,let pendingDensity,let reuseTransaction {
             try Task.checkCancellation()

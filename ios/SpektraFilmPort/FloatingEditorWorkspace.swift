@@ -1332,7 +1332,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("固定 1024×768 线性 ACES；检查相纸/扫描复用、上游失效及清理代际，并验证受控九层颗粒重新抽样。逐位比较、记录耗时、热状态及内存。正式颗粒和原尺寸缓存仍关闭。")
+                    Text("固定 1024×768 线性 ACES；检查相纸/扫描复用、上游失效及清理代际，并验证受控九层颗粒重新抽样。逐位比较、记录耗时、热状态及内存。正式快速预览已支持受控颗粒缓存；新增相纸密度候选独立对照，未转正。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {

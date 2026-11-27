@@ -69,6 +69,12 @@ enum OPTSourceOpticalTriplets {
                          preflash:SIMD3<Double>,printEV:Double) -> SIMD3<Double> {
         let exposure=pow(2.0,printEV)
         let divisor=max(reference,1e-10)
+        return paperLogPrepared(raw,divisor:divisor,preflash:preflash,exposure:exposure)
+    }
+
+    @inline(__always)
+    static func paperLogPrepared(_ raw:SIMD3<Double>,divisor:Double,
+                                 preflash:SIMD3<Double>,exposure:Double)->SIMD3<Double> {
         var result=SIMD3<Double>(repeating:0)
         for c in 0..<3 {
             let rawBeforeEnlarger=max(0,raw[c]/divisor+preflash[c])+1e-10
@@ -674,7 +680,11 @@ struct SpectralPhysics {
                                 raw:scalar,reference:0.37,preflash:flash,printEV:ev)
                             let newLog=OPTSourceOpticalTriplets.paperLog(rawLanes,
                                 reference:0.37,preflash:SIMD3<Double>(flash[0],flash[1],flash[2]),printEV:ev)
-                            guard SourceSpectralTriplet.channels(newLog).map({$0.bitPattern}) ==
+                            let once=OPTSourceOpticalTriplets.paperLogPrepared(rawLanes,
+                                divisor:max(0.37,1e-10),preflash:SIMD3<Double>(flash[0],flash[1],flash[2]),
+                                exposure:pow(2.0,ev))
+                            guard SourceSpectralTriplet.channels(once).map({$0.bitPattern})==oldLog.map({$0.bitPattern}),
+                                  SourceSpectralTriplet.channels(newLog).map({$0.bitPattern}) ==
                                   oldLog.map({$0.bitPattern}) else {
                                 throw PhysicsError.invalid("OPT source paper log exposure bits changed: "+stock)
                             }
@@ -1695,6 +1705,81 @@ struct SpectralPhysics {
     /// After film development (and stochastic optical-density grain, if
     /// enabled), apply the original substrate-specific printing/scanning
     /// pipeline. A reversal film bypasses printing.
+    /// Exact once-per-render prepared enlarger and fitted paper response.
+    /// The signature contains the actual effective coefficients, not UI
+    /// labels or a partial list of parameters. Used for cache dependency
+    /// testing only; no persistent cache or approximate spectral LUT.
+    struct PreparedSourcePaper {
+        let spectral:SourcePreparedSpectralSum
+        let curve:OriginalPrintMorph.SourceCurve
+        let divisor:Double
+        let preflash:SIMD3<Double>
+        let exposure:Double
+        let reciprocals:[Double]
+
+        func density(_ cmy:[Double])throws->[Double] {
+            guard cmy.count==3,cmy.allSatisfy({$0.isFinite}) else {
+                throw PhysicsError.invalid("原版相纸输入密度无效")
+            }
+            let raw=spectral.evaluateLanes(SIMD3<Double>(cmy[0],cmy[1],cmy[2]),
+                                           clampDensity:false,scan:false)
+            let logE=OPTSourceOpticalTriplets.paperLogPrepared(
+                raw,divisor:divisor,preflash:preflash,exposure:exposure)
+            guard logE[0].isFinite,logE[1].isFinite,logE[2].isFinite else {
+                throw PhysicsError.invalid("原版相纸曝光非有限")
+            }
+            return [develop(logE[0],0),develop(logE[1],1),develop(logE[2],2)]
+        }
+        @inline(__always)
+        private func develop(_ x:Double,_ c:Int)->Double {
+            let axis=curve.logExposure,ys=curve.channels[c]
+            if x<=axis[0] {return ys[0]}
+            if x>=axis[255] {return ys[255]}
+            var lo=0,hi=256
+            while lo<hi {
+                let mid=(lo+hi)/2
+                if x<axis[mid] {hi=mid} else {lo=mid+1}
+            }
+            let lower=lo-1
+            let t=(x-axis[lower])*reciprocals[lower]
+            return ys[lower]+t*(ys[lo]-ys[lower])
+        }
+        func signature()->[UInt64] {
+            var bits=[divisor,preflash[0],preflash[1],preflash[2],exposure].map{$0.bitPattern}
+            bits.append(UInt64(spectral.rows.count))
+            for row in spectral.rows {
+                bits.append(contentsOf:[row.base,row.dye0,row.dye1,row.dye2,
+                    row.weights[0],row.weights[1],row.weights[2]].map{$0.bitPattern})
+            }
+            bits.append(contentsOf:curve.logExposure.map{$0.bitPattern})
+            for channel in curve.channels {bits.append(contentsOf:channel.map{$0.bitPattern})}
+            return bits
+        }
+    }
+
+    func prepareSourcePaper(paperEV:Double)->PreparedSourcePaper? {
+        guard !isPositive,useOriginalPrintOptics,useOriginalScanner,
+              let curve=sourcePaperHDCurve,paperEV.isFinite,abs(paperEV)<=4 else{return nil}
+        return .init(spectral:preparedPrintSum,curve:curve,
+            divisor:max(printReference,1e-10),
+            preflash:SIMD3<Double>(opticalPreflashRaw[0],opticalPreflashRaw[1],opticalPreflashRaw[2]),
+            exposure:pow(2.0,paperEV+correctedPrintExposureEV),
+            reciprocals:SourcePreparedHDIntervals.prepare(curve.logExposure))
+    }
+
+    func scanSourcePaperDensity(_ density:[Double],linear:Bool,xyz:Bool)throws->[Double] {
+        guard !isPositive,useOriginalPrintOptics,useOriginalScanner,
+              density.count==3,density.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("原版相纸密度扫描输入无效")
+        }
+        let result=scanDevelopedSubstrateDensity(density,substrate:paper,
+                                                sourceLinearOutput:linear,sourceXYZOutput:xyz)
+        guard result.count==3,result.allSatisfy({$0.isFinite}) else {
+            throw PhysicsError.invalid("原版相纸密度扫描输出无效")
+        }
+        return result
+    }
+
     func scanFilmDensity(_ filmDensity: [Double], paperEV: Double,
                          sourceLinearOutput: Bool = false,
                          sourceXYZOutput: Bool = false,
