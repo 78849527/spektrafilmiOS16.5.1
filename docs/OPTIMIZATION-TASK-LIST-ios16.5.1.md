@@ -395,6 +395,15 @@
 - Actual original JPEG 83E6D4FB completed40.454s, sampled physical footprint1009897280B (~1010MB), RSS1073856512B, lowest available2211328192B, thermal0→1; full original optical geometry3024×4032, estimated1268047872B, captured allowance2222525830B, cold decode. Camera photons11.769s from begin, spatial DIR16.314s, film_density_ready_DIR_released38.940s, optics_done38.960s, completion40.454s. Stage label interval16.314→38.940s includes downstream work; not isolated H-D timing. FFT workspace0. This is basic-settings original Float64 export, NOT a comparable all-optics timing against Build157 138.553s. First export3BE00F19 last checkpoint background at17.739s; not proven crash.
 - FFT compare C94F2E61 rejected0.007s: 原尺寸 FFT 对照至少开启摄影柔化或印相柔化. No serial/candidate trials, no full-size SHA comparison; not an algorithm failure or successful candidate proof. No production promotion. Repeat only existing original-size FFT comparison with camera pre-optics + camera diffusion and print enlarger + print diffusion on; for all-optics comparison also retain prior seeded SciPy grain, halation and scanner settings. No full-resolution preview or repeat preview test. Actual basic and all-optics original exports are separate acceptance workloads. Prioritize real full-resolution spectral/pixel-stage and FFT improvements, do not claim reduced preview geometry speeds full export.
 
+## Build158 补测真机证据（last28）
+
+- 同 v1.8.124/158 d584b1ae11c0 iOS16.5.1 schema2；累积528 events/25 run IDs（前319事件为last27，新增209事件/8 runs），5次快速预览完成、1次 JPEG 准入、1次 JPEG 完成、1次 FFT 对照完成。未出现新失败或后台记录。Portra400/Endura、3024×4032、Hanatos/DIR、cameraEV0/paperEV0、摄影柔化/印相柔化/扫描眩光/扫描镜头开启；grain=false、halation=false，不能把 grainSublayers=true 当作活跃颗粒。全光学颗粒/光晕基线138.553s另列。
+- 23C9B0BA 正式冷 JPEG96.785s，1829737920B sampled physical footprint，1838776320B RSS，thermal0→2，原尺寸3024×4032，两个8192×8192 FFT、PSF半径876，摄影柔化22.538s、印相24.498s、印相后逐像素扫描8.550s；峰值估计2170312704B，原70%允许2215288880B。无预览/密度缓存。
+- 5859B961 两轮独立原尺寸 JPEG：完整 Float64 292626432B SHA256 equal=true，passed=true，两个 JPEG 均4757038B（大小相同不是 JPEG 字节证明），thermal2→2均相同，无后台。serial 99.363669s（扣SHA99.224203s）/1836029504B；two-worker+exact row reuse 93.410793s（扣SHA93.272781s）/1836062272B。端到端节省5.951422s≈6.0%，摄影FFT22.680583→21.513501s≈5.1%，印相26.745656→21.812713s≈18.4%，印相后逐像素8.506→8.192s；物理峰值差32768B，采样内存基本相同。不能据此宣称已达90秒全光学目标或全部参数认证。OPT31/33 有限整图证据通过，下一步正式接入已验证范围。
+- Build159 生产化范围：未裁切原尺寸3024×4032冷 RAW、两8192×8192紧凑FFT、不启用颗粒/光晕、无胶片密度复用，仅此选择workers2+核行实际Double逐位相等复用；其他尺寸/单FFT/全光学颗粒与光晕/预览/热缓存维持原路径，日志production_fft_policy明确。范围是工程保守选择，不限制原尺寸导出功能。FFT算法本身仍精确、不降低动态70/80%门槛。尚未进行Build159实际正式导出复验。
+- 下一候选：印相扩散后的独立纸H-D/光谱扫描逐像素两核，复用现有不重叠RGB span，不引入整图aux、不改变随机序列或空间处理，不改变紧凑FFT内存准入。独立 postDiffusionScanWorkers 默认1，候选2仅允许紧凑、印相扩散、无缓存/阶段整图观察。主机实际print diffusion端到端Float64 bitPattern对照；原尺寸两次JPEG对照候选新增扫描双核、输出阶段耗时。正式扫描仍单核，需实际整图SHA及耗时后再推广。全光学测试需显式启用颗粒和光晕；不再要求完整精细预览。不将固定预览速度作为验收标准。
+- 保留 Python 原版整图/RAW rawpy/ICC 科学认证未完成状态。Build159 编译与新候选实测均待验证。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

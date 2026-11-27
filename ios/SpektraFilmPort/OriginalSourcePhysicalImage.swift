@@ -1006,7 +1006,8 @@ enum OriginalSourcePhysicalImage {
         requireExistingFilmDensity:Bool = false,
         consumeExistingFilmDensity:Bool = false,
         diffusionFFTWorkers:Int=1,
-        reuseIdenticalDiffusionKernelRows:Bool=false
+        reuseIdenticalDiffusionKernelRows:Bool=false,
+        postDiffusionScanWorkers:Int=1
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -1084,6 +1085,14 @@ enum OriginalSourcePhysicalImage {
                   stageDoubleObserver==nil else {
                 throw Failure.invalid("原尺寸 FFT 候选要求独立紧凑 Float64 光学路径")
             }
+        }
+        // Only the independent per-pixel paper H-D / scan after FFT.
+        // Do not select the older global multi-worker memory envelope:
+        // this reuses the existing RGB buffer and no auxiliary image.
+        guard postDiffusionScanWorkers==1 || (postDiffusionScanWorkers==2 &&
+              compactOptics && activePrintDiffusion && filmDensityReuse==nil &&
+              paperDensityReuse==nil && stageDoubleObserver==nil) else {
+            throw Failure.invalid("印相后扫描候选需要独立紧凑 Float64 印相扩散路径")
         }
         // Recheck actual headroom immediately before a stage allocates
         // large buffers. Include potential COW and conservative per-stage
@@ -1642,11 +1651,12 @@ enum OriginalSourcePhysicalImage {
                     paperStageObserver:paperObserver
                 )
             }
-            if parallelPrint {
-                phaseMemoryObserver?("parallel_paper_scan_begin")
+            if parallelPrint || postDiffusionScanWorkers>1 {
+                phaseMemoryObserver?(postDiffusionScanWorkers>1
+                    ? "parallel_post_diffusion_scan_begin" : "parallel_paper_scan_begin")
                 var noAux=[Double]()
                 try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,
-                    workers:parameters.deterministicPixelWorkers) { _,photons in
+                    workers:postDiffusionScanWorkers>1 ? postDiffusionScanWorkers : parameters.deterministicPixelWorkers) { _,photons in
                         (try printedPhotonPixel(photons,paperObserver:nil),nil)
                     }
             } else {

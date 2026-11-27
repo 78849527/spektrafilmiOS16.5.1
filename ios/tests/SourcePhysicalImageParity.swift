@@ -832,6 +832,12 @@ enum SourcePhysicalImageParity {
                 let withoutTaps=try OriginalSourcePhysicalImage.develop(
                     frame,parameters:paperParams
                 )
+                var parallelScan=frame
+                try OriginalSourcePhysicalImage.developInPlace(&parallelScan,
+                    parameters:paperParams,postDiffusionScanWorkers:2)
+                guard parallelScan.rgb.map({$0.bitPattern}) == withoutTaps.rgb.map({$0.bitPattern}) else {
+                    throw Failure.invalid("Build159 independent post-diffusion scan workers differ")
+                }
                 let count=fixture.width*fixture.height*3
                 guard withTaps.rgb == withoutTaps.rgb,
                       let raw=paperTraces["printDiffusion"],
