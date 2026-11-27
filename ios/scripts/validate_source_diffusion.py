@@ -112,6 +112,14 @@ def main():
             )
         proc=subprocess.run([str(exe)],check=True,
                             capture_output=True,text=True)
+    # Keep the native stdout protocol strict: never skip unknown rows.
+    # The independent frozen-butterfly assertion must run and report.
+    expected_marker = (
+        "PASS Build151 exact borrowed Double FFT butterfly, "
+        "20 forward/inverse geometry cases"
+    )
+    assert expected_marker in proc.stderr.splitlines(), proc.stderr
+    print(proc.stderr, end="")
     parsed={}
     for line in proc.stdout.splitlines():
         row=line.strip().split(",")

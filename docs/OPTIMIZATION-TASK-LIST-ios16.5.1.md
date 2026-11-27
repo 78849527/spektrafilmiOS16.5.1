@@ -307,6 +307,10 @@
 - OPT27 same radix-2 Float64 row/column FFT, use exclusive mutable pointer for butterfly, frozen 18 forward/inverse geometry bitwise tests and existing original PSF/whole convolution checks. No Accelerate promotion, no geometry/precision/budget change.
 - Full comprehensive optical acceptance remains device gate OPT28. Consolidate into one IPA after all CI tests.
 
+## Build151 CI 修复
+- 45935287187 / cd80e98：Linux 6/6 success；macOS 失败于 OPT-06/07 independent pinned Python diffusion。原生 Swift 可执行程序成功退出（含20组 frozen butterfly 逐位断言），新增 PASS 人类可读行混入严格 CSV stdout，Python case=int(row[1]) 抛 ValueError；独立 Python 扩散误差检查未执行。不是已证实的 FFT 数值错误。
+- 将独立 PASS 输出迁移到 stderr；Python 必须验证该精确 marker，保持 stdout METADATA/RESULT/PRINT 严格解析以及所有旧容差不变。重新执行全流程，不跳过失败门槛。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

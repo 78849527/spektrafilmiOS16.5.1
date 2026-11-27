@@ -7,7 +7,11 @@ import Foundation
 struct SourceDiffusionNumericValidation {
     static func main() throws {
         OriginalSourceDiffusion.verifyExactButterfly()
-        print("PASS Build151 exact borrowed Double FFT butterfly, 20 forward/inverse geometry cases")
+        // stdout is a strict METADATA/RESULT/PRINT CSV transport.
+        // Send the independent bitwise test evidence to stderr instead.
+        FileHandle.standardError.write(Data(
+            "PASS Build151 exact borrowed Double FFT butterfly, 20 forward/inverse geometry cases\n".utf8
+        ))
         let settings: [OriginalSourceDiffusion.Settings] = [
             .init(active:true,family:.glimmerglass,strength:0.125,
                   spatialScale:1,haloWarmth:0,coreIntensity:1,
