@@ -113,6 +113,19 @@ struct OriginalSourceNumbaFastCounts {
         // prob=prob*((n-k)/(k+1))*(p/(1-p)); return k-1.
         // Do not "fix" the source k-1 convention or reorder operations.
         let uniform = rng.nextUniform()
+        return try Self.invertSmallVariance(n,probability:p,uniform:uniform)
+    }
+
+    /// Same inversion after its single uniform draw. The guard documents
+    /// the domain needed for the zero-probability absorbing-state proof.
+    /// Kept internal so the exact u==0 edge can be tested without finding
+    /// a 53-bit zero draw in a real random stream.
+    static func invertSmallVariance(_ n:Int64,probability p:Double,
+                                    uniform:Double)throws->Int64 {
+        guard n>=25,p.isFinite,p>0,p<1,uniform>=0,uniform<1,
+              Double(n)*p*(1.0-p)<=10 else {
+            throw Failure.invalid("Numba fast_binomial: invalid inversion domain")
+        }
         var cdf = 0.0
         var probability = pow(1.0 - p, Double(n))
         // Constant for this draw. Preserve division and multiplication
@@ -122,6 +135,19 @@ struct OriginalSourceNumbaFastCounts {
         while cdf < uniform && k <= n {
             guard k < 2_000_000 else {
                 throw Failure.invalid("Numba fast_binomial: inversion exceeded safety cap")
+            }
+            // With 0<p<1 in binary64, odds is finite (<=2^53),
+            // and (n-k)/(k+1) is finite (<=Int64.max). Once prob
+            // is exactly zero, the original left-associated products
+            // remain zero; cdf cannot change and there are no RNG calls.
+            // At this point cdf<u and k<=n. The old loop would return n,
+            // or throw at k==2_000_000. Preserve both, including u==0
+            // (which never enters this loop and still returns -1).
+            if probability == 0 {
+                guard n < 2_000_000 else {
+                    throw Failure.invalid("Numba fast_binomial: inversion exceeded safety cap")
+                }
+                return n
             }
             cdf += probability
             if k < n {

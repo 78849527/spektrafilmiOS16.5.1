@@ -271,6 +271,12 @@
 - 原 45876274875 查询仍为 Linux 6/6、macOS 63通过、iPhoneOS compile；为不取消已有测试，同分支 concurrency cancel-in-progress=false，新 run 等待原 run 退出。明确 [runner:intel] [device-ipa:148]，Apple Silicon 默认不变，只有完整 CI、真实 arm64 iPhoneOS 编译及当前 SHA/版本核验成功后才发布未签名 IPA。没有提前认定测试通过。
 - 真机验证同一 RAW：无颗粒快速/精细冷热、修改相纸曝光、精细预览→JPEG 导出；受控九层颗粒快速冷热、全尺寸颗粒精细与 JPEG；FastStats 单独记录九层 Poisson/Binomial 分段和 lifetime model；原尺寸带颗粒缓存保持禁用。完整报告按 runID 核对，避免环形日志覆盖。
 
+## Build149-A — FastStats 异常 inversion 等价优化
+
+- 固定原版 3bb2c2d 的 src/spektrafilm/utils/fast_stats.py（blob 9e80d29ce6b9f7820ae70f5c09da15edfaa70a0d）：小方差 branch 单次 uniform 后 prob=(1-p)**n；乘法递推。p 在 (0,1) 的 Float64 可表示域、n 为非负 Int64，两个乘数有限；当 prob==0 且仍在 cdf<u/k<=n 的循环内，所有后续 prob 恒0，cdf 不变，无新增随机抽样。直接返回原 k-1 最终值 n，n>=2M 时仍抛出原 Swift cap 错误。u==0 不进入循环仍返回 -1；非零概率递推完全保留。没有修正原版 underflow 分布，没有换 RNG、取消原有 fail-closed、修改其他分支或内存预算。
+- 增加冻结 Build148 原循环对照，覆盖零/次正规 uniform、正负边界、未下溢及下溢、cap 前后、4种 seed 的连续 uniform/normal 探针。原独立 Python golden 与全图 5×4 stage regression 仍必跑。新增 CI 尚未执行；是否为设备 80s 异常主因需实际分段和设备测试，不预报收益。
+- Build148 CI 45878111626 Linux 6/6 + macOS 73/73 成功，真机数值报告 17/17 缓存逐位一致、整尺寸冷/热 SHA 一致；用户说明两次长诊断有自动锁屏，耗时与采样覆盖需标为受干扰。下一批加入长任务屏幕保持及前后台记录、日志完整性，再推进 OPT-21/22/23。只提交当前开发分支，不发单项 IPA。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

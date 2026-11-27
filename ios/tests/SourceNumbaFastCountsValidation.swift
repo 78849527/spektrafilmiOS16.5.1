@@ -3,7 +3,79 @@ import Foundation
 /// Exact-source one-worker diagnostics, NOT production Numba prange parity.
 @main
 struct SourceNumbaFastCountsValidation {
+    // Frozen Build148 inversion, including its cap and source k-1.
+    // Intentionally executes every iteration; no absorbing-state shortcut.
+    private static func legacyInversion(_ n:Int64,_ p:Double,_ u:Double)throws->Int64 {
+        var cdf=0.0
+        var prob=pow(1.0-p,Double(n))
+        var k:Int64=0
+        while cdf<u && k<=n {
+            guard k<2_000_000 else {
+                throw OriginalSourceNumbaFastCounts.Failure.invalid(
+                    "Numba fast_binomial: inversion exceeded safety cap")
+            }
+            cdf+=prob
+            if k<n {prob=prob*(Double(n-k)/Double(k+1))*(p/(1.0-p))}
+            k+=1
+        }
+        return k-1
+    }
+
+    private static func inversionParity()throws {
+        let pairs:[(Int64,Double)]=[
+            (25,0.01),(25,0.5),(25,0.999999),
+            (100,0.1),(100,0.9),(100,0.999999),
+            (1000,0.001),(1000,0.99),(1000,0.999),
+            (10000,0.0001),(10000,0.999999),
+            (1_999_999,0.999999),(2_000_000,0.999999),
+            (2_000_001,0.999999),(Int64.max,Double(1).nextDown)
+        ]
+        var checked=0
+        for (n,p) in pairs where Double(n)*p*(1.0-p)<=10 {
+            for u:Double in [0,Double.leastNonzeroMagnitude,0.001,0.5,0.999999,Double(1).nextDown] {
+                // Compare success or exact error text, not just an error flag.
+                let expected=Result {try legacyInversion(n,p,u)}
+                let actual=Result {try OriginalSourceNumbaFastCounts.invertSmallVariance(n,probability:p,uniform:u)}
+                switch (expected,actual) {
+                case (.success(let a),.success(let b)): precondition(a==b)
+                case (.failure(let a),.failure(let b)):
+                    precondition(a.localizedDescription==b.localizedDescription)
+                default: fatalError("Absorbing probability changed inversion result")
+                }
+                checked+=1
+            }
+        }
+        // Real RNG consumption: compare against a separate seeded Numba
+        // generator that draws exactly once then executes the frozen loop.
+        for seed:UInt32 in [0,1,8888,UInt32.max] {
+            var actual=OriginalSourceNumbaFastCounts(seed:seed)
+            var legacy=OriginalSourceNumbaSingleThreadNormal(seed:seed)
+            let streamPairs:[(Int64,Double)]=[(1000,0.999),(100,0.1),(10000,0.999999),(1000,0.001)]
+            for (n,p) in streamPairs {
+                let expected=try legacyInversion(n,p,legacy.nextUniform())
+                let got=try actual.fastBinomial(n,probability:p)
+                precondition(got==expected)
+                var probe=legacy
+                precondition(actual.peekNextUniform().bitPattern==probe.nextUniform().bitPattern)
+                let x=try actual.nextMicrostructureNormal()
+                let y=try legacy.nextNormal()
+                precondition(x.bitPattern==y.bitPattern)
+            }
+        }
+        // The old cap must still fail after the same one uniform draw.
+        var actual=OriginalSourceNumbaFastCounts(seed:8888)
+        var legacy=OriginalSourceNumbaSingleThreadNormal(seed:8888)
+        _=legacy.nextUniform()
+        do {
+            _=try actual.fastBinomial(2_000_000,probability:0.999999)
+            fatalError("Inversion cap bypassed")
+        } catch OriginalSourceNumbaFastCounts.Failure.invalid {}
+        precondition(actual.peekNextUniform().bitPattern==legacy.nextUniform().bitPattern)
+        print("PASS Build149-A absorbing zero inversion \(checked) frozen-loop cases, exact uniform/normal stream and cap")
+    }
+
     static func main() throws {
+        try inversionParity()
         let fixtures = GeneratedSourceNumbaFastCountsReference.cases
         guard fixtures.count == 3,
               GeneratedSourceNumbaFastCountsReference.fastStatsBlob.count == 40,
