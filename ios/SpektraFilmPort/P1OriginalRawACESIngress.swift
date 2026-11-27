@@ -335,6 +335,32 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_optical_admission",["width":String(working.width),
             "height":String(working.height),"film":selected.filmID,"paper":selected.paperID])
         recordOpticalOptions(selected,cropped:crop != nil)
+        let envelope=OriginalSourcePhysicalImage.memoryEnvelope(
+            width:working.width,height:working.height,parameters:selected)
+        let opticalPlan=try Build91PhysicalMemory.plan(
+            width:working.width,height:working.height,
+            baseBytesPerPixel:OriginalSourcePhysicalImage.estimatedPeakBytesPerPixel,
+            additionalBytesPerPixel:envelope.additionalBytesPerPixel,
+            physicalMemory:ProcessInfo.processInfo.physicalMemory,
+            processAvailable:SafeExportResolution.currentProcessHeadroom(),
+            camera:envelope.cameraDiffusion,paper:envelope.paperDiffusion,
+            compactSequentialFFT:envelope.compactSequentialFFT)
+        var phaseDetails:[String:String]=[
+            "compactSequentialFFT":String(envelope.compactSequentialFFT),
+            "nonFFTBytes":String(opticalPlan.basePeakBytes),
+            "fftScratchAndPSFBytes":String(opticalPlan.additionalFFTBytes),
+            "estimatedPeakBytes":String(opticalPlan.estimatedPeakBytes),
+            "allowedBytes":String(opticalPlan.allowedBytes),
+            "phasesBPP":envelope.phaseModel.phases.map{"\($0.phase):\($0.bytesPerPixel)"}.joined(separator:",")]
+        if let camera=opticalPlan.cameraFFT {
+            phaseDetails["cameraFFTGrid"]="\(camera.fftWidth)x\(camera.fftHeight)"
+            phaseDetails["cameraPSFRadius"]=String(camera.radius)
+        }
+        if let paper=opticalPlan.paperFFT {
+            phaseDetails["paperFFTGrid"]="\(paper.fftWidth)x\(paper.fftHeight)"
+            phaseDetails["paperPSFRadius"]=String(paper.radius)
+        }
+        OPTDeviceFeedback.mark("full_optical_phase_plan",phaseDetails)
         // Build152 actual uncropped RAW cold/hot SHA256 matched both
         // fixed-seed serial SciPy and fixed-seed serial FastStats.
         // canReuseFilmDensity still enforces seed equality for FastStats

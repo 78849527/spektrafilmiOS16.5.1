@@ -42,6 +42,15 @@ assert "let extra=Build106SourceMemoryLedger.productionAdditional(" in physical
 assert "return parallelGrain ? 72 : 64" in ledger
 assert "if !parallelGrain && !serialMicrostructureActive {return 56}" in ledger
 assert "serialMicrostructureActive:serialMicrostructureActive" in physical
+assert "sequentialOptics:sequentialOptics" in physical
+assert "compactSequentialFFT:envelope.compactSequentialFFT" in physical
+assert "compactSequentialFFT:footprint.compactSequentialFFT" in app
+assert "max(basePeak,fftStage)" in memory
+assert "applyCompactInPlace(" in physical
+assert 'admitPhase("film_halation",120)' in physical
+assert 'admitPhase("grain",128)' in physical
+assert '"full_optical_phase_plan"' in raw
+assert "sequential==expected" in test
 assert "microStd>0.05" in physical
 assert "candidate.estimatedPeakBytes==sourcePixels*160" in test
 assert "noMicroExtra==" in test

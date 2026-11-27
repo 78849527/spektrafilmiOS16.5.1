@@ -94,9 +94,9 @@ enum Build106SourceMemoryLedger {
         return parallelGrain ? 72 : 64
     }
 
-    /// OPT-03: model sequential optical phases separately. The candidate
-    /// is telemetry only: no reduced budget is admitted until real-device
-    /// footprints and source regressions establish the actual lifetimes.
+    /// OPT-03: model sequential optical phases separately. Build154
+    /// activates the audited phase-local candidate for eligible unobserved
+    /// serial optics only. Other paths retain conservative legacy sums.
     /// Observer snapshots are persistent; FFT workspace is reported
     /// separately by Build91 and is NOT included in these B/px values.
     struct PhaseEstimate: Codable {
@@ -114,18 +114,24 @@ enum Build106SourceMemoryLedger {
         base:UInt64,admittedAdditional:UInt64,
         scannerFinish:Bool,scannerGlare:Bool,grain:Bool,
         cameraLens:Bool,filmHalation:Bool,paperDiffusion:Bool,
-        stageObserver:Bool,paperStageObserver:Bool,parallelGrain:Bool
+        stageObserver:Bool,paperStageObserver:Bool,parallelGrain:Bool,
+        sequentialOptics:Bool=false,serialMicrostructureActive:Bool=true
     ) -> PhaseModel {
         let observer = (stageObserver ? stageObserverBytesPerPixel : 0)
             + (paperStageObserver ? paperStageBytesPerPixel : 0)
+        let compact=sequentialOptics && !stageObserver && !paperStageObserver && !parallelGrain
+        let grainExtra=compact ? UInt64(serialMicrostructureActive ? 64 : 56) :
+            grainBytesPerPixel+(parallelGrain ? parallelGrainExtraBytesPerPixel : 0)
+        let halationExtra=compact ? UInt64(64) : filmHalationBytesPerPixel
+        let glareExtra=compact ? UInt64(32) : scannerGlareBytesPerPixel
         let phases:[PhaseEstimate] = [
             .init(phase:"camera_photons",bytesPerPixel:base+observer),
             .init(phase:"camera_lens",bytesPerPixel:base+observer+(cameraLens ? cameraLensBytesPerPixel : 0)),
-            .init(phase:"film_halation",bytesPerPixel:base+observer+(filmHalation ? filmHalationBytesPerPixel : 0)),
+            .init(phase:"film_halation",bytesPerPixel:base+observer+(filmHalation ? halationExtra : 0)),
             .init(phase:"spatial_DIR",bytesPerPixel:base+observer),
-            .init(phase:"grain",bytesPerPixel:base+observer+(grain ? grainBytesPerPixel+(parallelGrain ? parallelGrainExtraBytesPerPixel : 0) : 0)),
+            .init(phase:"grain",bytesPerPixel:base+observer+(grain ? grainExtra : 0)),
             .init(phase:"paper_diffusion",bytesPerPixel:base+observer+(paperDiffusion ? paperDiffusionBytesPerPixel : 0)),
-            .init(phase:"scanner_glare",bytesPerPixel:base+observer+(scannerGlare ? scannerGlareBytesPerPixel : 0)),
+            .init(phase:"scanner_glare",bytesPerPixel:base+observer+(scannerGlare ? glareExtra : 0)),
             .init(phase:"scanner_finish",bytesPerPixel:base+observer+(scannerFinish ? scannerFinishBytesPerPixel : 0))
         ]
         return PhaseModel(phases:phases,

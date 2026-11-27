@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.5"
-    MARKETING_VERSION: "1.8.119"
-    CURRENT_PROJECT_VERSION: "153"
+    MARKETING_VERSION: "1.8.120"
+    CURRENT_PROJECT_VERSION: "154"
 targets:
   SpektraFilmPort:
     type: application

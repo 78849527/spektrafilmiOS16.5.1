@@ -517,6 +517,16 @@ enum OriginalSourceDiffusion {
             let referenceSeconds=ProcessInfo.processInfo.systemUptime-start
             observe("fft_reference_ready",["family":family.rawValue,
                 "seconds":String(referenceSeconds),"width":String(w),"height":String(h)])
+            var compact=input
+            let compactStart=ProcessInfo.processInfo.systemUptime
+            try applyCompactInPlace(&compact,width:w,height:h,pixelUM:pixelUM,
+                                    settings:cfg,usePreparedPSFCache:false)
+            let compactSeconds=ProcessInfo.processInfo.systemUptime-compactStart
+            let compactEqual=zip(compact,reference).allSatisfy{$0.0.bitPattern==$0.1.bitPattern}
+            passed=passed && compactEqual
+            observe("fft_compact_ready",["family":family.rawValue,
+                "seconds":String(compactSeconds),"bitwiseEqual":String(compactEqual),
+                "scope":"fixed_full_grid_not_12MP"])
             let candidateStart=ProcessInfo.processInfo.systemUptime
             let candidate=try apply(input,width:w,height:h,pixelUM:pixelUM,
                                     settings:cfg,fftBackend:.accelerateCandidate,usePreparedPSFCache:false)

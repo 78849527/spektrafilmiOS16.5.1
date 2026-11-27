@@ -95,7 +95,7 @@
 # cache scopes; compile-only. All host regressions remain mandatory.
 # Build148 consolidated: serial particle buffer, exact MT twist, independent
 # Float64 SIMD and lifetime telemetry. Package only after all source gates.
-name: Build153 optimization regression and explicitly requested device IPA
+name: Build154 optimization regression and explicitly requested device IPA
 
 on:
   push:
@@ -103,7 +103,7 @@ on:
       - 'work/build129-raw-float32-srgb-icc-admission-ios1651'
     paths:
       # One consolidated validation after the optimization batch.
-      # Package on manual opt-in or exact explicit Build153 commit marker only.
+      # Package on manual opt-in or exact explicit Build154 commit marker only.
       - '.github/workflows/build131-ios1651-strict-source-input-cleanup-ipa.yml'
   workflow_dispatch:
     inputs:
@@ -173,11 +173,11 @@ jobs:
           sys.path.insert(0,'ios/scripts')
           from build_ci_version_floor import minimum_build, minimum_minor
           project=Path('ios/project.yml').read_text()
-          assert minimum_build(project,153)
-          assert minimum_minor(project,119)
-          assert not minimum_build(project,154)
-          assert not minimum_minor(project,120)
-          print('PASS current 1.8.119/153, exact processing defaults and all RAW source/crop contracts')
+          assert minimum_build(project,154)
+          assert minimum_minor(project,120)
+          assert not minimum_build(project,155)
+          assert not minimum_minor(project,121)
+          print('PASS current 1.8.120/154, exact processing defaults and all RAW source/crop contracts')
           PY
           git diff --exit-code
       - name: Build136 source io.py and Swift Float16/32 exact bytes on Linux
@@ -969,8 +969,8 @@ jobs:
           grep -Fq 'Build104DeviceGrainEvidence.capture(' ios/SpektraFilmPort/ContentView.swift
           grep -Fq 'Build104-device-grain-' ios/SpektraFilmPort/Build104DeviceGrainEvidence.swift
           grep -Fq 'onRunBuild104Grain()' ios/SpektraFilmPort/FloatingEditorWorkspace.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.119"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "153"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.120"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "154"' ios/project.yml
       - uses: actions/setup-python@v5
         with:
           # Keep 3.11 + Numba 0.61.2, the verified fixture generation stack.
@@ -1087,8 +1087,8 @@ jobs:
           grep -Fq 'tests/SourcePhysicalImageParity.swift' ios/project.yml
           grep -Fq 'generated-physical-v1.8.22' ios/project.yml
           grep -Fq 'Build92DeviceSourceStageDiagnostic.evaluate()' ios/SpektraFilmPort/ContentView.swift
-          grep -Fq 'MARKETING_VERSION: "1.8.119"' ios/project.yml
-          grep -Fq 'CURRENT_PROJECT_VERSION: "153"' ios/project.yml
+          grep -Fq 'MARKETING_VERSION: "1.8.120"' ios/project.yml
+          grep -Fq 'CURRENT_PROJECT_VERSION: "154"' ios/project.yml
           test -s ios/SpektraFilmPort/Build91PhysicalMemory.swift
           test -s ios/SpektraFilmPort/Build91MemoryProductionDiagnostic.swift
           test -s ios/tests/Build91PhysicalMemoryMatrixValidation.swift
@@ -1275,8 +1275,8 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
           test -s "$APP/SpektraFilmPort"
           test -s "$APP/default.metallib"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.119
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 153
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" | grep -Fx 1.8.120
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" | grep -Fx 154
           /usr/libexec/PlistBuddy -c 'Print :SFSourceCommit' "$APP/Info.plist" | grep -Fx "$GITHUB_SHA"
           # Native libraw symbols must actually be linked, no stub.
           xcrun nm -gU "$APP/SpektraFilmPort" | grep -q '_libraw_dcraw_process'
@@ -1292,7 +1292,7 @@ jobs:
           echo 'Build110 native ARM64 iPhoneOS Release PASS; bundled source optical reference tapes; physical iOS16.5.1 validation NOT run.'
 
       - name: Package this exact Build108 unsigned iPhoneOS app as actual IPA
-        if: ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:153]')))
+        if: ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:154]')))
         run: |
           set -euo pipefail
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpektraFilmPort.app
@@ -1300,29 +1300,29 @@ jobs:
           mkdir -p "$ROOT/Payload" ios/build/release
           ditto "$APP" "$ROOT/Payload/SpektraFilmPort.app"
           (cd "$ROOT" && zip -q -r -X \
-             ../release/SpektraFilm-1.8.119-Build153-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
-          IPA=ios/build/release/SpektraFilm-1.8.119-Build153-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+             ../release/SpektraFilm-1.8.120-Build154-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa Payload)
+          IPA=ios/build/release/SpektraFilm-1.8.120-Build154-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           test -s "$IPA"
           unzip -t "$IPA" | tail -1 | grep -F 'No errors detected'
           unzip -Z -1 "$IPA" | grep -Fx 'Payload/SpektraFilmPort.app/Info.plist'
           shasum -a 256 "$IPA" | tee "$IPA.sha256"
           echo "Build110 real unsigned IPA size=$(stat -f %z "$IPA") bytes"
       - name: Verify final IPA version, arch and SAME committed source SHA
-        if: ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:153]')))
+        if: ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:154]')))
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
           import hashlib,os,plistlib,subprocess,json
-          package=Path('ios/build/release/SpektraFilm-1.8.119-Build153-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
+          package=Path('ios/build/release/SpektraFilm-1.8.120-Build154-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa')
           commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           assert commit==os.environ['GITHUB_SHA'], 'app sources/IPA do not match action commit'
           with ZipFile(package) as z:
               p=plistlib.loads(z.read('Payload/SpektraFilmPort.app/Info.plist'))
               assert p['CFBundleIdentifier']=='com.twogou.spektrafilmport'
-              assert p['CFBundleShortVersionString']=='1.8.119'
-              assert p['CFBundleVersion']=='153'
+              assert p['CFBundleShortVersionString']=='1.8.120'
+              assert p['CFBundleVersion']=='154'
               assert p.get('SFSourceCommit')==commit, 'IPA embedded Git SHA is missing or incorrect'
               assert p['MinimumOSVersion'].startswith('16.5')
               assert 'Payload/SpektraFilmPort.app/default.metallib' in z.namelist()
@@ -1334,28 +1334,28 @@ jobs:
               'ipa_name':package.name,
               'ipa_sha256':hashlib.sha256(package.read_bytes()).hexdigest(),
               'ipa_size_bytes':package.stat().st_size,
-              'version':'1.8.119',
-              'build':'153',
+              'version':'1.8.120',
+              'build':'154',
               'ios_minimum':'16.5',
               'architecture':'arm64',
               'signing':'UNSIGNED; requires user signing to install',
-              'certification':'Build153 host-tested candidate; full seeded FastStats cache promotion after actual RAW SHA parity, rate-plane exact Int64 word reuse, measured prior 8B/px admission refinement only in simple serial no-microstructure case. Live 70/80 percent gates retained. Full optical A15 acceptance and signed installation NOT CERTIFIED; unsigned',
+              'certification':'Build154 host-tested candidate; compact exact full-grid Double FFT, sequential optical phase bounds and live phase admission for eligible serial paths; legacy observed and parallel paths retained. Full RAW export plan includes FFT. A15 whole-optics performance, RAW/ICC parity and signed installation NOT CERTIFIED; unsigned',
               'release_authority':'actual GitHub Actions xcodebuild -sdk iphoneos',
           }
-          Path('ios/build/release/verification-build153.json').write_text(
+          Path('ios/build/release/verification-build154.json').write_text(
               json.dumps(identity,indent=2,sort_keys=True)+'\n')
           print('PASS exact signed-off source SHA/IPA identity',identity)
           PY
-          cat ios/build/release/verification-build153.json
+          cat ios/build/release/verification-build154.json
       - name: Upload Build111 input color-profile plus old four-mode experimental unsigned IPA and source tapes
-        if: ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:153]')))
+        if: ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:154]')))
         uses: actions/upload-artifact@v4
         with:
-          name: Build153-1.8.119-arm64-optimization-unsigned-unverified
+          name: Build154-1.8.120-arm64-optimization-unsigned-unverified
           path: |
             ios/build/release/*.ipa
             ios/build/release/*.sha256
-            ios/build/release/verification-build153.json
+            ios/build/release/verification-build154.json
             ios/build/release/build114-four-gate-certification-ledger.json
             ios/build/release/build114-unseeded-numba-source-statistics.json
             ios/build/release/build115-swift-parallel-stats.json
@@ -1364,22 +1364,22 @@ jobs:
             /tmp/build92-native-ui-static.json
           if-no-files-found: error
       - name: Publish ONLY experimental unsigned Build131 IPA after successful true iPhoneOS compile
-        if: success() && ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:153]')))
+        if: success() && ((github.event_name == 'workflow_dispatch' && inputs.publish_ipa == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[device-ipa:154]')))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           BRANCH=work/build129-raw-float32-srgb-icc-admission-ios1651
-          TAG="ios1651-v1.8.119-build153-optimization-${GITHUB_SHA:0:12}-UNSIGNED-UNVERIFIED"
+          TAG="ios1651-v1.8.120-build154-optimization-${GITHUB_SHA:0:12}-UNSIGNED-UNVERIFIED"
           HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" -q '.object.sha')"
           if [ "$HEAD" != "$GITHUB_SHA" ]; then
             echo "::error::Release forbidden: latest branch $HEAD differs from tested $GITHUB_SHA"
             exit 1
           fi
-          ASSET=ios/build/release/SpektraFilm-1.8.119-Build153-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
+          ASSET=ios/build/release/SpektraFilm-1.8.120-Build154-iOS16.5.1-UNSIGNED-UNVERIFIED.ipa
           SUM="$ASSET.sha256"
-          ID=ios/build/release/verification-build153.json
-          NOTES='Build153 v1.8.119/153 iPhoneOS arm64 deployment 16.5. Full uncropped seeded serial FastStats density cache promoted after Build152 actual Float64 SHA parity. Serial count storage reuses consumed 64-bit rates preserving original whole Poisson then Binomial and exact signed Int64 bits. Admission uses only previously measured 8B/px improvement for simple serial no-microstructure; live 70/80 percent gates, explicit geometry and cache eviction fallback unchanged. Production parallel disabled. Physical A15 speed, complete optics and installation await verification.'
+          ID=ios/build/release/verification-build154.json
+          NOTES='Build154 v1.8.120/154 iPhoneOS arm64 deployment 16.5. Compact full-grid PSF column FFT preserves original FFT1, reflection, radius, grid, crop and blend; old four-grid oracle retained. Stage-local maximum and actual phase checks for eligible unobserved serial optics; conservative legacy observed/parallel paths and dynamic 70/80 percent gates retained. RAW export includes FFT. Whole-optics A15 acceptance and signed installation await device evidence.'
           # Keep earlier Build136 release immutable. A rerun for this exact
           # SHA leaves its existing assets untouched instead of clobbering.
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -1388,7 +1388,7 @@ jobs:
           fi
           gh release create "$TAG" "$ASSET" "$SUM" "$ID" \
             --target "$GITHUB_SHA" --prerelease \
-            --title "Build153 consolidated optimization device candidate - unsigned unverified" \
+            --title "Build154 consolidated optimization device candidate - unsigned unverified" \
             --notes "$NOTES"
           gh release view "$TAG" --json tagName,url,assets
           echo "PASS Build118 separate large-frame Float64 source grain experimental unsigned IPA at SHA $GITHUB_SHA."

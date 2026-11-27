@@ -237,7 +237,9 @@ enum OriginalSourcePhysicalImage {
             paperDiffusion:parameters.printDiffusion.active,
             stageObserver:stageObserver,
             paperStageObserver:stageObserver && !SpectralPhysics.isPositiveFilm(parameters.filmID),
-            parallelGrain:parameters.sourceGrain.useUnseededParallel
+            parallelGrain:parameters.sourceGrain.useUnseededParallel,
+            sequentialOptics:sequentialOptics,
+            serialMicrostructureActive:serialMicrostructureActive
         )
         return MemoryEnvelope(
             additionalBytesPerPixel:extra,compactSequentialFFT:sequentialOptics,phaseModel:phases,
