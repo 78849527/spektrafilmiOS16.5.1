@@ -270,7 +270,12 @@ checks.update({
         "data:data," in main,
     "p0_original_ram_preflight":
         "case .original: fraction = originalBudgetPercent" in memory and
-        "plan.estimatedPeakBytes <= plan.allocationAllowanceBytes" in memory and
+        "plan.committedSourceBytes==verifiedCommittedSourceBytes" in memory and
+        "verifiedCommittedSourceBytes<=plan.estimatedPeakBytes" in memory and
+        "verifiedCommittedSourceBytes==0 || current != nil" in memory and
+        "let remainingPeak=plan.estimatedPeakBytes-verifiedCommittedSourceBytes" in memory and
+        "remainingPeak <= plan.allocationAllowanceBytes" in memory and
+        "remainingPeak <= (current / 100) * fraction" in memory and
         "validateForHeadroom(" in memory,
     "p0_original_ram_recheck":
         "try SafeExportResolution.validateBeforeRender(plan)" in processor and

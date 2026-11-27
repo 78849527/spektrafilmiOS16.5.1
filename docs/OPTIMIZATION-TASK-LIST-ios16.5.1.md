@@ -368,6 +368,10 @@
 
 - 45994303883 / 99ddfd0800d5: Linux 第3步 build141_raw_pre_crop_audit.py:32 assertion failure; macOS skipped. 新 one-shot 分支的 frame 文本匹配与原有单路径顺序检查冲突。修正审计为两个独立路径，均须 crop/geometry→实际内存准入→Double frame→光学；明确 one-shot 禁止 crop。另修复 active workflow exact version floor/ceiling 157/123（之前 floor 与 ceiling 矛盾）。保留全部既有测试；不宣称数值或编译通过。原 Build157 同版本重跑集中门槛。
 
+## Build157 第二轮 CI 修复
+
+- 45994543452 / 83b3423：Linux 第3步历史 GUI 审计 p0_original_ram_preflight 失败，Build141、142、135、136、相机审计均已通过；macOS 未执行。旧断言只识别总峰值，不识别已验证驻留 CMY 的扣除。改为明确验证实际缓存字节相等、不得超过总峰值、有效实时余量、剩余分配量与原70%门槛；保留低内存拒绝数值测试。同步将 OPT 事件观察审计从2条更新为3条，明确 one-shot 分支与导出准入事件。生产算法、门槛、版本不变。重跑集中回归。
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

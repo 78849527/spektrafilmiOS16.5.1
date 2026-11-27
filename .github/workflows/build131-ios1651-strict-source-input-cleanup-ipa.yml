@@ -273,7 +273,9 @@ jobs:
           feedback=(root/'OPTDeviceFeedback.swift').read_text()
           assert 'OPTDeviceFeedback.measure(operation,' in ingress
           assert 'full_cache_hit' in ingress and 'preview_cache_hit' in ingress
-          assert ingress.count('phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}')==2
+          assert ingress.count('phaseMemoryObserver:{OPTDeviceFeedback.mark($0)}')==3
+          assert 'consumeExistingFilmDensity:true' in ingress
+          assert 'export_hot_plan_admitted' in ingress
           reduced=ingress.split('static func developPreviewWithGeometry(',1)[1]
           full=ingress.split('static func developSourceCandidate(',1)[1].split('static func runFullDensityReuseComparison(',1)[0]
           assert 'filmDensityReuse:reuseAllowed ? previewDensityCache : nil' in reduced
