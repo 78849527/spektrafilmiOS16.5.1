@@ -136,6 +136,7 @@ struct SourceNumbaFastCountsValidation {
             // original allocating implementation, with poisoned scratch.
             var reusableEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
             var allocatingEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
+            var bitEngine=OriginalSourceNumbaFastCounts(seed:fixture.seed)
             for _ in 0..<2 {
                 for i in reused.indices {reused[i] = Int64.min}
                 let reference=try allocatingEngine.runOriginalTwoPhaseCounts(
@@ -148,9 +149,15 @@ struct SourceNumbaFastCountsValidation {
                       reusableEngine.peekNextUniform().bitPattern==allocatingEngine.peekNextUniform().bitPattern else {
                     fatalError("Reused Numba counts or next uniform diverged")
                 }
+                var rateWords=fixture.rates.map{$0}
+                try bitEngine.runOriginalTwoPhaseReusingRates(
+                    &rateWords,probabilities:fixture.probabilities)
+                precondition(rateWords.map{Int64(bitPattern:$0.bitPattern)}==reference)
+                precondition(bitEngine.peekNextUniform().bitPattern==allocatingEngine.peekNextUniform().bitPattern)
                 let a=try reusableEngine.nextMicrostructureNormal()
                 let b=try allocatingEngine.nextMicrostructureNormal()
-                precondition(a.bitPattern==b.bitPattern)
+                let c=try bitEngine.nextMicrostructureNormal()
+                precondition(a.bitPattern==b.bitPattern && c.bitPattern==b.bitPattern)
             }
             // Independent offset interval compared with copied slice,
             // including subsequent normal-cache state.

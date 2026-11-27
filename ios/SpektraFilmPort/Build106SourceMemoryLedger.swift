@@ -55,7 +55,8 @@ enum Build106SourceMemoryLedger {
         scannerFinish:Bool,scannerGlare:Bool,grain:Bool,
         grainSublayers:Bool,cameraActive:Bool,cameraLens:Bool,
         filmHalation:Bool,paperDiffusion:Bool,stageObserver:Bool,
-        paperStageObserver:Bool,outputGamut:Bool,parallelGrain:Bool
+        paperStageObserver:Bool,outputGamut:Bool,parallelGrain:Bool,
+        serialMicrostructureActive:Bool=true
     ) -> UInt64 {
         let conservative=additional(
             scannerFinish:scannerFinish,scannerGlare:scannerGlare,
@@ -67,7 +68,12 @@ enum Build106SourceMemoryLedger {
               !cameraActive && !cameraLens && !filmHalation &&
               !paperDiffusion && !stageObserver && !paperStageObserver &&
               !outputGamut else {return conservative}
-        // Build114 source baseline is 112B/px.
+        // Build152 actual full RAW serial no-microstructure footprint
+        // fell about 95 MB after eliminating 8 B/px of sublayer storage.
+        // Apply ONLY that measured structural reduction (not Build153
+        // count-plane savings); 104+56=160, same allocator margin.
+        // Active microstructure can still peak later, so retain old bound.
+        if !parallelGrain && !serialMicrostructureActive {return 56}
         return parallelGrain ? 72 : 64
     }
 
@@ -173,7 +179,9 @@ enum Build106SourceMemoryLedger {
         // First sublayer prepares directly into sampler planes; only
         // two remaining measured sublayers survive the first draw.
         let layers=scalar*2
-        let scratch=layers+scalar*3+cloud
+        // Counts are exact Int64 bit words in the already allocated
+        // rate plane after Poisson; no additional count allocation.
+        let scratch=layers+scalar*2+cloud
         let particle=rgb*2+scratch
         // After release: input + out. Clump RGB is conditional and its
         // in-place Gaussian uses three scalar scratch planes.
@@ -182,7 +190,7 @@ enum Build106SourceMemoryLedger {
         // Clump scope has ended; in-place final Gaussian uses three planes.
         let final:UInt64?=finalBlur ? rgb*2+scalar*3 : nil
         return .init(inputBytes:rgb,outputBytes:rgb,layerBytes:layers,
-            probabilityBytes:scalar,ratesBytes:scalar,countBytes:scalar,
+            probabilityBytes:scalar,ratesBytes:scalar,countBytes:0,
             cloudBytes:cloud,particlePhaseBytes:particle,
             releasedScratchBytes:scratch,microstructurePhaseBytes:micro,
             finalBlurPhaseBytes:final,

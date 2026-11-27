@@ -250,7 +250,9 @@ enum P1OriginalRawACESIngress {
             "finalBlurPhaseBytes":life.finalBlurPhaseBytes.map{String($0)} ?? "inactive",
             "logicalPeakBytes":String(life.logicalPeakBytes),
             "optionalDensityCacheBudgetBytes":String(cacheAdmitted ? pixels*24 : 0),
-            "admissionChanged":"false"])
+            "admissionChanged":"true",
+            "countPlaneStorage":"reused_rate_Int64_bits",
+            "admissionBasis":"Build152_measured_8B_reduction_only"])
     }
 
     struct PreviewWithGeometry {
@@ -330,11 +332,12 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_optical_admission",["width":String(working.width),
             "height":String(working.height),"film":selected.filmID,"paper":selected.paperID])
         recordOpticalOptions(selected,cropped:crop != nil)
-        // Build150 A15 full uncropped RAW cold/hot SHA256 matched with
-        // fixed-seed serial SciPy three-sublayer grain. Keep exactly that
-        // production scope (fast_stats full cache remains unpromoted).
+        // Build152 actual uncropped RAW cold/hot SHA256 matched both
+        // fixed-seed serial SciPy and fixed-seed serial FastStats.
+        // canReuseFilmDensity still enforces seed equality for FastStats
+        // and excludes the unseeded workers. Never cache grain output.
         let allowSeededFull=selected.sourceGrain.active &&
-            selected.sourceGrain.sublayersActive && !selected.sourceGrain.useFastStats
+            selected.sourceGrain.sublayersActive
         let densityBytes=UInt64(working.width)*UInt64(working.height)*24
         let retainedBytes=densityBytes+UInt64(decoded.packedRGB16.count)
         let eligible=crop==nil &&
@@ -415,7 +418,9 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_density_cache_policy",[
             "eligible":String(reuseAllowed),"reason":reuseReason,
             "densityBytes":String(densityBytes),"retainPreview":String(retainDecodedSource),
-            "seededSciPy":String(allowSeededFull),"requiredHotHit":String(requireHotHit)])
+            "seededSciPy":String(allowSeededFull && !selected.sourceGrain.useFastStats),
+            "seededFastStats":String(allowSeededFull && selected.sourceGrain.useFastStats),
+            "requiredHotHit":String(requireHotHit)])
         recordSerialGrainLifetime(selected,width:working.width,height:working.height,
                                   cacheAdmitted:reuseAllowed)
         try OriginalSourcePhysicalImage.developInPlace(
@@ -431,7 +436,7 @@ enum P1OriginalRawACESIngress {
         // Retain only a successful preview, subject to combined live margin.
         // Export, errors and cancelled operations release the density.
         keepDensity=retainDecodedSource && reuseAllowed &&
-            fullDensityCache.hasEntry(expectedGeneration:fullDensityCache.lease()) &&
+            fullDensityCache.hasEntry(expectedGeneration:densityLease &+ 1) &&
             canRetainPreviewDensity(bytes:retainedBytes)
         OPTDeviceFeedback.mark("full_density_retention_policy",["retained":String(keepDensity)])
         // The independent packed ACES16 cache keeps its original policy.

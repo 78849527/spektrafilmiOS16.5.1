@@ -205,6 +205,30 @@ struct OriginalSourceNumbaFastCounts {
         }
     }
 
+    // Same controlled Numba stream; use dead rate storage as exact
+    // Int64 bit words. In particular the original -1 edge value must
+    // survive even though its Double bit pattern is a NaN.
+    mutating func runOriginalTwoPhaseReusingRates(
+        _ rates:inout [Double],probabilities:[Double],
+        poissonCompleted:(()->Void)?=nil
+    ) throws {
+        guard rates.count==probabilities.count else {
+            throw Failure.invalid("Numba fast_stats: array shape mismatch")
+        }
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            let count=try fastPoisson(rates[i])
+            rates[i]=Double(bitPattern:UInt64(bitPattern:count))
+        }
+        poissonCompleted?()
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            let count=try fastBinomial(Int64(bitPattern:rates[i].bitPattern),
+                                      probability:probabilities[i])
+            rates[i]=Double(bitPattern:UInt64(bitPattern:count))
+        }
+    }
+
     mutating func runOriginalTwoPhase(
         rates: [Double], probabilities: [Double]
     ) throws -> (poisson: [Int64], binomial: [Int64], afterPoisson: Double,

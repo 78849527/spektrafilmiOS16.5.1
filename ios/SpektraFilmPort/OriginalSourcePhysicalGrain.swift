@@ -356,6 +356,46 @@ enum OriginalSourcePhysicalGrain {
                         rates[p]=n/saturation
                     }
                 }
+                if reuseSerialCloudPlanes {
+                    // Once each rate has been read by Poisson its slot
+                    // becomes an exact Int64 bit word. Binomial consumes
+                    // the whole Poisson plane only after the first phase.
+                    // No separate count plane; no change to random draws.
+                    phaseMemoryObserver?("grain_\(ch)_\(sl)_poisson_begin")
+                    let poissonCompleted:(()->Void)? = phaseMemoryObserver.map { observer in
+                        {observer("grain_\(ch)_\(sl)_poisson_done")}
+                    }
+                    if settings.useFastStats {
+                        try controlledFastSampler!.runOriginalTwoPhaseReusingRates(
+                            &rates,probabilities:probabilities,poissonCompleted:poissonCompleted)
+                    } else {
+                        try OriginalSourceSciPySampler.drawLayerReusingRates(
+                            &rates,probabilities:probabilities,seed:UInt32(ch+sl*10),
+                            poissonCompleted:poissonCompleted)
+                    }
+                    phaseMemoryObserver?("grain_\(ch)_\(sl)_binomial_done")
+                    let sigma=settings.dyeCloudBlurUM*sqrt(od)
+                    if sigma>0 {
+                        for p in 0..<pixels {
+                            if p & 4095 == 0 {try Task.checkCancellation()}
+                            let count=Int64(bitPattern:rates[p].bitPattern)
+                            let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
+                            rates[p]=Double(count)*od*saturation
+                        }
+                        try SourceGrainScalarGaussian.blurInPlace(
+                            &rates,width:width,height:height,sigma:sigma,
+                            intermediate:&probabilities)
+                        for p in 0..<pixels {out[p*3+ch]+=rates[p]}
+                    } else {
+                        for p in 0..<pixels {
+                            if p & 4095 == 0 {try Task.checkCancellation()}
+                            let count=Int64(bitPattern:rates[p].bitPattern)
+                            let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
+                            out[p*3+ch]+=Double(count)*od*saturation
+                        }
+                    }
+                    continue
+                }
                 // Scoped read-only view dies at the end of this sublayer.
                 // The next iteration may mutate serialCounts without COW.
                 let counts:[Int64]
@@ -403,22 +443,7 @@ enum OriginalSourcePhysicalGrain {
                 // blur_dye_clouds_um WITHOUT dividing by pixelUM, then
                 // multiplies sqrt(optical density per particle).
                 let sigma=settings.dyeCloudBlurUM*sqrt(od)
-                if sigma>0 && reuseSerialCloudPlanes {
-                    // Both draw phases have ended. Convert each count into
-                    // the dead rates plane with the exact prior expression.
-                    // Only after ALL probabilities are consumed, reuse their
-                    // plane as the full-frame Gaussian intermediate.
-                    for p in 0..<pixels {
-                        if p & 4095 == 0 {try Task.checkCancellation()}
-                        let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
-                        rates[p]=Double(counts[p])*od*saturation
-                    }
-                    try SourceGrainScalarGaussian.blurInPlace(
-                        &rates,width:width,height:height,sigma:sigma,
-                        intermediate:&probabilities
-                    )
-                    for p in 0..<pixels {out[p*3+ch]+=rates[p]}
-                } else if sigma>0 {
+                if sigma>0 {
                     for p in 0..<pixels {
                         let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
                         cloud[p]=Double(counts[p])*od*saturation

@@ -61,11 +61,11 @@ enum Build106SourceMemoryLedgerValidation {
                 let microBlur=mask&4 != 0,final=mask&8 != 0
                 let life=b.serialGrainLifetime(pixels:pixels,dyeCloud:dye,
                     microstructure:micro,microBlur:microBlur,finalBlur:final)!
-                try demand(life.particlePhaseBytes==pixels*88,
+                try demand(life.particlePhaseBytes==pixels*80,
                            "serial particle lifetime changed")
-                try demand(life.releasedScratchBytes==pixels*40,
+                try demand(life.releasedScratchBytes==pixels*32,
                            "serial scratch release changed")
-                try demand(life.countBytes==pixels*8 && life.ratesBytes==pixels*8,
+                try demand(life.countBytes==0 && life.ratesBytes==pixels*8,
                            "count or borrowed scratch double counted")
                 try demand(life.microstructurePhaseBytes==(micro ? pixels*(microBlur ? 96 : 72) : nil),
                            "late microstructure lifetime changed")

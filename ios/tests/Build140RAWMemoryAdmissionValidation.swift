@@ -22,6 +22,35 @@ struct Build140RAWMemoryAdmissionValidation {
         )
         demand(grainOnly==64,
                "grain-only phase-lifetime must use validated 64 not stale 224")
+        // Build153: only the already measured Build152 serial no-micro
+        // storage reduction may lower the conservative estimate by 8 B/px.
+        // Preserve original 70/80% live gates and cold fallback.
+        let noMicro=Build106SourceMemoryLedger.productionAdditional(
+            scannerFinish:false,scannerGlare:false,grain:true,
+            grainSublayers:true,cameraActive:false,cameraLens:false,
+            filmHalation:false,paperDiffusion:false,stageObserver:false,
+            paperStageObserver:false,outputGamut:false,parallelGrain:false,
+            serialMicrostructureActive:false)
+        demand(noMicro==56,"only observed serial no-micro reduction")
+        for live:UInt64 in [2_808_018_112,2_802_496_512] {
+            let old=try SafeExportResolution.plan(width:w,height:h,
+                physicalMemory:4_000_000_000,processAvailableMemory:live,
+                mode:.original,estimatedBytesPerPixel:168,fullSourceProcessing:true)
+            do {
+                try SafeExportResolution.validateForHeadroom(old,processAvailableMemory:live)
+                preconditionFailure("Build152 rejection not reproduced")
+            } catch SafeExportResolution.Failure.invalid {}
+            let candidate=try SafeExportResolution.plan(width:w,height:h,
+                physicalMemory:4_000_000_000,processAvailableMemory:live,
+                mode:.original,estimatedBytesPerPixel:104+noMicro,fullSourceProcessing:true)
+            try SafeExportResolution.validateForHeadroom(candidate,processAvailableMemory:live)
+            demand(candidate.estimatedPeakBytes==sourcePixels*160 && !candidate.dimensions.reduced,
+                   "actual observed headroom, exact geometry, unchanged 70% gate")
+            do {
+                try SafeExportResolution.validateForHeadroom(candidate,processAvailableMemory:2_500_000_000)
+                preconditionFailure("low headroom must still refuse")
+            } catch SafeExportResolution.Failure.invalid {}
+        }
         let p=try Build91PhysicalMemory.plan(
             width:w,height:h,baseBytesPerPixel:104,
             additionalBytesPerPixel:grainOnly,
@@ -86,6 +115,15 @@ struct Build140RAWMemoryAdmissionValidation {
                 stageObserver:false,paperStageObserver:false,
                 parallelGrain:parallel
             )
+            let noMicroExtra=Build106SourceMemoryLedger.productionAdditional(
+                scannerFinish:scanner,scannerGlare:glare,grain:grain,
+                grainSublayers:true,cameraActive:lens,cameraLens:lens,
+                filmHalation:halation,paperDiffusion:print,stageObserver:false,
+                paperStageObserver:false,outputGamut:gamut,parallelGrain:parallel,
+                serialMicrostructureActive:false)
+            demand(noMicroExtra==(grain && !scanner && !glare && !lens &&
+                !halation && !print && !gamut && !parallel ? 56 : extra),
+                "only simple serial no-microstructure may receive reduction")
             demand(extra<=ordinary,"optimized ledger must not exceed old budget")
             if extra<ordinary {
                 demand(grain && !scanner && !glare && !lens &&

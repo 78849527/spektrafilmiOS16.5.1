@@ -342,6 +342,33 @@ struct OriginalSourceSciPySampler {
         return seeds
     }
 
+    /// Exact 64-bit storage reuse: each rate is dead after its Poisson
+    /// draw. Store Int64 bits in the same 64-bit slot (not a numeric
+    /// Double conversion), then replace with Binomial bits in phase two.
+    /// No floating arithmetic on a count word, no Int32 bound, no draw
+    /// interleaving. The caller must decode each word before optical math.
+    static func drawLayerReusingRates(
+        _ rates:inout [Double],probabilities:[Double],seed:UInt32,
+        poissonCompleted:(()->Void)?=nil
+    ) throws {
+        guard rates.count==probabilities.count,!rates.isEmpty else {
+            throw Failure.invalid("原版 SciPy 随机场：输入数组尺寸不一致")
+        }
+        var engine=Self(seed:seed)
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            let count=try engine.poisson(rates[i])
+            rates[i]=Double(bitPattern:UInt64(bitPattern:count))
+        }
+        poissonCompleted?()
+        for i in rates.indices {
+            if i & 4095 == 0 {try Task.checkCancellation()}
+            let count=try engine.binomial(Int64(bitPattern:rates[i].bitPattern),
+                                          probability:probabilities[i])
+            rates[i]=Double(bitPattern:UInt64(bitPattern:count))
+        }
+    }
+
     /// Caller-owned whole-layer count storage. Every element is replaced
     /// by the Poisson draw BEFORE any Binomial draw; no previous counts
     /// participate. Keep the allocating drawLayer as the independent path.

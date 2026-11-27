@@ -81,6 +81,11 @@ struct OriginalSciPyRNGValidation {
         let cases = GeneratedOriginalSciPyRNGReference.cases
         precondition(cases.count >= 5)
         var count: Int = 0
+        // Exact signed/NaN payload bit storage, including extreme words.
+        let bitWords:[Int64]=[0,1,-1,Int64.min,Int64.max,0x7ff8000000000001]
+        var bitSlots=[Double](repeating:0,count:bitWords.count)
+        for i in bitWords.indices {bitSlots[i]=Double(bitPattern:UInt64(bitPattern:bitWords[i]))}
+        precondition(bitSlots.map{Int64(bitPattern:$0.bitPattern)}==bitWords)
         var reused=[Int64]()
         for sample in cases {
             let n = sample.rates.count
@@ -135,6 +140,11 @@ struct OriginalSciPyRNGValidation {
                     seed:sample.seed,counts:&reused
                 )
                 precondition(reused==sample.binomial,"Reused SciPy counts diverged")
+                var rateWords=sample.rates.map{$0}
+                try OriginalSourceSciPySampler.drawLayerReusingRates(
+                    &rateWords,probabilities:sample.probabilities,seed:sample.seed)
+                precondition(rateWords.map{Int64(bitPattern:$0.bitPattern)}==sample.binomial,
+                             "Bit-word rate storage SciPy counts diverged")
             }
             print("PASS: original SciPy two-stage count/MT stream \(sample.name), pixels=\(n)")
             count += n

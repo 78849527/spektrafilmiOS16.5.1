@@ -199,6 +199,10 @@ enum OriginalSourcePhysicalImage {
         let paper:(settings:OriginalSourceDiffusion.Settings,
                    pixelUM:Double)?=paperActive
             ? (parameters.printDiffusion,pixelUM) : nil
+        let grainPixelUM=parameters.dir.referencePixelSizeUM ?? pixelUM
+        let microStd=parameters.sourceGrain.microstructureNM*0.001/grainPixelUM
+        let serialMicrostructureActive = !grainPixelUM.isFinite || grainPixelUM<=0 ||
+            !microStd.isFinite || microStd>0.05
         let extra=Build106SourceMemoryLedger.productionAdditional(
             scannerFinish:parameters.scannerOptics.active,
             scannerGlare:parameters.scannerGlare.active &&
@@ -213,7 +217,8 @@ enum OriginalSourcePhysicalImage {
             paperStageObserver:stageObserver &&
                 !SpectralPhysics.isPositiveFilm(parameters.filmID),
             outputGamut:parameters.sourceOutputGamut != nil,
-            parallelGrain:parameters.sourceGrain.useUnseededParallel
+            parallelGrain:parameters.sourceGrain.useUnseededParallel,
+            serialMicrostructureActive:serialMicrostructureActive
         )
         let phases=Build106SourceMemoryLedger.phaseModel(
             base:estimatedPeakBytesPerPixel,admittedAdditional:extra,
