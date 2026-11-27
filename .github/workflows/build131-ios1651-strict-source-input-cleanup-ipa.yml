@@ -763,6 +763,7 @@ jobs:
       - name: OPT-06/07 independent pinned Python diffusion and cached/Accelerate parity
         run: |
           set -euo pipefail
+          # Build151: require frozen butterfly stderr marker and strict original CSV oracle.
           python ios/scripts/validate_source_diffusion.py
       - name: P1 original RAW Float32 bitstream and full-size pixel compare selftests
         run: |
