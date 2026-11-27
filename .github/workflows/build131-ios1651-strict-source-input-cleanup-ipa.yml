@@ -1,3 +1,4 @@
+# Build156 retry: trigger consolidated CI after Swift infix whitespace correction; no gate or runner change.
 # Build142 Swift syntax retry: five type-inferred default enum assignments use consistent surrounding spaces; reset behavior unchanged.
 # Build142: 100 exact current source factory defaults; RAW precision and user's non-destructive photo/crop/recipe preserved.
 # Build141 retry: retain Build139 1280px invariant across Swift signature formatting; source crop unchanged.
