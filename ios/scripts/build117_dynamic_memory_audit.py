@@ -15,7 +15,12 @@ assert "remainingPeak<=($0/10)*8" in mem
 assert "alreadyCommittedInputBytes<=plan.basePeakBytes" in mem
 assert "FFT.sourceCap" not in mem and "let allowed=processAvailable.map" in mem
 assert "retainAllSublayers=stageObserver != nil" in grain
-assert "pixels*(retainAllSublayers ? 9 : 3)" in grain
+assert "let retainedLayerCount=retainAllSublayers ? 9 : (prepareFirstLayerDirect ? 2 : 3)" in grain
+assert "let prepareFirstLayerDirect = !retainAllSublayers && !settings.useUnseededParallel" in grain
+assert "count:pixels*retainedLayerCount" in grain
+assert "layerInputs[p*2]=layerScratch[3+ch]" in grain
+assert "layerInputs[p*2+1]=layerScratch[6+ch]" in grain
+assert "if !prepareFirstLayerDirect || sl != 0" in grain
 assert "layerInputs[p*3+sl]=layerScratch[sl*3+ch]" in grain
 assert "retainAllSublayers ? p*9+li : p*3+sl" in grain
 assert "static let extraBytesPerPixel: UInt64 = 224" in grain

@@ -229,8 +229,10 @@ enum OriginalSourcePhysicalGrain {
         // Normal production retains only the current channel's 3 sublayers.
         // RNG order remains ch outer / sl inner; no Float32 or tiling.
         let retainAllSublayers=stageObserver != nil
+        let prepareFirstLayerDirect = !retainAllSublayers && !settings.useUnseededParallel
+        let retainedLayerCount=retainAllSublayers ? 9 : (prepareFirstLayerDirect ? 2 : 3)
         var layerInputs=[Double](
-            repeating:0,count:pixels*(retainAllSublayers ? 9 : 3)
+            repeating:0,count:pixels*retainedLayerCount
         )
         var inputCMY=[Double](repeating:0,count:3)
         var layerScratch=[Double](repeating:0,count:9)
@@ -321,8 +323,20 @@ enum OriginalSourcePhysicalGrain {
                             throw Failure.invalid("原版胶片三亚层密度未完整计算")
                         }
                     }
-                    for sl in 0..<3 {
-                        layerInputs[p*3+sl]=layerScratch[sl*3+ch]
+                    if prepareFirstLayerDirect {
+                        // Sublayer zero is consumed first. Prepare its
+                        // exact sampler planes now; save only layers 1/2.
+                        let sourceD=layerScratch[ch]+minLayers[ch]
+                        let probability=min(1.0-1e-6,max(1e-6,sourceD/densityMax[ch]))
+                        let saturation=1.0-probability*uniformity*(1.0-1e-6)
+                        probabilities[p]=probability
+                        rates[p]=particleN[ch]/saturation
+                        layerInputs[p*2]=layerScratch[3+ch]
+                        layerInputs[p*2+1]=layerScratch[6+ch]
+                    } else {
+                        for sl in 0..<3 {
+                            layerInputs[p*3+sl]=layerScratch[sl*3+ch]
+                        }
                     }
                 }
             }
@@ -331,12 +345,16 @@ enum OriginalSourcePhysicalGrain {
                 let li=sl*3+ch
                 let n=particleN[li],od=densityOD[li]
                 let minimum=minLayers[li],maximum=densityMax[li]
-                for p in 0..<pixels {
-                    let sourceD=layerInputs[retainAllSublayers ? p*9+li : p*3+sl]+minimum
-                    let probability=min(1.0-1e-6,max(1e-6,sourceD/maximum))
-                    let saturation=1.0-probability*uniformity*(1.0-1e-6)
-                    probabilities[p]=probability
-                    rates[p]=n/saturation
+                if !prepareFirstLayerDirect || sl != 0 {
+                    for p in 0..<pixels {
+                        let index=prepareFirstLayerDirect ? p*2+sl-1 :
+                            (retainAllSublayers ? p*9+li : p*3+sl)
+                        let sourceD=layerInputs[index]+minimum
+                        let probability=min(1.0-1e-6,max(1e-6,sourceD/maximum))
+                        let saturation=1.0-probability*uniformity*(1.0-1e-6)
+                        probabilities[p]=probability
+                        rates[p]=n/saturation
+                    }
                 }
                 // Scoped read-only view dies at the end of this sublayer.
                 // The next iteration may mutate serialCounts without COW.

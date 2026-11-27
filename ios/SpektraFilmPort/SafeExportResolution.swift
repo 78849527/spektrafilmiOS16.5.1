@@ -233,7 +233,8 @@ enum SafeExportResolution {
                 "导出预检：已选 \(plan.dimensions.width)×\(plan.dimensions.height) " +
                 "预计使用 \(plan.estimatedPeakBytes / 1_000_000) MB，" +
                 "超过本档安全预算 \(plan.allocationAllowanceBytes / 1_000_000) MB。" +
-                "请明确选择较低分辨率，原图不会自动缩小。"
+                (plan.fullSourceProcessing ? "RAW 光学始终按原尺寸；可先裁切或释放内存，不会自动缩图。" :
+                    "请明确选择较低分辨率，原图不会自动缩小。")
             )
         }
         if let current {
@@ -251,9 +252,23 @@ enum SafeExportResolution {
                     "\(current / 1_000_000) MB，" +
                     "\(plan.dimensions.width)×\(plan.dimensions.height) " +
                     "预估峰值 \(plan.estimatedPeakBytes / 1_000_000) MB。" +
-                    "请明确选择安全或省内存分辨率，不会静默缩图。"
+                    (plan.fullSourceProcessing ? "RAW 光学仍按原尺寸；请先裁切或释放内存，不会静默缩图。" :
+                        "请明确选择安全或省内存分辨率，不会静默缩图。")
                 )
             }
+        }
+    }
+
+    /// Retry an admission check ONCE after actual optional cache eviction.
+    /// No arithmetic credit, changed threshold, or changed confirmed size.
+    static func retryAfterCacheEviction<T>(
+        attempt:() throws -> T,isMemoryRefusal:(Error)->Bool,evict:()->Void
+    ) throws -> T {
+        do {return try attempt()}
+        catch {
+            guard isMemoryRefusal(error) else {throw error}
+            evict()
+            return try attempt()
         }
     }
 

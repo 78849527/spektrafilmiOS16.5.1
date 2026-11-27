@@ -54,6 +54,26 @@ enum P1OriginalRawACESIngress {
         fullDensityCache.clear()
     }
 
+    // Only called within the serialized export render, AFTER a possibly
+    // cancelled preview has released its working arrays. Preserve the exact
+    // confirmed dimensions, captured allowance, and fresh 70% gate.
+    static func validateConfirmedExportPlan(_ plan:SafeExportResolution.Plan) throws {
+        try SafeExportResolution.retryAfterCacheEviction(
+            attempt:{try SafeExportResolution.validateBeforeRender(plan)},
+            isMemoryRefusal:{$0 is SafeExportResolution.Failure},
+            evict:{
+                let before=SafeExportResolution.currentProcessHeadroom()
+                clearAllInputCaches(reason:"confirmed_export_pressure")
+                OPTDeviceFeedback.mark("export_optional_cache_evicted",[
+                    "headroomBefore":before.map{String($0)} ?? "unavailable",
+                    "headroomAfter":SafeExportResolution.currentProcessHeadroom().map{String($0)} ?? "unavailable"])
+            })
+        OPTDeviceFeedback.mark("export_plan_admitted",[
+            "estimatedPeakBytes":String(plan.estimatedPeakBytes),
+            "capturedAllowanceBytes":String(plan.allocationAllowanceBytes),
+            "width":String(plan.dimensions.width),"height":String(plan.dimensions.height)])
+    }
+
     struct Source {
         let width: Int
         let height: Int
@@ -457,6 +477,8 @@ enum P1OriginalRawACESIngress {
         let bytes=UInt64(w)*UInt64(h)*24
         OPTDeviceFeedback.mark("full_density_compare_begin",[
             "width":String(w),"height":String(h),"cacheBytes":String(bytes),
+            "grainFastStats":String(selected.sourceGrain.useFastStats),
+            "grainUnseededParallel":String(selected.sourceGrain.useUnseededParallel),
             "scope":allowSeededDiagnostic
                 ? "actual_uncropped_RAW_seeded_grain_SHA256_all_Float64_bytes"
                 : "actual_uncropped_RAW_no_grain_SHA256_all_Float64_bytes"])
@@ -506,6 +528,7 @@ enum P1OriginalRawACESIngress {
             var phases=[String]()
             let sampler=Build133RAWMemoryLadder.RSSSampler()
             let start=ProcessInfo.processInfo.systemUptime
+            let thermalBefore=ProcessInfo.processInfo.thermalState.rawValue
             sampler.start()
             do {
                 try OriginalSourcePhysicalImage.developInPlace(
@@ -535,6 +558,10 @@ enum P1OriginalRawACESIngress {
             }
             OPTDeviceFeedback.mark("full_density_trial_result",[
                 "case":name,"seconds":String(elapsed),"hit":String(hit),
+                "thermalBefore":String(thermalBefore),
+                "thermalAfter":String(ProcessInfo.processInfo.thermalState.rawValue),
+                "workers":String(params.deterministicPixelWorkers),
+                "stageMask":String(params.deterministicPixelStageMask),
                 "stored":String(stored),"invalidated":String(invalidated),
                 "outputBytes":String(frame.rgb.count*8),
                 "sampledPeakPhysicalFootprintBytes":samples.footprint.map{String($0)} ?? "not_measured",
@@ -561,12 +588,22 @@ enum P1OriginalRawACESIngress {
                           expectedLease:hotLease,requireHit:true)
         let coldEqual=cold.digest==baseline.digest
         let hotEqual=hot.digest==baselineChanged.digest
-        let passed=coldEqual && hotEqual && hot.hit && !hot.invalidated
         session.clear()
+        // The fixed reduced-grid diagnostic favored only print/scan on
+        // two workers. Check real uncropped input and identical settings
+        // against the earlier independent serial SHA; no cache here.
+        var parallel=selected
+        parallel.deterministicPixelWorkers=2
+        parallel.deterministicPixelStageMask=4
+        let printTrial=try trial("parallel_print_full",parallel,cache:false)
+        let printEqual=printTrial.digest==baseline.digest
+        let passed=coldEqual && hotEqual && hot.hit && !hot.invalidated && printEqual
         OPTDeviceFeedback.mark("full_density_compare_result",[
             "passed":String(passed),"coldAllBytesSHA256Equal":String(coldEqual),
             "hotAllBytesSHA256Equal":String(hotEqual),"hotHit":String(hot.hit),
             "productionEnabled":"false","cacheCleared":"true",
+            "parallelPrintSHA256Equal":String(printEqual),
+            "grainFastStats":String(selected.sourceGrain.useFastStats),
             "seededGrain":String(allowSeededDiagnostic)])
         return passed
     }

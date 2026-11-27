@@ -170,7 +170,10 @@ enum Build106SourceMemoryLedger {
         // dead probabilities for its intermediate after both draws.
         // Observer/parallel scratch() remains the conservative model.
         let cloud:UInt64=0
-        let scratch=rgb+scalar*3+cloud
+        // First sublayer prepares directly into sampler planes; only
+        // two remaining measured sublayers survive the first draw.
+        let layers=scalar*2
+        let scratch=layers+scalar*3+cloud
         let particle=rgb*2+scratch
         // After release: input + out. Clump RGB is conditional and its
         // in-place Gaussian uses three scalar scratch planes.
@@ -178,7 +181,7 @@ enum Build106SourceMemoryLedger {
             ? rgb*3+(microBlur ? scalar*3 : 0) : nil
         // Clump scope has ended; in-place final Gaussian uses three planes.
         let final:UInt64?=finalBlur ? rgb*2+scalar*3 : nil
-        return .init(inputBytes:rgb,outputBytes:rgb,layerBytes:rgb,
+        return .init(inputBytes:rgb,outputBytes:rgb,layerBytes:layers,
             probabilityBytes:scalar,ratesBytes:scalar,countBytes:scalar,
             cloudBytes:cloud,particlePhaseBytes:particle,
             releasedScratchBytes:scratch,microstructurePhaseBytes:micro,

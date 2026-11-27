@@ -194,6 +194,35 @@ struct SafeExportResolutionValidation {
                 rawTIFF16,processAvailableMemory:1_800_000_000)
             fatalError("Must reject low process headroom")
         } catch SafeExportResolution.Failure.invalid {}
+        // Build152: 1219万 RAW, 168B/px, resident optional caches.
+        // Actual release must precede new live sample; never add a guessed
+        // allocation to the OS headroom value.
+        var live:UInt64=2_800_000_000
+        var evictions=0
+        var attempts=0
+        let recovered=try SafeExportResolution.retryAfterCacheEviction(
+            attempt:{
+                attempts+=1
+                let candidate=try SafeExportResolution.plan(
+                    width:3024,height:4032,physicalMemory:4_000_000_000,
+                    processAvailableMemory:live,mode:.original,
+                    estimatedBytesPerPixel:168,fullSourceProcessing:true)
+                try SafeExportResolution.validateForHeadroom(candidate,processAvailableMemory:live)
+                return candidate
+            },
+            isMemoryRefusal:{$0 is SafeExportResolution.Failure},
+            evict:{evictions+=1;live=3_100_000_000})
+        precondition(evictions==1 && attempts==2 && !recovered.dimensions.reduced)
+        precondition(recovered.estimatedPeakBytes==UInt64(3024*4032)*168)
+        do {
+            try SafeExportResolution.retryAfterCacheEviction(
+                attempt:{try SafeExportResolution.validateForHeadroom(recovered,processAvailableMemory:1_000_000_000)},
+                isMemoryRefusal:{$0 is SafeExportResolution.Failure},
+                evict:{evictions+=1})
+            fatalError("Must reject insufficient actual headroom after cache eviction")
+        } catch SafeExportResolution.Failure.invalid {}
+        precondition(evictions==2)
+        print("PASS Build152 actual cache eviction retry, unchanged 70% admission and fixed RAW geometry")
         for mp in ExportResolutionMode.presetWanPixels {
             let fixed=try SafeExportResolution.plan(
                 width:4032,height:3024,physicalMemory:8_000_000_000,

@@ -311,6 +311,12 @@
 - 45935287187 / cd80e98：Linux 6/6 success；macOS 失败于 OPT-06/07 independent pinned Python diffusion。原生 Swift 可执行程序成功退出（含20组 frozen butterfly 逐位断言），新增 PASS 人类可读行混入严格 CSV stdout，Python case=int(row[1]) 抛 ValueError；独立 Python 扩散误差检查未执行。不是已证实的 FFT 数值错误。
 - 将独立 PASS 输出迁移到 stderr；Python 必须验证该精确 marker，保持 stdout METADATA/RESULT/PRINT 严格解析以及所有旧容差不变。重新执行全流程，不跳过失败门槛。
 
+## Build152 集中候选
+- Build151 e57f1e8 CI 45936278686 success，真机 last20 schema2 823 events / 15 complete；3024×4032 SciPy cold 60.343s/1307.186MB，正式 hot 38.371–38.852s，峰值1298–1312MB，FastStats 57.040s/1300.927MB；诊断1323.619MB。与 Build150 约1398–1422MB相较实际节省约90–100MB，非相同热状态严格A/B。22/22 cache、12/12 parallel、4/4 FFT、full cold/hot SHA均通过。正式 JPEG 无日志；用户报告先提示内存不足，后正常。当前 168 B/px ~2048MB, 70% export live gate requires ~2926MB，实际缓存约293MB可能压低余量；无原失败日志，原因待确认。
+- JPEG/TIFF16 preflight: actual optional RAW/CMY/CI cache eviction once only on admission error, fresh captured plan same explicit output; confirmation recheck after exclusive RAW lock, actual eviction once and fresh headroom, unchanged frozen plan, unchanged 70/80% gates, no automatic resizing. UI preflight refusal has standalone journal record; render phase logs exact admission/eviction headroom. Regression 2.8GB refused -> actual sampled 3.1GB admitted; 1GB still refused.
+- Serial unobserved grain stores only two remaining sublayers, prepares first directly into existing probability/rate planes. Same expression, order, RNG consumption and Gaussian; observer and parallel paths unchanged. Theoretical additional 97.54MB saved at 12.19MP; particle payload 88B/px instead of96; microstructure may still peak96. Production 168/192 B/px conservative gates unchanged. Existing observed Python golden and production bitwise comparisons required.
+- Stage-specific two worker print/scan synthetic advantage (not all-chain parallel) warrants full RAW fifth independent SHA trial under same grain/CCTF settings, no cache; report thermal/memory. No new default workers until actual device data. Full fixed seed FastStats cache still diagnostic until separate actual full SHA, report explicitly records mode. Original borrowed Float64 FFT faster than Accelerate in last20, retain default. Final full optics/continuous export acceptance still pending.
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

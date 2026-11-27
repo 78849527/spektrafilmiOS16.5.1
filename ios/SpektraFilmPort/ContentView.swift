@@ -3080,6 +3080,37 @@ final class PhotoEditorModel: ObservableObject {
     func prepareExport(resolution: ExportResolutionMode,
                        tiff16: Bool = false) throws
         -> SafeExportResolution.Plan {
+        guard rawOriginalSourceActive && sourcePixelIOEnabled &&
+            sourcePhysicalDirectEnabled else {
+            return try prepareExportOnce(resolution:resolution,tiff16:tiff16)
+        }
+        let operation=tiff16 ? "tiff16_preflight" : "jpeg_preflight"
+        do {
+            let plan=try SafeExportResolution.retryAfterCacheEviction(
+                attempt:{try self.prepareExportOnce(resolution:resolution,tiff16:tiff16)},
+                isMemoryRefusal:{ $0 is SafeExportResolution.Failure || $0 is Build91PhysicalMemory.Failure },
+                evict:{
+                    let before=SafeExportResolution.currentProcessHeadroom()
+                    P1OriginalRawACESIngress.clearAllInputCaches(reason:"export_preflight_pressure")
+                    PhotoProcessor.clearTransientCaches()
+                    OPTDeviceFeedback.recordStandalone(operation:operation,stage:"optional_cache_evicted",
+                        details:["headroomBefore":before.map{String($0)} ?? "unavailable",
+                                 "headroomAfter":SafeExportResolution.currentProcessHeadroom().map{String($0)} ?? "unavailable"])
+                })
+            OPTDeviceFeedback.recordStandalone(operation:operation,stage:"admitted",
+                details:["width":String(plan.dimensions.width),"height":String(plan.dimensions.height),
+                         "estimatedPeakBytes":String(plan.estimatedPeakBytes),
+                         "allowanceBytes":String(plan.allocationAllowanceBytes)])
+            return plan
+        } catch {
+            OPTDeviceFeedback.recordStandalone(operation:operation,stage:"failed",
+                details:["error":String(error.localizedDescription.prefix(500))])
+            throw error
+        }
+    }
+
+    private func prepareExportOnce(resolution: ExportResolutionMode,
+                                   tiff16: Bool) throws -> SafeExportResolution.Plan {
         // Build134: the editor may retain completed Core Image preview
         // kernels even though original RAW export uses the independent
         // source Float64 renderer. Discard only unowned CI intermediate
@@ -3262,7 +3293,8 @@ final class PhotoEditorModel: ObservableObject {
         try requireConfiguredGrain()
         // Recheck live memory before the background work begins. Original
         // source Float64 exports are protected here as well as CI JPEG.
-        if let confirmedPlan {
+        if let confirmedPlan,
+           !(rawOriginalSourceActive && sourcePixelIOEnabled && sourcePhysicalDirectEnabled) {
             try SafeExportResolution.validateBeforeRender(confirmedPlan)
         }
         if grainOriginalMetalEnabled && grainEnabled && grainAmount > 0 {
@@ -3287,12 +3319,12 @@ final class PhotoEditorModel: ObservableObject {
                         "RAW 精细 JPEG 必须选择当前原片、原尺寸或固定像素档位；禁止兼容回退"
                     )
                 }
-                try SafeExportResolution.validateBeforeRender(plan)
                 let optical=try sourcePhysicalParameters()
                 rawPreviewTask?.cancel()
                 let url=try await Task.detached(priority:.userInitiated) {
                     try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"jpeg_export") {
                       try autoreleasepool { () throws -> URL in
+                        try P1OriginalRawACESIngress.validateConfirmedExportPlan(plan)
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical,crop:crop
                         )
@@ -3424,12 +3456,12 @@ final class PhotoEditorModel: ObservableObject {
                         "RAW TIFF16 仅支持已确认原尺寸或固定像素档位；禁止静默缩图"
                     )
                 }
-                try SafeExportResolution.validateBeforeRender(confirmedPlan)
                 let optical=try sourcePhysicalParameters()
                 rawPreviewTask?.cancel()
                 let url=try await Task.detached(priority:.userInitiated) {
                     try P1OriginalRawACESIngress.withExclusiveRAWWork(operation:"tiff16_export") {
                       try autoreleasepool { () throws -> URL in
+                        try P1OriginalRawACESIngress.validateConfirmedExportPlan(confirmedPlan)
                         var result=try P1OriginalRawACESIngress.developSourceCandidate(
                             rawURL,opticalSettings:optical,crop:crop
                         )

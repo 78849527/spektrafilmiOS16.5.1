@@ -83,6 +83,19 @@ enum OPTDeviceFeedback {
         defer {lock.unlock()}
         return try writeLocked()
     }
+    static func recordStandalone(operation:String,stage:String,details:[String:String]) {
+        lock.lock()
+        defer {lock.unlock()}
+        events.append(Event(runID:UUID().uuidString,operation:operation,stage:stage,date:Date(),
+            elapsedSeconds:0,rssBytes:Build133RAWMemoryLadder.resident(),
+            physicalFootprintBytes:Build133RAWMemoryLadder.footprint(),
+            availableBytes:Build133RAWMemoryLadder.available(),details:details))
+        while events.count>historyLimit,let oldest=events.first?.runID {
+            events.removeAll{$0.runID==oldest}
+        }
+        _=try? writeLocked()
+    }
+
     static func mark(_ stage:String,_ details:[String:String]=[:]) {
         markForRun(stage,details,runID:nil)
     }

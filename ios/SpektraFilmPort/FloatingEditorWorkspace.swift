@@ -1343,7 +1343,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。四次独立冲印，每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸未裁切固定种子 SciPy 三亚层缓存已接入；此按钮仍独立对照，不复用编辑器缓存。")
+                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。五次独立冲印（含原尺寸双核印相扫描候选），每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸未裁切固定种子 SciPy 三亚层缓存已接入；此按钮仍独立对照，不复用编辑器缓存。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
