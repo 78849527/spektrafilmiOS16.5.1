@@ -440,6 +440,154 @@ enum OriginalSourceDiffusion {
             }
         }
     }
+    // OPT29: prepare the ORIGINAL recurrence, not sin/cos at each k.
+    // Every block starts from the same (1,+0), so a shared table has the
+    // identical IEEE-754 words to recomputing it per block. Keep separate
+    // forward/inverse plans, unchanged scalar butterfly order and scaling.
+    private struct ExactFFTPlan {
+        let n:Int
+        let inverse:Bool
+        let reverse:[Int]
+        let tr:[Double]
+        let ti:[Double]
+        init(_ n:Int,inverse:Bool) {
+            precondition(n>0 && n.nonzeroBitCount==1)
+            self.n=n;self.inverse=inverse
+            var rev=[Int](repeating:0,count:n)
+            var j=0
+            if n>1 {
+                for i in 1..<n {
+                    var bit=n>>1
+                    while j&bit != 0 {j^=bit;bit>>=1}
+                    j^=bit;rev[i]=j
+                }
+            }
+            var r=[Double](repeating:0,count:n-1)
+            var im=[Double](repeating:0,count:n-1)
+            var len=2
+            while len<=n {
+                let half=len>>1,offset=half-1
+                let a=(inverse ? 2.0 : -2.0)*Double.pi/Double(len)
+                let wr=cos(a),wi=sin(a)
+                var ur=1.0,ui=0.0
+                for k in 0..<half {
+                    r[offset+k]=ur;im[offset+k]=ui
+                    let nextR=ur*wr-ui*wi
+                    ui=ur*wi+ui*wr;ur=nextR
+                }
+                len*=2
+            }
+            reverse=rev;tr=r;ti=im
+        }
+        @inline(__always)
+        func transform(_ real:UnsafeMutablePointer<Double>,_ imag:UnsafeMutablePointer<Double>) {
+            reverse.withUnsafeBufferPointer { rev in
+                for i in 1..<n {
+                    let j=rev[i]
+                    if i<j {
+                        let r=real[i],v=imag[i]
+                        real[i]=real[j];imag[i]=imag[j]
+                        real[j]=r;imag[j]=v
+                    }
+                }
+            }
+            tr.withUnsafeBufferPointer { rp in
+                ti.withUnsafeBufferPointer { ip in
+                    var len=2
+                    while len<=n {
+                        let half=len>>1,offset=half-1
+                        for first in stride(from:0,to:n,by:len) {
+                            for k in 0..<half {
+                                let ur=rp[offset+k],ui=ip[offset+k]
+                                let left=first+k,right=left+half
+                                let r=real[right]*ur-imag[right]*ui
+                                let i=real[right]*ui+imag[right]*ur
+                                real[right]=real[left]-r
+                                imag[right]=imag[left]-i
+                                real[left]+=r;imag[left]+=i
+                            }
+                        }
+                        len*=2
+                    }
+                }
+            }
+            if inverse {
+                let scale=1.0/Double(n)
+                for k in 0..<n {real[k]*=scale;imag[k]*=scale}
+            }
+        }
+        func transform(_ real:inout [Double],_ imag:inout [Double]) {
+            precondition(real.count==n && imag.count==n)
+            real.withUnsafeMutableBufferPointer { rp in
+                imag.withUnsafeMutableBufferPointer { ip in
+                    transform(rp.baseAddress!,ip.baseAddress!)
+                }
+            }
+        }
+    }
+
+    // Rows are contiguous and can be transformed in place. For the columns,
+    // gather 16 neighboring columns a row at a time, transform each column
+    // independently, then scatter a row at a time. No extra whole grid.
+    // This is memory-access blocking ONLY: no independent optical tiles.
+    private static let fftColumnBlock=16
+    private static func fft2Prepared(_ real:inout [Double],_ imag:inout [Double],
+        width:Int,height:Int,row:ExactFFTPlan,column:ExactFFTPlan,
+        blockReal:inout [Double],blockImag:inout [Double]) throws {
+        let block=min(fftColumnBlock,width)
+        precondition(row.n==width && column.n==height &&
+                     blockReal.count==block*height && blockImag.count==block*height)
+        try real.withUnsafeMutableBufferPointer { rp in
+            try imag.withUnsafeMutableBufferPointer { ip in
+                let r=rp.baseAddress!,i=ip.baseAddress!
+                for y in 0..<height {
+                    if y & 31 == 0 {try Task.checkCancellation()}
+                    row.transform(r.advanced(by:y*width),i.advanced(by:y*width))
+                }
+                try blockReal.withUnsafeMutableBufferPointer { br in
+                    try blockImag.withUnsafeMutableBufferPointer { bi in
+                        let cr=br.baseAddress!,ci=bi.baseAddress!
+                        for x in stride(from:0,to:width,by:block) {
+                            try Task.checkCancellation()
+                            let count=min(block,width-x)
+                            for y in 0..<height {
+                                let origin=y*width+x
+                                for c in 0..<count {
+                                    cr[c*height+y]=r[origin+c];ci[c*height+y]=i[origin+c]
+                                }
+                            }
+                            for c in 0..<count {
+                                column.transform(cr.advanced(by:c*height),ci.advanced(by:c*height))
+                            }
+                            for y in 0..<height {
+                                let origin=y*width+x
+                                for c in 0..<count {
+                                    r[origin+c]=cr[c*height+y];i[origin+c]=ci[c*height+y]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static func verifyPreparedButterfly() {
+        for n in [1,2,4,8,32,128,512,2048,8192,32768] {
+            for inverse in [false,true] {
+                var r=(0..<n).map{Double(($0*37+13)%997)/313.0-1.0}
+                var i=(0..<n).map{Double(($0*19+17)%499)/251.0-1.0}
+                r[0] = -0.0;i[0] = 0.0
+                var rr=r,ii=i
+                fft1Frozen(&rr,&ii,inverse:inverse)
+                ExactFFTPlan(n,inverse:inverse).transform(&r,&i)
+                precondition(r.map{$0.bitPattern}==rr.map{$0.bitPattern} &&
+                    i.map{$0.bitPattern}==ii.map{$0.bitPattern},
+                    "Build155 prepared Double FFT butterfly differs")
+            }
+        }
+    }
+
     /// OPT-06: explicit diagnostic-only candidate. Production calls
     /// continue using the existing radix-2 Float64 implementation.
     enum FFTBackend {
@@ -520,13 +668,23 @@ enum OriginalSourceDiffusion {
             var compact=input
             let compactStart=ProcessInfo.processInfo.systemUptime
             try applyCompactInPlace(&compact,width:w,height:h,pixelUM:pixelUM,
-                                    settings:cfg,usePreparedPSFCache:false)
+                                    settings:cfg,usePreparedPSFCache:false,usePreparedFFT:false)
             let compactSeconds=ProcessInfo.processInfo.systemUptime-compactStart
             let compactEqual=zip(compact,reference).allSatisfy{$0.0.bitPattern==$0.1.bitPattern}
             passed=passed && compactEqual
             observe("fft_compact_ready",["family":family.rawValue,
                 "seconds":String(compactSeconds),"bitwiseEqual":String(compactEqual),
                 "scope":"fixed_full_grid_not_12MP"])
+            var prepared=input
+            let preparedStart=ProcessInfo.processInfo.systemUptime
+            try applyCompactInPlace(&prepared,width:w,height:h,pixelUM:pixelUM,
+                                    settings:cfg,usePreparedPSFCache:false)
+            let preparedSeconds=ProcessInfo.processInfo.systemUptime-preparedStart
+            let preparedEqual=zip(prepared,reference).allSatisfy{$0.0.bitPattern==$0.1.bitPattern}
+            passed=passed && preparedEqual
+            observe("fft_prepared_ready",["family":family.rawValue,
+                "seconds":String(preparedSeconds),"compactSeconds":String(compactSeconds),
+                "bitwiseEqual":String(preparedEqual),"scope":"fixed_full_grid_not_12MP"])
             let candidateStart=ProcessInfo.processInfo.systemUptime
             let candidate=try apply(input,width:w,height:h,pixelUM:pixelUM,
                                     settings:cfg,fftBackend:.accelerateCandidate,usePreparedPSFCache:false)
@@ -565,9 +723,14 @@ enum OriginalSourceDiffusion {
     /// RGB frame and PSF. Two image grids, two nonzero kernel row spectra,
     /// one zero-row transform, plus conservative row/column scratch.
     static func compactScratchBytes(fftWidth:Int,fftHeight:Int,kernelSize:Int)->UInt64 {
+        // Both directions of the two axis plans (48 bytes/axis
+        // element for reverse + real/imag tables), conservative 128
+        // B/axis element reserve, plus one reused 16-column complex block.
         UInt64(fftWidth)*UInt64(fftHeight)*16 +
         UInt64(fftWidth)*UInt64(kernelSize)*16 +
-        UInt64(fftWidth)*48+UInt64(fftHeight)*32
+        UInt64(fftWidth)*48+UInt64(fftHeight)*32 +
+        UInt64(fftWidth+fftHeight)*128 +
+        UInt64(min(fftColumnBlock,fftWidth))*UInt64(fftHeight)*16
     }
 
     /// Same full-grid linear convolution. Kernel forward transform is
@@ -579,7 +742,8 @@ enum OriginalSourceDiffusion {
     /// No tiles, reduced radius, real-FFT approximation or reordered sum.
     static func applyCompactInPlace(
         _ rgb:inout [Double],width:Int,height:Int,pixelUM:Double,
-        settings:Settings,usePreparedPSFCache:Bool=true
+        settings:Settings,usePreparedPSFCache:Bool=true,
+        usePreparedFFT:Bool=true
     ) throws {
         try settings.validate()
         guard width>0,height>0,width<=Int.max/height/3,
@@ -613,7 +777,15 @@ enum OriginalSourceDiffusion {
         var kr=[Double](repeating:0,count:ks*fftW),ki=[Double](repeating:0,count:ks*fftW)
         var rr=[Double](repeating:0,count:fftW),ri=[Double](repeating:0,count:fftW)
         var zr=[Double](repeating:0,count:fftW),zi=[Double](repeating:0,count:fftW)
-        fft1(&zr,&zi,inverse:false)
+        let forwardRow=usePreparedFFT ? ExactFFTPlan(fftW,inverse:false) : nil
+        let forwardColumn=usePreparedFFT ? ExactFFTPlan(fftH,inverse:false) : nil
+        let inverseRow=usePreparedFFT ? ExactFFTPlan(fftW,inverse:true) : nil
+        let inverseColumn=usePreparedFFT ? ExactFFTPlan(fftH,inverse:true) : nil
+        let block=usePreparedFFT ? min(fftColumnBlock,fftW) : 1
+        var blockReal=[Double](repeating:0,count:block*fftH)
+        var blockImag=[Double](repeating:0,count:block*fftH)
+        if let forwardRow {forwardRow.transform(&zr,&zi)}
+        else {fft1(&zr,&zi,inverse:false)}
         var cr=[Double](repeating:0,count:fftH),ci=[Double](repeating:0,count:fftH)
         func zero(_ x:inout [Double]) {
             let bytes=x.count*MemoryLayout<Double>.stride
@@ -630,15 +802,58 @@ enum OriginalSourceDiffusion {
                     ar[y*fftW+x]=rgb[(sy*width+sx)*3+c]
                 }
             }
-            fft2(&ar,&ai,width:fftW,height:fftH,inverse:false)
+            if let forwardRow,let forwardColumn {
+                try fft2Prepared(&ar,&ai,width:fftW,height:fftH,row:forwardRow,column:forwardColumn,
+                                 blockReal:&blockReal,blockImag:&blockImag)
+            } else {fft2(&ar,&ai,width:fftW,height:fftH,inverse:false)}
             for y in 0..<ks {
                 if y & 31 == 0 {try Task.checkCancellation()}
                 zero(&rr);zero(&ri)
                 for x in 0..<ks {rr[x]=kernel.data[(y*ks+x)*3+c]}
-                fft1(&rr,&ri,inverse:false)
+                if let forwardRow {forwardRow.transform(&rr,&ri)}
+                else {fft1(&rr,&ri,inverse:false)}
                 let origin=y*fftW
                 for x in 0..<fftW {kr[origin+x]=rr[x];ki[origin+x]=ri[x]}
             }
+            if let forwardColumn {
+                // Reuse exactly the same column work block as the image
+                // FFT. Adjacent columns read contiguous kernel/image rows.
+                // Each element retains the old complex multiply order.
+                try ar.withUnsafeMutableBufferPointer { ap in
+                    try ai.withUnsafeMutableBufferPointer { bp in
+                        try blockReal.withUnsafeMutableBufferPointer { br in
+                            try blockImag.withUnsafeMutableBufferPointer { bi in
+                                let a=ap.baseAddress!,b=bp.baseAddress!
+                                let c=br.baseAddress!,d=bi.baseAddress!
+                                for x in stride(from:0,to:fftW,by:block) {
+                                    try Task.checkCancellation()
+                                    let count=min(block,fftW-x)
+                                    for y in 0..<fftH {
+                                        let offset=y*fftW+x
+                                        for j in 0..<count {
+                                            let k=j*fftH+y
+                                            if y<ks {c[k]=kr[offset+j];d[k]=ki[offset+j]}
+                                            else {c[k]=zr[x+j];d[k]=zi[x+j]}
+                                        }
+                                    }
+                                    for j in 0..<count {
+                                        forwardColumn.transform(c.advanced(by:j*fftH),d.advanced(by:j*fftH))
+                                    }
+                                    for y in 0..<fftH {
+                                        let offset=y*fftW+x
+                                        for j in 0..<count {
+                                            let k=j*fftH+y,i=offset+j
+                                            let real=a[i]*c[k]-b[i]*d[k]
+                                            let imag=a[i]*d[k]+b[i]*c[k]
+                                            a[i]=real;b[i]=imag
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
             for x in 0..<fftW {
                 if x & 31 == 0 {try Task.checkCancellation()}
                 for y in 0..<fftH {
@@ -653,8 +868,12 @@ enum OriginalSourceDiffusion {
                     ar[i]=real;ai[i]=imag
                 }
             }
+            }
             try Task.checkCancellation()
-            fft2(&ar,&ai,width:fftW,height:fftH,inverse:true)
+            if let inverseRow,let inverseColumn {
+                try fft2Prepared(&ar,&ai,width:fftW,height:fftH,row:inverseRow,column:inverseColumn,
+                                 blockReal:&blockReal,blockImag:&blockImag)
+            } else {fft2(&ar,&ai,width:fftW,height:fftH,inverse:true)}
             // All source pixels of this channel have been consumed by
             // the FFT. Other channels have not been modified.
             for y in 0..<height {

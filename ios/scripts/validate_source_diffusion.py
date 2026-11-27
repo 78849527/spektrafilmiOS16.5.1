@@ -120,6 +120,8 @@ def main():
     )
     assert expected_marker in proc.stderr.splitlines(), proc.stderr
     assert "PASS Build154 compact full-grid FFT 64 bitwise cases" in proc.stderr.splitlines(), proc.stderr
+    assert "PASS Build155 prepared Double FFT butterfly 20 bitwise cases" in proc.stderr.splitlines(), proc.stderr
+    assert "PASS Build155 prepared blocked full-grid FFT 64 bitwise cases" in proc.stderr.splitlines(), proc.stderr
     print(proc.stderr, end="")
     parsed={}
     for line in proc.stdout.splitlines():

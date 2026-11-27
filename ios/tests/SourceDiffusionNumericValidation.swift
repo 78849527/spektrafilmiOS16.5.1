@@ -7,6 +7,9 @@ import Foundation
 struct SourceDiffusionNumericValidation {
     static func main() throws {
         OriginalSourceDiffusion.verifyExactButterfly()
+        OriginalSourceDiffusion.verifyPreparedButterfly()
+        FileHandle.standardError.write(Data(
+            "PASS Build155 prepared Double FFT butterfly 20 bitwise cases\n".utf8))
         // stdout is a strict METADATA/RESULT/PRINT CSV transport.
         // Send the independent bitwise test evidence to stderr instead.
         FileHandle.standardError.write(Data(
@@ -45,9 +48,15 @@ struct SourceDiffusionNumericValidation {
                     var compact=input
                     try OriginalSourceDiffusion.applyCompactInPlace(
                         &compact,width:w,height:h,pixelUM:pixelUM,settings:cfg,
-                        usePreparedPSFCache:false)
+                        usePreparedPSFCache:false,usePreparedFFT:false)
                     precondition(compact.map{$0.bitPattern}==legacy.map{$0.bitPattern},
                                  "Build154 compact full-grid FFT differs")
+                    var prepared=input
+                    try OriginalSourceDiffusion.applyCompactInPlace(
+                        &prepared,width:w,height:h,pixelUM:pixelUM,settings:cfg,
+                        usePreparedPSFCache:false)
+                    precondition(prepared.map{$0.bitPattern}==legacy.map{$0.bitPattern},
+                                 "Build155 prepared blocked full-grid FFT differs")
                     precondition(input.count==compact.count)
                     compactCases+=1
                 }
@@ -56,6 +65,8 @@ struct SourceDiffusionNumericValidation {
         precondition(compactCases==64)
         FileHandle.standardError.write(Data(
             "PASS Build154 compact full-grid FFT 64 bitwise cases\n".utf8))
+        FileHandle.standardError.write(Data(
+            "PASS Build155 prepared blocked full-grid FFT 64 bitwise cases\n".utf8))
         let dimensions=[(11,9),(16,13),(29,21),(24,19)]
         for caseIndex in settings.indices {
             let (w,h)=dimensions[caseIndex]

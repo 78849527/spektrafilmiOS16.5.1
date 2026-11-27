@@ -47,6 +47,13 @@ assert "compactSequentialFFT:envelope.compactSequentialFFT" in physical
 assert "compactSequentialFFT:footprint.compactSequentialFFT" in app
 assert "max(basePeak,fftStage)" in memory
 assert "applyCompactInPlace(" in physical
+diffusion=read("ios/SpektraFilmPort/OriginalSourceDiffusion.swift")
+assert "private struct ExactFFTPlan" in diffusion
+assert "private static let fftColumnBlock=16" in diffusion
+assert "usePreparedFFT:Bool=true" in diffusion
+assert "fft2Prepared(&ar,&ai" in diffusion
+assert "usePreparedFFT:false" in diffusion
+assert "UInt64(min(fftColumnBlock,fftWidth))*UInt64(fftHeight)*16" in diffusion
 assert 'admitPhase("film_halation",120)' in physical
 assert 'admitPhase("grain",128)' in physical
 assert '"full_optical_phase_plan"' in raw

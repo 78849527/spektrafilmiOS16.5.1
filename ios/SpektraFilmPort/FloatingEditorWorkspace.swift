@@ -1306,7 +1306,7 @@ struct FloatingEditorWorkspace: View {
                         statusReportPresented=false
                         onRunOptimizationFFT()
                     } label: {
-                        Label("FFT 原版 / 紧凑 / Accelerate 对照",systemImage:"waveform.path")
+                        Label("FFT 原版 / 紧凑 / 优化 / Accelerate 对照",systemImage:"waveform.path")
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)

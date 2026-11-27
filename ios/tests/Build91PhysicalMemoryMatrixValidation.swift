@@ -120,6 +120,17 @@ enum Build91PhysicalMemoryMatrixValidation {
         let compactBytes=OriginalSourceDiffusion.compactScratchBytes(
             fftWidth:fft.fftWidth,fftHeight:fft.fftHeight,kernelSize:2*fft.radius+1)
         precondition(compactBytes<fft.actualScratchBytes)
+        let width=UInt64(fft.fftWidth),height=UInt64(fft.fftHeight)
+        let oldCompact=width*height*16+width*UInt64(2*fft.radius+1)*16+width*48+height*32
+        precondition(compactBytes==oldCompact+(width+height)*128+min(16,width)*height*16)
+        // Actual Build154 8192x8192, radius 876: exact compact geometry
+        // plus plan/block reserve; not a new full-grid allocation.
+        let fullOld:UInt64=1_304_164_352
+        let fullNew=OriginalSourceDiffusion.compactScratchBytes(
+            fftWidth:8192,fftHeight:8192,kernelSize:1753)
+        let actualOld=UInt64(8192)*8192*16+UInt64(8192)*1753*16+UInt64(8192)*80
+        precondition(fullNew==actualOld+UInt64(8192*2)*128+UInt64(16*8192)*16)
+        precondition(fullNew<2*fullOld)
         precondition(compact.additionalFFTBytes==compactBytes+fft.psfBytes)
         precondition(compact.estimatedPeakBytes==max(168_000_000,64_000_000+compactBytes+fft.psfBytes))
         try Build91PhysicalMemory.validate(compact)
