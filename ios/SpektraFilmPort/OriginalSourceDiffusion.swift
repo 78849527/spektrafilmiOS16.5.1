@@ -307,7 +307,7 @@ enum OriginalSourceDiffusion {
         while k<n { k*=2 }
         return k
     }
-    private static func fft1(_ real:inout [Double],_ imag:inout [Double],
+    private static func fft1Frozen(_ real:inout [Double],_ imag:inout [Double],
                              inverse:Bool) {
         let n=real.count
         var j=0
@@ -341,6 +341,67 @@ enum OriginalSourceDiffusion {
         if inverse {
             let scale=1.0/Double(n)
             for k in real.indices { real[k]*=scale;imag[k]*=scale }
+        }
+    }
+    private static func fft1(_ real:inout [Double],_ imag:inout [Double],
+                             inverse:Bool) {
+        let n=real.count
+        precondition(n==imag.count && n>=2 && n.nonzeroBitCount==1)
+        real.withUnsafeMutableBufferPointer { rp in
+            imag.withUnsafeMutableBufferPointer { ip in
+                let real=rp.baseAddress!,imag=ip.baseAddress!
+        var j=0
+        for i in 1..<n {
+            var bit=n>>1
+            while j&bit != 0 { j^=bit; bit>>=1 }
+            j^=bit
+            if i<j {
+                let r=real[i],v=imag[i]
+                real[i]=real[j];imag[i]=imag[j]
+                real[j]=r;imag[j]=v
+            }
+        }
+        var len=2
+        while len<=n {
+            let a=(inverse ? 2.0 : -2.0)*Double.pi/Double(len)
+            let wr=cos(a),wi=sin(a)
+            for first in stride(from:0,to:n,by:len) {
+                var ur=1.0,ui=0.0
+                for k in 0..<(len>>1) {
+                    let left=first+k,right=left+(len>>1)
+                    let tr=real[right]*ur-imag[right]*ui
+                    let ti=real[right]*ui+imag[right]*ur
+                    real[right]=real[left]-tr
+                    imag[right]=imag[left]-ti
+                    real[left]+=tr;imag[left]+=ti
+                    let nextR=ur*wr-ui*wi
+                    ui=ur*wi+ui*wr;ur=nextR
+                }
+            }
+            len*=2
+        }
+        if inverse {
+            let scale=1.0/Double(n)
+            for k in 0..<n { real[k]*=scale;imag[k]*=scale }
+        }
+            }
+        }
+    }
+    // Test the exact 1D production butterfly against its frozen pre-151
+    // operation sequence, in both directions with signed and mixed inputs.
+    static func verifyExactButterfly() {
+        for n in [2,4,8,32,128,512,2048,8192,32768] {
+            for inverse in [false,true] {
+                var r=(0..<n).map{Double(($0*37+13)%997)/313.0-1.0}
+                var i=(0..<n).map{Double(($0*19+17)%499)/251.0-1.0}
+                r[0] = -0.0;i[0] = 0.0
+                var rr=r,ii=i
+                fft1Frozen(&rr,&ii,inverse:inverse)
+                fft1(&r,&i,inverse:inverse)
+                precondition(r.map{$0.bitPattern}==rr.map{$0.bitPattern} &&
+                    i.map{$0.bitPattern}==ii.map{$0.bitPattern},
+                    "Build151 Double FFT butterfly differs")
+            }
         }
     }
     private static func fft2(_ real:inout [Double],_ imag:inout [Double],

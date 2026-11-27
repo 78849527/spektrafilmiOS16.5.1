@@ -166,10 +166,10 @@ enum Build106SourceMemoryLedger {
     )->SerialGrainLifetime? {
         guard pixels>0,pixels<=13_000_000 else{return nil}
         let scalar=pixels*8,rgb=pixels*24
-        let cloud=dyeCloud ? scalar : 0
-        // 3 RGB-equivalent planes: input, out, current channel's 3
-        // sublayers; probability/rates/counts; optional scalar cloud.
-        // The cloud Gaussian borrows rates after sampling (no new plane).
+        // Serial no-observer path reuses dead rates for cloud and
+        // dead probabilities for its intermediate after both draws.
+        // Observer/parallel scratch() remains the conservative model.
+        let cloud:UInt64=0
         let scratch=rgb+scalar*3+cloud
         let particle=rgb*2+scratch
         // After release: input + out. Clump RGB is conditional and its

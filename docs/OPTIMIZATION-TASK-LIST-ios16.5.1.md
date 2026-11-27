@@ -299,6 +299,14 @@
 - OPT25：A15 Metal 不采用 Float32 替代 Double；无已经验证的全套软件 Float64 GPU 性能/逐位证据，保留 CPU 原版精确路径。后续可研究，但本次不接入未认证 GPU、并行或 FFT 后端。已支持显式 FastStats 开关及现有全尺寸颗粒对照，可单独测全尺寸 FastStats；不改变用户默认。
 - 候选未执行 CI；集中版本 v1.8.116/150 后统一验证并仅在 exact-SHA 全部 gates 成功后发 IPA。
 
+## Build151 集中候选
+- Build150 exact SHA 3b1ae16 / CI 45931078390 Linux6/6 macOS73/73；真机 544 events, 10/10 complete，22/22 cache bit-exact，full uncropped RAW seeded SciPy three-sublayer cold/hot full output SHA256 equal, verified owned cache credit. Production no-grain full preview 39.03s cold/15.53s hot, 721.9MB hot; seeded full diagnostic hot ~39s, peak ~1422MB. JPEG thermal/background confounded. No claim of cold 40–50s or 1100MB target.
+- Production full cache promotion limited to uncropped, supported Hanatos negative fixed seed serial SciPy three-sublayer or existing no grain. FastStats/unseeded/single-layer not promoted. Exact full SHA key, owned distinct frame credit after baseline input gate, 80% live gate unchanged, optional cache eviction before render, export consumes only matching entry and never retains. No optical fallback. Full grain hot runtime must be tested.
+- Grain serial unobserved rates plane becomes dye cloud only after Poisson + Binomial; probabilities become blur intermediate only after all are consumed. Frozen observer/parallel path retains separate cloud. Source counts and order, reflect Gaussian unchanged. Logical serial scratch 48 B/px (was 56 with cloud); 96 B/px particle peak, saves one 8 B/px array, conservative production budget unchanged. Physical footprint improvement not certified.
+- OPT26 diagnostic-only stage mask 1 camera/2 H-D/4 print, 1/2/4 full worker and 2-worker stage isolation, thermal and bitwise reports. No parallel default change without device performance.
+- OPT27 same radix-2 Float64 row/column FFT, use exclusive mutable pointer for butterfly, frozen 18 forward/inverse geometry bitwise tests and existing original PSF/whole convolution checks. No Accelerate promotion, no geometry/precision/budget change.
+- Full comprehensive optical acceptance remains device gate OPT28. Consolidate into one IPA after all CI tests.
+
 ## 后续验收
 
 独立 Python 各 tap、RAW rawpy 实图对照、8/10/12/13MP、全光学及连续操作、A15 iOS16.5.1 实机。集中构建前更新此清单，记录实际测试结果、SHA、未认证项与真实 CI/IPA 状态。

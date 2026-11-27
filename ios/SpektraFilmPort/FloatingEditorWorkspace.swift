@@ -1321,7 +1321,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("固定线性 ACES 测试图，1/2/4 线程，分别检查无颗粒和受控九层颗粒+印相扩散；逐位比较、阶段耗时、25ms 内存采样。正式冲印仍串行，结果并入性能反馈 JSON。")
+                    Text("固定线性 ACES 测试图，1/2/4 线程及相机、H-D、印相分阶段两核候选，分别检查无颗粒和受控九层颗粒+印相扩散；逐位比较、阶段耗时、25ms 内存采样。正式冲印仍串行，结果并入性能反馈 JSON。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
@@ -1332,7 +1332,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("固定 1024×768 线性 ACES；检查相纸/扫描复用、上游失效及清理代际，并验证受控九层颗粒重新抽样。逐位比较、记录耗时、热状态及内存。正式快速预览已支持受控颗粒缓存；新增相纸密度候选独立对照，未转正。")
+                    Text("固定 1024×768 线性 ACES；检查相纸/扫描复用、上游失效及清理代际，并验证受控九层颗粒重新抽样。逐位比较、记录耗时、热状态及内存。正式快速预览支持受控颗粒胶片缓存及无颗粒相纸缓存；保留独立逐位对照。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
@@ -1343,7 +1343,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。四次独立冲印，每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸颗粒缓存仍关闭。")
+                    Text("使用当前未裁切真实 RAW、受支持的负片设置；可开启受控种子颗粒。四次独立冲印，每次重新采样颗粒，比较完整 Float64 输出字节 SHA256；动态内存不足明确拒绝。正式原尺寸未裁切固定种子 SciPy 三亚层缓存已接入；此按钮仍独立对照，不复用编辑器缓存。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {

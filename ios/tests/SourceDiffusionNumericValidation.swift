@@ -6,6 +6,8 @@ import Foundation
 @main
 struct SourceDiffusionNumericValidation {
     static func main() throws {
+        OriginalSourceDiffusion.verifyExactButterfly()
+        print("PASS Build151 exact borrowed Double FFT butterfly, 18 forward/inverse geometry cases")
         let settings: [OriginalSourceDiffusion.Settings] = [
             .init(active:true,family:.glimmerglass,strength:0.125,
                   spatialScale:1,haloWarmth:0,coreIntensity:1,

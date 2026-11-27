@@ -280,11 +280,17 @@ enum OriginalSourcePhysicalImage {
             lock.lock();defer{lock.unlock()}
             return generation==expectedGeneration && entry != nil
         }
-        // Only the isolated full RAW diagnostic may credit this allocation.
+        // The isolated full RAW diagnostic may credit this allocation.
         // Return a strong snapshot, not a guessed byte count or future release.
         func existingDensity(expectedGeneration:UInt64)->[Double]? {
             lock.lock();defer{lock.unlock()}
             return generation==expectedGeneration ? entry?.1 : nil
+        }
+        // Read-only exact key lookup, no change to the cache generation.
+        func matchingDensity(_ key:Key,expectedGeneration:UInt64)->[Double]? {
+            lock.lock();defer{lock.unlock()}
+            guard generation==expectedGeneration,let entry,entry.0==key else{return nil}
+            return entry.1
         }
         @discardableResult
         func clear(expectedGeneration:UInt64?=nil)->UInt64 {
@@ -335,7 +341,7 @@ enum OriginalSourcePhysicalImage {
         p.deterministicPixelWorkers==1
     }
 
-    private static func filmDensityReuseKey(
+    static func filmDensityReuseKey(
         frame:OriginalSourcePixelIO.Frame,parameters:Parameters,
         allowSeededGrain:Bool=false
     ) throws -> FilmDensityReuse.Key {
@@ -430,9 +436,13 @@ enum OriginalSourcePhysicalImage {
         // Explicit candidate only. Production retains serial default until
         // independent device parity, performance and headroom are measured.
         var deterministicPixelWorkers:Int=1
+        // Diagnostic stage selection: 1 camera, 2 H-D, 4 print/scan.
+        // No production caller opts into workers > 1.
+        var deterministicPixelStageMask:Int=7
 
         func validate() throws {
-            guard (1...4).contains(deterministicPixelWorkers) else {
+            guard (1...4).contains(deterministicPixelWorkers),
+                  (1...7).contains(deterministicPixelStageMask) else {
                 throw Failure.invalid("原版确定性像素线程数无效")
             }
             guard SpectralPhysics.supportedFilmIDs.contains(filmID),
@@ -580,10 +590,15 @@ enum OriginalSourcePhysicalImage {
                 "grain":String(grain),"printDiffusion":String(grain),"input":"fixed_linear_ACES16_promoted_to_Double"])
             var reference=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
             try developInPlace(&reference,parameters:params)
-            for workers in [1,2,4] {
+            // Isolate expensive stages rather than assuming all-core
+            // scheduling of the whole pipeline is faster on A15.
+            for (workers,mask) in [(1,7),(2,7),(4,7),(2,1),(2,2),(2,4)] {
                 try Task.checkCancellation()
                 params.deterministicPixelWorkers=workers
-                emit("parallel_trial_begin",["scenario":scenario,"workers":String(workers)])
+                params.deterministicPixelStageMask=mask
+                let thermalBefore=ProcessInfo.processInfo.thermalState.rawValue
+                emit("parallel_trial_begin",["scenario":scenario,"workers":String(workers),
+                    "stageMask":String(mask)])
                 var actual=OriginalSourcePixelIO.Frame(width:width,height:height,rgb:input)
                 let sampler=Build133RAWMemoryLadder.RSSSampler()
                 var stages=[String:String]()
@@ -610,6 +625,9 @@ enum OriginalSourcePhysicalImage {
                 allPassed=allPassed && passed
                 stages["scenario"]=scenario
                 stages["workers"]=String(workers)
+                stages["stageMask"]=String(mask)
+                stages["thermalBefore"]=String(thermalBefore)
+                stages["thermalAfter"]=String(ProcessInfo.processInfo.thermalState.rawValue)
                 stages["seconds"]=String(elapsed)
                 stages["bitMismatches"]=String(different)
                 stages["maxAbsoluteError"]=String(maxError)
@@ -946,10 +964,10 @@ enum OriginalSourcePhysicalImage {
         } else {reuseKey=nil}
         let committedInputBytes=UInt64(frame.rgb.count) *
             UInt64(MemoryLayout<Double>.stride)
-        // On the explicitly required hot diagnostic only, pin the exact
+        // On an explicitly required full-grid hot hit, pin the exact
         // matching CMY array before sampling available memory. Its 24 B/px
         // is already included in the additive cache envelope. Never credit
-        // a miss, stale lease, estimated release, or a production preview.
+        // a miss, stale lease, estimated release, or reduced-grid preview.
         var pinnedTransaction:(generation:UInt64,density:[Double]?)?
         var committedCacheBytes:UInt64=0
         if requireExistingFilmDensity {
@@ -962,7 +980,7 @@ enum OriginalSourcePhysicalImage {
                   filmDensityReuse.hasEntry(expectedGeneration:transaction.generation) else {
                 throw Failure.invalid("原尺寸热缓存诊断未命中或代际失效")
             }
-            // The full diagnostic always creates a separate decoded RGB
+            // The full RAW route always creates a separate decoded RGB
             // frame. Verify distinct storage rather than counting an alias.
             let separate=density.withUnsafeBufferPointer { cache in
                 frame.rgb.withUnsafeBufferPointer { input in cache.baseAddress != input.baseAddress }
@@ -1029,6 +1047,9 @@ enum OriginalSourcePhysicalImage {
         phaseMemoryObserver?("source_input_ready")
         let engine=try parameters.createEngine()
         let parallelPixels=parameters.deterministicPixelWorkers>1
+        let parallelCamera=parallelPixels && parameters.deterministicPixelStageMask & 1 != 0
+        let parallelDevelop=parallelPixels && parameters.deterministicPixelStageMask & 2 != 0
+        let parallelPrint=parallelPixels && parameters.deterministicPixelStageMask & 4 != 0
         guard !parallelPixels || stageDoubleObserver == nil else {
             throw Failure.invalid("多线程候选不支持整图阶段观察器；请显式使用串行")
         }
@@ -1265,7 +1286,7 @@ enum OriginalSourcePhysicalImage {
             }
             return (initial.rawLog,initialDensity,nil)
         }
-        if parallelPixels {
+        if parallelCamera {
             phaseMemoryObserver?("parallel_camera_begin")
             try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&inhibitors,
                 workers:parameters.deterministicPixelWorkers) { _,sample in
@@ -1342,11 +1363,11 @@ enum OriginalSourcePhysicalImage {
                     : engine.sourceSpatialDevelopInitialLog(corrected)
             }
             // Grain must finish ALL nine layers before any print photons.
-            let rgb=try (controlledFilmGrain || reuseKey != nil)
+            let rgb=try (controlledFilmGrain || reuseKey != nil || parallelPrint)
                 ? density : printPixel(density,paperObserver:paperObserver)
             return (density,rgb)
         }
-        if parallelPixels {
+        if parallelDevelop {
             phaseMemoryObserver?("parallel_develop_begin")
             // diffused is read-only until the synchronous worker wave returns.
             let field=diffused
@@ -1451,10 +1472,10 @@ enum OriginalSourcePhysicalImage {
                 let scanned=try engine.scanSourcePaperDensity(cmy,linear:scanLinear,xyz:scanXYZ)
                 for c in 0..<3 {frame.rgb[k+c]=scanned[c]}
             }
-        } else if controlledFilmGrain || reuseKey != nil {
+        } else if controlledFilmGrain || reuseKey != nil || parallelPrint {
             // Grain RNG and full-frame filters have finished. Only the
             // deterministic density-to-paper/scanner mapping is parallel.
-            if parallelPixels {
+            if parallelPrint {
                 phaseMemoryObserver?("parallel_grain_print_begin")
                 var noAux=[Double]()
                 try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,

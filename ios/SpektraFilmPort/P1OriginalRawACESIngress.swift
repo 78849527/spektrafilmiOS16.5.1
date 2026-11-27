@@ -293,7 +293,7 @@ enum P1OriginalRawACESIngress {
         // A confirmed crop instead admits the native decoder geometry
         // independently; the cropped work grid still passes the full gate.
         clearPreviewInputCache()
-        let densityLease=fullDensityCache.lease()
+        var densityLease=fullDensityCache.lease()
         var keepDensity=false
         // Export may consume an existing full preview density, but never
         // retain a new export cache. Errors/cancellation release the entry.
@@ -310,34 +310,83 @@ enum P1OriginalRawACESIngress {
         OPTDeviceFeedback.mark("full_optical_admission",["width":String(working.width),
             "height":String(working.height),"film":selected.filmID,"paper":selected.paperID])
         recordOpticalOptions(selected,cropped:crop != nil)
-        // Build148-A: only the real-device verified no-grain, uncropped
-        // full-grid scope. The optional cache never changes optical settings.
+        // Build150 A15 full uncropped RAW cold/hot SHA256 matched with
+        // fixed-seed serial SciPy three-sublayer grain. Keep exactly that
+        // production scope (fast_stats full cache remains unpromoted).
+        let allowSeededFull=selected.sourceGrain.active &&
+            selected.sourceGrain.sublayersActive && !selected.sourceGrain.useFastStats
         let densityBytes=UInt64(working.width)*UInt64(working.height)*24
         let retainedBytes=densityBytes+UInt64(decoded.packedRGB16.count)
+        let eligible=crop==nil &&
+            OriginalSourcePhysicalImage.canReuseFilmDensity(selected,allowSeededGrain:allowSeededFull)
         var reuseAllowed=false
+        var requireHotHit=false
         var reuseReason="unsupported_parameters"
-        if crop==nil && !selected.sourceGrain.active &&
-            OriginalSourcePhysicalImage.canReuseFilmDensity(selected) {
-            if acquisition.key==nil {
-                reuseReason="identity_unavailable"
-            } else if fullDensityCache.lease() != densityLease {
-                reuseReason="lease_invalidated"
-            } else if !retainDecodedSource &&
-                !fullDensityCache.hasEntry(expectedGeneration:densityLease) {
-                reuseReason="export_without_preview_entry"
-            } else if !canRetainPreviewDensity(bytes:retainedBytes) {
-                reuseReason="retention_headroom"
+        if !eligible || acquisition.key==nil ||
+            fullDensityCache.lease() != densityLease ||
+            (!retainDecodedSource && !fullDensityCache.hasEntry(expectedGeneration:densityLease)) ||
+            !canRetainPreviewDensity(bytes:retainedBytes) {
+            if eligible {reuseReason="identity_lease_or_retention"}
+            densityLease=fullDensityCache.clear(expectedGeneration:densityLease)
+        } else {
+            reuseAllowed=true
+            reuseReason="candidate"
+        }
+        // First admit the unmodified optical job. The optional existing
+        // cache can be evicted to make room, never reduce render quality.
+        do {
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:working.width,height:working.height,parameters:selected)
+        } catch {
+            guard reuseAllowed else {throw error}
+            fullDensityCache.clear(expectedGeneration:densityLease)
+            reuseAllowed=false
+            reuseReason="baseline_headroom_eviction"
+            try OriginalSourcePhysicalImage.validateMemoryBudget(
+                width:working.width,height:working.height,parameters:selected)
+        }
+        var frame = try makeSourceFrame(
+            working, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
+        )
+        OPTDeviceFeedback.mark("float64_input_ready")
+        if reuseAllowed {
+            let key=try OriginalSourcePhysicalImage.filmDensityReuseKey(
+                frame:frame,parameters:selected,allowSeededGrain:allowSeededFull)
+            // Strong actual matching snapshot across the live budget query.
+            // No credit for a stale key, alias, or unallocated future scratch.
+            let existing=fullDensityCache.matchingDensity(key,expectedGeneration:densityLease)
+            defer {withExtendedLifetime(existing) {}}
+            let existingBytes:UInt64
+            if let existing,existing.count==frame.rgb.count,
+               existing.withUnsafeBufferPointer({ cache in
+                   frame.rgb.withUnsafeBufferPointer { input in cache.baseAddress != input.baseAddress }
+               }) {
+                existingBytes=UInt64(existing.count)*8
+                requireHotHit=true
             } else {
+                existingBytes=0
+                densityLease=fullDensityCache.clear(expectedGeneration:densityLease)
+                // Export never builds a fresh cache on a miss.
+                if !retainDecodedSource {reuseAllowed=false;reuseReason="export_key_miss"}
+            }
+            if reuseAllowed && fullDensityCache.lease() != densityLease {
+                reuseAllowed=false
+                requireHotHit=false
+                reuseReason="lease_invalidated"
+            }
+            if reuseAllowed {
                 let envelope=OriginalSourcePhysicalImage.memoryEnvelope(
                     width:working.width,height:working.height,parameters:selected)
                 do {
                     try OriginalSourcePhysicalImage.validateMemoryBudget(
                         width:working.width,height:working.height,
                         additionalBytesPerPixel:envelope.additionalBytesPerPixel+24,
+                        alreadyCommittedInputBytes:UInt64(frame.rgb.count)*8+existingBytes,
                         cameraDiffusion:envelope.cameraDiffusion,paperDiffusion:envelope.paperDiffusion)
-                    reuseAllowed=true
-                    reuseReason="admitted"
+                    reuseReason=requireHotHit ? "verified_owned_hot_cache" : "cold_cache_admitted"
                 } catch {
+                    reuseAllowed=false
+                    requireHotHit=false
                     reuseReason="cache_memory_admission"
                 }
             }
@@ -345,21 +394,17 @@ enum P1OriginalRawACESIngress {
         if !reuseAllowed {fullDensityCache.clear(expectedGeneration:densityLease)}
         OPTDeviceFeedback.mark("full_density_cache_policy",[
             "eligible":String(reuseAllowed),"reason":reuseReason,
-            "densityBytes":String(densityBytes),"retainPreview":String(retainDecodedSource)])
+            "densityBytes":String(densityBytes),"retainPreview":String(retainDecodedSource),
+            "seededSciPy":String(allowSeededFull),"requiredHotHit":String(requireHotHit)])
         recordSerialGrainLifetime(selected,width:working.width,height:working.height,
                                   cacheAdmitted:reuseAllowed)
-        try OriginalSourcePhysicalImage.validateMemoryBudget(
-            width:working.width,height:working.height,parameters:selected
-        )
-        var frame = try makeSourceFrame(
-            working, maximumAllowedPixels: OriginalSourcePhysicalImage.maximumPixels
-        )
-        OPTDeviceFeedback.mark("float64_input_ready")
         try OriginalSourcePhysicalImage.developInPlace(
             &frame, parameters: selected,
             phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},
             filmDensityReuse:reuseAllowed ? fullDensityCache : nil,
-            filmDensityReuseLease:reuseAllowed ? densityLease : nil
+            filmDensityReuseLease:reuseAllowed ? densityLease : nil,
+            allowSeededGrainDensityReuse:allowSeededFull,
+            requireExistingFilmDensity:reuseAllowed && requireHotHit
         )
         try Task.checkCancellation()
         OPTDeviceFeedback.mark("optics_done")

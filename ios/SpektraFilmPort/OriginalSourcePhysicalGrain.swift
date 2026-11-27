@@ -268,7 +268,8 @@ enum OriginalSourcePhysicalGrain {
         // No extra full-resolution Double saturation field is needed.
         // Build116: dye cloud carries ONE channel per source sublayer.
         // Reuse its scalar buffer for full-frame FIR/YVV output.
-        var cloud=settings.dyeCloudBlurUM>0
+        let reuseSerialCloudPlanes = !retainAllSublayers && !settings.useUnseededParallel
+        var cloud=settings.dyeCloudBlurUM>0 && !reuseSerialCloudPlanes
             ? [Double](repeating:0,count:pixels) : []
         var controlledFastSampler:OriginalSourceNumbaFastCounts? =
             settings.useFastStats && !settings.useUnseededParallel
@@ -384,7 +385,22 @@ enum OriginalSourcePhysicalGrain {
                 // blur_dye_clouds_um WITHOUT dividing by pixelUM, then
                 // multiplies sqrt(optical density per particle).
                 let sigma=settings.dyeCloudBlurUM*sqrt(od)
-                if sigma>0 {
+                if sigma>0 && reuseSerialCloudPlanes {
+                    // Both draw phases have ended. Convert each count into
+                    // the dead rates plane with the exact prior expression.
+                    // Only after ALL probabilities are consumed, reuse their
+                    // plane as the full-frame Gaussian intermediate.
+                    for p in 0..<pixels {
+                        if p & 4095 == 0 {try Task.checkCancellation()}
+                        let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
+                        rates[p]=Double(counts[p])*od*saturation
+                    }
+                    try SourceGrainScalarGaussian.blurInPlace(
+                        &rates,width:width,height:height,sigma:sigma,
+                        intermediate:&probabilities
+                    )
+                    for p in 0..<pixels {out[p*3+ch]+=rates[p]}
+                } else if sigma>0 {
                     for p in 0..<pixels {
                         let saturation=1.0-probabilities[p]*uniformity*(1.0-1e-6)
                         cloud[p]=Double(counts[p])*od*saturation
