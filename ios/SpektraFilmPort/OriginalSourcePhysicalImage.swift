@@ -1007,7 +1007,8 @@ enum OriginalSourcePhysicalImage {
         consumeExistingFilmDensity:Bool = false,
         diffusionFFTWorkers:Int=1,
         reuseIdenticalDiffusionKernelRows:Bool=false,
-        postDiffusionScanWorkers:Int=1
+        postDiffusionScanWorkers:Int=1,
+        compactPixelWorkers:Int=1
     ) throws {
         try Task.checkCancellation()
         try parameters.validate()
@@ -1094,6 +1095,14 @@ enum OriginalSourcePhysicalImage {
               paperDensityReuse==nil && stageDoubleObserver==nil) else {
             throw Failure.invalid("印相后扫描候选需要独立紧凑 Float64 印相扩散路径")
         }
+        // Independent RGB spans reuse existing input/inhibitor storage.
+        // No new full-frame intermediate, RNG or spatial convolution in workers.
+        guard compactPixelWorkers==1 || (compactPixelWorkers==2 &&
+              compactOptics && activePrintDiffusion && filmDensityReuse==nil &&
+              paperDensityReuse==nil && stageDoubleObserver==nil &&
+              parameters.deterministicPixelWorkers==1) else {
+            throw Failure.invalid("双核 H-D 候选需要独立紧凑 Float64 印相扩散路径")
+        }
         // Recheck actual headroom immediately before a stage allocates
         // large buffers. Include potential COW and conservative per-stage
         // reserve; source RGB is already resident. No hidden downgrade.
@@ -1161,8 +1170,9 @@ enum OriginalSourcePhysicalImage {
         phaseMemoryObserver?("source_input_ready")
         let engine=try parameters.createEngine()
         let parallelPixels=parameters.deterministicPixelWorkers>1
-        let parallelCamera=parallelPixels && parameters.deterministicPixelStageMask & 1 != 0
-        let parallelDevelop=parallelPixels && parameters.deterministicPixelStageMask & 2 != 0
+        let parallelCamera=compactPixelWorkers>1 || (parallelPixels && parameters.deterministicPixelStageMask & 1 != 0)
+        let parallelDevelop=compactPixelWorkers>1 || (parallelPixels && parameters.deterministicPixelStageMask & 2 != 0)
+        let hdWorkers=compactPixelWorkers>1 ? compactPixelWorkers : parameters.deterministicPixelWorkers
         let parallelPrint=parallelPixels && parameters.deterministicPixelStageMask & 4 != 0
         guard !parallelPixels || stageDoubleObserver == nil else {
             throw Failure.invalid("多线程候选不支持整图阶段观察器；请显式使用串行")
@@ -1417,7 +1427,7 @@ enum OriginalSourcePhysicalImage {
         if parallelCamera {
             phaseMemoryObserver?("parallel_camera_begin")
             try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&inhibitors,
-                workers:parameters.deterministicPixelWorkers) { _,sample in
+                workers:hdWorkers) { _,sample in
                     let result=try cameraPixel(sample)
                     return (result.raw,result.inhibition)
                 }
@@ -1501,7 +1511,7 @@ enum OriginalSourcePhysicalImage {
             let field=diffused
             var noAux=[Double]()
             try OPTDeterministicPixels.apply(&frame.rgb,auxiliary:&noAux,
-                workers:parameters.deterministicPixelWorkers) { p,sample in
+                workers:hdWorkers) { p,sample in
                     let k=p*3
                     let corrected=(0..<3).map {c in sample[c]-(dirOn ? field[k+c] : 0.0)}
                     let result=try correctedPixel(corrected,paperObserver:nil)

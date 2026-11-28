@@ -546,21 +546,24 @@ enum P1OriginalRawACESIngress {
             "requiredHotHit":String(requireHotHit)])
         recordSerialGrainLifetime(selected,width:working.width,height:working.height,
                                   cacheAdmitted:reuseAllowed)
-        // Build158 real 3024x4032 RAW, both 8192x8192 FFTs, no grain
-        // or halation: full Float64 scan SHA matched serial exactly.
-        // Scope production promotion to the independently measured route.
-        // Other geometries, stochastic/halation settings and caches keep
-        // their existing serial implementation until full-grid evidence.
+        // Build158 no grain/halation and Build159 full seeded grain/halation
+        // real 3024x4032 RAW, both 8192x8192 FFTs: full Double SHA matched.
+        // Only cold compact routes with the measured grain modes qualify.
+        let verifiedPlain = !selected.sourceGrain.active && !selected.filmHalation.active
+        let verifiedFull = selected.sourceGrain.active && selected.sourceGrain.sublayersActive &&
+            !selected.sourceGrain.useUnseededParallel && !selected.sourceGrain.useFastStats &&
+            selected.sourceGrain.numbaSeed==8888 && selected.filmHalation.active
         let useVerifiedFFT = !retainDecodedSource && !reuseAllowed && crop==nil &&
             working.width==3024 && working.height==4032 &&
-            envelope.compactSequentialFFT && !selected.sourceGrain.active &&
-            !selected.filmHalation.active &&
+            envelope.compactSequentialFFT && (verifiedPlain || verifiedFull) &&
             opticalPlan.cameraFFT?.fftWidth==8192 && opticalPlan.cameraFFT?.fftHeight==8192 &&
             opticalPlan.paperFFT?.fftWidth==8192 && opticalPlan.paperFFT?.fftHeight==8192
+        let useVerifiedScan=useVerifiedFFT && verifiedFull
         OPTDeviceFeedback.mark("production_fft_policy",[
             "workers":useVerifiedFFT ? "2" : "1",
             "reuseIdenticalRows":String(useVerifiedFFT),
-            "scope":useVerifiedFFT ? "verified_12MP_two_diffusions_no_grain_no_halation" : "serial_reference"])
+            "postDiffusionScanWorkers":useVerifiedScan ? "2" : "1",
+            "scope":useVerifiedFFT ? (verifiedFull ? "verified_12MP_two_diffusions_seeded_grain_halation" : "verified_12MP_two_diffusions_no_grain_no_halation") : "serial_reference"])
         try OriginalSourcePhysicalImage.developInPlace(
             &frame, parameters: selected,
             phaseMemoryObserver:{OPTDeviceFeedback.mark($0)},
@@ -569,7 +572,8 @@ enum P1OriginalRawACESIngress {
             allowSeededGrainDensityReuse:allowSeededFull,
             requireExistingFilmDensity:reuseAllowed && requireHotHit,
             diffusionFFTWorkers:useVerifiedFFT ? 2 : 1,
-            reuseIdenticalDiffusionKernelRows:useVerifiedFFT
+            reuseIdenticalDiffusionKernelRows:useVerifiedFFT,
+            postDiffusionScanWorkers:useVerifiedScan ? 2 : 1
         )
         try Task.checkCancellation()
         OPTDeviceFeedback.mark("optics_done")
@@ -803,14 +807,14 @@ enum P1OriginalRawACESIngress {
         }
         clearAllInputCaches(reason:"full_export_fft_diagnostic")
         defer {clearAllInputCaches(reason:"full_export_fft_diagnostic_finished")}
-        func exportTrial(_ name:String,workers:Int,reuseRows:Bool,scanWorkers:Int) throws -> [UInt8] {
+        func exportTrial(_ name:String,workers:Int,reuseRows:Bool,scanWorkers:Int,pixelWorkers:Int) throws -> [UInt8] {
             try Task.checkCancellation()
             let sampler=Build133RAWMemoryLadder.RSSSampler()
             let start=ProcessInfo.processInfo.systemUptime
             let thermalBefore=ProcessInfo.processInfo.thermalState.rawValue
             OPTDeviceFeedback.mark("full_export_fft_trial_begin",["case":name,
                 "workers":String(workers),"reuseIdenticalRows":String(reuseRows),
-                "postDiffusionScanWorkers":String(scanWorkers)])
+                "postDiffusionScanWorkers":String(scanWorkers),"compactPixelWorkers":String(pixelWorkers)])
             sampler.start()
             let digest:[UInt8]
             var hashSeconds=0.0
@@ -841,7 +845,7 @@ enum P1OriginalRawACESIngress {
                                 stages[phase]=ProcessInfo.processInfo.systemUptime-begin
                                 OPTDeviceFeedback.mark("full_export_fft_phase",["case":name,"phase":phase])
                             },diffusionFFTWorkers:workers,reuseIdenticalDiffusionKernelRows:reuseRows,
-                            postDiffusionScanWorkers:scanWorkers)
+                            postDiffusionScanWorkers:scanWorkers,compactPixelWorkers:pixelWorkers)
                         return frame
                     }
                     var frame=try develop()
@@ -857,6 +861,9 @@ enum P1OriginalRawACESIngress {
                     }
                     if scanWorkers>1 && stages["parallel_post_diffusion_scan_begin"]==nil {
                         throw Failure.invalid("原尺寸对照未执行双核印相后扫描")
+                    }
+                    if pixelWorkers>1 && (stages["parallel_camera_begin"]==nil || stages["parallel_develop_begin"]==nil) {
+                        throw Failure.invalid("原尺寸对照未执行双核初始及校正显影")
                     }
                     let hashStart=ProcessInfo.processInfo.systemUptime
                     var hash=SHA256()
@@ -879,7 +886,9 @@ enum P1OriginalRawACESIngress {
                         "jpegSeconds":String(ProcessInfo.processInfo.systemUptime-jpegStart),
                         "cameraFFTSeconds":String((stages["camera_diffusion_ready"] ?? 0)-(stages["camera_diffusion_begin"] ?? 0)),
                         "paperFFTSeconds":String((stages["paper_diffusion_ready"] ?? 0)-(stages["paper_diffusion_begin"] ?? 0)),
-                        "postDiffusionScanSeconds":String((stages["paper_scan_pixels_ready"] ?? 0)-(stages["paper_diffusion_ready"] ?? 0))])
+                        "postDiffusionScanSeconds":String((stages["paper_scan_pixels_ready"] ?? 0)-(stages["paper_diffusion_ready"] ?? 0)),
+                        "initialHDSeconds":String((stages["camera_photons_ready"] ?? 0)-(stages["phase_admitted_DIR"] ?? 0)),
+                        "correctedHDSeconds":String((stages["film_density_ready_DIR_released"] ?? 0)-(stages["spatial_DIR_ready"] ?? 0))])
                     frame.rgb.removeAll(keepingCapacity:false)
                     return words
                 }
@@ -894,19 +903,19 @@ enum P1OriginalRawACESIngress {
                 "secondsExcludingSHA":String(elapsed-hashSeconds),
                 "thermalBefore":String(thermalBefore),"thermalAfter":String(ProcessInfo.processInfo.thermalState.rawValue),
                 "workers":String(workers),"rowReuse":String(reuseRows),
-                "postDiffusionScanWorkers":String(scanWorkers),
+                "postDiffusionScanWorkers":String(scanWorkers),"compactPixelWorkers":String(pixelWorkers),
                 "sampledPeakPhysicalFootprintBytes":samples.footprint.map{String($0)} ?? "not_measured",
                 "sampledPeakRSSBytes":samples.peak.map{String($0)} ?? "not_measured",
                 "sampledLowestHeadroomBytes":samples.lowest.map{String($0)} ?? "not_measured",
                 "sampleCount":String(samples.count)])
             return digest
         }
-        let reference=try exportTrial("serial_reference",workers:1,reuseRows:false,scanWorkers:1)
-        let candidate=try exportTrial("two_worker_fft_scan_candidate",workers:2,reuseRows:true,scanWorkers:2)
+        let reference=try exportTrial("verified_fft_scan_reference",workers:2,reuseRows:true,scanWorkers:2,pixelWorkers:1)
+        let candidate=try exportTrial("two_worker_hd_candidate",workers:2,reuseRows:true,scanWorkers:2,pixelWorkers:2)
         let equal=reference==candidate
         OPTDeviceFeedback.mark("full_export_fft_compare_result",["passed":String(equal),
             "allFloat64BytesSHA256Equal":String(equal),"productionEnabled":"false",
-            "candidate":"two_worker_fft_and_post_diffusion_scan",
+            "candidate":"two_worker_initial_and_corrected_hd",
             "scope":"actual_uncropped_RAW_full_resolution_two_independent_JPEG_exports"])
         return equal
     }

@@ -1310,7 +1310,7 @@ struct FloatingEditorWorkspace: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.busy)
-                    Text("已选未裁切 RAW 且开启印相柔化时，独立执行两次原尺寸完整 Float64 冲印及 JPEG 写出（单核参考／双核 FFT＋相同核行复用＋印相后扫描双核候选），核对完整 RGB SHA256、实际导出耗时和采样内存。扫描并行尚未进入正式导出。不需要完整精细预览。无 RAW 时执行四家族 512×384 对照。")
+                    Text("已选未裁切 RAW 且开启印相柔化时，独立执行两次原尺寸完整 Float64 冲印及 JPEG 写出（已验证双核 FFT＋印相后扫描参考／新增双核初始 H-D 与校正显影候选），核对完整 RGB SHA256、实际导出耗时和采样内存。新增 H-D 并行尚未进入正式导出。不需要完整精细预览。无 RAW 时执行四家族 512×384 对照。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Button {
